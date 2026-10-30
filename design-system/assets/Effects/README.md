@@ -1,0 +1,1 @@
+Wormhole effect glyphs, 16×16 SVG, one per effect (Pulsar, Black Hole, Cataclysmic Variable, Magnetar, Red Giant, Wolf-Rayet, none). Single ink `#e6edf2` (the `ink` token); recolour to the matching `effect-*` token in Qt with `QSvgRenderer` into a pixmap, then `CompositionMode_SourceIn`. Use at 14px (`size-icon`), 13px in the overlay, never below 12px.

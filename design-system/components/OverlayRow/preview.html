@@ -1,0 +1,22 @@
+<!-- @dsCard group="Overlay" height=250 width=760 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+
+<div class="lm-row" style="align-items:flex-start;gap:16px">
+<div class="lm-ov-stage lm-bg-space"><div class="lm-ov" id="a"></div></div>
+<div class="lm-ov-stage lm-bg-blast"><div class="lm-ov" id="b"></div></div></div>
+<script>
+var LM = window.Homebound;
+var rows = [
+ {name:'A2', cls:'C5', j:'J163856', fx:'redgiant', k1:0, k24:7, owner:['LZRD',1]},
+ {name:'A2a', cls:'C5', j:'J120617', k1:0, k24:0, cur:true},
+ {name:'C', cls:'C6', j:'J222911', fx:'magnetar', k1:3, k24:41, recent:true},
+ {name:'8', cls:'HS', sec:'0.6', dist:'(Jita) <b>3j</b> from A'}];
+var hd = '<div class="hdr">' + LM.chr(1) + '<span class="who">Ryn Vass</span><span class="mode">rows</span></div>';
+document.getElementById('a').innerHTML = hd + rows.map(LM.ovRow).join('');
+document.getElementById('b').innerHTML = hd + rows.map(LM.ovRow).join('');
+</script>
+</body>
+</html>

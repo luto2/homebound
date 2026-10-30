@@ -1,0 +1,40 @@
+<!-- @dsCard height=288 -->
+<!doctype html>
+<html data-theme="dark">
+<head><link rel="stylesheet" href="../tokens.css"><link rel="stylesheet" href="../components/bundle.css"><script src="../components/bundle.js"></script><meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: var(--bg-1); }
+  .cv { position: relative; width: 960px; height: 288px; overflow: hidden; background: var(--bg-1); }
+  svg { position: absolute; left: 0; top: 0; }
+  .accent { fill: var(--accent); } .c5 { fill: var(--class-c5); } .c3 { fill: var(--class-c3); } .deep { fill: var(--bg-0); } .tint { fill: var(--bg-4); }
+  .tile { rx: var(--radius-3); } .chip { rx: var(--radius-1); }
+  .dot { fill: var(--line-2); }
+  .txt { position: absolute; left: 40px; bottom: 32px; max-width: 440px; }
+  .name { font-family: var(--font-sans); font-weight: 800; font-size: 92px; line-height: .95; letter-spacing: -0.02em; color: var(--ink); margin: 0; }
+  .tag { font-family: var(--font-sans); font-size: 14px; line-height: 20px; color: var(--ink-muted); margin-top: 16px; }
+</style></head>
+<body>
+<div class="cv">
+  <svg width="960" height="288" viewBox="0 0 960 288" aria-hidden="true">
+    <!-- blocks: bg-0 slab 456×288, accent 216×120, class-c5 144×72, class-c3 96×120 (bleeds bottom), bg-4 192×48 (bleeds top)
+         arrangement: one deep slab from x=504 with tiles staggered like nodes in a chain, two bleeding off top and bottom edges
+         pattern: dot grid at sp-24 pitch (the map canvas grid) — "precise, technical, mono" and literally the canvas the app draws on
+         scales: sides are multiples of sp-24; corners radius-3 (nodes), radius-1 (chips) -->
+    <rect class="deep" x="504" y="0" width="456" height="288"/>
+    <g id="dots"></g>
+    <rect class="tint tile" x="744" y="-8" width="192" height="56"/>
+    <rect class="accent tile" x="552" y="72" width="216" height="120"/>
+    <rect class="c5 tile" x="792" y="120" width="144" height="72"/>
+    <rect class="c3 tile" x="600" y="216" width="96" height="96"/>
+    <rect class="accent chip" x="768" y="129" width="24" height="6"/>
+  </svg>
+  <div class="txt"><h1 class="name">Local<br>Mapper</h1><div class="tag">A ship instrument for wormhole chains: dense, local, legible over anything.</div></div>
+</div>
+<script>
+  var g = document.getElementById('dots'), s = '';
+  for (var i = 0; i < 9; i++) for (var j = 0; j < 5; j++) { var x = 732 + i * 24, y = 216 + j * 24; if (x > 950 || (x < 708 && y < 300)) continue; s += '<circle class="dot" cx="' + x + '" cy="' + y + '" r="1.5"/>'; }
+  for (var i = 0; i < 4; i++) for (var j = 0; j < 2; j++) s += '<circle class="dot" cx="' + (528 + i * 24) + '" cy="' + (24 + j * 24) + '" r="1.5"/>';
+  g.innerHTML = s;
+</script>
+</body>
+</html>

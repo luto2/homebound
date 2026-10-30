@@ -1,0 +1,13 @@
+<!-- @dsCard group="Badges" height=80 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+
+<div class="lm-row" id="s"></div>
+<script>
+var LM = window.Homebound;
+document.getElementById('s').innerHTML = ['C5','HS'].map(LM.statik).join('') + '&nbsp;&nbsp;' + ['C3','LS'].map(LM.statik).join('') + '&nbsp;&nbsp;' + ['C6'].map(LM.statik).join('') + '&nbsp;&nbsp;' + ['NS'].map(LM.statik).join('');
+</script>
+</body>
+</html>

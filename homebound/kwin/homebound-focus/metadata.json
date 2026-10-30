@@ -1,0 +1,13 @@
+{
+    "KPlugin": {
+        "Id": "homebound-focus",
+        "Name": "Homebound focus",
+        "Description": "Tells Homebound which EVE client window is active and where it is, so the overlay can follow it.",
+        "Version": "1.0",
+        "License": "MIT",
+        "Authors": [{"Name": "Homebound"}]
+    },
+    "X-Plasma-API": "javascript",
+    "X-Plasma-MainScript": "code/main.js",
+    "KPackageStructure": "KWin/Script"
+}

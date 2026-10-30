@@ -1,0 +1,28 @@
+<!-- @dsCard group="Data" height=372 width=640 -->
+<!doctype html>
+<html data-theme="dark">
+<head><link rel="stylesheet" href="../tokens.css"><link rel="stylesheet" href="../components/bundle.css"><script src="../components/bundle.js"></script><meta charset="utf-8"></head>
+<body>
+
+<div style="width:600px">
+<div class="lm-row" style="margin-bottom:8px"><span style="font-size:15px;font-weight:600">Signatures</span><span class="lm-faint" style="font-size:12px">9 · last paste 2 min ago</span><span style="margin-left:auto" class="lm-row"><button class="lm-btn primary sm">Paste sigs <span class="lm-kbd">Ctrl+V</span></button></span></div>
+<div class="lm-banner warn" style="margin-bottom:8px"><span class="g">▲</span><span><b>3 sigs missing</b> from the last paste</span><span class="end"><button class="lm-btn sm">Keep</button><button class="lm-btn danger sm">✕ Delete missing</button></span></div>
+<table class="lm-table" id="t"></table></div>
+<script>
+var LM = window.Homebound;
+var R = [
+ ['', 'ABC-123','wh','Wormhole','H296','→ A2a  C5',100,'1h 12m','123-1'],
+ ['', 'KLV-554','wh','Wormhole','K162','→ A  C3',100,'2h 40m','123-2', 'is-selected'],
+ ['', 'QRT-801','wh','Wormhole','V753','→ C  C6',100,'34m','123-3', 'is-hover'],
+ ['+', 'MMX-310','wh','Wormhole','?','',38,'1m','', 'is-new'],
+ ['', 'ZOP-912','data','Data Site','','Unsecured Perimeter Info Center',100,'5h 03m',''],
+ ['', 'FFE-020','gas','Gas Site','','Vital Core Reservoir',100,'5h 03m',''],
+ ['−', 'HJK-447','combat','Combat Site','','Perimeter Hangar',100,'9h 15m','', 'is-missing'],
+ ['−', 'PLW-662','relic','Relic Site','','Forgotten Frontier Quarantine',100,'9h 15m','', 'is-missing'],
+ ['−', 'UTE-071','unknown','?','','',12,'1d 2h','', 'is-missing']];
+var h = '<tr><th></th><th>Sig</th><th>Group</th><th>Type</th><th>Name / leads to</th><th class="num">Scan</th><th class="num">Age</th><th></th></tr>';
+R.forEach(function(r){ h += '<tr class="' + (r[9]||'') + '"><td class="flag">' + r[0] + '</td><td class="sig">' + r[1] + '</td><td><span class="lm-grp ' + r[2] + '">' + r[3] + '</span></td><td class="lm-mono">' + r[4] + '</td><td style="max-width:180px;overflow:hidden;text-overflow:ellipsis">' + r[5] + '</td><td class="num"><span class="lm-scan' + (r[6]==100?' full':'') + '"><i><b style="width:' + r[6] + '%"></b></i>' + r[6] + '%</span></td><td class="num">' + r[7] + '</td><td>' + (r[8] ? '<button class="lm-btn sm" title="Copy bookmark name">⧉ ' + r[8] + '</button>' : '') + '</td></tr>'; });
+document.getElementById('t').innerHTML = h;
+</script>
+</body>
+</html>

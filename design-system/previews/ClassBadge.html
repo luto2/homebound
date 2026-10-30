@@ -1,0 +1,15 @@
+<!-- @dsCard group="Badges" height=118 -->
+<!doctype html>
+<html data-theme="dark">
+<head><link rel="stylesheet" href="../tokens.css"><link rel="stylesheet" href="../components/bundle.css"><script src="../components/bundle.js"></script><meta charset="utf-8"></head>
+<body>
+
+<div class="lm-col"><div class="lm-row" id="w"></div><div class="lm-row" id="k"></div>
+<div class="lm-help">Filled = wormhole space · Outlined = known space (with security) · C13 notched · Pochven corner-cut</div></div>
+<script>
+var LM = window.Homebound;
+document.getElementById('w').innerHTML = ['C1','C2','C3','C4','C5','C6','TH','C13','DR','PV'].map(function(c){return LM.cls(c)}).join('');
+document.getElementById('k').innerHTML = LM.cls('HS','0.9') + LM.cls('HS','0.5') + LM.cls('LS','0.4') + LM.cls('LS','0.1') + LM.cls('NS','-0.3') + LM.cls('NS','-1.0');
+</script>
+</body>
+</html>

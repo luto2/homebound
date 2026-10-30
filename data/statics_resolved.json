@@ -1,0 +1,142 @@
+{
+ "J000487": {
+  "anoik": [
+   "C008",
+   "Q003",
+   "Z006"
+  ],
+  "source": "zkill",
+  "statics": [
+   "C008",
+   "Q003",
+   "Z006"
+  ],
+  "wanderer": [
+   "Q003",
+   "Z006"
+  ]
+ },
+ "J005663": {
+  "anoik": [
+   "U210"
+  ],
+  "source": "zkill",
+  "statics": [
+   "U210"
+  ],
+  "wanderer": [
+   "U210",
+   "Y790"
+  ]
+ },
+ "J010366": {
+  "anoik": [
+   "W237"
+  ],
+  "source": "zkill",
+  "statics": [
+   "K346",
+   "W237"
+  ],
+  "wanderer": [
+   "K346",
+   "W237"
+  ]
+ },
+ "J011355": {
+  "anoik": [
+   "C247",
+   "X877"
+  ],
+  "source": "zkill",
+  "statics": [
+   "C247",
+   "K346",
+   "X877"
+  ],
+  "wanderer": [
+   "C247",
+   "K346",
+   "X877"
+  ]
+ },
+ "J011790": {
+  "anoik": [
+   "D792",
+   "K346",
+   "M267"
+  ],
+  "source": "zkill",
+  "statics": [
+   "K346",
+   "M267"
+  ],
+  "wanderer": [
+   "K346",
+   "M267"
+  ]
+ },
+ "J011824": {
+  "anoik": [
+   "C247",
+   "U210",
+   "X877"
+  ],
+  "source": "zkill",
+  "statics": [
+   "C247",
+   "K346",
+   "X877"
+  ],
+  "wanderer": [
+   "C247",
+   "K346",
+   "X877"
+  ]
+ },
+ "J012635": {
+  "anoik": [
+   "A239",
+   "B274"
+  ],
+  "source": "zkill",
+  "statics": [
+   "A239",
+   "B274"
+  ],
+  "wanderer": [
+   "A239",
+   "B274",
+   "D382"
+  ]
+ },
+ "J012773": {
+  "anoik": [
+   "E175"
+  ],
+  "source": "zkill",
+  "statics": [
+   "E175",
+   "K346"
+  ],
+  "wanderer": [
+   "E175",
+   "K346"
+  ]
+ },
+ "J015092": {
+  "anoik": [
+   "J244",
+   "Z060"
+  ],
+  "source": "zkill",
+  "statics": [
+   "N110",
+   "Z060"
+  ],
+  "wanderer": [
+   "N110",
+   "Z060"
+  ]
+ }
+}

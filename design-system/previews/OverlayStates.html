@@ -1,0 +1,46 @@
+<!-- @dsCard group="Screens" height=500 width=1600 page subtitle="Overlay: normal, k-space distance, unlocked, empty" -->
+<!doctype html>
+<html data-theme="dark">
+<head><link rel="stylesheet" href="../tokens.css"><link rel="stylesheet" href="../components/bundle.css"><script src="../components/bundle.js"></script><meta charset="utf-8"><style>
+body { padding: 16px; background: var(--bg-0); }
+.wrap { display: flex; gap: 16px; align-items: flex-start; }
+.cell { display: flex; flex-direction: column; gap: 8px; }
+.st { width: 368px; height: 420px; border-radius: var(--radius-3); padding: 20px 24px; position: relative; overflow: hidden; }
+.split { background: linear-gradient(180deg, #05070a 0 12%, #ffffff 12% 30%, #ffd27a 42%, #ff7a2a 62%, #3a160a 100%); }
+</style></head>
+<body>
+<div class="wrap">
+ <div class="cell"><span class="lm-caption">1 · Normal — follows active client</span><div class="st lm-bg-space"><div class="lm-ov" id="o1"></div></div></div>
+ <div class="cell"><span class="lm-caption">2 · K-space: 3j from entrance</span><div class="st split"><div class="lm-ov" id="o2"></div></div></div>
+ <div class="cell"><span class="lm-caption">3 · Unlocked for dragging</span><div class="st lm-bg-ui"><div class="lm-ov unlocked" id="o3" style="background:#080b0eeb"></div></div></div>
+ <div class="cell"><span class="lm-caption">4 · Empty / hidden</span><div class="st lm-bg-blast" style="display:flex;flex-direction:column;gap:24px">
+   <div class="lm-ov empty" id="o4"></div><div class="lm-ov empty" id="o5"></div></div></div>
+</div>
+<script>
+var LM = window.Homebound;
+var chain = [
+ {tree:'', name:'Home', cls:'C2', j:'J161940', k1:0, k24:2, owner:['HOME',6,true]},
+ {tree:'├', name:'8', cls:'HS', sec:'0.6', j:'Sirseshin', k1:1, k24:12},
+ {tree:'├', name:'A', cls:'C3', j:'J105443', fx:'pulsar', k1:0, k24:3},
+ {tree:'│├', name:'9-4RP2', cls:'NS', sec:'-0.3', j:'', k1:2, k24:38},
+ {tree:'│└', name:'A2', cls:'C5', j:'J163856', fx:'redgiant', k1:0, k24:7, owner:['LZRD',1]},
+ {tree:'│ ├', name:'A2a', cls:'C5', j:'J120617', k1:0, k24:0, cur:true},
+ {tree:'│ │└', name:'A2b', cls:'C13', j:'J213734', k1:0, k24:0},
+ {tree:'│ ├', name:'Thera', cls:'TH', j:'', k1:6, k24:96},
+ {tree:'│ └', name:'C', cls:'C6', j:'J222911', fx:'magnetar', k1:3, k24:41, recent:true},
+ {tree:'└', name:'B', cls:'C4', j:'J005299', fx:'cataclysmic', k1:0, k24:1, owner:['SNGL',5]},
+ {tree:' ├', name:'B1', cls:'C1', j:'J140217', fx:'blackhole', k1:0, k24:0},
+ {tree:' └', name:'Kino', cls:'PV', j:'', k1:4, k24:22}];
+function hdr(n, who, mode, extra) { return '<div class="hdr">' + LM.chr(n) + '<span class="who">' + who + '</span>' + (extra||'') + '<span class="mode">' + mode + '</span></div>'; }
+var foot = '<div class="ft">12 systems · kills 1h/24h</div>';
+document.getElementById('o1').innerHTML = hdr(1, 'Ryn Vass', 'follow active') + chain.map(LM.ovRow).join('') + foot;
+var c2 = chain.slice(0, 3).map(function(r){ return Object.assign({}, r, {cur:false}); });
+c2.splice(2, 0, {tree:'│└', name:'Perimeter', cls:'HS', sec:'1.0', dist:'<b>3j</b> from entrance', cur:true});
+c2[1] = Object.assign({}, c2[1], {j:'Sirseshin · entrance'});
+document.getElementById('o2').innerHTML = hdr(2, 'Kade Morrow', 'follow active') + c2.map(LM.ovRow).join('') + chain.slice(9).map(LM.ovRow).join('') + '<div class="ft">Showing Home branch · 6 rows</div>';
+document.getElementById('o3').innerHTML = '<div class="grip"><i></i><i></i><i></i><i></i><i></i></div>' + hdr(1, 'Ryn Vass', 'pinned', '<span class="lock">UNLOCKED</span>') + chain.slice(0, 7).map(LM.ovRow).join('') + '<div class="ft">Drag to move · drag edge to resize · Ctrl+Shift+L to lock</div>';
+document.getElementById('o4').innerHTML = hdr(3, 'Ilse Tarn', 'follow active') + '<div class="msg">Not in a mapped chain.<br><span style="font-weight:400">Last seen in Sirseshin, 2h ago.</span></div>';
+document.getElementById('o5').innerHTML = hdr(1, 'Ryn Vass', 'follow active') + '<div class="msg">No game client focused — overlay hidden.<br><span style="font-weight:400">This state is only visible in "Pinned · always shown".</span></div>';
+</script>
+</body>
+</html>

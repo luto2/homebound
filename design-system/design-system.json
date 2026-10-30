@@ -1,0 +1,29 @@
+{
+  "v": 3,
+  "layout": "files",
+  "createdOnFiles": {"v": 1, "at": "2026-10-30T12:00:00Z"},
+  "title": "Homebound",
+  "namespace": "Homebound",
+  "libraries": [],
+  "sections": {},
+  "groups": ["Effects"],
+  "assetGroups": {
+    "Effects": {
+      "name": "Effects",
+      "tile": "s",
+      "order": ["effect-pulsar.svg", "effect-blackhole.svg", "effect-cataclysmic.svg", "effect-magnetar.svg", "effect-redgiant.svg", "effect-wolfrayet.svg", "effect-none.svg"],
+      "files": {
+        "effect-pulsar.svg": {"name": "effect-pulsar.svg", "blob": "870e92371c2f42dcf52007de17b07fdc", "size": 342, "type": "image/svg+xml"},
+        "effect-blackhole.svg": {"name": "effect-blackhole.svg", "blob": "cdba1673841aec28c8d93ca535c7e78f", "size": 284, "type": "image/svg+xml"},
+        "effect-cataclysmic.svg": {"name": "effect-cataclysmic.svg", "blob": "0423d84b81c7c2d4a4e1442abf3502a1", "size": 371, "type": "image/svg+xml"},
+        "effect-magnetar.svg": {"name": "effect-magnetar.svg", "blob": "0f054a9767e10727a409a400c0e49136", "size": 290, "type": "image/svg+xml"},
+        "effect-redgiant.svg": {"name": "effect-redgiant.svg", "blob": "d02d231d01b3700ea4e82bbf331531d0", "size": 253, "type": "image/svg+xml"},
+        "effect-wolfrayet.svg": {"name": "effect-wolfrayet.svg", "blob": "41d29ca9d0d8e5aed9fc6a657332f018", "size": 347, "type": "image/svg+xml"},
+        "effect-none.svg": {"name": "effect-none.svg", "blob": "0943311b1b19c70bbde97e027a84f9ab", "size": 217, "type": "image/svg+xml"}
+      }
+    }
+  },
+  "blobs": {},
+  "docs": {"readme": "project/README.md", "sections": []},
+  "lastChange": {"by": "Claude", "at": "2026-10-30T12:00:00Z", "via": "Claude Code", "note": "Initial Homebound design system: tokens, 15 components, 4 screen mockups, Qt notes"}
+}

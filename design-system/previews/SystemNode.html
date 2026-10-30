@@ -1,0 +1,23 @@
+<!-- @dsCard group="Map" height=330 width=760 -->
+<!doctype html>
+<html data-theme="dark">
+<head><link rel="stylesheet" href="../tokens.css"><link rel="stylesheet" href="../components/bundle.css"><script src="../components/bundle.js"></script><meta charset="utf-8"></head>
+<body>
+
+<div style="position:relative;height:300px;background:var(--bg-0)" id="m"></div>
+<script>
+var LM = window.Homebound;
+var m = document.getElementById('m');
+m.innerHTML =
+ '<div class="lm-caption" style="position:absolute;left:16px;top:8px">Default</div>' + LM.node({x:16,y:36,name:'A2',j:'J163856',cls:'C5',fx:'redgiant',statics:['C5'],owner:['LZRD',1],zk:'med'}) +
+ '<div class="lm-caption" style="position:absolute;left:204px;top:8px">Selected · 2 chars</div>' + LM.node({x:204,y:36,name:'A2a',j:'J120617',cls:'C5',statics:['C5'],chars:[1,3],zk:'none',state:'is-selected'}) +
+ '<div class="lm-caption" style="position:absolute;left:392px;top:8px">Hover · recent kill</div>' + LM.node({x:392,y:36,name:'C',j:'J222911',cls:'C6',fx:'magnetar',statics:['C6'],zk:'high',recent:true,state:'is-hover'}) +
+ '<div class="lm-caption" style="position:absolute;left:580px;top:8px">Home</div>' + LM.node({x:580,y:36,name:'Home',j:'J161940',cls:'C2',statics:['C3','HS'],owner:['HOME',6,true],chars:[2],state:'is-home'}) +
+ '<div class="lm-caption" style="position:absolute;left:16px;top:130px">K-space</div>' + LM.node({x:16,y:156,name:'8',sub:'(Jita)',j:'Sirseshin',cls:'HS',sec:'0.6',zk:'low'}) +
+ '<div class="lm-caption" style="position:absolute;left:204px;top:130px">Stale (not visited 3h)</div>' + LM.node({x:204,y:156,name:'B1',j:'J140217',cls:'C1',fx:'blackhole',statics:['HS'],stale:'3h',state:'is-stale'}) +
+ '<div class="lm-caption" style="position:absolute;left:392px;top:130px">Zoom 55% — compact</div>' + '<div class="lm-node compact" style="position:absolute;left:392px;top:156px;width:120px"><div class="l1"><span class="nm">A2a</span><span class="end">' + LM.cls('C5') + '</span></div></div>' +
+ '<div class="lm-caption" style="position:absolute;left:580px;top:130px">Zoom 30% — minimal</div>' + '<div class="lm-node minimal" style="position:absolute;left:580px;top:156px"><div class="l1"><span class="nm" style="font-size:13px">A2a</span></div></div>' +
+ '<div class="lm-help" style="position:absolute;left:16px;top:250px;right:16px">Line 1: custom name · zKill · character markers on top edge. Line 2: class · effect · J-name · statics. Line 3: owner (omitted if none).</div>';
+</script>
+</body>
+</html>

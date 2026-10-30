@@ -1,0 +1,15 @@
+<!-- @dsCard group="Badges" height=96 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+
+<div class="lm-col"><div class="lm-row" id="o"></div><div class="lm-row" id="o2"></div></div>
+<script>
+var LM = window.Homebound;
+var t = ['HOME','LZRD','SNGL','HKR','VOID','KRAB','NOPE','BLNK','EVIC','LOOT'];
+document.getElementById('o').innerHTML = LM.owner('HOME', 6, true) + t.slice(1).map(function(x,i){return LM.owner(x, i + 2)}).join('');
+document.getElementById('o2').innerHTML = '<span class="lm-help">10 user-assignable colours (owner-1 … owner-10). The ticker is always shown; colour only groups.</span>';
+</script>
+</body>
+</html>
