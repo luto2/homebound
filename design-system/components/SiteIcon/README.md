@@ -1,22 +1,24 @@
 # SiteIcon
 
-One glyph per signature group, used in the SignatureTable group headers, the SigEditor group combo and anywhere a site type is named. Same grid and stroke as EffectIcon: 16×16, 1.4px main strokes, 1.1px detail strokes, round caps and joins.
+One icon per signature group, used in the SignatureTable group headers, the SigEditor group combo and anywhere a site type is named. The icons are **EVE Online's own in-space bracket icons**, so they match what players see in the client (and in Wanderer).
 
-| Group | Glyph | Ink |
+| Group | Icon (IEC `Icons/items/Brackets/`) | Tint token |
 |---|---|---|
-| Wormhole | tunnel: ring with an off-centre inner ring and a dot | `accent` |
-| Combat site | two crossed blades with guards | `danger` |
-| Data site | chip: square with a core and pins on four sides | `ink-muted` |
-| Relic site | broken arch on a base line, a fallen fragment | `warning` |
-| Gas site | cloud outline with one inner wisp | `success` |
-| Ore site | faceted rock | `warning` |
-| Ice site | six-armed crystal with small barbs | `accent` |
-| Unscanned | dashed rounded square with a ? | `ink-faint` |
+| Wormhole | `wormhole.png` | `accent` |
+| Combat site | `combatSite_16.png` | `danger` |
+| Data site | `data_Site_16.png` | `ink-muted` |
+| Relic site | `relic_Site_16.png` | `warning` |
+| Gas site | `harvestableCloud.png` | `success` |
+| Ore site | `ore_Site_16.png` | `warning` |
+| Ice site | `iceField.png` | `accent` |
+| Unscanned | Homebound's own dashed ? glyph (no EVE counterpart) | `ink-faint` |
 
-- **The shape identifies the group, the colour only supports it.** Relic and Ore share `warning`, Wormhole and Ice share `accent`; their outlines are different (arch vs rock, ring vs star). The greyscale row in the preview is the test.
-- No glyph reuses an effect silhouette: Wolf-Rayet is the hexagon and "no effect" is the dashed circle, so Ice has no hexagon and Unscanned is a dashed *square*.
-- **Anomalies use the same glyph** as the signature group of the same kind. The group header says `Anomalies ·` in `ink-muted` before the title; a second glyph set would double what players need to learn.
-- Sizes: 14px (`size-icon`) in tables, headers and combos; 12px is the floor. Always paired with the group word; the name is also the tooltip and accessible name.
-- Files: the *Sites* asset group, `site-<group>.svg`, single ink `#e6edf2`. The path data is also in `components/bundle.js` → `SITE`.
+- **Source:** CCP's official Image Export Collection, Uprising V21.03 (`Uprising_V21.03_Icons.zip`). EVE Online and its images are the intellectual property of CCP hf; Homebound is free, non-commercial and not affiliated with CCP. See `homebound/theme/sites/NOTICE.md`.
+- **Tinting:** the originals are white with a dark drop shadow. Tint by **brightness**: each pixel becomes the token colour with alpha = original alpha × lightness, so the shadow drops out on dark rows and the shape stays crisp. A plain `SourceIn` fill would turn the shadow into a thick outline.
+- **Size:** native 16×16. Draw at 16px (pixel-exact at 1×); at fractional or 2× scaling use smooth scaling. Don't go below 16.
+- The shapes come from the game, so colour is still a support signal: Relic and Ore share `warning`, Wormhole and Ice share `accent`, and their EVE silhouettes differ.
+- **Anomalies** use the same icon as the signature group of the same kind; the header says `Anomalies ·`.
 
-Qt: load each SVG once with `QSvgRenderer`, render to a `QPixmap` at `14 × devicePixelRatio`, then tint with `QPainter.CompositionMode_SourceIn` filled with `color(token)`. Cache by `(group, token, dpr)` in `QPixmapCache`. In `sig_table.py` this replaces the `BULLET` shapes: draw the pixmap where `_bullet` draws today and keep the same token map.
+Qt: `painting.site_pixmap(grp, size, dpr)` builds and caches the tinted pixmap; `painting.draw_site(p, x, y, grp)` draws it. Used by `sig_table.py` (group column and header rows) and the SigEditor group combo (`QIcon`).
+
+Preview note: the browser previews tint with a CSS luminance mask, the same rule as the app.

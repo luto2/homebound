@@ -20,7 +20,7 @@ The signature and anomaly list for the selected system, **grouped** with one hea
 
 **Section title meta:** `9 sigs · 4 anoms · last paste 2m ago`.
 
-**Group glyphs** (see SiteIcon): wormhole tunnel `accent`, combat crossed blades `danger`, data chip `ink-muted`, relic broken arch `warning`, gas cloud `success`, ore rock `warning`, ice crystal `accent`, unscanned dashed ? `ink-faint`. 14px, left of the title. Anomaly groups use the same glyph as the matching signature group.
+**Group icons** (see SiteIcon): EVE's bracket icons, 16px, tinted wormhole `accent`, combat `danger`, data `ink-muted`, relic `warning`, gas `success`, ore `warning`, ice `accent`; unscanned uses our dashed ? in `ink-faint`. Left of the title. Anomaly groups use the same glyph as the matching signature group.
 
 **Actions**: "Paste sigs (Ctrl+V)" is the panel's primary button and also works anywhere in the map window. Each WH row has a `sm` "⧉ 123-1" button that copies the bookmark name built from the naming scheme; after copying, the label switches to "✓ Copied" for 1.5 s. Double-click a sig row opens the SigEditor (not for anomalies).
 

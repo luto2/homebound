@@ -75,57 +75,57 @@
       "name": "Sites",
       "tile": "s",
       "order": [
-        "site-wormhole.svg",
-        "site-combat.svg",
-        "site-data.svg",
-        "site-relic.svg",
-        "site-gas.svg",
-        "site-ore.svg",
-        "site-ice.svg",
+        "site-wormhole.png",
+        "site-combat.png",
+        "site-data.png",
+        "site-relic.png",
+        "site-gas.png",
+        "site-ore.png",
+        "site-ice.png",
         "site-unknown.svg"
       ],
       "files": {
-        "site-wormhole.svg": {
-          "name": "site-wormhole.svg",
-          "blob": "a94b2431e9e39bccbeb49e530cd1a404",
-          "size": 393,
-          "type": "image/svg+xml"
+        "site-wormhole.png": {
+          "name": "site-wormhole.png",
+          "blob": "4f1ad664ee722ff60c860fbf4b4e9942",
+          "size": 2095,
+          "type": "image/png"
         },
-        "site-combat.svg": {
-          "name": "site-combat.svg",
-          "blob": "29e2b1327ccbbdfcf001b7d8450246e2",
-          "size": 402,
-          "type": "image/svg+xml"
+        "site-combat.png": {
+          "name": "site-combat.png",
+          "blob": "648339ee183fdc0697d7c68bfcecdfa4",
+          "size": 1961,
+          "type": "image/png"
         },
-        "site-data.svg": {
-          "name": "site-data.svg",
-          "blob": "38781428c4c8952dbe12034c67c81adb",
-          "size": 510,
-          "type": "image/svg+xml"
+        "site-data.png": {
+          "name": "site-data.png",
+          "blob": "b5e8b01f3c740fcdd216d62ca831262d",
+          "size": 1726,
+          "type": "image/png"
         },
-        "site-relic.svg": {
-          "name": "site-relic.svg",
-          "blob": "18028132a122ffc7ccc09b0e07669501",
-          "size": 524,
-          "type": "image/svg+xml"
+        "site-relic.png": {
+          "name": "site-relic.png",
+          "blob": "63dcb30c1bfe299389c6a9ca4a5ffd12",
+          "size": 2034,
+          "type": "image/png"
         },
-        "site-gas.svg": {
-          "name": "site-gas.svg",
-          "blob": "55708e659b92c3885966fe2a882713b1",
-          "size": 384,
-          "type": "image/svg+xml"
+        "site-gas.png": {
+          "name": "site-gas.png",
+          "blob": "eb937477466930fb9d9392af172fc724",
+          "size": 693,
+          "type": "image/png"
         },
-        "site-ore.svg": {
-          "name": "site-ore.svg",
-          "blob": "34050127ee1da6a80906da2461fa92ed",
-          "size": 385,
-          "type": "image/svg+xml"
+        "site-ore.png": {
+          "name": "site-ore.png",
+          "blob": "0253c8fccb23d636b0135433e5a95c71",
+          "size": 2009,
+          "type": "image/png"
         },
-        "site-ice.svg": {
-          "name": "site-ice.svg",
-          "blob": "594e3e6f97cb9b029b4e4df89f606c52",
-          "size": 470,
-          "type": "image/svg+xml"
+        "site-ice.png": {
+          "name": "site-ice.png",
+          "blob": "5948c9aac6baa117859940ab6d9b827e",
+          "size": 396,
+          "type": "image/png"
         },
         "site-unknown.svg": {
           "name": "site-unknown.svg",
@@ -143,8 +143,8 @@
   },
   "lastChange": {
     "by": "Claude",
-    "at": "2026-10-31T14:00:00Z",
+    "at": "2026-10-31T16:00:00Z",
     "via": "Claude Code",
-    "note": "Added SiteIcon: glyphs for signature and anomaly groups (Sites asset group), used in SignatureTable and SigEditor"
+    "note": "Site icons are now EVE Online's bracket icons from CCP's Image Export Collection, tinted per group; Unscanned keeps our own glyph"
   }
 }

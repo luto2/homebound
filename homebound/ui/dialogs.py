@@ -273,7 +273,7 @@ class ConnectionDialog(BaseDialog):
 
 
 SIG_GROUPS = [("wormhole", "Wormhole"), ("combat", "Combat site"), ("data", "Data site"), ("relic", "Relic site"),
-              ("gas", "Gas site"), ("ore", "Ore site"), ("unknown", "Unscanned")]
+              ("gas", "Gas site"), ("ore", "Ore site"), ("ice", "Ice site"), ("unknown", "Unscanned")]
 
 
 class SigDialog(BaseDialog):

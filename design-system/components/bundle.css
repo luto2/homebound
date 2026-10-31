@@ -260,7 +260,8 @@ body { padding: var(--sp-12); }
 .lm-segs > span.on { border: 2px solid var(--accent); background: var(--accent-dim); color: var(--ink); font-weight: 600; }
 .lm-segs .ch { font-size: 9px; font-weight: 800; padding: 0 3px; border-radius: 2px; line-height: 11px; color: var(--ink-inverse); font-family: var(--font-sans); }
 
-/* site glyphs (signature groups, anomalies): 14px in tables, 13px in dense rows, never below 12px */
+/* site icons (signature groups, anomalies): EVE bracket icons at their native 16px */
 .lm-site { flex: none; display: inline-block; vertical-align: middle; }
+.lm-site.png { image-rendering: pixelated; }
 .lm-grp.has-ic::before { display: none; }
 .lm-grp.has-ic { gap: 6px; }

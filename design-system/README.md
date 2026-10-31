@@ -75,7 +75,7 @@ A frameless, always-on-top, click-through window over the game, showing one char
 
 ## Iconography
 
-- **Site glyphs**: the *Sites* asset group, one per signature group (wormhole, combat, data, relic, gas, ore, ice, unscanned), same grid and stroke as the effect glyphs; see SiteIcon.
+- **Site icons**: EVE Online's own bracket icons for each signature group (CCP Image Export Collection), tinted to the group token; only Unscanned uses our own glyph. See SiteIcon.
 - **Effect glyphs**: the *Effects* asset group, 16×16 SVG, single ink `#e6edf2` (`ink`). Their path data also lives in `components/bundle.js` (`FX`) for building `QPainterPath`s.
 - **UI glyphs** are Unicode from the sans face (✓ ✕ ▲ ⌂ ⧉ ↗ ⚙ ◷); if a glyph is missing in the fallback font, swap it for a Breeze icon from the system theme via `QIcon.fromTheme` (e.g. `edit-copy`, `configure`, `go-home`).
 - No app logo exists yet. The toolbar and cover use the wordmark "HOMEBOUND" in plain type next to a two-node glyph built from the edge and node styles; replace it when a mark is designed.

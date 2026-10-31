@@ -19,3 +19,21 @@ def test_qss_fully_resolved():
 def test_type_and_sizes():
     assert TYPE["overlay-row"]["px"] >= 11 and TYPE["overlay-mono"]["px"] >= 11
     assert PX["size-node-w"] == 168 and PX["size-overlay-w"] == 320
+
+
+def test_site_icons_load_and_tint():
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtGui import QGuiApplication
+    app = QGuiApplication.instance() or QGuiApplication([])  # noqa: F841 (pixmaps need an app)
+    from homebound.theme.painting import SITE_TOKENS, site_pixmap
+    from homebound.theme.tokens import color
+    for grp, tok in SITE_TOKENS.items():
+        img = site_pixmap(grp, 16, 1.0).toImage()
+        lit = [img.pixelColor(x, y) for x in range(16) for y in range(16) if img.pixelColor(x, y).alpha() > 128]
+        assert lit, grp
+        c = color(tok)
+        # premultiplied alpha rounds by a step or two when read back
+        assert all(abs(p.red() - c.red()) <= 2 and abs(p.green() - c.green()) <= 2 and abs(p.blue() - c.blue()) <= 2
+                   for p in lit), grp
+    assert site_pixmap(None).toImage() == site_pixmap("unknown").toImage()
