@@ -59,4 +59,8 @@ uv run pytest
 uv run python -m homebound.logs.replay path/to/Local_*.txt --home J161940   # replay logs through the tracker
 ```
 
+Code layout notes: signature scan parsing is `homebound/mapping/signature_parser.py`, the signature table `homebound/ui/signature_table.py`, the wormhole type/size/lifetime fields `homebound/ui/wormhole_fields.py` and the character list `homebound/ui/character_dock.py`. Names are spelled out (no abbreviations), every public entry point validates its arguments with `homebound/validation.py`, and `uv run pytest --cov=homebound` reports coverage. Known bugs and loose ends are in `TODO.md`.
+
+Schema changes: the map database (settings keys, tables and columns were renamed to unabbreviated names, e.g. `log_dir` is now `log_directory`) and `data/universe.sqlite` changed. Old map files migrate automatically when they are opened. `universe.sqlite` must be rebuilt once with `uv run python -m homebound.universe.build_static`, which works offline from `data/cache`.
+
 The UI follows `design-system/`: tokens, component specs and Qt notes.

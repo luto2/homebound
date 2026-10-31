@@ -2,7 +2,11 @@
 import re
 from importlib.resources import files
 
-from .tokens import HEX, PX, color, qss_color
+from PySide6.QtGui import QPalette
+from PySide6.QtWidgets import QApplication, QWidget
+
+from ..validation import require_type
+from .tokens import HEX_COLORS, PIXELS, color, font, qss_color
 
 QSS = """
 QWidget            { background: {bg-1}; color: {ink}; font-family: "Noto Sans"; font-size: 13px; }
@@ -109,51 +113,59 @@ QToolTip { background: {bg-3}; color: {ink}; border: 1px solid {line-2}; padding
 """
 
 _PLACEHOLDER = re.compile(r"\{([A-Za-z0-9_.-]+)\}")
+ICONS = {"icon-check": "check.svg", "icon-radio": "radio-dot.svg", "icon-menu-check": "menu-check.svg",
+         "icon-menu-dot": "menu-dot.svg"}
 
 
 def build_qss() -> str:
-    vals = {k: qss_color(k) for k in HEX} | {k: f"{v:g}" for k, v in PX.items()}
-    vals["size-control-inner"] = f"{PX['size-control'] - 2:g}"
+    """Return the app style sheet with every ``{token}`` placeholder filled in.
+
+    Raises:
+        KeyError: If the template names a token that doesn't exist.
+    """
+    values = {name: qss_color(name) for name in HEX_COLORS} | {name: f"{value:g}" for name, value in PIXELS.items()}
+    values["size-control-inner"] = f"{PIXELS['size-control'] - 2:g}"
     icons = files("homebound.theme").joinpath("icons")
-    vals["icon-check"] = str(icons.joinpath("check.svg"))
-    vals["icon-radio"] = str(icons.joinpath("radio-dot.svg"))
-    vals["icon-menu-check"] = str(icons.joinpath("menu-check.svg"))
-    vals["icon-menu-dot"] = str(icons.joinpath("menu-dot.svg"))
-    return _PLACEHOLDER.sub(lambda m: vals[m.group(1)], QSS)
+    values |= {key: str(icons.joinpath(file_name)) for key, file_name in ICONS.items()}
+    return _PLACEHOLDER.sub(lambda match: values[match.group(1)], QSS)
 
 
-def build_palette():
-    from PySide6.QtGui import QPalette
-
-    p = QPalette()
-    R = QPalette.ColorRole
-    p.setColor(R.Window, color("bg-1"))
-    p.setColor(R.WindowText, color("ink"))
-    p.setColor(R.Base, color("bg-3"))
-    p.setColor(R.AlternateBase, color("bg-2"))
-    p.setColor(R.Text, color("ink"))
-    p.setColor(R.Button, color("bg-3"))
-    p.setColor(R.ButtonText, color("ink"))
-    p.setColor(R.Highlight, color("accent"))
-    p.setColor(R.HighlightedText, color("ink-inverse"))
-    p.setColor(R.PlaceholderText, color("ink-faint"))
-    p.setColor(R.ToolTipBase, color("bg-3"))
-    p.setColor(R.ToolTipText, color("ink"))
-    p.setColor(QPalette.ColorGroup.Disabled, R.Text, color("ink-disabled"))
-    p.setColor(QPalette.ColorGroup.Disabled, R.ButtonText, color("ink-disabled"))
-    return p
+def build_palette() -> QPalette:
+    """Return the Fusion palette built from the colour tokens."""
+    palette = QPalette()
+    role = QPalette.ColorRole
+    for color_role, token in ((role.Window, "bg-1"), (role.WindowText, "ink"), (role.Base, "bg-3"),
+                              (role.AlternateBase, "bg-2"), (role.Text, "ink"), (role.Button, "bg-3"),
+                              (role.ButtonText, "ink"), (role.Highlight, "accent"),
+                              (role.HighlightedText, "ink-inverse"), (role.PlaceholderText, "ink-faint"),
+                              (role.ToolTipBase, "bg-3"), (role.ToolTipText, "ink")):
+        palette.setColor(color_role, color(token))
+    palette.setColor(QPalette.ColorGroup.Disabled, role.Text, color("ink-disabled"))
+    palette.setColor(QPalette.ColorGroup.Disabled, role.ButtonText, color("ink-disabled"))
+    return palette
 
 
-def apply_theme(app) -> None:
-    from .tokens import font
+def apply_theme(application: QApplication) -> QApplication:
+    """Give the application the Fusion style, the token palette, the body font and the style sheet.
 
-    app.setStyle("Fusion")
-    app.setPalette(build_palette())
-    app.setFont(font("ui-body"))
-    app.setStyleSheet(build_qss())
+    Returns:
+        The application.
+    """
+    require_type(application, QApplication, "application")
+    application.setStyle("Fusion")
+    application.setPalette(build_palette())
+    application.setFont(font("ui-body"))
+    application.setStyleSheet(build_qss())
+    return application
 
 
-def repolish(w) -> None:
-    """Call after changing a dynamic property used by QSS."""
-    w.style().unpolish(w)
-    w.style().polish(w)
+def repolish(widget: QWidget) -> QWidget:
+    """Re-apply the style sheet to a widget after changing a dynamic property used by QSS.
+
+    Returns:
+        The widget.
+    """
+    require_type(widget, QWidget, "widget")
+    widget.style().unpolish(widget)
+    widget.style().polish(widget)
+    return widget

@@ -3,72 +3,98 @@ import json
 import re
 from importlib.resources import files
 
+from PySide6.QtGui import QColor, QFont
+
+from ..validation import require_integer, require_text
+
 THEME = "dark"
 
-_T = json.loads(files("homebound.theme").joinpath("tokens.json").read_text())
+_TOKENS = json.loads(files("homebound.theme").joinpath("tokens.json").read_text())
 
-COLORS_RAW: dict[str, object] = {t["name"]: t["value"] for t in _T["color"]["tokens"]}
-
-
-def _resolve(v):
-    if isinstance(v, dict):
-        v = v.get(THEME) or next(iter(v.values()))
-    m = re.fullmatch(r"\{(.+)\}", v)
-    return _resolve(COLORS_RAW[m.group(1)]) if m else v
+RAW_COLORS: dict[str, object] = {token["name"]: token["value"] for token in _TOKENS["color"]["tokens"]}
+_REFERENCE = re.compile(r"\{(.+)\}")
 
 
-HEX: dict[str, str] = {k: _resolve(v) for k, v in COLORS_RAW.items()}  # '#rrggbb' or '#rrggbbaa'
-PX: dict[str, float] = {
-    t["name"]: float(str(t["value"]).rstrip("px"))
-    for fam in ("spacing", "radius", "border", "size")
-    for t in _T[fam]["tokens"]
+def _resolve(value: object) -> str:
+    """Resolve a colour token value: pick the theme variant and follow ``{other-token}`` references."""
+    if isinstance(value, dict):
+        value = value.get(THEME) or next(iter(value.values()))
+    match = _REFERENCE.fullmatch(value)
+    return _resolve(RAW_COLORS[match.group(1)]) if match else value
+
+
+HEX_COLORS: dict[str, str] = {name: _resolve(value) for name, value in RAW_COLORS.items()}  # '#rrggbb' or '#rrggbbaa'
+PIXELS: dict[str, float] = {
+    token["name"]: float(str(token["value"]).rstrip("px"))
+    for family in ("spacing", "radius", "border", "size")
+    for token in _TOKENS[family]["tokens"]
 }
-OP: dict[str, float] = {t["name"]: float(t["value"]) for t in _T["opacity"]["tokens"]}
+OPACITY: dict[str, float] = {token["name"]: float(token["value"]) for token in _TOKENS["opacity"]["tokens"]}
 
 FAMILIES = {
-    k: [f.strip().strip('"') for f in v.split(",") if f.strip() not in ("sans-serif", "monospace")]
-    for k, v in _T["type"]["families"].items()
+    key: [name.strip().strip('"') for name in value.split(",") if name.strip() not in ("sans-serif", "monospace")]
+    for key, value in _TOKENS["type"]["families"].items()
 }
 TYPE: dict[str, dict] = {}
-for _g in _T["type"]["groups"]:
-    for _s in _g["styles"]:
-        TYPE[_s["name"]] = {
-            "family": _s.get("family", _g["family"]),
-            "px": int(_s["fontSize"].rstrip("px")),
-            "weight": int(_s["fontWeight"]),
-            "spacing_em": float(_s.get("letterSpacing", "0em").rstrip("em")),
+for _group in _TOKENS["type"]["groups"]:
+    for _style in _group["styles"]:
+        TYPE[_style["name"]] = {
+            "family": _style.get("family", _group["family"]),
+            "px": int(_style["fontSize"].rstrip("px")),
+            "weight": int(_style["fontWeight"]),
+            "spacing_em": float(_style.get("letterSpacing", "0em").rstrip("em")),
         }
 
 
-def hex_to_rgba(h: str) -> tuple[int, int, int, int]:
-    """Parse CSS-style #rrggbb / #rrggbbaa (alpha LAST, unlike Qt's #aarrggbb)."""
-    h = h.lstrip("#")
-    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-    a = int(h[6:8], 16) if len(h) == 8 else 255
-    return r, g, b, a
+def hex_to_rgba(hex_color: str) -> tuple[int, int, int, int]:
+    """Parse CSS-style ``#rrggbb`` / ``#rrggbbaa`` (alpha LAST, unlike Qt's ``#aarrggbb``).
+
+    Raises:
+        ValueError: If the text is not 6 or 8 hex digits after the ``#``.
+    """
+    require_text(hex_color, "hex_color")
+    digits = hex_color.lstrip("#")
+    if len(digits) not in (6, 8):
+        raise ValueError(f"expected #rrggbb or #rrggbbaa, got {hex_color!r}")
+    red, green, blue = int(digits[0:2], 16), int(digits[2:4], 16), int(digits[4:6], 16)
+    alpha = int(digits[6:8], 16) if len(digits) == 8 else 255
+    return red, green, blue, alpha
 
 
-def color(name: str):
-    from PySide6.QtGui import QColor
+def color(name: str) -> QColor:
+    """Return a colour token as a QColor.
 
-    return QColor(*hex_to_rgba(HEX[name]))
+    Raises:
+        KeyError: If there is no such token.
+    """
+    return QColor(*hex_to_rgba(HEX_COLORS[name]))
 
 
 def qss_color(name: str) -> str:
-    r, g, b, a = hex_to_rgba(HEX[name])
-    return f"rgba({r},{g},{b},{a})" if a < 255 else f"#{r:02x}{g:02x}{b:02x}"
+    """Return a colour token for a style sheet: ``#rrggbb``, or ``rgba(...)`` with alpha."""
+    red, green, blue, alpha = hex_to_rgba(HEX_COLORS[name])
+    return f"rgba({red},{green},{blue},{alpha})" if alpha < 255 else f"#{red:02x}{green:02x}{blue:02x}"
 
 
-def font(style: str, px: int | None = None):
-    """QFont for a type token, e.g. font('mono-sig')."""
-    from PySide6.QtGui import QFont
+def font(style: str, pixel_size: int | None = None) -> QFont:
+    """Return the QFont of a type token, e.g. ``font('mono-sig')``.
 
-    s = TYPE[style]
-    f = QFont(FAMILIES[s["family"]])
-    f.setPixelSize(px or s["px"])
-    f.setWeight(QFont.Weight(s["weight"]))
-    if s["family"] == "mono":
-        f.setStyleHint(QFont.StyleHint.Monospace)
-    if s["spacing_em"]:
-        f.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, s["spacing_em"] * (px or s["px"]))
-    return f
+    Args:
+        style: The type token name.
+        pixel_size: A size that overrides the token's.
+
+    Raises:
+        KeyError: If there is no such type token.
+        ValueError: If the size is below 1.
+    """
+    require_integer(pixel_size, "pixel_size", minimum=1, optional=True)
+    spec = TYPE[style]
+    size = pixel_size or spec["px"]
+    result = QFont(FAMILIES[spec["family"]])
+    result.setPixelSize(size)
+    result.setWeight(QFont.Weight(spec["weight"]))
+    if spec["family"] == "mono":
+        result.setStyleHint(QFont.StyleHint.Monospace)
+    if spec["spacing_em"]:
+        result.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, spec["spacing_em"] * size)
+    return result

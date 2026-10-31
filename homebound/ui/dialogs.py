@@ -1,84 +1,143 @@
 """Dialogs (spec: Dialog, NamingDialog): naming question + sig picker, connection editor."""
-from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QFontMetricsF, QIcon, QKeySequence, QPainter, QShortcut
+from collections.abc import Callable
+from pathlib import Path
+
+from PySide6.QtCore import QEvent, QModelIndex, QObject, QRectF, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import (QDesktopServices, QFontMetricsF, QGuiApplication, QIcon, QKeySequence, QMouseEvent,
+                           QPainter, QShortcut, QShowEvent, QStandardItem, QStandardItemModel)
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QComboBox, QDialog, QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QRadioButton, QStyle, QStyledItemDelegate, QVBoxLayout, QWidget,
+    QButtonGroup, QCheckBox, QComboBox, QCompleter, QDialog, QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel,
+    QLineEdit, QPushButton, QRadioButton, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QVBoxLayout, QWidget,
 )
 
-from ..theme import painting as P
+from ..mapdb.store import Connection, Signature, map_stats
+from ..mapping.tracker import NamingRequest
+from ..theme import painting
 from ..theme.qss import repolish
-from ..theme.tokens import PX, color, font
+from ..theme.tokens import PIXELS, color, font
+from ..universe.db import System
+from ..validation import require_choice, require_text, require_type
+from .map_scene import age_text
+from .menus import copy_icon, glyph_icon
+from .state import AppState
+from .wormhole_fields import WormholeFields
+
+BANNER_TOKENS = {"info": "accent", "warning": "warning", "success": "success", "danger": "danger"}
+SIGNATURE_GROUPS = [("wormhole", "Wormhole"), ("combat", "Combat site"), ("data", "Data site"),
+                    ("relic", "Relic site"), ("gas", "Gas site"), ("ore", "Ore site"), ("ice", "Ice site"),
+                    ("unknown", "Unscanned")]
+VALIDATION_DELAY_MS = 150
+REASON_ROLE = Qt.ItemDataRole.UserRole + 1
+
+Validator = Callable[[str], tuple[bool, str]]
 
 
 class ChoiceRow(QFrame):
     """Full-width radio row: radio · mono main text · secondary text · optional caption."""
+
     clicked = Signal()
 
-    def __init__(self, main: str, secondary: str = "", caption: str = "", group: QButtonGroup | None = None):
+    def __init__(self, main: str, secondary: str = "", caption: str = "", group: QButtonGroup | None = None) -> None:
+        """Create the row.
+
+        Args:
+            main: The mono text (a name or signature ID).
+            secondary: The muted text after it.
+            caption: An accent caption on the right, e.g. "BEST GUESS".
+            group: The exclusive group of the radio button.
+        """
         super().__init__()
         self.setProperty("card", "true")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        h = QHBoxLayout(self)
-        h.setContentsMargins(PX["sp-8"], PX["sp-6"], PX["sp-8"], PX["sp-6"])
-        h.setSpacing(PX["sp-8"])
+        row = QHBoxLayout(self)
+        row.setContentsMargins(PIXELS["sp-8"], PIXELS["sp-6"], PIXELS["sp-8"], PIXELS["sp-6"])
+        row.setSpacing(PIXELS["sp-8"])
         self.radio = QRadioButton()
         self.radio.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         if group:
             group.addButton(self.radio)
-        self.radio.toggled.connect(self._sync)
+        self.radio.toggled.connect(self._sync_selected)
         self.main = QLabel(main)
         self.main.setFont(font("mono-sig"))
-        self.sec = QLabel(secondary)
-        self.sec.setProperty("role", "muted")
-        h.addWidget(self.radio)
-        h.addWidget(self.main)
-        h.addWidget(self.sec, 1)
-        self.cap = QLabel(caption)
-        self.cap.setProperty("role", "best-guess")
-        self.cap.setVisible(bool(caption))
-        h.addWidget(self.cap)
+        self.secondary = QLabel(secondary)
+        self.secondary.setProperty("role", "muted")
+        row.addWidget(self.radio)
+        row.addWidget(self.main)
+        row.addWidget(self.secondary, 1)
+        self.caption = QLabel(caption)
+        self.caption.setProperty("role", "best-guess")
+        self.caption.setVisible(bool(caption))
+        row.addWidget(self.caption)
 
-    def mousePressEvent(self, e):
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        """A click anywhere on the row picks it."""
         self.radio.setChecked(True)
         self.clicked.emit()
 
-    def _sync(self, on):
-        self.setProperty("selected", "true" if on else "false")
+    def _sync_selected(self, checked: bool) -> None:
+        """Show the selected card style."""
+        self.setProperty("selected", "true" if checked else "false")
         repolish(self)
 
 
-def _shadow(w: QWidget):
-    eff = QGraphicsDropShadowEffect(w)
-    eff.setBlurRadius(32)
-    eff.setOffset(0, 12)
-    c = color("bg-0")
-    c.setAlphaF(0.55)
-    eff.setColor(c)
-    w.setGraphicsEffect(eff)
+def add_shadow(widget: QWidget) -> QGraphicsDropShadowEffect:
+    """Give a widget the dialog shadow (``shadow-dialog``)."""
+    effect = QGraphicsDropShadowEffect(widget)
+    effect.setBlurRadius(32)
+    effect.setOffset(0, 12)
+    shadow = color("bg-0")
+    shadow.setAlphaF(0.55)
+    effect.setColor(shadow)
+    widget.setGraphicsEffect(effect)
+    return effect
 
 
 def banner(kind: str, glyph: str, html: str) -> QFrame:
-    """Inline banner (spec: lm-banner): info / warning / success / danger."""
-    f = QFrame()
-    f.setProperty("banner", kind)
-    h = QHBoxLayout(f)
-    h.setContentsMargins(PX["sp-8"], PX["sp-6"], PX["sp-8"], PX["sp-6"])
-    h.setSpacing(PX["sp-8"])
-    tok = {"info": "accent", "warning": "warning", "success": "success", "danger": "danger"}[kind]
-    g = QLabel(glyph)
-    g.setStyleSheet(f"color: {color(tok).name()}; font-weight: 800; background: transparent; border: 0;")
-    t = QLabel(html)
-    t.setWordWrap(True)
-    t.setStyleSheet("background: transparent; border: 0; font-size: 12px;")
-    h.addWidget(g)
-    h.addWidget(t, 1)
-    return f
+    """Return an inline banner (spec: lm-banner).
+
+    Args:
+        kind: ``"info"``, ``"warning"``, ``"success"`` or ``"danger"``.
+        glyph: The glyph on the left.
+        html: The rich text.
+
+    Raises:
+        ValueError: If the kind is unknown.
+    """
+    require_choice(kind, BANNER_TOKENS, "kind")
+    frame = QFrame()
+    frame.setProperty("banner", kind)
+    row = QHBoxLayout(frame)
+    row.setContentsMargins(PIXELS["sp-8"], PIXELS["sp-6"], PIXELS["sp-8"], PIXELS["sp-6"])
+    row.setSpacing(PIXELS["sp-8"])
+    glyph_label = QLabel(glyph)
+    glyph_label.setStyleSheet(f"color: {color(BANNER_TOKENS[kind]).name()}; font-weight: 800; "
+                              "background: transparent; border: 0;")
+    text = QLabel(html)
+    text.setWordWrap(True)
+    text.setStyleSheet("background: transparent; border: 0; font-size: 12px;")
+    row.addWidget(glyph_label)
+    row.addWidget(text, 1)
+    return frame
+
+
+def _end_label(field: QLineEdit, text: str) -> QLabel:
+    """Put a faint label inside the right end of a line edit."""
+    label = QLabel(text, field)
+    label.setStyleSheet(f"background: transparent; color: {color('ink-faint').name()}; font-size: 11px;")
+    row = QHBoxLayout(field)
+    row.setContentsMargins(0, 0, PIXELS["sp-8"], 0)
+    row.addStretch(1)
+    row.addWidget(label)
+    return label
 
 
 class BaseDialog(QDialog):
-    def __init__(self, parent, title: str, subtitle: str = ""):
+    """Dialog layout: title and subtitle on bg-2, buttons in a footer on bg-1."""
+
+    def __init__(self, parent: QWidget | None, title: str, subtitle: str = "") -> None:
+        """Create the frame; subclasses fill ``self.body`` and ``self.foot``."""
         super().__init__(parent)
+        require_type(title, str, "title")
         self.setWindowTitle(title)
         self.setModal(True)
         self.setMinimumWidth(420)
@@ -90,86 +149,101 @@ class BaseDialog(QDialog):
         body.setObjectName("dialogBody")
         body.setStyleSheet(f"#dialogBody {{ background: {color('bg-2').name()}; }}")
         self.body = QVBoxLayout(body)
-        self.body.setContentsMargins(PX["sp-16"], PX["sp-16"], PX["sp-16"], PX["sp-12"])
-        self.body.setSpacing(PX["sp-8"])
-        t = QLabel(title)
-        t.setProperty("role", "title")
-        self.body.addWidget(t)
+        self.body.setContentsMargins(PIXELS["sp-16"], PIXELS["sp-16"], PIXELS["sp-16"], PIXELS["sp-12"])
+        self.body.setSpacing(PIXELS["sp-8"])
+        title_label = QLabel(title)
+        title_label.setProperty("role", "title")
+        self.body.addWidget(title_label)
         if subtitle:
-            s = QLabel(subtitle)
-            s.setProperty("role", "help")
-            s.setWordWrap(True)
-            self.body.addWidget(s)
+            subtitle_label = QLabel(subtitle)
+            subtitle_label.setProperty("role", "help")
+            subtitle_label.setWordWrap(True)
+            self.body.addWidget(subtitle_label)
         outer.addWidget(body, 1)
         foot = QFrame()
         foot.setObjectName("dialogFoot")
-        foot.setStyleSheet(f"#dialogFoot {{ background: {color('bg-1').name()}; border-top: 1px solid {color('line-1').name()}; }}")
+        foot.setStyleSheet(f"#dialogFoot {{ background: {color('bg-1').name()}; "
+                           f"border-top: 1px solid {color('line-1').name()}; }}")
         self.foot = QHBoxLayout(foot)
-        self.foot.setContentsMargins(PX["sp-16"], PX["sp-8"], PX["sp-16"], PX["sp-8"])
-        self.foot.setSpacing(PX["sp-8"])
+        self.foot.setContentsMargins(PIXELS["sp-16"], PIXELS["sp-8"], PIXELS["sp-16"], PIXELS["sp-8"])
+        self.foot.setSpacing(PIXELS["sp-8"])
         outer.addWidget(foot)
 
-    def adjustSize(self):
-        """Fit the height to the width we actually get: wrapped labels make sizeHint() measure at a
-        narrower width than the minimum, which leaves empty space between the rows."""
-        lay = self.layout()
-        w = max(self.minimumWidth(), min(self.sizeHint().width(), self.maximumWidth()))
-        h = lay.heightForWidth(w) if lay.hasHeightForWidth() else self.sizeHint().height()
-        self.resize(w, max(h, lay.minimumSize().height()))
+    def adjustSize(self) -> None:
+        """Fit the height to the width we actually get.
 
-    def showEvent(self, e):
-        super().showEvent(e)
+        Wrapped labels make sizeHint() measure at a narrower width than the minimum, which leaves
+        empty space between the rows.
+        """
+        layout = self.layout()
+        width = max(self.minimumWidth(), min(self.sizeHint().width(), self.maximumWidth()))
+        height = layout.heightForWidth(width) if layout.hasHeightForWidth() else self.sizeHint().height()
+        self.resize(width, max(height, layout.minimumSize().height()))
+
+    def showEvent(self, event: QShowEvent) -> None:
+        """Fit the size when shown."""
+        super().showEvent(event)
         self.adjustSize()
 
-    def caption(self, text):
-        c = QLabel(text.upper())
-        c.setProperty("role", "caption")
-        self.body.addWidget(c)
-        return c
+    def caption(self, text: str) -> QLabel:
+        """Add a field caption to the body and return it."""
+        label = QLabel(text.upper())
+        label.setProperty("role", "caption")
+        self.body.addWidget(label)
+        return label
+
+    def add_buttons(self, danger: QPushButton | None = None, cancel_text: str = "Cancel",
+                    primary_text: str = "Save") -> QPushButton:
+        """Add the footer: danger button far left, Cancel (ghost) and the primary button far right.
+
+        Returns:
+            The primary button.
+        """
+        if danger is not None:
+            self.foot.addWidget(danger)
+            self.foot.addStretch(1)
+        cancel = QPushButton(cancel_text)
+        cancel.setProperty("variant", "ghost")
+        cancel.clicked.connect(self.reject)
+        primary = QPushButton(primary_text)
+        primary.setProperty("variant", "primary")
+        primary.setDefault(True)
+        primary.clicked.connect(self.accept)
+        self.foot.addWidget(cancel)
+        self.foot.addWidget(primary)
+        return primary
+
+
+def danger_button(text: str, on_click: Callable[[], object]) -> QPushButton:
+    """Return a danger-variant button."""
+    button = QPushButton(text)
+    button.setProperty("variant", "danger")
+    button.clicked.connect(on_click)
+    return button
 
 
 class NamingDialog(BaseDialog):
     """'Was this the static?' with resulting names shown, plus an optional sig picker."""
 
-    def __init__(self, parent, state, req, pending: int = 0):
-        st = state
-        child, parent_sys = st.uni.by_id(req.child_id), st.uni.by_id(req.parent_id)
-        who = f"{req.char_name} jumped " if req.char_name else ""
-        super().__init__(parent, f"New system · {child.name} ({child.cls})",
-                         f"{who}{st.namer.display(req.parent_id)} ({parent_sys.name}) → {child.name}")
-        self.state, self.req = st, req
-        yes_name, no_name = st.tracker.preview_names(req)
-        self.names = {True: yes_name, False: no_name}
-        types = st.uni.static_types(req.parent_id)
-        stat_txt = ", ".join(f"{t.name} → {'/'.join(t.dest)}" for t in types) or "none"
+    def __init__(self, parent: QWidget | None, state: AppState, request: NamingRequest, pending: int = 0) -> None:
+        """Build the question for a naming request.
 
-        static_cap = self.caption("Was this the static?")
-        self.group = QButtonGroup(self)
-        self.yes = ChoiceRow(yes_name, f"Yes · static {stat_txt}", "BEST GUESS" if req.guess.guess else "", self.group)
-        self.no = ChoiceRow(no_name, "No · another hole", "" if req.guess.guess else "BEST GUESS", self.group)
-        self.body.addWidget(self.yes)
-        self.body.addWidget(self.no)
-        why = QLabel(req.guess.reason)
-        why.setProperty("role", "help")
-        why.setWordWrap(True)
-        self.body.addWidget(why)
-        self.asks_static = req.guess.applies
-        for w in (static_cap, self.yes, self.no, why):
-            w.setVisible(self.asks_static)  # no static leads to this class: only the sig question
-
-        self.sig_group = QButtonGroup(self)
-        self.sig_rows: dict[str, ChoiceRow] = {}
-        if req.sig_candidates:
-            self.caption("Which sig did you take?")
-            for sig_id in req.sig_candidates:
-                s = st.store.signature(req.parent_id, sig_id)
-                row = ChoiceRow(sig_id, self._sig_text(s, child.cls), group=self.sig_group)
-                self.sig_rows[sig_id] = row
-                self.body.addWidget(row)
-            none = ChoiceRow("—", "Not scanned / skip", group=self.sig_group)
-            self.sig_rows[""] = none
-            self.body.addWidget(none)
-            none.radio.setChecked(True)
+        Args:
+            parent: The window to centre on.
+            state: The app state.
+            request: The question from the tracker.
+            pending: How many more questions wait behind this one.
+        """
+        require_type(request, NamingRequest, "request")
+        child, parent_system = state.universe.by_id(request.child_id), state.universe.by_id(request.parent_id)
+        who = f"{request.character_name} jumped " if request.character_name else ""
+        super().__init__(parent, f"New system · {child.name} ({child.system_class})",
+                         f"{who}{state.namer.display(request.parent_id)} ({parent_system.name}) → {child.name}")
+        self.state, self.request = state, request
+        if_static, if_not = state.tracker.preview_names(request)
+        self.names = {True: if_static, False: if_not}
+        self._build_static_question(request, if_static, if_not)
+        self._build_signature_question(request, child)
 
         self.caption("Name")
         self.name = QLineEdit()
@@ -177,535 +251,602 @@ class NamingDialog(BaseDialog):
         self.body.addWidget(self.name)
         self._edited = False
         self.name.textEdited.connect(lambda _: setattr(self, "_edited", True))
-        self.auto = QCheckBox("Don't ask when the guess is certain")
-        self.auto.setChecked(st.settings.auto_name_when_certain)
-        self.body.addWidget(self.auto)
+        self.auto_naming = QCheckBox("Don't ask when the guess is certain")
+        self.auto_naming.setChecked(state.settings.auto_name_when_certain)
+        self.body.addWidget(self.auto_naming)
 
         self.pending = QLabel(f"{pending} more pending" if pending else "")
         self.pending.setProperty("role", "help")
-        cancel = QPushButton("Skip (Esc)")
-        cancel.setProperty("variant", "ghost")
-        cancel.clicked.connect(self.reject)
-        ok = QPushButton("Accept (Enter)")
-        ok.setProperty("variant", "primary")
-        ok.setDefault(True)
-        ok.clicked.connect(self.accept)
         self.foot.addWidget(self.pending, 1)
-        self.foot.addWidget(cancel)
-        self.foot.addWidget(ok)
+        self.add_buttons(cancel_text="Skip (Esc)", primary_text="Accept (Enter)")
 
-        (self.yes if req.guess.guess else self.no).radio.setChecked(True)
-        if not yes_name:  # parent has no static slot
+        (self.yes if request.guess.guess else self.no).radio.setChecked(True)
+        if not if_static:  # parent has no static slot
             self.yes.setEnabled(False)
         self.group.buttonToggled.connect(self._update_name)
         self._update_name()
         if self.asks_static:
-            QShortcut(QKeySequence("Y"), self, activated=lambda: (self.yes.radio.setChecked(True), self.accept()))
-            QShortcut(QKeySequence("N"), self, activated=lambda: (self.no.radio.setChecked(True), self.accept()))
+            QShortcut(QKeySequence("Y"), self, activated=lambda: self.answer(True))
+            QShortcut(QKeySequence("N"), self, activated=lambda: self.answer(False))
         self.name.setFocus()
 
-    def _sig_text(self, s, child_cls: str) -> str:
-        """'H296 → C5 · 100%', 'K162 → C3 (typed in; you landed in a C4) · 100%', 'type unknown · 12%'"""
-        t = self.state.uni.wh_type(s.type) if s.type and s.type != "K162" else None
-        if s.type == "K162":
-            what = f"K162 → {s.dest}" if s.dest else "K162"
-            if s.dest and s.dest != child_cls:
-                what += f" (typed in; you landed in a {child_cls})"
-        elif t:
-            what = f"{t.name} → {'/'.join(t.dest)}" if t.dest else t.name
+    def _build_static_question(self, request: NamingRequest, if_static: str, if_not: str) -> None:
+        """Yes/No rows with the names they give; hidden when no static can lead here."""
+        types = self.state.universe.static_types(request.parent_id)
+        statics = ", ".join(f"{wormhole_type.name} → {'/'.join(wormhole_type.destinations)}" for wormhole_type in types) or "none"
+        static_caption = self.caption("Was this the static?")
+        self.group = QButtonGroup(self)
+        guess = request.guess.guess
+        self.yes = ChoiceRow(if_static, f"Yes · static {statics}", "BEST GUESS" if guess else "", self.group)
+        self.no = ChoiceRow(if_not, "No · another hole", "" if guess else "BEST GUESS", self.group)
+        self.body.addWidget(self.yes)
+        self.body.addWidget(self.no)
+        reason = QLabel(request.guess.reason)
+        reason.setProperty("role", "help")
+        reason.setWordWrap(True)
+        self.body.addWidget(reason)
+        self.asks_static = request.guess.applies
+        for widget in (static_caption, self.yes, self.no, reason):
+            widget.setVisible(self.asks_static)  # no static leads to this class: only the sig question
+
+    def _build_signature_question(self, request: NamingRequest, child: System) -> None:
+        """One row per candidate signature, plus "Not scanned / skip"."""
+        self.signature_group = QButtonGroup(self)
+        self.signature_rows: dict[str, ChoiceRow] = {}
+        if not request.signature_candidates:
+            return
+        self.caption("Which sig did you take?")
+        for signature_id in request.signature_candidates:
+            signature = self.state.store.signature(request.parent_id, signature_id)
+            row = ChoiceRow(signature_id, self.signature_text(signature, child.system_class),
+                            group=self.signature_group)
+            self.signature_rows[signature_id] = row
+            self.body.addWidget(row)
+        skip = ChoiceRow("—", "Not scanned / skip", group=self.signature_group)
+        self.signature_rows[""] = skip
+        self.body.addWidget(skip)
+        skip.radio.setChecked(True)
+
+    def signature_text(self, signature: Signature, child_class: str) -> str:
+        """Describe a candidate: 'H296 → C5 · 100%', 'K162 → C3 (typed in; you landed in a C4) · 100%'."""
+        known = (self.state.universe.wormhole_type(signature.type)
+                 if signature.type and signature.type != "K162" else None)
+        if signature.type == "K162":
+            what = f"K162 → {signature.destination}" if signature.destination else "K162"
+            if signature.destination and signature.destination != child_class:
+                what += f" (typed in; you landed in a {child_class})"
+        elif known:
+            what = f"{known.name} → {'/'.join(known.destinations)}" if known.destinations else known.name
         else:
             what = "type unknown"
-        pct = f"{s.scan_pct:.0f}%" if s.scan_pct is not None else ""
-        return " · ".join(x for x in (what, pct) if x)
+        percent = f"{signature.scan_percent:.0f}%" if signature.scan_percent is not None else ""
+        return " · ".join(part for part in (what, percent) if part)
 
-    def _update_name(self, *_):
+    def answer(self, is_static: bool) -> None:
+        """Pick yes or no and accept (the Y and N keys)."""
+        (self.yes if is_static else self.no).radio.setChecked(True)
+        self.accept()
+
+    def _update_name(self, *_: object) -> None:
+        """Show the name of the picked answer unless the user typed one."""
         if not self._edited:
             self.name.setText(self.names[self.is_static()])
 
     def is_static(self) -> bool:
+        """Return whether "yes, the static" is picked."""
         return self.yes.radio.isChecked()
 
-    def sig_id(self) -> str | None:
-        for sig, row in self.sig_rows.items():
+    def signature_id(self) -> str | None:
+        """Return the picked signature, or None for skip."""
+        for signature_id, row in self.signature_rows.items():
             if row.radio.isChecked():
-                return sig or None
+                return signature_id or None
         return None
 
     def custom_name(self) -> str | None:
-        t = self.name.text().strip()
-        return t if self._edited and t and t != self.names[self.is_static()] else None
+        """Return the name typed by hand, or None if it is the scheme name."""
+        text = self.name.text().strip()
+        return text if self._edited and text and text != self.names[self.is_static()] else None
 
 
 class ConnectionDialog(BaseDialog):
+    """Edit a connection: type, size (K162), lifetime and mass, or collapse it."""
+
     collapse = Signal()
 
-    def __init__(self, parent, state, conn):
-        from .wh_fields import WhFields
-        st = state
-        a, b = st.namer.display(conn.a), st.namer.display(conn.b)
-        super().__init__(parent, "Connection", f"{a} ↔ {b}")
+    def __init__(self, parent: QWidget | None, state: AppState, connection: Connection) -> None:
+        """Build the editor for a connection."""
+        require_type(connection, Connection, "connection")
+        side_a, side_b = state.namer.display(connection.system_a), state.namer.display(connection.system_b)
+        super().__init__(parent, "Connection", f"{side_a} ↔ {side_b}")
         self.setMinimumWidth(480)
         self.setMaximumWidth(560)
-        self.conn = conn
-        self.fields = WhFields(st, [conn.a, conn.b], {"type": conn.wh_type, "size": conn.size, "eol": conn.eol,
-                                                      "eol_at": conn.eol_at, "mass": conn.mass}, ask_dest=False)
+        self.connection = connection
+        self.fields = WormholeFields(state, [connection.system_a, connection.system_b], {
+            "type": connection.wormhole_type, "size": connection.size, "lifetime": connection.lifetime,
+            "lifetime_set_at": connection.lifetime_set_at, "mass": connection.mass}, ask_destination=False)
         self.fields.resized.connect(self.adjustSize)
         self.body.addWidget(self.fields)
-
-        col = QPushButton("✕ Collapse")
-        col.setProperty("variant", "danger")
-        col.clicked.connect(lambda: (self.collapse.emit(), self.reject()))
-        cancel = QPushButton("Cancel")
-        cancel.setProperty("variant", "ghost")
-        cancel.clicked.connect(self.reject)
-        ok = QPushButton("Save")
-        ok.setProperty("variant", "primary")
-        ok.setDefault(True)
-        ok.clicked.connect(self.accept)
-        self.foot.addWidget(col)
-        self.foot.addStretch(1)
-        self.foot.addWidget(cancel)
-        self.foot.addWidget(ok)
+        self.add_buttons(danger_button("✕ Collapse", lambda: (self.collapse.emit(), self.reject())))
 
     def values(self) -> dict:
-        v = self.fields.values()
-        return {"wh_type": v["type"], "mass": v["mass"], "eol": v["eol"], "size": v["size"], "frig": v["frig"]}
+        """Return the connection columns to save."""
+        values = self.fields.values()
+        return {"wormhole_type": values["type"], "mass": values["mass"], "lifetime": values["lifetime"],
+                "size": values["size"], "frigate_only": values["frigate_only"]}
 
 
-SIG_GROUPS = [("wormhole", "Wormhole"), ("combat", "Combat site"), ("data", "Data site"), ("relic", "Relic site"),
-              ("gas", "Gas site"), ("ore", "Ore site"), ("ice", "Ice site"), ("unknown", "Unscanned")]
+class SignatureDialog(BaseDialog):
+    """Edit one signature: group and name, and for wormholes the type, lifetime and mass.
 
+    For a K162 also where it leads and its size. The probe scanner never shows the WH type, so this
+    is where it is entered after warping to the hole and checking show info. If the sig is linked
+    to a map connection, saving updates that connection too.
+    """
 
-class SigDialog(BaseDialog):
-    """Edit one signature: group and name, and for wormholes the type, lifetime and mass
-    (plus where it leads and its size for a K162).
-
-    The probe scanner never shows the WH type, so this is where it is entered after warping
-    to the hole and checking show info. If the sig is linked to a map connection, saving
-    updates that connection too."""
     delete = Signal()
 
-    def __init__(self, parent, state, sig, conn=None):
-        from .wh_fields import WhFields
-        st = state
-        self.state, self.sig, self.conn = st, sig, conn
-        sub = f"{st.namer.display(sig.system_id)} ({st.uni.by_id(sig.system_id).name})"
-        if conn:
-            sub += f" · leads to {st.namer.display(conn.other(sig.system_id))}"
-        super().__init__(parent, f"Signature · {sig.sig_id}", sub)
+    def __init__(self, parent: QWidget | None, state: AppState, signature: Signature,
+                 connection: Connection | None = None) -> None:
+        """Build the editor for a signature, optionally linked to a connection."""
+        require_type(signature, Signature, "signature")
+        require_type(connection, (Connection, type(None)), "connection")
+        self.state, self.signature, self.connection = state, signature, connection
+        subtitle = f"{state.namer.display(signature.system_id)} ({state.universe.by_id(signature.system_id).name})"
+        if connection:
+            subtitle += f" · leads to {state.namer.display(connection.other_end(signature.system_id))}"
+        super().__init__(parent, f"Signature · {signature.signature_id}", subtitle)
         self.setMinimumWidth(480)
         self.setMaximumWidth(560)
-        if conn:
-            self.body.addWidget(banner("info", "⇄", f"Linked to the connection <b>{st.namer.display(conn.a)} ↔ "
-                                                    f"{st.namer.display(conn.b)}</b>. Saving updates it too."))
-
+        if connection:
+            self.body.addWidget(banner("info", "⇄", f"Linked to the connection <b>{state.namer.display(connection.system_a)}"
+                                                    f" ↔ {state.namer.display(connection.system_b)}</b>. Saving updates it too."))
         self.caption("Group")
         self.group = QComboBox()
         self.group.setIconSize(QSize(16, 16))
-        for key, label in SIG_GROUPS:
-            self.group.addItem(QIcon(P.site_pixmap(key, 16, self.devicePixelRatioF())), label, key)
-        self.group.setCurrentIndex(max(0, self.group.findData(sig.grp or "unknown")))
+        for key, label in SIGNATURE_GROUPS:
+            self.group.addItem(QIcon(painting.site_pixmap(key, 16, self.devicePixelRatioF())), label, key)
+        self.group.setCurrentIndex(max(0, self.group.findData(signature.group or "unknown")))
         self.body.addWidget(self.group)
 
-        src = conn if conn and (conn.eol or not sig.eol) else sig   # lifetime + its clock from the same place
-        cur = {"type": sig.type or (conn.wh_type if conn else None), "dest": sig.dest,
-               "size": sig.size or (conn.size if conn else None),
-               "eol": src.eol, "eol_at": src.eol_at,
-               "mass": sig.mass or (conn.mass if conn else None)}
-        self.wh = WhFields(st, [sig.system_id], cur)
-        self.wh.resized.connect(self.adjustSize)
+        self.wormhole = WormholeFields(state, [signature.system_id], self.starting_values())
+        self.wormhole.resized.connect(self.adjustSize)
         self.rule = QFrame()
         self.rule.setFixedHeight(1)
         self.rule.setStyleSheet(f"background: {color('line-1').name()};")
-        self.body.addSpacing(PX["sp-4"])
+        self.body.addSpacing(PIXELS["sp-4"])
         self.body.addWidget(self.rule)
-        self.body.addSpacing(PX["sp-4"])
-        self.body.addWidget(self.wh)
+        self.body.addSpacing(PIXELS["sp-4"])
+        self.body.addWidget(self.wormhole)
 
-        self.name_cap = self.caption("Name")
-        self.name = QLineEdit(sig.name or "")
+        self.name_caption = self.caption("Name")
+        self.name = QLineEdit(signature.name or "")
         self.name.setPlaceholderText("Site name from the scanner")
-        self.lock = QLabel("from the scanner", self.name)
-        self.lock.setStyleSheet(f"background: transparent; color: {color('ink-faint').name()}; font-size: 11px;")
-        lk = QHBoxLayout(self.name)
-        lk.setContentsMargins(0, 0, PX["sp-8"], 0)
-        lk.addStretch(1)
-        lk.addWidget(self.lock)
+        self.scanner_note = _end_label(self.name, "from the scanner")
         self.body.addWidget(self.name)
+        self.add_buttons(danger_button("✕ Delete sig", lambda: (self.delete.emit(), self.reject())))
+        self.group.currentIndexChanged.connect(self._sync_group)
+        self._sync_group()
+        self.wormhole.type.setFocus()
 
-        dele = QPushButton("✕ Delete sig")
-        dele.setProperty("variant", "danger")
-        dele.clicked.connect(lambda: (self.delete.emit(), self.reject()))
-        cancel = QPushButton("Cancel")
-        cancel.setProperty("variant", "ghost")
-        cancel.clicked.connect(self.reject)
-        ok = QPushButton("Save")
-        ok.setProperty("variant", "primary")
-        ok.setDefault(True)
-        ok.clicked.connect(self.accept)
-        self.foot.addWidget(dele)
-        self.foot.addStretch(1)
-        self.foot.addWidget(cancel)
-        self.foot.addWidget(ok)
+    def starting_values(self) -> dict:
+        """Return the wormhole values to start with: the sig's, filled in from the connection.
 
-        self.group.currentIndexChanged.connect(self._sync)
-        self._sync()
-        self.wh.type.setFocus()
+        Lifetime and its clock come from the same place: the connection if it has a state (or the sig
+        has none), else the sig.
+        """
+        signature, connection = self.signature, self.connection
+        lifetime_source = connection if connection and (connection.lifetime or not signature.lifetime) else signature
+        return {"type": signature.type or (connection.wormhole_type if connection else None),
+                "destination": signature.destination,
+                "size": signature.size or (connection.size if connection else None),
+                "lifetime": lifetime_source.lifetime, "lifetime_set_at": lifetime_source.lifetime_set_at,
+                "mass": signature.mass or (connection.mass if connection else None)}
 
-    def _sync(self, *_):
-        wh = self.group.currentData() == "wormhole"
-        self.wh.setVisible(wh)
-        self.rule.setVisible(wh)
+    def _sync_group(self, *_: object) -> None:
+        """Show the wormhole fields only for wormholes; their scanner name is fixed."""
+        wormhole = self.group.currentData() == "wormhole"
+        self.wormhole.setVisible(wormhole)
+        self.rule.setVisible(wormhole)
         # a wormhole's scanner name is always "Unstable Wormhole": shown, not editable
-        self.name.setReadOnly(wh)
-        self.name.setEnabled(not wh)
-        self.lock.setVisible(wh)
-        if wh and not self.name.text():
+        self.name.setReadOnly(wormhole)
+        self.name.setEnabled(not wormhole)
+        self.scanner_note.setVisible(wormhole)
+        if wormhole and not self.name.text():
             self.name.setPlaceholderText("Unstable Wormhole")
         self.adjustSize()
 
     def values(self) -> dict:
-        grp = self.group.currentData()
-        if grp != "wormhole":
-            return {"grp": grp, "name": self.name.text().strip() or None}
-        return {"grp": grp, **self.wh.values()}
+        """Return the signature columns to save."""
+        group = self.group.currentData()
+        if group != "wormhole":
+            return {"group": group, "name": self.name.text().strip() or None}
+        return {"group": group, **self.wormhole.values()}
 
 
 class PromptDialog(BaseDialog):
     """One captioned text field with inline validation (spec: PromptDialog).
 
-    `validate(text) -> (ok, message)`: message starts with ✓ / ✕ or is a plain hint. The primary
-    button is only enabled while the text is valid; `primary` may be a callable of the text."""
+    The primary button is only enabled while the text is valid.
+    """
 
-    def __init__(self, parent, title, subtitle, cap, text="", *, validate, primary, placeholder="",
-                 hint="", foot_note="", mono=False, end_text=""):
+    def __init__(self, parent: QWidget | None, title: str, subtitle: str, field_caption: str, text: str = "", *,
+                 validate: Validator, primary: str | Callable[[str], str], placeholder: str = "", hint: str = "",
+                 foot_note: str = "", mono: bool = False, end_text: str = "") -> None:
+        """Build the prompt.
+
+        Args:
+            parent: The window.
+            title: The title.
+            subtitle: Rich text under the title.
+            field_caption: The caption above the field.
+            text: The starting text (selected).
+            validate: ``validate(text) -> (ok, message)``; the message starts with ✓ / ✕ or is a plain hint.
+            primary: The primary button text, or a function of the text that returns it.
+            placeholder: Placeholder of the field.
+            hint: Help line shown when the validator has no message.
+            foot_note: Faint text in the footer.
+            mono: Use the mono font in the field.
+            end_text: Faint text inside the right end of the empty field.
+        """
         super().__init__(parent, title, subtitle)
+        if not callable(validate):
+            raise TypeError("validate must be callable")
         self._validate, self._primary, self.hint = validate, primary, hint
-        self.caption(cap)
+        self.caption(field_caption)
         self.field = QLineEdit(text)
         self.field.setPlaceholderText(placeholder)
         if mono:
             self.field.setProperty("mono", "true")
         if end_text:
-            end = QLabel(end_text, self.field)
-            end.setStyleSheet(f"background: transparent; color: {color('ink-faint').name()}; font-size: 11px;")
-            lay = QHBoxLayout(self.field)
-            lay.setContentsMargins(0, 0, PX["sp-8"], 0)
-            lay.addStretch(1)
-            lay.addWidget(end)
-            self.field.textChanged.connect(lambda t: end.setVisible(not t))
+            end = _end_label(self.field, end_text)
+            self.field.textChanged.connect(lambda current: end.setVisible(not current))
             end.setVisible(not text)
         self.body.addWidget(self.field)
         self.help = QLabel(" ")
         self.help.setProperty("role", "help")
         self.help.setWordWrap(True)
         self.body.addWidget(self.help)
-
         note = QLabel(foot_note)
         note.setStyleSheet(f"background: transparent; border: 0; color: {color('ink-faint').name()}; font-size: 12px;")
-        cancel = QPushButton("Cancel")
-        cancel.setProperty("variant", "ghost")
-        cancel.clicked.connect(self.reject)
-        self.ok = QPushButton()
-        self.ok.setProperty("variant", "primary")
-        self.ok.setDefault(True)
-        self.ok.clicked.connect(self.accept)
         self.foot.addWidget(note)
         self.foot.addStretch(1)
-        self.foot.addWidget(cancel)
-        self.foot.addWidget(self.ok)
-
-        from PySide6.QtCore import QTimer
-        self._debounce = QTimer(self, singleShot=True, interval=150)
-        self._debounce.timeout.connect(self._check)
+        self.primary_button = self.add_buttons(primary_text="")
+        self._debounce = QTimer(self, singleShot=True, interval=VALIDATION_DELAY_MS)
+        self._debounce.timeout.connect(self.validate_now)
         self.field.textChanged.connect(lambda _: (self._sync_primary(), self._debounce.start()))
         self.valid = False
-        self._check()
+        self.validate_now()
         self.field.setFocus()
         self.field.selectAll()
 
     def text(self) -> str:
+        """Return the entered text without surrounding spaces."""
         return self.field.text().strip()
 
-    def _sync_primary(self):
-        self.ok.setText(self._primary(self.text()) if callable(self._primary) else self._primary)
+    def _sync_primary(self) -> None:
+        """Update the primary button text."""
+        self.primary_button.setText(self._primary(self.text()) if callable(self._primary) else self._primary)
 
-    def _check(self):
-        ok, msg = self._validate(self.text())
-        self.valid = ok
+    def validate_now(self) -> bool:
+        """Run the validator and show its result.
+
+        Returns:
+            Whether the text is valid.
+        """
+        valid, message = self._validate(self.text())
+        self.valid = valid
         self._sync_primary()
-        self.ok.setEnabled(ok)
-        if not ok and msg:
-            role, state = "help-err", "invalid"
-        elif ok and msg.startswith("✓"):
-            role, state = "help-ok", "valid"
+        self.primary_button.setEnabled(valid)
+        if not valid and message:
+            role, field_state = "help-err", "invalid"
+        elif valid and message.startswith("✓"):
+            role, field_state = "help-ok", "valid"
         else:
-            role, state = "help", ""
-        self.help.setText(msg or self.hint or " ")
+            role, field_state = "help", ""
+        self.help.setText(message or self.hint or " ")
         self.help.setProperty("role", role)
-        self.field.setProperty("state", state)
+        self.field.setProperty("state", field_state)
         repolish(self.help)
         repolish(self.field)
+        return valid
 
-    def accept(self):
+    def accept(self) -> None:
+        """Accept only valid text; check again first (Enter right after typing)."""
         self._debounce.stop()
-        self._check()           # Enter right after typing: don't act on a stale check
-        if self.valid:
+        if self.validate_now():
             super().accept()
 
 
 class _SystemCompleterDelegate(QStyledItemDelegate):
     """name (typed part underlined in accent) · class badge · reason (spec: PromptDialog)."""
 
-    def __init__(self, completer):
+    def __init__(self, completer: QCompleter) -> None:
+        """Create the delegate for a completer popup."""
         super().__init__(completer)
         self.completer = completer
 
-    def sizeHint(self, opt, idx):
+    def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
+        """Every row has the same height."""
         return QSize(300, 24)
 
-    def paint(self, p, opt, idx):
-        from ..theme import painting as P
-        p.save()
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        r = QRectF(opt.rect)
-        enabled = bool(idx.flags() & Qt.ItemFlag.ItemIsEnabled)
-        sel = enabled and bool(opt.state & QStyle.StateFlag.State_Selected)
-        if sel:
-            p.fillRect(r, color("accent"))
-        ink = color("ink-inverse") if sel else color("ink") if enabled else color("ink-disabled")
-        name = idx.data(Qt.ItemDataRole.DisplayRole)
-        n = len(self.completer.completionPrefix())
-        f = font("mono-data")
-        f.setBold(True)
-        fm = QFontMetricsF(f)
-        x = r.left() + PX["sp-8"]
-        p.setFont(f)
-        head, tail = name[:n], name[n:]
-        p.setPen(ink if sel or not enabled else color("accent"))
-        p.drawText(QRectF(x, r.top(), 200, r.height()), Qt.AlignmentFlag.AlignVCenter, head)
-        hw = fm.horizontalAdvance(head)
-        p.fillRect(QRectF(x, r.center().y() + fm.ascent() / 2 + 1, hw, 1), p.pen().color())
-        p.setPen(ink)
-        p.drawText(QRectF(x + hw, r.top(), 200, r.height()), Qt.AlignmentFlag.AlignVCenter, tail)
-        x += fm.horizontalAdvance(name) + PX["sp-8"]
-        cls = idx.data(Qt.ItemDataRole.UserRole)
-        if cls:
-            P.draw_class_badge(p, x, r.center().y() - P.BADGE_H / 2, cls)
-        reason = idx.data(Qt.ItemDataRole.UserRole + 1)
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
+        """Paint one suggestion."""
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(option.rect)
+        enabled = bool(index.flags() & Qt.ItemFlag.ItemIsEnabled)
+        selected = enabled and bool(option.state & QStyle.StateFlag.State_Selected)
+        if selected:
+            painter.fillRect(rect, color("accent"))
+        ink = color("ink-inverse") if selected else color("ink") if enabled else color("ink-disabled")
+        name = index.data(Qt.ItemDataRole.DisplayRole)
+        typed = len(self.completer.completionPrefix())
+        name_font = font("mono-data")
+        name_font.setBold(True)
+        metrics = QFontMetricsF(name_font)
+        x = rect.left() + PIXELS["sp-8"]
+        painter.setFont(name_font)
+        head, tail = name[:typed], name[typed:]
+        painter.setPen(ink if selected or not enabled else color("accent"))
+        painter.drawText(QRectF(x, rect.top(), 200, rect.height()), Qt.AlignmentFlag.AlignVCenter, head)
+        head_width = metrics.horizontalAdvance(head)
+        painter.fillRect(QRectF(x, rect.center().y() + metrics.ascent() / 2 + 1, head_width, 1), painter.pen().color())
+        painter.setPen(ink)
+        painter.drawText(QRectF(x + head_width, rect.top(), 200, rect.height()), Qt.AlignmentFlag.AlignVCenter, tail)
+        x += metrics.horizontalAdvance(name) + PIXELS["sp-8"]
+        system_class = index.data(Qt.ItemDataRole.UserRole)
+        if system_class:
+            painting.draw_class_badge(painter, x, rect.center().y() - painting.BADGE_HEIGHT / 2, system_class)
+        reason = index.data(REASON_ROLE)
         if reason:
-            p.setFont(font("ui-small", 11))
-            p.setPen(color("ink-inverse") if sel else color("ink-faint"))
-            p.drawText(r.adjusted(0, 0, -PX["sp-8"], 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, reason)
-        p.restore()
+            painter.setFont(font("ui-small", 11))
+            painter.setPen(color("ink-inverse") if selected else color("ink-faint"))
+            painter.drawText(rect.adjusted(0, 0, -PIXELS["sp-8"], 0),
+                             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, reason)
+        painter.restore()
 
 
-def system_completer(state, line: QLineEdit, on_map_reason="already on this map"):
-    """QCompleter over every system name; systems already on the map are listed but disabled.
-    Tab takes the highlighted (or top) row."""
-    from PySide6.QtGui import QStandardItem, QStandardItemModel
-    from PySide6.QtWidgets import QCompleter
-    uni, store = state.uni, state.store
-    model = QStandardItemModel(line)
-    for name in sorted(uni.all_names()):
-        it = QStandardItem(name)
-        s = uni.by_name(name)
-        it.setData(s.cls if s else "", Qt.ItemDataRole.UserRole)
-        if s and on_map_reason and store.has_system(s.id):
-            it.setData(on_map_reason, Qt.ItemDataRole.UserRole + 1)
-            it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsEnabled & ~Qt.ItemFlag.ItemIsSelectable)
-        model.appendRow(it)
-    comp = QCompleter(model, line)
-    comp.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-    comp.setFilterMode(Qt.MatchFlag.MatchStartsWith)
-    comp.setMaxVisibleItems(8)
-    comp.popup().setItemDelegate(_SystemCompleterDelegate(comp))
-    comp.popup().setMinimumWidth(320)
-    line.setCompleter(comp)
+class _TabCompletion(QObject):
+    """Tab in the completer popup takes the highlighted row, or the top enabled one."""
 
-    class _Tab(QObject):
-        def eventFilter(self, obj, e):
-            if e.type() == QEvent.Type.KeyPress and e.key() == Qt.Key.Key_Tab and comp.popup().isVisible():
-                idx = comp.popup().currentIndex()
-                m = comp.completionModel()
-                if not idx.isValid():
-                    idx = next((m.index(r, 0) for r in range(m.rowCount())
-                                if m.index(r, 0).flags() & Qt.ItemFlag.ItemIsEnabled), idx)
-                if idx.isValid():
-                    line.setText(idx.data())
-                comp.popup().hide()
-                return True
+    def __init__(self, completer: QCompleter, line: QLineEdit) -> None:
+        """Watch the popup of ``completer`` that fills ``line``."""
+        super().__init__(completer)
+        self.completer, self.line = completer, line
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        """Handle Tab while the popup is open."""
+        popup = self.completer.popup()
+        if event.type() != QEvent.Type.KeyPress or event.key() != Qt.Key.Key_Tab or not popup.isVisible():
             return False
+        index = popup.currentIndex()
+        model = self.completer.completionModel()
+        if not index.isValid():
+            index = next((model.index(row, 0) for row in range(model.rowCount())
+                          if model.index(row, 0).flags() & Qt.ItemFlag.ItemIsEnabled), index)
+        if index.isValid():
+            self.line.setText(index.data())
+        popup.hide()
+        return True
 
-    comp._tab = _Tab(comp)
-    comp.popup().installEventFilter(comp._tab)
-    return comp
+
+def system_completer(state: AppState, line: QLineEdit, on_map_reason: str = "already on this map") -> QCompleter:
+    """Attach a completer over every system name to a line edit.
+
+    Systems already on the map are listed but disabled, with ``on_map_reason`` next to them.
+    Tab takes the highlighted (or top) row.
+
+    Returns:
+        The completer.
+    """
+    require_type(line, QLineEdit, "line")
+    universe, store = state.universe, state.store
+    model = QStandardItemModel(line)
+    for name in sorted(universe.all_names()):
+        entry = QStandardItem(name)
+        system = universe.by_name(name)
+        entry.setData(system.system_class if system else "", Qt.ItemDataRole.UserRole)
+        if system and on_map_reason and store.has_system(system.id):
+            entry.setData(on_map_reason, REASON_ROLE)
+            entry.setFlags(entry.flags() & ~Qt.ItemFlag.ItemIsEnabled & ~Qt.ItemFlag.ItemIsSelectable)
+        model.appendRow(entry)
+    completer = QCompleter(model, line)
+    completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+    completer.setFilterMode(Qt.MatchFlag.MatchStartsWith)
+    completer.setMaxVisibleItems(8)
+    completer.popup().setItemDelegate(_SystemCompleterDelegate(completer))
+    completer.popup().setMinimumWidth(320)
+    line.setCompleter(completer)
+    completer.tab_completion = _TabCompletion(completer, line)
+    completer.popup().installEventFilter(completer.tab_completion)
+    return completer
 
 
 class AddSystemDialog(PromptDialog):
-    """Add a system by name (spec: PromptDialog → Add system). Placed where the user right-clicked;
-    linked to the selected system if there is one. Both stay unconfirmed until a character gets there."""
+    """Add a system by name (spec: PromptDialog → Add system).
 
-    def __init__(self, parent, state, connect_to: int | None = None):
+    Placed where the user right-clicked; linked to the selected system if there is one. Both stay
+    unconfirmed until a character gets there.
+    """
+
+    def __init__(self, parent: QWidget | None, state: AppState, connect_to: int | None = None) -> None:
+        """Build the prompt; ``connect_to`` is the selected system the new one links to."""
         self.state, self.connect_to = state, connect_to
-        st = state
-        sub = "Placed where you right-clicked"
+        subtitle = "Placed where you right-clicked"
         if connect_to:
-            sub += f" · linked to <b>{st.namer.display(connect_to)}</b> (selected)"
-        super().__init__(parent, "Add system", sub, "System name", validate=self._validate_name, primary="Add system",
-                         placeholder="J-name or system name, e.g. J161940 or Jita", mono=True,
+            subtitle += f" · linked to <b>{state.namer.display(connect_to)}</b> (selected)"
+        super().__init__(parent, "Add system", subtitle, "System name", validate=self.validate_name,
+                         primary="Add system", placeholder="J-name or system name, e.g. J161940 or Jita", mono=True,
                          hint="Stays marked ▲ unconfirmed until a character gets there.")
-        system_completer(st, self.field)
+        system_completer(state, self.field)
 
-    def system(self):
-        return self.state.uni.by_name(self.text())
+    def system(self) -> System | None:
+        """Return the system named in the field, or None."""
+        return self.state.universe.by_name(self.text())
 
-    def _validate_name(self, text):
+    def validate_name(self, text: str) -> tuple[bool, str]:
+        """Accept a known system that isn't on the map yet."""
         if not text:
             return False, ""
-        s = self.state.uni.by_name(text)
-        if not s:
+        system = self.state.universe.by_name(text)
+        if not system:
             return False, "✕ No system with that name"
-        if self.state.store.has_system(s.id):
-            return False, f"✕ {s.name} is already on this map"
-        st = self.state
-        what = (f"added with a WH connection to {st.namer.display(self.connect_to)}" if self.connect_to
+        if self.state.store.has_system(system.id):
+            return False, f"✕ {system.name} is already on this map"
+        what = (f"added with a WH connection to {self.state.namer.display(self.connect_to)}" if self.connect_to
                 else "added on its own")
-        return True, f"✓ {s.name} · {s.cls} · {what}"
+        return True, f"✓ {system.name} · {system.system_class} · {what}"
 
 
 class ConfirmDeleteMapDialog(BaseDialog):
     """The one action that asks first (spec: ConfirmDialog). Cancel is the default: Enter and Esc keep the map."""
 
-    def __init__(self, parent, name: str, path, home: str):
-        from ..mapdb.store import map_stats
-        from .map_scene import age_text
+    def __init__(self, parent: QWidget | None, name: str, path: Path, home: str) -> None:
+        """Build the question for the map ``name`` stored at ``path``, with what would be lost."""
+        require_text(name, "name")
+        require_type(path, Path, "path")
         super().__init__(parent, f"Delete the map “{name}”?", "This deletes its file and can't be undone.")
-        st = map_stats(path)
-        loss = QFrame()
-        loss.setObjectName("loss")
-        loss.setStyleSheet(f"#loss {{ background: {color('bg-1').name()}; border: 1px solid {color('line-1').name()};"
-                           f" border-radius: {PX['radius-2']:g}px; }}")
-        g = QHBoxLayout(loss)
-        g.setContentsMargins(0, 0, 0, 0)
-        g.setSpacing(0)
-        last = age_text(st["last"]) or "never"
-        cells = [(str(st["systems"]), "systems"), (str(st["signatures"]), "signatures"),
-                 ("now" if last == "0m" else last, "last activity")]
-        for i, (num, what) in enumerate(cells):
-            c = QFrame()
-            c.setObjectName(f"cell{i}")
-            if i < len(cells) - 1:
-                c.setStyleSheet(f"#cell{i} {{ border-right: 1px solid {color('line-1').name()}; }}")
-            v = QVBoxLayout(c)
-            v.setContentsMargins(PX["sp-8"] + 2, PX["sp-8"], PX["sp-8"], PX["sp-8"])
-            v.setSpacing(0)
-            n = QLabel(num)
-            n.setFont(font("mono-sig", 15))
-            w = QLabel(what)
-            w.setStyleSheet(f"color: {color('ink-faint').name()}; font-size: 11px;")
-            v.addWidget(n)
-            v.addWidget(w)
-            g.addWidget(c, 1)
-        self.body.addWidget(loss)
-        rel = path.name if path.parent.name != "maps" else f"maps/{path.name}"
-        help_ = QLabel(f"{'Home ' + home if home else 'No home'} · file <span style=\"font-family: monospace\">{rel}</span>"
-                       " (+ -wal, -shm). Characters and settings are kept.")
-        help_.setProperty("role", "help")
-        help_.setWordWrap(True)
-        self.body.addWidget(help_)
-
-        dele = QPushButton("✕ &Delete map")
-        dele.setProperty("variant", "danger")
-        dele.setAutoDefault(False)
-        dele.clicked.connect(self.accept)
+        self.body.addWidget(self._loss_summary(map_stats(path)))
+        relative = path.name if path.parent.name != "maps" else f"maps/{path.name}"
+        details = QLabel(f"{'Home ' + home if home else 'No home'} · file "
+                         f"<span style=\"font-family: monospace\">{relative}</span>"
+                         " (+ -wal, -shm). Characters and settings are kept.")
+        details.setProperty("role", "help")
+        details.setWordWrap(True)
+        self.body.addWidget(details)
+        delete = danger_button("✕ &Delete map", self.accept)
+        delete.setAutoDefault(False)
         cancel = QPushButton("Cancel")
         cancel.setDefault(True)
         cancel.clicked.connect(self.reject)
-        self.foot.addWidget(dele)
+        self.foot.addWidget(delete)
         self.foot.addStretch(1)
         self.foot.addWidget(cancel)
         cancel.setFocus()
         self.adjustSize()
 
+    @staticmethod
+    def _loss_summary(stats: dict) -> QFrame:
+        """Return the three-cell box: systems · signatures · last activity."""
+        loss = QFrame()
+        loss.setObjectName("loss")
+        loss.setStyleSheet(f"#loss {{ background: {color('bg-1').name()}; border: 1px solid {color('line-1').name()};"
+                           f" border-radius: {PIXELS['radius-2']:g}px; }}")
+        row = QHBoxLayout(loss)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        last = age_text(stats["last"]) or "never"
+        cells = [(str(stats["systems"]), "systems"), (str(stats["signatures"]), "signatures"),
+                 ("now" if last == "0m" else last, "last activity")]
+        for index, (number, what) in enumerate(cells):
+            cell = QFrame()
+            cell.setObjectName(f"cell{index}")
+            if index < len(cells) - 1:
+                cell.setStyleSheet(f"#cell{index} {{ border-right: 1px solid {color('line-1').name()}; }}")
+            column = QVBoxLayout(cell)
+            column.setContentsMargins(PIXELS["sp-8"] + 2, PIXELS["sp-8"], PIXELS["sp-8"], PIXELS["sp-8"])
+            column.setSpacing(0)
+            number_label = QLabel(number)
+            number_label.setFont(font("mono-sig", 15))
+            what_label = QLabel(what)
+            what_label.setStyleSheet(f"color: {color('ink-faint').name()}; font-size: 11px;")
+            column.addWidget(number_label)
+            column.addWidget(what_label)
+            row.addWidget(cell, 1)
+        return loss
 
 
 class StartupErrorDialog(BaseDialog):
     """Shown before the main window when the static universe data is missing (spec: StartupError).
-    Quit is the only way out; the fix is one command, so it gets a code box with a copy button."""
 
-    def __init__(self, data_file, command: str):
-        from pathlib import Path
-        from PySide6.QtCore import QTimer, QUrl
-        from PySide6.QtGui import QDesktopServices, QGuiApplication
+    Quit is the only way out; the fix is one command, so it gets a code box with a copy button.
+    """
+
+    def __init__(self, data_file: Path | str, command: str) -> None:
+        """Build the error for a missing ``data_file`` and the ``command`` that builds it."""
+        require_text(command, "command")
         super().__init__(None, "Map data is missing",
                          f"Homebound needs {Path(data_file).name} (systems, classes, statics, gates) and "
                          "builds it once from CCP's static data.")
+        self.command = command
         self.setWindowTitle("Homebound")
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowTitleHint)
         self.setFixedWidth(440)
-        # header glyph: the only dialog with one, because it's the only one that stops the app
-        title = self.body.itemAt(0).widget()
-        self.body.removeWidget(title)
-        head = QHBoxLayout()
-        head.setSpacing(PX["sp-8"])
-        g = QLabel("!")
-        g.setFixedSize(22, 22)
-        g.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        g.setStyleSheet(f"background: {color('danger').name()}; color: {color('ink-inverse').name()};"
-                        " border-radius: 11px; font-weight: 800;")
-        head.addWidget(g)
-        head.addWidget(title, 1)
-        self.body.insertLayout(0, head)
-
+        self._add_header_glyph()
         self.caption("Run this in the project folder")
-        box = QFrame()
-        box.setObjectName("codeBox")
-        box.setStyleSheet(f"#codeBox {{ background: {color('bg-0').name()}; border: 1px solid {color('line-2').name()};"
-                          f" border-radius: {PX['radius-2']:g}px; }}")
-        h = QHBoxLayout(box)
-        h.setContentsMargins(PX["sp-8"], PX["sp-4"], PX["sp-4"], PX["sp-4"])
-        h.setSpacing(PX["sp-6"])
-        mono = font("mono-small")
-        prompt = QLabel("$")
-        prompt.setFont(mono)
-        prompt.setStyleSheet(f"color: {color('ink-faint').name()};")
-        cmd = QLabel(command)
-        cmd.setFont(mono)
-        cmd.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        from .menus import copy_icon, glyph_icon
-        copy = QPushButton()
-        copy.setIcon(copy_icon())
-        copy.setProperty("variant", "ghost")
-        copy.setFixedWidth(28)
-        copy.setStyleSheet("padding: 0;")
-        copy.setToolTip("Copy command")
-
-        def do_copy():
-            QGuiApplication.clipboard().setText(command)
-            copy.setIcon(glyph_icon("✓", "success"))
-            QTimer.singleShot(2000, lambda: copy.setIcon(copy_icon()))
-        copy.clicked.connect(do_copy)
-        h.addWidget(prompt)
-        h.addWidget(cmd, 1)
-        h.addWidget(copy)
-        self.body.addWidget(box)
-        help_ = QLabel("It downloads the data once; after that Homebound works offline. Start Homebound again when it's done.")
-        help_.setProperty("role", "help")
-        help_.setWordWrap(True)
-        self.body.addWidget(help_)
+        self.body.addWidget(self._code_box(command))
+        help_label = QLabel("It downloads the data once; after that Homebound works offline. "
+                            "Start Homebound again when it's done.")
+        help_label.setProperty("role", "help")
+        help_label.setWordWrap(True)
+        self.body.addWidget(help_label)
 
         root = Path(data_file).resolve().parent.parent
         where = QLabel(str(root).replace(str(Path.home()), "~"))
-        where.setFont(mono)
+        where.setFont(font("mono-small"))
         where.setStyleSheet(f"color: {color('ink-faint').name()}; background: transparent; border: 0;")
         folder = QPushButton("Open folder")
         folder.setProperty("variant", "ghost")
         folder.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(root))))
-        quit_ = QPushButton("Quit")
-        quit_.setProperty("variant", "primary")
-        quit_.setDefault(True)
-        quit_.clicked.connect(self.reject)
+        quit_button = QPushButton("Quit")
+        quit_button.setProperty("variant", "primary")
+        quit_button.setDefault(True)
+        quit_button.clicked.connect(self.reject)
         self.foot.addWidget(where, 1)
         self.foot.addWidget(folder)
-        self.foot.addWidget(quit_)
+        self.foot.addWidget(quit_button)
+
+    def _add_header_glyph(self) -> None:
+        """Put a red "!" before the title: the only dialog with one, because it stops the app."""
+        title = self.body.itemAt(0).widget()
+        self.body.removeWidget(title)
+        head = QHBoxLayout()
+        head.setSpacing(PIXELS["sp-8"])
+        glyph = QLabel("!")
+        glyph.setFixedSize(22, 22)
+        glyph.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        glyph.setStyleSheet(f"background: {color('danger').name()}; color: {color('ink-inverse').name()};"
+                            " border-radius: 11px; font-weight: 800;")
+        head.addWidget(glyph)
+        head.addWidget(title, 1)
+        self.body.insertLayout(0, head)
+
+    def _code_box(self, command: str) -> QFrame:
+        """Return the "$ command  ⧉" box."""
+        box = QFrame()
+        box.setObjectName("codeBox")
+        box.setStyleSheet(f"#codeBox {{ background: {color('bg-0').name()}; border: 1px solid {color('line-2').name()};"
+                          f" border-radius: {PIXELS['radius-2']:g}px; }}")
+        row = QHBoxLayout(box)
+        row.setContentsMargins(PIXELS["sp-8"], PIXELS["sp-4"], PIXELS["sp-4"], PIXELS["sp-4"])
+        row.setSpacing(PIXELS["sp-6"])
+        mono = font("mono-small")
+        prompt = QLabel("$")
+        prompt.setFont(mono)
+        prompt.setStyleSheet(f"color: {color('ink-faint').name()};")
+        command_label = QLabel(command)
+        command_label.setFont(mono)
+        command_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.copy_button = QPushButton()
+        self.copy_button.setIcon(copy_icon())
+        self.copy_button.setProperty("variant", "ghost")
+        self.copy_button.setFixedWidth(28)
+        self.copy_button.setStyleSheet("padding: 0;")
+        self.copy_button.setToolTip("Copy command")
+        self.copy_button.clicked.connect(self.copy_command)
+        row.addWidget(prompt)
+        row.addWidget(command_label, 1)
+        row.addWidget(self.copy_button)
+        return box
+
+    def copy_command(self) -> str:
+        """Copy the command and show a ✓ for two seconds.
+
+        Returns:
+            The command.
+        """
+        QGuiApplication.clipboard().setText(self.command)
+        self.copy_button.setIcon(glyph_icon("✓", "success"))
+        QTimer.singleShot(2000, lambda: self.copy_button.setIcon(copy_icon()))
+        return self.command

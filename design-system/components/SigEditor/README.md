@@ -1,6 +1,6 @@
 # SigEditor
 
-The dialog for what the probe scanner can't show: wormhole type, lifetime and mass (and, for a K162, where it leads and how big it is). Opens on double-click of a signature row; anomaly rows don't open it. App: `SigDialog` in `homebound/ui/dialogs.py`, wormhole fields in `homebound/ui/wh_fields.py` (shared with the connection editor).
+The dialog for what the probe scanner can't show: wormhole type, lifetime and mass (and, for a K162, where it leads and how big it is). Opens on double-click of a signature row; anomaly rows don't open it. App: `SignatureDialog` in `homebound/ui/dialogs.py`, wormhole fields in `homebound/ui/wormhole_fields.py` (shared with the connection editor).
 
 **Layout, top to bottom:** title `Signature · ABC-123` (sig ID in mono) · subtitle with the system and, if linked, `· leads to A2a` · Group · wormhole section (only for Group = Wormhole, set apart by a `line-1` rule) · Name · footer `✕ Delete sig` (danger, far left) · Cancel (ghost) · Save (primary, default).
 

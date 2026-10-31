@@ -7,15 +7,20 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .parser import LogFile, SystemChange, decode, parse_change, parse_header
+from PySide6.QtCore import QObject, QTimer, Signal
+
+from ..validation import require_integer, require_type
+from .parser import BYTE_ORDER_MARK, LogFile, SystemChange, decode_log_bytes, parse_header, parse_system_change
 
 # Logs older than this are not "online"; their last system is still used as last known location.
 ONLINE_WINDOW = timedelta(hours=24)
 
 
 @dataclass
-class CharState:
-    char_id: int
+class CharacterState:
+    """What the scanner knows about one character's log."""
+
+    character_id: int
     name: str | None = None
     file: LogFile | None = None
     offset: int = 0              # bytes consumed (always even, after BOM)
@@ -28,129 +33,172 @@ class CharState:
 
 @dataclass
 class ScanResult:
+    """What one poll found."""
+
     changes: list[SystemChange] = field(default_factory=list)
-    chars_changed: bool = False
+    characters_changed: bool = False
 
 
 class LogScanner:
-    def __init__(self, log_dir: Path | str):
-        self.log_dir = Path(log_dir)
-        self.chars: dict[int, CharState] = {}
+    """Reads new lines from the newest Local log of every character in a folder."""
+
+    def __init__(self, log_directory: Path | str) -> None:
+        """Create a scanner for a log folder (it doesn't need to exist yet)."""
+        require_type(log_directory, (str, Path), "log_directory")
+        self.log_directory = Path(log_directory)
+        self.characters: dict[int, CharacterState] = {}
 
     def valid(self) -> bool:
-        return self.log_dir.is_dir()
+        """Return whether the log folder exists."""
+        return self.log_directory.is_dir()
 
     def newest_files(self) -> dict[int, LogFile]:
+        """Return the newest Local log of each character, by the start time in the file name."""
         newest: dict[int, LogFile] = {}
         if not self.valid():
             return newest
-        for p in self.log_dir.glob("Local_*.txt"):
-            lf = LogFile.from_path(p)
-            if lf and (lf.char_id not in newest or lf.started > newest[lf.char_id].started):
-                newest[lf.char_id] = lf
+        for path in self.log_directory.glob("Local_*.txt"):
+            log_file = LogFile.from_path(path)
+            if log_file and (log_file.character_id not in newest
+                             or log_file.started > newest[log_file.character_id].started):
+                newest[log_file.character_id] = log_file
         return newest
 
     def poll(self, now: datetime | None = None) -> ScanResult:
+        """Read everything written since the last poll.
+
+        The first poll of an existing file only reports the last location (as ``first``), so old
+        history doesn't create connections.
+
+        Args:
+            now: The current time (UTC) for the online check, or None for the clock.
+
+        Returns:
+            The new system changes and whether the character list changed.
+        """
+        require_type(now, (datetime, type(None)), "now")
         now = now or datetime.now(timezone.utc)
-        res = ScanResult()
-        for cid, lf in self.newest_files().items():
-            st = self.chars.get(cid)
-            initial = st is None
-            if st is None:
-                st = self.chars[cid] = CharState(cid)
-                res.chars_changed = True
-            if st.file is None or st.file.path != lf.path:
+        result = ScanResult()
+        for character_id, log_file in self.newest_files().items():
+            state = self.characters.get(character_id)
+            initial = state is None
+            if state is None:
+                state = self.characters[character_id] = CharacterState(character_id)
+                result.characters_changed = True
+            if state.file is None or state.file.path != log_file.path:
                 # New session (login): start reading the new file from the top.
-                st.file, st.offset, st.pending, st.session_seen_change = lf, 0, "", False
-                res.chars_changed = True
-            res.changes += self._read(st, quiet=initial)
+                state.file, state.offset, state.pending, state.session_seen_change = log_file, 0, "", False
+                result.characters_changed = True
+            result.changes += self._read(state, quiet=initial)
             try:
-                mtime = datetime.fromtimestamp(lf.path.stat().st_mtime, timezone.utc)
+                modified = datetime.fromtimestamp(log_file.path.stat().st_mtime, timezone.utc)
             except OSError:
                 continue
-            online = now - max(mtime, lf.started) < ONLINE_WINDOW
-            if online != st.online:
-                st.online = online
-                res.chars_changed = True
-        return res
+            online = now - max(modified, log_file.started) < ONLINE_WINDOW
+            if online != state.online:
+                state.online = online
+                result.characters_changed = True
+        return result
 
-    def _read(self, st: CharState, quiet: bool) -> list[SystemChange]:
-        """Read new bytes. With quiet=True (first scan of an existing file) only the final
-        location is kept and reported as a non-jump, so old history doesn't create connections."""
+    def _read(self, state: CharacterState, quiet: bool) -> list[SystemChange]:
+        """Read new bytes of one character's log.
+
+        Args:
+            state: The character; its offset and pending line are updated.
+            quiet: First scan of an existing file: keep only the final location, as a non-jump.
+
+        Returns:
+            The system changes found.
+        """
         try:
-            with open(st.file.path, "rb") as f:
-                f.seek(st.offset)
-                data = f.read()
+            with open(state.file.path, "rb") as log:
+                log.seek(state.offset)
+                data = log.read()
         except OSError:
             return []
-        if st.offset == 0 and data.startswith(b"\xff\xfe"):
-            data, st.offset = data[2:], 2
+        if state.offset == 0 and data.startswith(BYTE_ORDER_MARK):
+            data, state.offset = data[2:], 2
         usable = len(data) - (len(data) % 2)
         if not usable:
             return []
-        text = st.pending + decode(data[:usable])
-        st.offset += usable
+        text = state.pending + decode_log_bytes(data[:usable])
+        state.offset += usable
         lines = text.split("\n")
-        st.pending = lines.pop()  # may be partial
-        if st.name is None:
+        state.pending = lines.pop()  # may be partial
+        if state.name is None:
             name, _ = parse_header(text)
             if name:
-                st.name = name
-        out: list[SystemChange] = []
+                state.name = name
+        changes: list[SystemChange] = []
         for line in lines:
-            r = parse_change(line)
-            if not r:
+            found = parse_system_change(line)
+            if not found:
                 continue
-            ts, system = r
-            first = not st.session_seen_change
-            st.session_seen_change = True
-            if system == st.system and not first:
+            timestamp, system = found
+            first = not state.session_seen_change
+            state.session_seen_change = True
+            if system == state.system and not first:
                 continue
-            st.system, st.last_seen = system, ts
-            out.append(SystemChange(st.char_id, st.name or str(st.char_id), system, ts, first=first))
-        if quiet and out:
-            last = out[-1]
-            out = [SystemChange(last.char_id, last.char_name, last.system, last.at, first=True)]
-        return out
+            state.system, state.last_seen = system, timestamp
+            changes.append(SystemChange(state.character_id, state.name or str(state.character_id), system,
+                                        timestamp, first=first))
+        if quiet and changes:
+            last = changes[-1]
+            changes = [SystemChange(last.character_id, last.character_name, last.system, last.at, first=True)]
+        return changes
 
 
-try:
-    from PySide6.QtCore import QObject, QTimer, Signal
+class LogWatcher(QObject):
+    """Polls a :class:`LogScanner` on a timer and re-emits what it finds as Qt signals."""
 
-    class LogWatcher(QObject):
-        systemChanged = Signal(object)      # SystemChange
-        charactersChanged = Signal()
-        statusChanged = Signal(str, str)    # level ok|warn|err, text
+    systemChanged = Signal(object)      # SystemChange
+    charactersChanged = Signal()
+    statusChanged = Signal(str, str)    # level ok|warn|err, text
 
-        def __init__(self, log_dir: str, interval_ms: int = 1000, parent=None):
-            super().__init__(parent)
-            self.scanner = LogScanner(log_dir)
-            self.timer = QTimer(self)
-            self.timer.timeout.connect(self.poll)
-            self.interval_ms = interval_ms
+    def __init__(self, log_directory: str, interval_ms: int = 1000, parent: QObject | None = None) -> None:
+        """Create a watcher; call :meth:`start` to begin polling.
 
-        def start(self):
-            self.poll()
-            self.timer.start(self.interval_ms)
+        Args:
+            log_directory: The Chatlogs folder.
+            interval_ms: Poll interval in milliseconds.
+            parent: Qt parent.
+        """
+        super().__init__(parent)
+        require_integer(interval_ms, "interval_ms", minimum=1)
+        self.scanner = LogScanner(log_directory)
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.poll)
+        self.interval_ms = interval_ms
 
-        def set_log_dir(self, log_dir: str):
-            self.scanner = LogScanner(log_dir)
-            self.poll()
+    def start(self) -> None:
+        """Poll once now, then every ``interval_ms``."""
+        self.poll()
+        self.timer.start(self.interval_ms)
 
-        def poll(self):
-            if not self.scanner.valid():
-                self.statusChanged.emit("err", "Log folder not found")
-                return
-            res = self.scanner.poll()
-            for ch in res.changes:
-                self.systemChanged.emit(ch)
-            if res.chars_changed:
-                self.charactersChanged.emit()
-            n = sum(1 for c in self.scanner.chars.values() if c.online)
-            self.statusChanged.emit("ok", f"Logs: {len(self.scanner.chars)} characters, {n} online")
+    def set_log_directory(self, log_directory: str) -> None:
+        """Switch to another log folder and poll it at once."""
+        self.scanner = LogScanner(log_directory)
+        self.poll()
 
-        @property
-        def chars(self) -> dict[int, CharState]:
-            return self.scanner.chars
-except ImportError:  # pragma: no cover - tests without Qt
-    pass
+    def poll(self) -> ScanResult | None:
+        """Poll the scanner and emit its results.
+
+        Returns:
+            The scan result, or None if the log folder doesn't exist.
+        """
+        if not self.scanner.valid():
+            self.statusChanged.emit("err", "Log folder not found")
+            return None
+        result = self.scanner.poll()
+        for change in result.changes:
+            self.systemChanged.emit(change)
+        if result.characters_changed:
+            self.charactersChanged.emit()
+        online = sum(1 for character in self.scanner.characters.values() if character.online)
+        self.statusChanged.emit("ok", f"Logs: {len(self.scanner.characters)} characters, {online} online")
+        return result
+
+    @property
+    def characters(self) -> dict[int, CharacterState]:
+        """The characters the scanner knows, by ID."""
+        return self.scanner.characters

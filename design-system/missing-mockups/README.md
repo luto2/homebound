@@ -16,7 +16,7 @@ General rules that apply to all of them (from `README.md`, `components/Dialog/RE
 
 ## 1. Signature editor
 
-**Status:** built (`homebound/ui/dialogs.py` → `SigDialog`) from the Dialog rules, without a mockup.
+**Status:** built (`homebound/ui/dialogs.py` → `SignatureDialog`) from the Dialog rules, without a mockup.
 
 **What it does:** lets the user enter what the probe scanner can't show. The type of a wormhole only shows up on grid ("show info"), and so do its lifetime and mass state. Anything entered here carries over to the map connection once the hole is jumped. If the sig is already linked to a connection, saving updates that connection as well.
 
@@ -28,7 +28,7 @@ General rules that apply to all of them (from `README.md`, `components/Dialog/RE
 | Title | `Signature · ABC-123` | Sig ID in the title. |
 | Subtitle | `Home (J161940)` or `Home (J161940) · leads to A2a` | Which system the sig is in; the target if it's linked. |
 | Group | combo | Wormhole, Combat site, Data site, Relic site, Gas site, Ore site, Unscanned. The wormhole fields are only shown when Wormhole is picked. |
-| Wormhole type | dropdown in the style of Wanderer (`homebound/ui/wh_fields.py`) | Rows: "Unknown type", K162 ("exit · opened from the other side"), this system's statics, then every type that can spawn in this system's class. Each row: code (mono) · destination class badge · size (S/M/L/XL, S in `edge-frig`) · lifetime · total mass (right) · `STATIC` caption in `accent`. Last row "Show all types …" adds every other type, dimmed. Type-ahead jumps to codes. The closed combo paints the same row. |
+| Wormhole type | dropdown in the style of Wanderer (`homebound/ui/wormhole_fields.py`) | Rows: "Unknown type", K162 ("exit · opened from the other side"), this system's statics, then every type that can spawn in this system's class. Each row: code (mono) · destination class badge · size (S/M/L/XL, S in `edge-frig`) · lifetime · total mass (right) · `STATIC` caption in `accent`. Last row "Show all types …" adds every other type, dimmed. Type-ahead jumps to codes. The closed combo paints the same row. |
 | Type info line | help text | e.g. `→ C5 · Capital (XL) · 24h · 3 300 kt total · 2 000 kt per jump`. |
 | Leads to | combo | **Only for K162.** Unknown, C1–C6, HS, LS, NS, TH, C13, PV, DR. Any other type says where it leads. |
 | Size | 5-way segmented | **Only for K162.** ? · Frigate · S · Medium · M · Large · L · Capital · XL. Any other type gives its size (by max mass per jump: ≤ 5 kt S, ≤ 62 kt M, ≤ 375 kt L, else XL). Size S marks the connection frigate-only. |
@@ -57,7 +57,7 @@ The **connection editor** (double-click an edge) now uses the same Type / Size /
 
 ## 2. SignatureTable: group headers and anomalies
 
-**Status:** built (`homebound/ui/sig_table.py`). It departs from `previews/SignatureTable.html`.
+**Status:** built (`homebound/ui/signature_table.py`). It departs from `previews/SignatureTable.html`.
 
 **What changed:**
 - Rows are grouped, with a header row per group. Signatures come first (Wormholes, Combat, Data, Relic, Gas, Ore, Ice, Unscanned), then anomalies (`Anomalies · Combat`, `Anomalies · Ore`, …).

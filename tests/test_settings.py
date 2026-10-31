@@ -1,0 +1,117 @@
+"""Settings: maps, loading old and broken files, marker slots and log folder detection."""
+import json
+from pathlib import Path
+
+import pytest
+
+import homebound.settings as settings_module
+from homebound.settings import Settings
+
+
+@pytest.fixture
+def data_dir(tmp_path, monkeypatch) -> Path:
+    """Point the settings at an empty temporary data folder."""
+    monkeypatch.setattr(settings_module, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(settings_module, "SETTINGS_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(settings_module, "detect_log_directories", lambda: [])
+    return tmp_path
+
+
+def test_maps_in_settings(data_dir) -> None:
+    """Old settings become the "Main" map; maps can be added, switched, renamed and removed."""
+    (data_dir / "settings.json").write_text('{"home_system": "J161940", "naming_scheme": "a2a"}')
+    settings = Settings.load()
+    assert settings.maps == {"Main": {"file": "map.db", "home_system": "J161940", "naming_scheme": "a2a"}}
+    assert settings.add_map("Corp chain", "J100551", "numeric") == data_dir / "maps/corp-chain.db"
+    with pytest.raises(ValueError):
+        settings.add_map("Corp chain")
+    with pytest.raises(ValueError):
+        settings.add_map("  ")
+    with pytest.raises(ValueError):
+        settings.add_map("Other", naming_scheme="roman")
+    assert settings.switch_map("Corp chain") == "Corp chain"
+    assert (settings.home_system, settings.naming_scheme) == ("J100551", "numeric")
+    settings.naming_scheme = "letter_numeric"
+    assert settings.save() == data_dir / "settings.json"
+    settings = Settings.load()
+    assert settings.active_map == "Corp chain"
+    assert settings.maps["Corp chain"]["naming_scheme"] == "letter_numeric"
+    assert settings.map_path() == data_dir / "maps/corp-chain.db"
+    settings.switch_map("Main")
+    assert (settings.home_system, settings.naming_scheme) == ("J161940", "a2a")
+    assert settings.rename_map("Corp chain", " Corp ") == "Corp"
+    with pytest.raises(ValueError):
+        settings.rename_map("Corp", "Main")
+    with pytest.raises(ValueError):
+        settings.rename_map("Corp", "")
+    with pytest.raises(ValueError):
+        settings.remove_map("Main")  # active
+    with pytest.raises(ValueError):
+        settings.switch_map("Nope")
+    assert settings.remove_map("Corp") == data_dir / "maps/corp-chain.db"
+
+
+def test_map_files_get_unique_names(data_dir) -> None:
+    """Two names with the same slug, or an existing file, get a numbered file."""
+    settings = Settings.load()
+    (data_dir / "maps").mkdir()
+    (data_dir / "maps/corp.db").write_text("")
+    assert settings.add_map("Corp").name == "corp-2.db"
+    assert settings.add_map("corp!").name == "corp-3.db"
+    assert settings.add_map("???").name == "map.db"
+
+
+def test_renaming_the_active_map_follows(data_dir) -> None:
+    """Renaming the active map keeps it active."""
+    settings = Settings.load()
+    settings.rename_map("Main", "Home")
+    assert settings.active_map == "Home" and list(settings.maps) == ["Home"]
+
+
+def test_old_keys_and_bad_values_on_load(data_dir) -> None:
+    """Old key names are read; values of the wrong type and unknown keys are ignored."""
+    (data_dir / "settings.json").write_text(json.dumps({
+        "log_dir": "/logs", "kspace_radius": 3, "overlay_opacity": "high", "overlay_pinned_char": 42,
+        "zkill_enabled": 1, "overlay_text_px": 13, "unknown": True, "char_slots": {"42": 2},
+        "active_map": "Gone"}))
+    settings = Settings.load()
+    assert (settings.log_directory, settings.known_space_radius, settings.overlay_pinned_character) == ("/logs", 3, 42)
+    assert settings.overlay_opacity == 0.78 and settings.zkill_enabled is True
+    assert settings.overlay_text_size == 13 and settings.character_slots == {"42": 2}
+    assert settings.active_map == "Main"
+
+
+def test_broken_settings_file_gives_defaults(data_dir) -> None:
+    """Unreadable JSON or a JSON list means default settings."""
+    for content in ("{not json", "[1, 2]"):
+        (data_dir / "settings.json").write_text(content)
+        assert Settings.load().naming_scheme == "numeric"
+
+
+def test_detected_log_folder_is_used(data_dir, monkeypatch) -> None:
+    """Without a saved folder, the first detected one is used."""
+    monkeypatch.setattr(settings_module, "detect_log_directories", lambda: [Path("/found/Chatlogs")])
+    assert Settings.load().log_directory == "/found/Chatlogs"
+
+
+def test_marker_slots_fill_up_then_share() -> None:
+    """Characters get the first free slot; past six they share slots in turn."""
+    settings = Settings()
+    assert [settings.slot_for(i) for i in range(1, 7)] == [1, 2, 3, 4, 5, 6]
+    assert settings.slot_for(3) == 3
+    assert settings.slot_for(7) == 1 and settings.slot_for(8) == 2
+    with pytest.raises(TypeError):
+        settings.slot_for("7")
+
+
+def test_detect_log_directories_in_a_fake_home(tmp_path, monkeypatch) -> None:
+    """A Proton prefix in a Steam library listed in libraryfolders.vdf is found."""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    steam = tmp_path / ".local/share/Steam"
+    other = tmp_path / "games"
+    (steam / "steamapps").mkdir(parents=True)
+    (steam / "steamapps/libraryfolders.vdf").write_text(f'"libraryfolders" {{ "1" {{ "path" "{other}" }} }}')
+    chatlogs = other / "steamapps/compatdata/8500/pfx/drive_c/users/steamuser/Documents/EVE/logs/Chatlogs"
+    chatlogs.mkdir(parents=True)
+    assert settings_module.steam_libraries() == [steam.resolve(), other.resolve()]
+    assert settings_module.detect_log_directories() == [chatlogs]

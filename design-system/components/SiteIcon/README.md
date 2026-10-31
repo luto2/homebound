@@ -19,6 +19,6 @@ One icon per signature group, used in the SignatureTable group headers, the SigE
 - The shapes come from the game, so colour is still a support signal: Relic and Ore share `warning`, Wormhole and Ice share `accent`, and their EVE silhouettes differ.
 - **Anomalies** use the same icon as the signature group of the same kind; the header says `Anomalies ·`.
 
-Qt: `painting.site_pixmap(grp, size, dpr)` builds and caches the tinted pixmap; `painting.draw_site(p, x, y, grp)` draws it. Used by `sig_table.py` (group column and header rows) and the SigEditor group combo (`QIcon`).
+Qt: `painting.site_pixmap(group, size, device_pixel_ratio)` builds and caches the tinted pixmap; `painting.draw_site(painter, x, y, group)` draws it. Used by `signature_table.py` (group column and header rows) and the SigEditor group combo (`QIcon`).
 
 Preview note: the browser previews tint with a CSS luminance mask, the same rule as the app.

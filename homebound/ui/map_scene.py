@@ -1,61 +1,123 @@
-"""Map canvas: SystemNode, ConnectionEdge, MapScene, MapView (spec: SystemNode, ConnectionEdge, MapWindow)."""
+"""Map canvas: system nodes, connection edges, the scene that holds them and the zoomable view."""
 import math
 from datetime import datetime, timedelta, timezone
 
 from PySide6.QtCore import QLineF, QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFontMetricsF, QPainter, QPainterPath, QPainterPathStroker, QPen, QPolygonF
-from PySide6.QtWidgets import QGraphicsItem, QGraphicsObject, QGraphicsScene, QGraphicsView, QStyle
+from PySide6.QtGui import (QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPainterPathStroker, QPen,
+                           QPolygonF)
+from PySide6.QtWidgets import (QGraphicsItem, QGraphicsLineItem, QGraphicsObject, QGraphicsScene,
+                               QGraphicsView, QStyle, QStyleOptionGraphicsItem, QWidget)
 
-from ..mapdb.store import LIFE_1H, LIFE_4H, LIFE_CHIP, LIFE_EXPIRED, LIFE_LABEL, LIFE_LEFT
+from ..mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_CHIPS, LIFETIME_EXPIRED, LIFETIME_LABELS,
+                           LIFETIME_REMAINING, Connection)
+from ..mapping.chain import connected_component, wormhole_adjacency
 from ..mapping.tracker import hole_size
-from ..theme import painting as P
+from ..theme import painting
+from ..theme.tokens import OPACITY, PIXELS, color, font
 from ..universe.db import SIZE_NAMES
-from ..theme.tokens import OP, PX, color, font
-from ..zkill import is_fresh
+from ..validation import require_integer, require_number, require_text, require_type
 
-W, H = PX["size-node-w"], PX["size-node-h"]
-GRID = H / 3  # background grid cell: a third of a system node's height; nodes snap to it
+NODE_WIDTH, NODE_HEIGHT = PIXELS["size-node-w"], PIXELS["size-node-h"]
+W, H = NODE_WIDTH, NODE_HEIGHT  # short aliases kept for older importers
+GRID = NODE_HEIGHT / 3  # background grid cell: a third of a system node's height; nodes snap to it
 STALE_AFTER = timedelta(hours=24)
+MINIMUM_ZOOM, MAXIMUM_ZOOM = 0.2, 2.5
 
 
 def age_text(iso: str | None) -> str:
+    """Format the time since an ISO timestamp, e.g. "5m", "2h 10m" or "3d 4h".
+
+    Args:
+        iso: A timezone-aware ISO 8601 timestamp, or None/empty.
+
+    Returns:
+        The age, or an empty string when there is no timestamp.
+
+    Raises:
+        TypeError: If ``iso`` is neither a string nor None.
+    """
+    require_text(iso, "iso", allow_empty=True, optional=True)
     if not iso:
         return ""
-    d = datetime.now(timezone.utc) - datetime.fromisoformat(iso)
-    m = int(d.total_seconds() // 60)
-    if m < 60:
-        return f"{m}m"
-    h, m = divmod(m, 60)
-    if h < 24:
-        return f"{h}h {m}m" if m else f"{h}h"
-    dd, h = divmod(h, 24)
-    return f"{dd}d {h}h" if h else f"{dd}d"
+    elapsed = datetime.now(timezone.utc) - datetime.fromisoformat(iso)
+    minutes = int(elapsed.total_seconds() // 60)
+    if minutes < 60:
+        return f"{minutes}m"
+    hours, minutes = divmod(minutes, 60)
+    if hours < 24:
+        return f"{hours}h {minutes}m" if minutes else f"{hours}h"
+    days, hours = divmod(hours, 24)
+    return f"{days}d {hours}h" if hours else f"{days}d"
 
 
-def removed_in(conn) -> str:
-    """Time until tracker.expire drops the connection, e.g. "7 min" / "2h 10m"."""
-    if not conn.eol_at or conn.eol not in LIFE_LEFT:
+def removed_in(connection: Connection) -> str:
+    """Time until tracker.expire drops the connection, e.g. "7 min" / "2h 10m".
+
+    Args:
+        connection: The connection to look at.
+
+    Returns:
+        The remaining time, or "?" when the lifetime state has no countdown.
+    """
+    require_type(connection, Connection, "connection")
+    if not connection.lifetime_set_at or connection.lifetime not in LIFETIME_REMAINING:
         return "?"
-    left = datetime.fromisoformat(conn.eol_at) + LIFE_LEFT[conn.eol] - datetime.now(timezone.utc)
-    m = max(0, int(left.total_seconds() // 60))
-    if m < 60:
-        return f"{m} min"
-    return f"{m // 60}h {m % 60}m"
+    remaining = (datetime.fromisoformat(connection.lifetime_set_at) + LIFETIME_REMAINING[connection.lifetime]
+                 - datetime.now(timezone.utc))
+    minutes = max(0, int(remaining.total_seconds() // 60))
+    if minutes < 60:
+        return f"{minutes} min"
+    return f"{minutes // 60}h {minutes % 60}m"
 
 
-def elide(text: str, f, width: float) -> str:
-    fm = QFontMetricsF(f)
-    return fm.elidedText(text, Qt.TextElideMode.ElideRight, width)
+def elide(text: str, text_font: QFont, width: float) -> str:
+    """Shorten text with an ellipsis so it fits a width in the given font.
+
+    Args:
+        text: The text to shorten.
+        text_font: The font it will be drawn in.
+        width: The available width in pixels.
+
+    Returns:
+        The text, elided on the right if needed.
+
+    Raises:
+        TypeError: If an argument has the wrong type.
+    """
+    require_text(text, "text", allow_empty=True)
+    require_type(text_font, QFont, "text_font")
+    require_number(width, "width")
+    return QFontMetricsF(text_font).elidedText(text, Qt.TextElideMode.ElideRight, width)
 
 
 class SystemNode(QGraphicsObject):
+    """One mapped system on the canvas: name, class badge, statics, owner, zKill and character markers."""
+
     moved = Signal(int, float, float)
 
-    def __init__(self, state, sid: int):
+    def __init__(self, state, system_id: int) -> None:
+        """Create the node and load its data.
+
+        Args:
+            state: The application state (universe, store, namer, settings).
+            system_id: The system this node shows.
+
+        Raises:
+            TypeError: If ``system_id`` is not an integer.
+        """
         super().__init__()
-        self.state, self.sid = state, sid
+        require_integer(system_id, "system_id")
+        self.state, self.system_id = state, system_id
         self.edges: list["ConnectionEdge"] = []
         self.hover = False
+        self.system = None
+        self.mapped = None
+        self.name = ""
+        self.zkill = None
+        self.characters: list[tuple[int, str, int]] = []
+        self.unconfirmed = False
+        self.stale = False
+        self._character_marker_start = 8.0   # where the character markers start on the top edge
         self.setFlags(QGraphicsItem.GraphicsItemFlag.ItemIsMovable | QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
                       | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges)
         self.setAcceptHoverEvents(True)
@@ -63,373 +125,460 @@ class SystemNode(QGraphicsObject):
         self.setCacheMode(QGraphicsItem.CacheMode.NoCache)
         self.refresh()
 
-    def refresh(self):
-        st = self.state
-        self.sys = st.uni.by_id(self.sid)
-        self.ms = st.store.system(self.sid)
-        self.name = st.namer.label(self.sid)
-        self.zk = st.store.zkill(self.sid) if st.settings.zkill_enabled else None
-        self.chars = st.chars_in(self.sid)
+    def refresh(self) -> None:
+        """Reload everything the node shows from the state and repaint."""
+        state = self.state
+        self.system = state.universe.by_id(self.system_id)
+        self.mapped = state.store.system(self.system_id)
+        self.name = state.namer.label(self.system_id)
+        self.zkill = state.store.zkill_stats(self.system_id) if state.settings.zkill_enabled else None
+        self.characters = state.characters_in(self.system_id)
         # added by hand and not seen yet, or attached to a hand-drawn connection nobody has jumped
-        self.unconfirmed = bool(self.ms and (not self.ms.confirmed or
-                                             any(not c.confirmed for c in st.store.connections_of(self.sid))))
-        self.stale = bool(self.ms and self.ms.scanned_at and
-                          datetime.now(timezone.utc) - datetime.fromisoformat(self.ms.scanned_at) > STALE_AFTER)
+        self.unconfirmed = bool(self.mapped and (
+            not self.mapped.confirmed
+            or any(not connection.confirmed for connection in state.store.connections_of_system(self.system_id))))
+        self.stale = bool(self.mapped and self.mapped.scanned_at and
+                          datetime.now(timezone.utc) - datetime.fromisoformat(self.mapped.scanned_at) > STALE_AFTER)
         self.setToolTip(self._tooltip())
         self.update()
 
     def _tooltip(self) -> str:
-        s = self.sys
-        if not s:
-            return str(self.sid)
-        bits = [f"<b>{self.state.namer.display(self.sid)}</b> · {s.name}", f"{s.cls} · {s.region}"]
-        if s.effect:
-            bits.append(P.EFFECT_NAMES[s.effect])
-        if s.statics:
-            bits.append("Statics: " + ", ".join(f"{t.name} → {'/'.join(t.dest)}" for t in self.state.uni.static_types(s.id)))
-        if self.ms and self.ms.owner_ticker:
-            bits.append(f"Owner: {self.ms.owner_ticker} {self.ms.owner_note or ''}")
-        if self.chars:
-            bits.append("Here: " + ", ".join(c[1] for c in self.chars))
+        """Return the rich-text tooltip: names, class, effect, statics, owner, characters, unconfirmed note."""
+        system = self.system
+        if not system:
+            return str(self.system_id)
+        lines = [f"<b>{self.state.namer.display(self.system_id)}</b> · {system.name}",
+                 f"{system.system_class} · {system.region}"]
+        if system.effect:
+            lines.append(painting.EFFECT_NAMES[system.effect])
+        if system.statics:
+            lines.append("Statics: " + ", ".join(
+                f"{static.name} → {'/'.join(static.destinations)}"
+                for static in self.state.universe.static_types(system.id)))
+        if self.mapped and self.mapped.owner_ticker:
+            lines.append(f"Owner: {self.mapped.owner_ticker} {self.mapped.owner_note or ''}")
+        if self.characters:
+            lines.append("Here: " + ", ".join(character[1] for character in self.characters))
         if self.unconfirmed:
-            bits.append("▲ Unconfirmed: added by hand, or on a connection nobody has jumped yet")
-        return "<br>".join(bits)
+            lines.append("▲ Unconfirmed: added by hand, or on a connection nobody has jumped yet")
+        return "<br>".join(lines)
 
     @property
-    def kspace(self) -> bool:
-        return bool(self.sys and self.sys.kspace)
+    def known_space(self) -> bool:
+        """Whether this is a k-space system (security status shown, no J-name)."""
+        return bool(self.system and self.system.known_space)
 
     def boundingRect(self) -> QRectF:
-        return QRectF(-4, -12, W + 8, H + 16)
+        """Return the node body plus room for the tabs above and the selection ring."""
+        return QRectF(-4, -12, NODE_WIDTH + 8, NODE_HEIGHT + 16)
 
     def shape(self) -> QPainterPath:
-        p = QPainterPath()
-        p.addRoundedRect(QRectF(0, 0, W, H), PX["radius-3"], PX["radius-3"])
-        return p
+        """Return the rounded body, used for hit testing."""
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(0, 0, NODE_WIDTH, NODE_HEIGHT), PIXELS["radius-3"], PIXELS["radius-3"])
+        return path
 
     def center(self) -> QPointF:
-        return self.pos() + QPointF(W / 2, H / 2)
+        """Return the centre of the node in scene coordinates."""
+        return self.pos() + QPointF(NODE_WIDTH / 2, NODE_HEIGHT / 2)
 
     # ------------------------------------------------------------ paint
-    def paint(self, p: QPainter, opt, widget=None):
-        lod = opt.levelOfDetailFromTransform(p.worldTransform())
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setRenderHint(QPainter.RenderHint.TextAntialiasing)
-        selected = bool(opt.state & QStyle.StateFlag.State_Selected)
-        h = H if lod >= 0.6 else (34 if lod >= 0.35 else 26)
-        body = QRectF(0, 0, W, h)
-        fill = color("bg-4") if self.hover else color("bg-1" if self.kspace else "bg-2")
-        border = color("line-1" if self.kspace else "line-2")
-        p.setPen(QPen(border, 1))
-        p.setBrush(fill)
-        p.drawRoundedRect(body.adjusted(.5, .5, -.5, -.5), PX["radius-3"], PX["radius-3"])
+    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:
+        """Draw the node at a level of detail that follows the zoom (full, compact, name only)."""
+        level_of_detail = option.levelOfDetailFromTransform(painter.worldTransform())
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+        selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        height = NODE_HEIGHT if level_of_detail >= 0.6 else (34 if level_of_detail >= 0.35 else 26)
+        body = QRectF(0, 0, NODE_WIDTH, height)
+        self._paint_body(painter, body, selected)
+        self._paint_tabs(painter)
+
         if self.stale:
-            p.setBrush(P.stale_brush())
-            p.setPen(Qt.PenStyle.NoPen)
-            p.drawRoundedRect(body, PX["radius-3"], PX["radius-3"])
+            painter.setOpacity(OPACITY["op-stale"])
+        if level_of_detail < 0.35:
+            name_font = font("node-name", max(10, int(13 / max(level_of_detail, 0.05))))
+            painter.setFont(name_font)
+            painter.setPen(color("ink"))
+            painter.drawText(body.adjusted(6, 0, -6, 0), Qt.AlignmentFlag.AlignVCenter,
+                             elide(self.name, name_font, NODE_WIDTH - 12))
+            self._paint_character_markers(painter)
+            return
+        self._paint_title(painter, level_of_detail)
+        if level_of_detail >= 0.6:
+            self._paint_details(painter)
+        painter.setOpacity(1)
+        self._paint_character_markers(painter)
+
+    def _paint_body(self, painter: QPainter, body: QRectF, selected: bool) -> None:
+        """Draw the rounded body with its stale hatching, unconfirmed outline and selection ring."""
+        radius = PIXELS["radius-3"]
+        fill = color("bg-4") if self.hover else color("bg-1" if self.known_space else "bg-2")
+        painter.setPen(QPen(color("line-1" if self.known_space else "line-2"), 1))
+        painter.setBrush(fill)
+        painter.drawRoundedRect(body.adjusted(.5, .5, -.5, -.5), radius, radius)
+        if self.stale:
+            painter.setBrush(painting.stale_brush())
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRoundedRect(body, radius, radius)
         if self.unconfirmed:
-            p.setPen(QPen(color("warning"), 2, Qt.PenStyle.DashLine))
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawRoundedRect(body.adjusted(1, 1, -1, -1), PX["radius-3"], PX["radius-3"])
+            painter.setPen(QPen(color("warning"), 2, Qt.PenStyle.DashLine))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(body.adjusted(1, 1, -1, -1), radius, radius)
         if selected:
-            p.setPen(QPen(color("accent"), 2))
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawRoundedRect(body.adjusted(-1, -1, 1, 1), PX["radius-3"] + 1, PX["radius-3"] + 1)
-        self._tab_x = 8.0   # where the character markers start on the top edge
-        if self.sid == self.state.home_id:
-            P.draw_chip(p, W - 46, -7, "⌂ HOME", color("accent"), h=13)
+            painter.setPen(QPen(color("accent"), 2))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(body.adjusted(-1, -1, 1, 1), radius + 1, radius + 1)
+
+    def _paint_tabs(self, painter: QPainter) -> None:
+        """Draw the HOME and UNCONFIRMED tabs on the top edge and note where the character markers may start."""
+        self._character_marker_start = 8.0
+        if self.system_id == self.state.home_id:
+            painting.draw_chip(painter, NODE_WIDTH - 46, -7, "⌂ HOME", color("accent"), height=13)
         if self.unconfirmed:
-            self._tab_x += P.draw_chip(p, 8, -7, "▲ UNCONFIRMED", color("warning"), h=13) + 4
+            self._character_marker_start += painting.draw_chip(
+                painter, 8, -7, "▲ UNCONFIRMED", color("warning"), height=13) + 4
 
-        if self.stale:
-            p.setOpacity(OP["op-stale"])
-        if lod < 0.35:
-            f = font("node-name", max(10, int(13 / max(lod, 0.05))))
-            p.setFont(f)
-            p.setPen(color("ink"))
-            p.drawText(body.adjusted(6, 0, -6, 0), Qt.AlignmentFlag.AlignVCenter, elide(self.name, f, W - 12))
-            self._chars(p)
-            return
+    def _paint_title(self, painter: QPainter, level_of_detail: float) -> None:
+        """Draw line 1 (zKill, name, J-name) and, when zoomed out, the compact class badge."""
         x = 8
-        nf = font("node-name")
-        right = W - 8
-        if lod >= 0.6 and self.zk and (self.zk.kills_24h or self.zk.kills_1h):
-            right -= self._zk_width()
-            self._draw_zk(p, right + 4, 7)
-        p.setFont(nf)
-        name = self.name
-        sub = f" ({self.sys.name})" if self.kspace and name != self.sys.name and not (self.ms and self.ms.custom_name) else ""
-        fm = QFontMetricsF(nf)
-        p.setPen(color("ink"))
-        nm = elide(name, nf, right - x)
-        p.drawText(QPointF(x, 5 + fm.ascent()), nm)
-        if sub:
-            sx = x + fm.horizontalAdvance(nm) + 2
-            sf = font("ui-small", 11)
-            p.setFont(sf)
-            p.setPen(color("ink-muted"))
-            p.drawText(QPointF(sx, 5 + fm.ascent()), elide(sub.strip(), sf, right - sx))
-        if lod < 0.6:
-            P.draw_class_badge(p, W - 8 - P.class_badge_width(self.sys.cls), 9, self.sys.cls)
-            self._chars(p)
-            return
-        # line 2: class · effect · J-name · statics
-        y2 = 25
-        cx = x + P.draw_class_badge(p, x, y2, self.sys.cls, self.sys.security if self.kspace else None) + 5
-        if self.sys.effect:
-            cx += P.draw_effect(p, cx, y2 + 1, self.sys.effect) + 5
-        sx = W - 8
-        for t in reversed(self.state.uni.static_types(self.sid)):
-            d = t.dest[0] if t.dest else "?"
-            sx -= self._static_w(d)
-            P.draw_static(p, sx, y2, d)
-            sx -= 3
-        if not self.kspace:
-            mf = font("mono-small")
-            p.setFont(mf)
-            p.setPen(color("ink-muted"))
-            p.drawText(QRectF(cx, y2, sx - cx - 2, 16), Qt.AlignmentFlag.AlignVCenter,
-                       elide(self.sys.name, mf, sx - cx - 2))
-        # line 3: owner, stale
-        y3 = 44
-        if self.ms and self.ms.owner_ticker:
-            P.draw_owner(p, x, y3, self.ms.owner_ticker, self.ms.owner_slot or 1, home=self.sid == self.state.home_id)
+        name_font = font("node-name")
+        right = NODE_WIDTH - 8
+        if level_of_detail >= 0.6 and self.zkill and (self.zkill.kills_24h or self.zkill.kills_1h):
+            right -= self._zkill_width()
+            self._draw_zkill(painter, right + 4, 7)
+        painter.setFont(name_font)
+        metrics = QFontMetricsF(name_font)
+        subtitle = (f" ({self.system.name})" if self.known_space and self.name != self.system.name
+                    and not (self.mapped and self.mapped.custom_name) else "")
+        painter.setPen(color("ink"))
+        shown_name = elide(self.name, name_font, right - x)
+        painter.drawText(QPointF(x, 5 + metrics.ascent()), shown_name)
+        if subtitle:
+            subtitle_x = x + metrics.horizontalAdvance(shown_name) + 2
+            subtitle_font = font("ui-small", 11)
+            painter.setFont(subtitle_font)
+            painter.setPen(color("ink-muted"))
+            painter.drawText(QPointF(subtitle_x, 5 + metrics.ascent()),
+                             elide(subtitle.strip(), subtitle_font, right - subtitle_x))
+        if level_of_detail < 0.6:
+            painting.draw_class_badge(
+                painter, NODE_WIDTH - 8 - painting.class_badge_width(self.system.system_class), 9,
+                self.system.system_class)
+
+    def _paint_details(self, painter: QPainter) -> None:
+        """Draw line 2 (class, effect, statics, J-name) and line 3 (owner, stale age)."""
+        x, line_two, line_three = 8, 25, 44
+        system = self.system
+        cursor = x + painting.draw_class_badge(
+            painter, x, line_two, system.system_class, system.security if self.known_space else None) + 5
+        if system.effect:
+            cursor += painting.draw_effect(painter, cursor, line_two + 1, system.effect) + 5
+        static_x = NODE_WIDTH - 8
+        for static in reversed(self.state.universe.static_types(self.system_id)):
+            destination = static.destinations[0] if static.destinations else "?"
+            static_x -= self._static_width(destination)
+            painting.draw_static(painter, static_x, line_two, destination)
+            static_x -= 3
+        if not self.known_space:
+            mono_font = font("mono-small")
+            painter.setFont(mono_font)
+            painter.setPen(color("ink-muted"))
+            painter.drawText(QRectF(cursor, line_two, static_x - cursor - 2, 16), Qt.AlignmentFlag.AlignVCenter,
+                             elide(system.name, mono_font, static_x - cursor - 2))
+        if self.mapped and self.mapped.owner_ticker:
+            painting.draw_owner(painter, x, line_three, self.mapped.owner_ticker, self.mapped.owner_slot or 1,
+                                home=self.system_id == self.state.home_id)
         if self.stale:
-            sf = font("node-meta")
-            p.setFont(sf)
-            p.setPen(color("ink-faint"))
-            p.drawText(QRectF(x, y3, W - 16, 14), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                       f"stale {age_text(self.ms.scanned_at)}")
-        p.setOpacity(1)
-        self._chars(p)
+            meta_font = font("node-meta")
+            painter.setFont(meta_font)
+            painter.setPen(color("ink-faint"))
+            painter.drawText(QRectF(x, line_three, NODE_WIDTH - 16, 14),
+                             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                             f"stale {age_text(self.mapped.scanned_at)}")
 
-    def _static_w(self, cls):
-        fm = QFontMetricsF(font("node-meta"))
-        return 3 + fm.horizontalAdvance("→") + 2 + fm.horizontalAdvance(cls) + 4
+    @staticmethod
+    def _static_width(system_class: str) -> float:
+        """Return the width of a static's "→ class" tag."""
+        metrics = QFontMetricsF(font("node-meta"))
+        return 3 + metrics.horizontalAdvance("→") + 2 + metrics.horizontalAdvance(system_class) + 4
 
-    def _zk_level(self):
-        if not self.zk:
+    def _zkill_level(self) -> tuple[str, bool]:
+        """Return the zKill activity level ("none" without stats) and whether a kill happened in the last 10 minutes."""
+        if not self.zkill:
             return "none", False
-        recent = bool(self.zk.last_kill_at and datetime.now(timezone.utc)
-                      - datetime.fromisoformat(self.zk.last_kill_at) < timedelta(minutes=10))
-        return P.zk_level(self.zk.kills_1h, self.zk.kills_24h), recent
+        recent = bool(self.zkill.last_kill_at and datetime.now(timezone.utc)
+                      - datetime.fromisoformat(self.zkill.last_kill_at) < timedelta(minutes=10))
+        return painting.zkill_level(self.zkill.kills_1h, self.zkill.kills_24h), recent
 
-    def _zk_width(self):
-        _, recent = self._zk_level()
+    def _zkill_width(self) -> float:
+        """Return the width reserved for the zKill badge."""
+        _, recent = self._zkill_level()
         return 14 + (16 if recent else 0) + 4
 
-    def _draw_zk(self, p, x, y):
-        lvl, recent = self._zk_level()
-        P.draw_zk(p, x, y, lvl, recent)
+    def _draw_zkill(self, painter: QPainter, x: float, y: float) -> None:
+        """Draw the zKill activity badge at a position."""
+        level, recent = self._zkill_level()
+        painting.draw_zkill(painter, x, y, level, recent)
 
-    def _chars(self, p):
-        """Character markers on the top edge, after the UNCONFIRMED tag and clear of the HOME tab;
-        whatever doesn't fit becomes a "+n" chip."""
-        if not self.chars:
+    def _paint_character_markers(self, painter: QPainter) -> None:
+        """Draw character markers on the top edge, after the UNCONFIRMED tag and clear of the HOME tab.
+
+        Whatever doesn't fit becomes a "+n" chip.
+        """
+        if not self.characters:
             return
-        x = getattr(self, "_tab_x", 8.0)
-        right = (W - 46 - 4) if self.sid == self.state.home_id else (W - 8)
-        step, more_w = 16, 24          # marker 14 + gap 2; room for a "+n" chip
-        n = len(self.chars)
-        fit = max(0, int((right - x) // step))
-        shown = n if n <= min(3, fit) else max(0, min(2, (right - x - more_w) // step))
-        for _, _, slot in self.chars[:int(shown)]:
-            x += P.draw_char_marker(p, x, -7, slot) + 2
-        if shown < n:
-            P.draw_chip(p, x, -6, f"+{n - int(shown)}", color("bg-4"), ink=color("ink"))
+        x = self._character_marker_start
+        right = (NODE_WIDTH - 46 - 4) if self.system_id == self.state.home_id else (NODE_WIDTH - 8)
+        step, room_for_more_chip = 16, 24          # marker 14 + gap 2; room for a "+n" chip
+        count = len(self.characters)
+        fitting = max(0, int((right - x) // step))
+        shown = count if count <= min(3, fitting) else max(0, min(2, int((right - x - room_for_more_chip) // step)))
+        for _, _, slot in self.characters[:shown]:
+            x += painting.draw_character_marker(painter, x, -7, slot) + 2
+        if shown < count:
+            painting.draw_chip(painter, x, -6, f"+{count - shown}", color("bg-4"), ink=color("ink"))
 
     # ------------------------------------------------------------ interaction
-    def hoverEnterEvent(self, e):
+    def hoverEnterEvent(self, event) -> None:
+        """Highlight the node."""
         self.hover = True
         self.update()
 
-    def hoverLeaveEvent(self, e):
+    def hoverLeaveEvent(self, event) -> None:
+        """Remove the highlight."""
         self.hover = False
         self.update()
 
-    def itemChange(self, change, value):
+    def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value: object) -> object:
+        """Snap moves to the grid, keep the edges attached and tell the state when selected."""
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
             return QPointF(round(value.x() / GRID) * GRID, round(value.y() / GRID) * GRID)
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            for e in self.edges:
-                e.adjust()
+            for edge in self.edges:
+                edge.adjust()
         if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged and value:
-            self.state.select(self.sid)
+            self.state.select(self.system_id)
         return super().itemChange(change, value)
 
-    def mouseReleaseEvent(self, e):
-        super().mouseReleaseEvent(e)
-        if self.ms and (self.ms.x, self.ms.y) != (self.pos().x(), self.pos().y()):
-            self.state.store.update_system(self.sid, x=self.pos().x(), y=self.pos().y())
-            self.ms = self.state.store.system(self.sid)
+    def mouseReleaseEvent(self, event) -> None:
+        """Store the new position after a drag."""
+        super().mouseReleaseEvent(event)
+        if self.mapped and (self.mapped.x, self.mapped.y) != (self.pos().x(), self.pos().y()):
+            self.state.store.update_system(self.system_id, x=self.pos().x(), y=self.pos().y())
+            self.mapped = self.state.store.system(self.system_id)
 
 
 class ConnectionEdge(QGraphicsItem):
+    """A curved wormhole connection between two nodes with a label plate (type and state chips)."""
+
     PENS = None
 
-    def __init__(self, state, conn, na: SystemNode, nb: SystemNode):
+    def __init__(self, state, connection: Connection, node_a: SystemNode, node_b: SystemNode) -> None:
+        """Create the edge and attach it to both nodes.
+
+        Args:
+            state: The application state.
+            connection: The connection to draw.
+            node_a: The node at one end.
+            node_b: The node at the other end.
+
+        Raises:
+            TypeError: If the connection or a node has the wrong type.
+        """
         super().__init__()
+        require_type(connection, Connection, "connection")
+        require_type(node_a, SystemNode, "node_a")
+        require_type(node_b, SystemNode, "node_b")
         if ConnectionEdge.PENS is None:
-            ConnectionEdge.PENS = P.edge_pens()
-        self.state, self.conn, self.na, self.nb = state, conn, na, nb
-        na.edges.append(self)
-        nb.edges.append(self)
+            ConnectionEdge.PENS = painting.edge_pens()
+        self.state, self.connection, self.node_a, self.node_b = state, connection, node_a, node_b
+        node_a.edges.append(self)
+        node_b.edges.append(self)
         self.hover = False
         self.setZValue(1)
         self.setAcceptHoverEvents(True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
         self.line = QLineF()
+        self.path = QPainterPath()
         self.adjust()
 
-    def refresh(self, conn):
-        self.conn = conn
+    def refresh(self, connection: Connection) -> None:
+        """Show an updated connection and repaint."""
+        require_type(connection, Connection, "connection")
+        self.connection = connection
         self.setToolTip(self._tooltip())
         self.update()
 
-    def _tooltip(self):
-        c = self.conn
-        parts = [c.wh_type or "Unknown type",
+    def _tooltip(self) -> str:
+        """Return the one-line tooltip: type, mass, lifetime, size, unconfirmed note and age."""
+        connection = self.connection
+        parts = [connection.wormhole_type or "Unknown type",
                  {"fresh": "Mass fresh", "reduced": "Mass reduced (<50%)", "critical": "Mass critical (<10%)",
-                  "unknown": "Mass unknown"}[c.mass]]
-        if c.eol == LIFE_EXPIRED:
-            parts.append(f"Expired · removed in {removed_in(c)}")
-        elif c.eol:
-            parts.append(f"Lifetime {LIFE_LABEL[c.eol]} (set {age_text(c.eol_at)} ago)")
-        size = hole_size(self.state.uni, c.wh_type, c.size)
+                  "unknown": "Mass unknown"}[connection.mass]]
+        if connection.lifetime == LIFETIME_EXPIRED:
+            parts.append(f"Expired · removed in {removed_in(connection)}")
+        elif connection.lifetime:
+            parts.append(f"Lifetime {LIFETIME_LABELS[connection.lifetime]} "
+                         f"(set {age_text(connection.lifetime_set_at)} ago)")
+        size = hole_size(self.state.universe, connection.wormhole_type, connection.size)
         if size:
             parts.append(SIZE_NAMES[size] + (" only" if size == "S" else ""))
-        if not c.confirmed:
+        if not connection.confirmed:
             parts.append("Unconfirmed: drawn by hand, nobody has jumped it yet")
-        parts.append(f"Age {age_text(c.created_at)}")
+        parts.append(f"Age {age_text(connection.created_at)}")
         return " · ".join(parts)
 
-    def adjust(self):
+    def adjust(self) -> None:
         """Curve from the facing sides of the two nodes (horizontal ports when side by side)."""
         self.prepareGeometryChange()
-        a, b = self.na.sceneBoundingRect().adjusted(4, 12, -4, -4), self.nb.sceneBoundingRect().adjusted(4, 12, -4, -4)
-        if b.left() >= a.right() or a.left() >= b.right():
-            l, r = (a, b) if b.left() >= a.right() else (b, a)
-            s, e = QPointF(l.right(), l.center().y()), QPointF(r.left(), r.center().y())
-            dx = (e.x() - s.x()) / 2
-            c1, c2 = s + QPointF(dx, 0), e - QPointF(dx, 0)
+        rect_a = self.node_a.sceneBoundingRect().adjusted(4, 12, -4, -4)
+        rect_b = self.node_b.sceneBoundingRect().adjusted(4, 12, -4, -4)
+        if rect_b.left() >= rect_a.right() or rect_a.left() >= rect_b.right():
+            left, right = (rect_a, rect_b) if rect_b.left() >= rect_a.right() else (rect_b, rect_a)
+            start, end = QPointF(left.right(), left.center().y()), QPointF(right.left(), right.center().y())
+            half = (end.x() - start.x()) / 2
+            control_a, control_b = start + QPointF(half, 0), end - QPointF(half, 0)
         else:
-            t, u = (a, b) if a.center().y() <= b.center().y() else (b, a)
-            s, e = QPointF(t.center().x(), t.bottom()), QPointF(u.center().x(), u.top())
-            dy = (e.y() - s.y()) / 2
-            c1, c2 = s + QPointF(0, dy), e - QPointF(0, dy)
-        path = QPainterPath(s)
-        path.cubicTo(c1, c2, e)
+            upper, lower = (rect_a, rect_b) if rect_a.center().y() <= rect_b.center().y() else (rect_b, rect_a)
+            start, end = QPointF(upper.center().x(), upper.bottom()), QPointF(lower.center().x(), lower.top())
+            half = (end.y() - start.y()) / 2
+            control_a, control_b = start + QPointF(0, half), end - QPointF(0, half)
+        path = QPainterPath(start)
+        path.cubicTo(control_a, control_b, end)
         self.path = path
-        self.line = QLineF(s, e)
+        self.line = QLineF(start, end)
         self.setToolTip(self._tooltip())
 
-    def boundingRect(self):
+    def boundingRect(self) -> QRectF:
+        """Return the curve and its label plate with a margin."""
         return self.path.boundingRect().united(self._plate_rect()).adjusted(-8, -8, 8, 8)
 
-    def shape(self):
-        s = QPainterPathStroker()
-        s.setWidth(12)
-        out = s.createStroke(self.path)
-        out.addRect(self._plate_rect())
-        return out
+    def shape(self) -> QPainterPath:
+        """Return a 12 px wide stroke around the curve plus the label plate, used for hit testing."""
+        stroker = QPainterPathStroker()
+        stroker.setWidth(12)
+        outline = stroker.createStroke(self.path)
+        outline.addRect(self._plate_rect())
+        return outline
 
-    def _chips(self):
-        c = self.conn
+    def _chips(self) -> list[tuple[str, QColor]]:
+        """Return the state chips (text, colour) shown after the type: mass, frigate, lifetime, unconfirmed."""
+        connection = self.connection
         chips = []
-        if c.mass in P.EDGE_CHIPS:
-            t, tok = P.EDGE_CHIPS[c.mass]
-            chips.append((t, color(tok)))
-        if c.frig:
+        if connection.mass in painting.EDGE_CHIPS:
+            text, token = painting.EDGE_CHIPS[connection.mass]
+            chips.append((text, color(token)))
+        if connection.frigate_only:
             chips.append(("F", color("edge-frig")))
-        if c.eol in LIFE_CHIP:
-            chips.append((LIFE_CHIP[c.eol], color("danger") if c.eol == LIFE_EXPIRED else color("edge-eol")))
-        if not c.confirmed:
+        if connection.lifetime in LIFETIME_CHIPS:
+            chips.append((LIFETIME_CHIPS[connection.lifetime],
+                          color("danger") if connection.lifetime == LIFETIME_EXPIRED else color("edge-eol")))
+        if not connection.confirmed:
             chips.append(("▲ UNCONF", color("warning")))
         return chips
 
     def _plate_rect(self) -> QRectF:
-        f = font("edge-label")
-        fm = QFontMetricsF(f)
-        cf = QFontMetricsF(font("edge-label", 9))
-        w = fm.horizontalAdvance(self.conn.wh_type or "?") + 10
-        w += sum(cf.horizontalAdvance(t) + 6 + 3 for t, _ in self._chips())
-        mid = self.path.pointAtPercent(0.5)
-        return QRectF(mid.x() - w / 2, mid.y() - 9, w, 18)
+        """Return the label plate rectangle centred on the middle of the curve."""
+        label_metrics = QFontMetricsF(font("edge-label"))
+        chip_metrics = QFontMetricsF(font("edge-label", 9))
+        width = label_metrics.horizontalAdvance(self.connection.wormhole_type or "?") + 10
+        width += sum(chip_metrics.horizontalAdvance(text) + 6 + 3 for text, _ in self._chips())
+        middle = self.path.pointAtPercent(0.5)
+        return QRectF(middle.x() - width / 2, middle.y() - 9, width, 18)
 
-    def paint(self, p: QPainter, opt, widget=None):
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        lod = opt.levelOfDetailFromTransform(p.worldTransform())
-        c = self.conn
+    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem, widget: QWidget | None = None) -> None:
+        """Draw the curve with its selection, unconfirmed and lifetime underlays, then the label plate."""
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        level_of_detail = option.levelOfDetailFromTransform(painter.worldTransform())
+        connection = self.connection
         path = self.path
         pens = ConnectionEdge.PENS
         if self.isSelected():
-            p.strokePath(path, pens["selected"])
-        if not c.confirmed:
+            painter.strokePath(path, pens["selected"])
+        if not connection.confirmed:
             casing = QPen(color("warning"), 7, Qt.PenStyle.DashLine, Qt.PenCapStyle.FlatCap)
             casing.setDashPattern([3, 2])
-            p.strokePath(path, casing)
-        if c.eol in (LIFE_4H, LIFE_1H):
-            p.strokePath(path, pens["eol1h" if c.eol == LIFE_1H else "eol"])
-        pen = QPen(pens["frig" if c.frig else c.mass])
+            painter.strokePath(path, casing)
+        if connection.lifetime in (LIFETIME_4H, LIFETIME_1H):
+            painter.strokePath(path, pens["lifetime_1h" if connection.lifetime == LIFETIME_1H else "lifetime_4h"])
+        pen = QPen(pens["frigate_only" if connection.frigate_only else connection.mass])
         if self.hover:
             pen.setWidthF(pen.widthF() + 1)
-        if c.eol == LIFE_EXPIRED:   # fading out
-            p.save()
-            p.setOpacity(0.4)
-            p.strokePath(path, pen)
-            p.restore()
+        if connection.lifetime == LIFETIME_EXPIRED:   # fading out
+            painter.save()
+            painter.setOpacity(0.4)
+            painter.strokePath(path, pen)
+            painter.restore()
         else:
-            p.strokePath(path, pen)
-        if c.frig:
-            m = self.path.pointAtPercent(0.5) + QPointF(0, 14)
-            d = QPolygonF([m + QPointF(0, -5), m + QPointF(5, 0), m + QPointF(0, 5), m + QPointF(-5, 0)])
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(color("edge-frig"))
-            p.drawPolygon(d)
-        # label plate
-        r = self._plate_rect()
-        show_type = lod >= 0.5
+            painter.strokePath(path, pen)
+        if connection.frigate_only:
+            middle = path.pointAtPercent(0.5) + QPointF(0, 14)
+            diamond = QPolygonF([middle + QPointF(0, -5), middle + QPointF(5, 0),
+                                 middle + QPointF(0, 5), middle + QPointF(-5, 0)])
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(color("edge-frig"))
+            painter.drawPolygon(diamond)
+        self._paint_plate(painter, level_of_detail >= 0.5)
+
+    def _paint_plate(self, painter: QPainter, show_type: bool) -> None:
+        """Draw the label plate with the wormhole type and the state chips.
+
+        Args:
+            painter: The painter to draw with.
+            show_type: Whether the zoom is high enough to show the plate when there are no chips.
+        """
         chips = self._chips()
         if not show_type and not chips:
             return
-        p.setPen(QPen(color("accent") if self.hover else color("line-1"), 1))
-        p.setBrush(color("edge-label-bg"))
-        p.drawRoundedRect(r, 3, 3)
-        x = r.left() + 5
-        f = font("edge-label")
-        p.setFont(f)
-        p.setPen(color("ink"))
-        t = c.wh_type or "?"
-        p.drawText(QRectF(x, r.top(), 60, r.height()), Qt.AlignmentFlag.AlignVCenter, t)
-        x += QFontMetricsF(f).horizontalAdvance(t) + 5
-        for text, bg in chips:
-            x += P.draw_chip(p, x, r.top() + 3, text, bg) + 3
+        plate = self._plate_rect()
+        painter.setPen(QPen(color("accent") if self.hover else color("line-1"), 1))
+        painter.setBrush(color("edge-label-bg"))
+        painter.drawRoundedRect(plate, 3, 3)
+        x = plate.left() + 5
+        label_font = font("edge-label")
+        painter.setFont(label_font)
+        painter.setPen(color("ink"))
+        label = self.connection.wormhole_type or "?"
+        painter.drawText(QRectF(x, plate.top(), 60, plate.height()), Qt.AlignmentFlag.AlignVCenter, label)
+        x += QFontMetricsF(label_font).horizontalAdvance(label) + 5
+        for text, background in chips:
+            x += painting.draw_chip(painter, x, plate.top() + 3, text, background) + 3
 
-    def hoverEnterEvent(self, e):
+    def hoverEnterEvent(self, event) -> None:
+        """Highlight the edge and refresh the tooltip (ages and the expiry countdown move on)."""
         self.hover = True
-        self.setToolTip(self._tooltip())   # ages and the expiry countdown move on
+        self.setToolTip(self._tooltip())
         self.update()
 
-    def hoverLeaveEvent(self, e):
+    def hoverLeaveEvent(self, event) -> None:
+        """Remove the highlight."""
         self.hover = False
         self.update()
 
 
 class MapScene(QGraphicsScene):
-    nodeContextMenu = Signal(int, object)     # sid, screen pos
+    """The scene with all nodes and edges of the active map; also draws new connections."""
+
+    nodeContextMenu = Signal(int, object)     # system id, screen pos
     edgeContextMenu = Signal(int, object)     # connection id, screen pos
     edgeActivated = Signal(int)
     backgroundContextMenu = Signal(object, object)  # scene pos, screen pos
-    linkRequested = Signal(int, int)          # draw a connection: from sid, to sid
+    linkRequested = Signal(int, int)          # draw a connection: from system id, to system id
 
-    def __init__(self, state):
+    def __init__(self, state) -> None:
+        """Create the scene, follow the state's signals and build the items.
+
+        Args:
+            state: The application state.
+        """
         super().__init__()
         self.state = state
         self.nodes: dict[int, SystemNode] = {}
         self.edges: dict[int, ConnectionEdge] = {}
         self.setSceneRect(-5000, -5000, 10000, 10000)
         self._link_from: SystemNode | None = None   # drawing a connection from this node
-        self._link_line = None
+        self._link_line: QGraphicsLineItem | None = None
         self._link_click = False                    # started from the menu: finish on the next click
         state.mapChanged.connect(self.rebuild)
         state.systemUpdated.connect(self.refresh_system)
@@ -437,149 +586,201 @@ class MapScene(QGraphicsScene):
         state.selectionChanged.connect(self._select)
         self.rebuild()
 
-    def rebuild(self):
-        st = self.state
-        systems = {s.id: s for s in st.store.systems()}
-        for sid in list(self.nodes):
-            if sid not in systems:
-                n = self.nodes.pop(sid)
-                self.removeItem(n)
-        for cid in list(self.edges):
-            self.removeItem(self.edges.pop(cid))
-        for n in self.nodes.values():
-            n.edges.clear()
-        for sid, ms in systems.items():
-            n = self.nodes.get(sid)
-            if n is None:
-                n = self.nodes[sid] = SystemNode(st, sid)
-                self.addItem(n)
-            n.setPos(ms.x, ms.y)
-            n.refresh()
-        for c in st.store.connections():
-            if c.a in self.nodes and c.b in self.nodes:
-                e = self.edges[c.id] = ConnectionEdge(st, c, self.nodes[c.a], self.nodes[c.b])
-                e.refresh(c)
-                self.addItem(e)
-        self._select(st.selected)
+    def rebuild(self) -> None:
+        """Sync nodes and edges with the store: drop removed systems, add new ones, redraw every connection."""
+        state = self.state
+        systems = {system.id: system for system in state.store.systems()}
+        for system_id in list(self.nodes):
+            if system_id not in systems:
+                self.removeItem(self.nodes.pop(system_id))
+        for connection_id in list(self.edges):
+            self.removeItem(self.edges.pop(connection_id))
+        for node in self.nodes.values():
+            node.edges.clear()
+        for system_id, mapped in systems.items():
+            node = self.nodes.get(system_id)
+            if node is None:
+                node = self.nodes[system_id] = SystemNode(state, system_id)
+                self.addItem(node)
+            node.setPos(mapped.x, mapped.y)
+            node.refresh()
+        for connection in state.store.connections():
+            if connection.system_a in self.nodes and connection.system_b in self.nodes:
+                edge = self.edges[connection.id] = ConnectionEdge(
+                    state, connection, self.nodes[connection.system_a], self.nodes[connection.system_b])
+                edge.refresh(connection)
+                self.addItem(edge)
+        self._select(state.selected)
 
-    def refresh_system(self, sid: int):
-        if n := self.nodes.get(sid):
-            n.refresh()
-            for e in n.edges:
-                c = self.state.store.connection_by_id(e.conn.id)
-                if c:
-                    e.refresh(c)
+    def refresh_system(self, system_id: int) -> None:
+        """Refresh one node and the connections attached to it."""
+        node = self.nodes.get(system_id)
+        if node is None:
+            return
+        node.refresh()
+        for edge in node.edges:
+            connection = self.state.store.connection_by_id(edge.connection.id)
+            if connection:
+                edge.refresh(connection)
 
-    def refresh_all(self):
-        for n in self.nodes.values():
-            n.refresh()
+    def refresh_all(self) -> None:
+        """Refresh every node (e.g. after characters moved)."""
+        for node in self.nodes.values():
+            node.refresh()
 
-    def _select(self, sid: int):
-        n = self.nodes.get(sid)
-        if n and not n.isSelected():
+    def _select(self, system_id: int) -> None:
+        """Select the node of a system unless it already is."""
+        node = self.nodes.get(system_id)
+        if node and not node.isSelected():
             self.clearSelection()
-            n.setSelected(True)
+            node.setSelected(True)
 
-    def contextMenuEvent(self, e):
-        item = self.itemAt(e.scenePos(), self.views()[0].transform()) if self.views() else None
+    def _item_at(self, scene_position: QPointF) -> QGraphicsItem | None:
+        """Return the topmost item at a scene position (needs a view for the transform), or None."""
+        return self.itemAt(scene_position, self.views()[0].transform()) if self.views() else None
+
+    def contextMenuEvent(self, event) -> None:
+        """Emit the context-menu signal that fits what was clicked."""
+        item = self._item_at(event.scenePos())
         if isinstance(item, SystemNode):
-            self.nodeContextMenu.emit(item.sid, e.screenPos())
+            self.nodeContextMenu.emit(item.system_id, event.screenPos())
         elif isinstance(item, ConnectionEdge):
-            self.edgeContextMenu.emit(item.conn.id, e.screenPos())
+            self.edgeContextMenu.emit(item.connection.id, event.screenPos())
         else:
-            self.backgroundContextMenu.emit(e.scenePos(), e.screenPos())
+            self.backgroundContextMenu.emit(event.scenePos(), event.screenPos())
 
     # ------------------------------------------------------------ drawing connections
-    def node_at(self, pos) -> "SystemNode | None":
-        return next((i for i in self.items(pos) if isinstance(i, SystemNode)), None)
+    def node_at(self, position: QPointF) -> SystemNode | None:
+        """Return the node at a scene position, or None."""
+        return next((item for item in self.items(position) if isinstance(item, SystemNode)), None)
 
-    def start_link(self, sid: int, click_mode: bool = True):
-        """Rubber-band line from sid; finished by releasing (Shift+drag) or clicking (menu) on another system."""
-        from PySide6.QtWidgets import QGraphicsLineItem
-        n = self.nodes.get(sid)
-        if not n:
-            return
+    def start_link(self, system_id: int, click_mode: bool = True) -> bool:
+        """Start a rubber-band line from a system.
+
+        It is finished by releasing (Shift+drag) or clicking (menu) on another system.
+
+        Args:
+            system_id: The system to draw from.
+            click_mode: Finish on the next click (menu) rather than on release (drag).
+
+        Returns:
+            True if the line was started, False if the system isn't on the map.
+
+        Raises:
+            TypeError: If ``system_id`` is not an integer.
+        """
+        require_integer(system_id, "system_id")
+        node = self.nodes.get(system_id)
+        if not node:
+            return False
         self.cancel_link()
-        self._link_from, self._link_click = n, click_mode
+        self._link_from, self._link_click = node, click_mode
         pen = QPen(color("warning"), 2, Qt.PenStyle.DashLine)
         pen.setCosmetic(True)
-        self._link_line = QGraphicsLineItem(QLineF(n.center(), n.center()))
+        self._link_line = QGraphicsLineItem(QLineF(node.center(), node.center()))
         self._link_line.setPen(pen)
         self._link_line.setZValue(10)
         self.addItem(self._link_line)
-        for v in self.views():
-            v.viewport().setCursor(Qt.CursorShape.CrossCursor)
+        for view in self.views():
+            view.viewport().setCursor(Qt.CursorShape.CrossCursor)
+        return True
 
-    def cancel_link(self):
+    def cancel_link(self) -> bool:
+        """Stop drawing a connection.
+
+        Returns:
+            True if a line was being drawn.
+        """
+        was_drawing = self._link_from is not None
         if self._link_line is not None:
             self.removeItem(self._link_line)
         self._link_from, self._link_line = None, None
-        for v in self.views():
-            v.viewport().unsetCursor()
+        for view in self.views():
+            view.viewport().unsetCursor()
+        return was_drawing
 
-    def _finish_link(self, pos):
-        src, dst = self._link_from, self.node_at(pos)
+    def _finish_link(self, scene_position: QPointF) -> bool:
+        """End the rubber band at a position and request the connection if it landed on another node."""
+        source, target = self._link_from, self.node_at(scene_position)
         self.cancel_link()
-        if src and dst and dst is not src:
-            self.linkRequested.emit(src.sid, dst.sid)
+        if source and target and target is not source:
+            self.linkRequested.emit(source.system_id, target.system_id)
+            return True
+        return False
 
-    def mousePressEvent(self, e):
+    def mousePressEvent(self, event) -> None:
+        """Finish a menu-started link, start a Shift+click link or pass the click on."""
         if self._link_from is not None and self._link_click:
-            self._finish_link(e.scenePos())
-            e.accept()
+            self._finish_link(event.scenePos())
+            event.accept()
             return
-        if e.button() == Qt.MouseButton.LeftButton and e.modifiers() & Qt.KeyboardModifier.ShiftModifier:
-            if n := self.node_at(e.scenePos()):
-                self.start_link(n.sid, click_mode=False)
-                e.accept()
+        if event.button() == Qt.MouseButton.LeftButton and event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+            if node := self.node_at(event.scenePos()):
+                self.start_link(node.system_id, click_mode=False)
+                event.accept()
                 return
-        super().mousePressEvent(e)
+        super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, e):
+    def mouseMoveEvent(self, event) -> None:
+        """Move the free end of the rubber band, snapping to a node under the cursor."""
         if self._link_from is not None:
-            dst = self.node_at(e.scenePos())
-            end = dst.center() if dst and dst is not self._link_from else e.scenePos()
+            target = self.node_at(event.scenePos())
+            end = target.center() if target and target is not self._link_from else event.scenePos()
             self._link_line.setLine(QLineF(self._link_from.center(), end))
-            e.accept()
+            event.accept()
             return
-        super().mouseMoveEvent(e)
+        super().mouseMoveEvent(event)
 
-    def mouseReleaseEvent(self, e):
+    def mouseReleaseEvent(self, event) -> None:
+        """Finish a dragged link on release."""
         if self._link_from is not None and not self._link_click:
-            self._finish_link(e.scenePos())
-            e.accept()
+            self._finish_link(event.scenePos())
+            event.accept()
             return
-        super().mouseReleaseEvent(e)
+        super().mouseReleaseEvent(event)
 
-    def keyPressEvent(self, e):
-        if e.key() == Qt.Key.Key_Escape and self._link_from is not None:
+    def keyPressEvent(self, event) -> None:
+        """Cancel drawing a link on Escape."""
+        if event.key() == Qt.Key.Key_Escape and self._link_from is not None:
             self.cancel_link()
             return
-        super().keyPressEvent(e)
+        super().keyPressEvent(event)
 
-    def mouseDoubleClickEvent(self, e):
-        item = self.itemAt(e.scenePos(), self.views()[0].transform()) if self.views() else None
+    def mouseDoubleClickEvent(self, event) -> None:
+        """Emit edgeActivated when a connection is double-clicked."""
+        item = self._item_at(event.scenePos())
         if isinstance(item, ConnectionEdge):
-            self.edgeActivated.emit(item.conn.id)
+            self.edgeActivated.emit(item.connection.id)
             return
-        super().mouseDoubleClickEvent(e)
+        super().mouseDoubleClickEvent(event)
 
-    def chain_rect(self, sid: int | None = None) -> QRectF:
-        items = list(self.nodes.values())
-        if sid and sid in self.nodes:
-            from ..mapping.chain import component, wh_adjacency
-            members = component(wh_adjacency(self.state.store), sid)
-            items = [self.nodes[m] for m in members if m in self.nodes]
-        r = QRectF()
-        for n in items:
-            r = r.united(n.sceneBoundingRect())
-        return r
+    def chain_rect(self, system_id: int | None = None) -> QRectF:
+        """Return the bounding rectangle of the whole map, or of the chain a system belongs to.
+
+        Args:
+            system_id: A system whose connected chain to measure, or None/0 for all nodes.
+
+        Returns:
+            The united scene rectangle (null when there are no nodes).
+        """
+        require_integer(system_id, "system_id", optional=True)
+        nodes = list(self.nodes.values())
+        if system_id and system_id in self.nodes:
+            members = connected_component(wormhole_adjacency(self.state.store), system_id)
+            nodes = [self.nodes[member] for member in members if member in self.nodes]
+        rect = QRectF()
+        for node in nodes:
+            rect = rect.united(node.sceneBoundingRect())
+        return rect
 
 
 class MapView(QGraphicsView):
+    """The zoomable view onto a MapScene with a grid background."""
+
     zoomChanged = Signal(float)
 
-    def __init__(self, scene: MapScene):
+    def __init__(self, scene: MapScene) -> None:
+        """Create the view for a scene."""
         super().__init__(scene)
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setRenderHint(QPainter.RenderHint.TextAntialiasing)
@@ -592,28 +793,57 @@ class MapView(QGraphicsView):
         self.setStyleSheet("background: transparent; border: 0;")
 
     def zoom(self) -> float:
+        """Return the current zoom factor (1.0 = 100 %)."""
         return self.transform().m11()
 
-    def set_zoom(self, z: float):
-        z = max(0.2, min(2.5, z))
-        f = z / self.zoom()
-        self.scale(f, f)
+    def set_zoom(self, factor: float) -> float:
+        """Zoom to a factor, clamped to 0.2 .. 2.5, and emit zoomChanged.
+
+        Args:
+            factor: The wanted zoom factor.
+
+        Returns:
+            The zoom factor that was applied.
+
+        Raises:
+            TypeError: If ``factor`` is not a number.
+        """
+        require_number(factor, "factor")
+        factor = max(MINIMUM_ZOOM, min(MAXIMUM_ZOOM, factor))
+        ratio = factor / self.zoom()
+        self.scale(ratio, ratio)
         self.zoomChanged.emit(self.zoom())
+        return self.zoom()
 
-    def wheelEvent(self, e):
-        self.set_zoom(self.zoom() * math.pow(1.0015, e.angleDelta().y()))
+    def wheelEvent(self, event) -> None:
+        """Zoom with the mouse wheel."""
+        self.set_zoom(self.zoom() * math.pow(1.0015, event.angleDelta().y()))
 
-    def drawBackground(self, p: QPainter, rect: QRectF):
-        if self.zoom() < 0.2:
-            p.fillRect(rect, color("bg-0"))
+    def drawBackground(self, painter: QPainter, rect: QRectF) -> None:
+        """Draw the grid (only the node-height lines when zoomed far out)."""
+        if self.zoom() < MINIMUM_ZOOM:
+            painter.fillRect(rect, color("bg-0"))
         else:
             # minor lines would be < 9px apart below 0.45: show only the node-height lines then
-            P.draw_line_grid(p, rect, GRID, 3, minor=self.zoom() >= 0.45)
+            painting.draw_line_grid(painter, rect, GRID, 3, minor=self.zoom() >= 0.45)
 
-    def fit(self, rect: QRectF):
+    def fit(self, rect: QRectF) -> bool:
+        """Zoom to show a rectangle (never beyond 100 %).
+
+        Args:
+            rect: The scene rectangle to show.
+
+        Returns:
+            False if the rectangle is empty and nothing changed.
+
+        Raises:
+            TypeError: If ``rect`` is not a QRectF.
+        """
+        require_type(rect, QRectF, "rect")
         if rect.isNull():
-            return
+            return False
         self.fitInView(rect.adjusted(-80, -60, 80, 60), Qt.AspectRatioMode.KeepAspectRatio)
         if self.zoom() > 1.2:
             self.set_zoom(1.0)
         self.zoomChanged.emit(self.zoom())
+        return True

@@ -1,0 +1,271 @@
+"""Map store: rows, validation, lifetime clock, migrations, undo snapshots and map stats."""
+import sqlite3
+
+import pytest
+
+from conftest import HOME, UNIVERSE, pick_system
+from homebound.mapdb.store import (LIFETIME_4H, Connection, Signature, Store, ZkillStats, map_stats,
+                                   utc_now_iso)
+
+JITA = UNIVERSE.by_name("Jita").id
+
+
+@pytest.fixture
+def store() -> Store:
+    """An empty in-memory map with home on it."""
+    store = Store(":memory:")
+    store.add_system(HOME.id)
+    return store
+
+
+def test_store_needs_a_path() -> None:
+    """The path must be a string or a Path."""
+    with pytest.raises(TypeError):
+        Store(42)
+
+
+def test_store_creates_the_folder_of_a_new_file(tmp_path) -> None:
+    """A map file in a folder that doesn't exist yet is created with the folder."""
+    store = Store(tmp_path / "maps" / "new.db")
+    assert (tmp_path / "maps" / "new.db").exists()
+    store.close()
+
+
+def test_systems_add_update_remove(store) -> None:
+    """Systems can be added once, changed and removed; children lose their parent."""
+    child = store.add_system(JITA, parent_id=HOME.id, hole_index=2, x=10.0)
+    assert (child.parent_id, child.hole_index, child.x) == (HOME.id, 2, 10.0)
+    assert store.add_system(JITA, x=99.0).x == 10.0          # existing system stays as it is
+    assert [s.id for s in store.children(HOME.id)] == [JITA]
+    assert store.update_system(JITA, custom_name="Trade") and store.system(JITA).custom_name == "Trade"
+    assert store.update_system(JITA) is False
+    assert store.remove_system(HOME.id) and store.system(JITA).parent_id is None
+    assert store.remove_system(HOME.id) is False
+    assert store.system(HOME.id) is None and not store.has_system(HOME.id)
+    assert [s.id for s in store.systems()] == [JITA]
+
+
+def test_system_validation(store) -> None:
+    """IDs must be positive integers and column names must exist."""
+    for bad in ("J161940", None, 0, True):
+        with pytest.raises((TypeError, ValueError)):
+            store.system(bad)
+    with pytest.raises(ValueError):
+        store.add_system(JITA, colour="red")
+    with pytest.raises(ValueError):
+        store.update_system(HOME.id, id=5)
+
+
+def test_connections_are_stored_with_sorted_ends(store) -> None:
+    """Ends are stored low/high, with each signature staying on its own side."""
+    store.add_system(JITA)
+    high, low = max(HOME.id, JITA), min(HOME.id, JITA)
+    connection = store.add_connection(high, low, signature_a="AAA-111", signature_b="BBB-222")
+    assert (connection.system_a, connection.system_b) == (low, high)
+    assert connection.signature_on(high) == "AAA-111" and connection.signature_on(low) == "BBB-222"
+    assert connection.other_end(low) == high and connection.other_end(high) == low
+    assert store.add_connection(low, high).id == connection.id
+    assert store.connection_by_id(connection.id) == connection
+    assert store.connections_of_system(low) == [connection] and store.connections() == [connection]
+    with pytest.raises(ValueError):
+        connection.other_end(1)
+    with pytest.raises(ValueError):
+        connection.signature_on(1)
+    assert store.remove_connection(connection.id) and not store.remove_connection(connection.id)
+
+
+def test_connection_validation(store) -> None:
+    """A connection needs two different systems and known columns and states."""
+    store.add_system(JITA)
+    with pytest.raises(ValueError):
+        store.add_connection(JITA, JITA)
+    with pytest.raises(ValueError):
+        store.add_connection(HOME.id, JITA, colour="red")
+    connection = store.add_connection(HOME.id, JITA)
+    with pytest.raises(ValueError):
+        store.update_connection(connection.id, lifetime=7)
+    with pytest.raises(ValueError):
+        store.update_connection(connection.id, mass="heavy")
+    with pytest.raises(ValueError):
+        store.update_connection(connection.id, system_a=1)
+    with pytest.raises(TypeError):
+        store.connection_by_id("1")
+
+
+def test_lifetime_clock_only_restarts_on_a_change(store) -> None:
+    """Saving the same lifetime keeps the clock; stable clears it."""
+    store.add_system(JITA)
+    connection = store.add_connection(HOME.id, JITA)
+    store.update_connection(connection.id, lifetime=LIFETIME_4H, lifetime_set_at="2026-10-30T12:00:00+00:00")
+    store.update_connection(connection.id, lifetime=LIFETIME_4H)
+    assert store.connection_by_id(connection.id).lifetime_set_at == "2026-10-30T12:00:00+00:00"
+    store.update_connection(connection.id, lifetime=0)
+    assert store.connection_by_id(connection.id).lifetime_set_at is None
+
+
+def test_set_connection_signature(store) -> None:
+    """The signature goes to the side it is in; a missing connection reports False."""
+    store.add_system(JITA)
+    connection = store.add_connection(HOME.id, JITA)
+    assert store.set_connection_signature(connection.id, JITA, "ABC-123")
+    assert store.connection_by_id(connection.id).signature_on(JITA) == "ABC-123"
+    assert store.set_connection_signature(connection.id, JITA, None)
+    assert store.connection_by_id(connection.id).signature_on(JITA) is None
+    assert store.set_connection_signature(999, JITA, "ABC-123") is False
+    with pytest.raises(ValueError):
+        store.set_connection_signature(connection.id, 30000001, "ABC-123")
+
+
+def test_signatures_upsert_update_delete(store) -> None:
+    """Signatures keep their creation time on upsert, and lifetime works as on connections."""
+    stored = store.upsert_signature(Signature(HOME.id, "ABC-123", "wormhole", name="Unstable Wormhole"))
+    created = stored.created_at
+    again = store.upsert_signature(Signature(HOME.id, "ABC-123", "wormhole", type="H296", created_at=""))
+    assert again.type == "H296" and again.created_at == created
+    assert store.update_signature(HOME.id, "ABC-123", lifetime=LIFETIME_4H)
+    assert store.signature(HOME.id, "ABC-123").lifetime_set_at
+    assert store.update_signature(HOME.id, "ABC-123", lifetime=0)
+    assert store.signature(HOME.id, "ABC-123").lifetime_set_at is None
+    store.upsert_signature(Signature(HOME.id, "DEF-456"))
+    assert [s.signature_id for s in store.signatures(HOME.id)] == ["ABC-123", "DEF-456"]
+    assert store.delete_signatures(HOME.id, ["ABC-123", "NOP-000"]) == 1
+    assert store.signature(HOME.id, "ABC-123") is None
+
+
+def test_signature_validation(store) -> None:
+    """Signatures need an ID, known columns and a valid state."""
+    with pytest.raises(TypeError):
+        store.upsert_signature({"signature_id": "ABC-123"})
+    with pytest.raises(ValueError):
+        store.upsert_signature(Signature(HOME.id, ""))
+    with pytest.raises(ValueError):
+        store.upsert_signature(Signature(HOME.id, "ABC-123", mass="heavy"))
+    with pytest.raises(ValueError):
+        store.update_signature(HOME.id, "ABC-123", colour="red")
+    with pytest.raises(TypeError):
+        store.delete_signatures(HOME.id, "ABC-123")
+    with pytest.raises(TypeError):
+        store.delete_signatures(HOME.id, [123])
+
+
+def test_characters_remember_the_previous_system(store) -> None:
+    """Setting a location returns where the character was."""
+    assert store.set_character(7, "Pilot", HOME.id, utc_now_iso()) is None
+    assert store.set_character(7, "Pilot", JITA, utc_now_iso()) == HOME.id
+    row = store.characters()[0]
+    assert (row["system_id"], row["previous_system_id"]) == (JITA, HOME.id)
+    assert store.set_character(7, "Pilot", None, utc_now_iso()) == JITA
+    with pytest.raises(ValueError):
+        store.set_character(7, "", JITA, utc_now_iso())
+
+
+def test_zkill_stats_round_trip(store) -> None:
+    """Stats are stored per system and replaced on the next fetch."""
+    stats = ZkillStats(HOME.id, 1, 5, 0, None, utc_now_iso())
+    assert store.set_zkill_stats(stats) == stats
+    assert store.zkill_stats(HOME.id) == stats
+    assert store.zkill_stats(JITA) is None
+    with pytest.raises(TypeError):
+        store.set_zkill_stats({"system_id": HOME.id})
+
+
+def test_key_values(store) -> None:
+    """Per-map settings default when missing; keys must not be blank."""
+    assert store.get_value("signature_sort", "x") == "x"
+    assert store.put_value("signature_sort", "[1, false]") == "[1, false]"
+    assert store.get_value("signature_sort") == "[1, false]"
+    with pytest.raises(ValueError):
+        store.put_value(" ", "x")
+    with pytest.raises(TypeError):
+        store.put_value("key", 5)
+
+
+def test_snapshot_restore_undoes_a_removal(store) -> None:
+    """Restoring puts back removed systems and connections and keeps what was added since."""
+    c5, c3 = pick_system("C5", exclude=(HOME.id,)), pick_system("C3")
+    store.add_system(c5.id, parent_id=HOME.id, hole_index=1)
+    store.add_system(c3.id, parent_id=c5.id, hole_index=2)
+    store.add_connection(HOME.id, c5.id)
+    store.add_connection(c5.id, c3.id)
+    store.upsert_signature(Signature(c5.id, "ABC-123"))
+    snapshot = store.snapshot()
+    store.remove_system(c5.id)           # cascades both connections and the sig, orphans c3
+    assert store.connections() == [] and store.system(c3.id).parent_id is None
+    store.add_system(JITA)
+    assert store.restore(snapshot) > 0
+    assert store.has_system(c5.id) and store.has_system(JITA)
+    assert store.system(c3.id).parent_id == c5.id
+    assert len(store.connections()) == 2 and store.signature(c5.id, "ABC-123")
+    with pytest.raises(ValueError):
+        store.restore({"characters": []})
+    with pytest.raises(TypeError):
+        store.restore([])
+
+
+def test_old_map_files_are_migrated(tmp_path) -> None:
+    """A map file with the old abbreviated names gets the new ones, keeping its rows."""
+    path = tmp_path / "old.db"
+    database = sqlite3.connect(path)
+    database.executescript("""
+        CREATE TABLE systems (id INTEGER PRIMARY KEY, parent_id INTEGER, hole_index INTEGER, level_index INTEGER,
+            custom_name TEXT, x REAL, y REAL, owner_ticker TEXT, owner_slot INTEGER, owner_note TEXT,
+            notes TEXT DEFAULT '', added_at TEXT NOT NULL, scanned_at TEXT, pinned INTEGER DEFAULT 0);
+        CREATE TABLE connections (id INTEGER PRIMARY KEY AUTOINCREMENT, a INTEGER, b INTEGER, sig_a TEXT,
+            sig_b TEXT, wh_type TEXT, mass TEXT DEFAULT 'fresh', eol INTEGER DEFAULT 0, eol_at TEXT,
+            frig INTEGER DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE (a, b));
+        CREATE TABLE signatures (system_id INTEGER NOT NULL, sig_id TEXT NOT NULL, grp TEXT, type TEXT,
+            name TEXT, scan_pct REAL, hole_index INTEGER, state TEXT DEFAULT '', created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL, PRIMARY KEY (system_id, sig_id));
+        CREATE TABLE characters (id INTEGER PRIMARY KEY, name TEXT, system_id INTEGER, prev_system_id INTEGER,
+            seen_at TEXT);
+        CREATE TABLE zkill (system_id INTEGER PRIMARY KEY, kills_1h INTEGER, kills_24h INTEGER, pods_1h INTEGER,
+            last_kill_at TEXT, fetched_at TEXT NOT NULL);
+        CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT);
+        INSERT INTO systems (id, added_at) VALUES (1, 't'), (2, 't');
+        INSERT INTO connections (a, b, sig_a, wh_type, eol, frig, created_at, updated_at)
+            VALUES (1, 2, 'ABC-123', 'H296', 1, 1, 't', 't');
+        INSERT INTO signatures VALUES (1, 'ABC-123', 'wormhole', NULL, NULL, 100, NULL, '', 't', 't');
+        INSERT INTO kv VALUES ('sig_sort', '[2, true]');
+    """)
+    database.commit()
+    database.close()
+    store = Store(path)
+    signature = store.signature(1, "ABC-123")
+    assert (signature.group, signature.scan_percent, signature.kind, signature.lifetime) == ("wormhole", 100, "sig", 0)
+    connection = store.connection(1, 2)
+    assert (connection.signature_a, connection.wormhole_type, connection.lifetime, connection.frigate_only,
+            connection.confirmed) == ("ABC-123", "H296", 1, 1, 1)
+    assert store.get_value("signature_sort") == "[2, true]"
+    assert store.system(1).confirmed == 1
+    assert store._migrate() == 0          # a second run has nothing left to do
+    store.close()
+
+
+def test_map_stats(tmp_path, store) -> None:
+    """Stats count rows of a map file without opening it as a store; missing files give zeros."""
+    assert map_stats(tmp_path / "missing.db") == {"systems": 0, "signatures": 0, "last": None}
+    path = tmp_path / "map.db"
+    file_store = Store(path)
+    file_store.add_system(HOME.id)
+    file_store.upsert_signature(Signature(HOME.id, "ABC-123"))
+    file_store.close()
+    stats = map_stats(path)
+    assert stats["systems"] == 1 and stats["signatures"] == 1 and stats["last"]
+    (tmp_path / "broken.db").write_text("not a database")
+    assert map_stats(tmp_path / "broken.db")["systems"] == 0
+    with pytest.raises(TypeError):
+        map_stats(None)
+
+
+def test_connection_dataclass_defaults() -> None:
+    """A bare connection is fresh, stable and confirmed."""
+    connection = Connection(1, 2, 3)
+    assert (connection.mass, connection.lifetime, connection.confirmed) == ("fresh", 0, 1)
+
+
+def test_store_is_a_context_manager(tmp_path) -> None:
+    """Leaving the ``with`` block closes the connection."""
+    with Store(tmp_path / "map.db") as opened:
+        opened.add_system(HOME.id)
+    with pytest.raises(sqlite3.ProgrammingError):
+        opened.system(HOME.id)

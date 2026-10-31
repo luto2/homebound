@@ -4,27 +4,31 @@ import sys
 
 
 def main() -> int:
+    """Start the app and run the Qt event loop.
+
+    Returns:
+        The exit code: 1 if the static universe data is missing or outdated, else Qt's exit code.
+    """
     # The overlay needs always-on-top, click-through and move(); those work reliably on KWin via XWayland.
     os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
     from PySide6.QtWidgets import QApplication
 
     from .settings import Settings
     from .theme.qss import apply_theme
-    from .universe.db import Universe
+    from .universe.db import BUILD_COMMAND, DEFAULT_PATH, Universe, UniverseDataError
 
-    app = QApplication(sys.argv)
-    app.setApplicationName("homebound")
-    app.setApplicationDisplayName("Homebound")
-    app.setDesktopFileName("homebound")
-    app.setQuitOnLastWindowClosed(False)
-    apply_theme(app)
+    application = QApplication.instance() or QApplication(sys.argv)
+    application.setApplicationName("homebound")
+    application.setApplicationDisplayName("Homebound")
+    application.setDesktopFileName("homebound")
+    application.setQuitOnLastWindowClosed(False)
+    apply_theme(application)
 
     try:
-        uni = Universe()
-    except FileNotFoundError:
+        universe = Universe()
+    except UniverseDataError:
         from .ui.dialogs import StartupErrorDialog
-        from .universe.db import DEFAULT_PATH
-        StartupErrorDialog(DEFAULT_PATH, "uv run python -m homebound.universe.build_static").exec()
+        StartupErrorDialog(DEFAULT_PATH, BUILD_COMMAND).exec()
         return 1
 
     from .ui.focus import FocusTracker
@@ -32,17 +36,17 @@ def main() -> int:
     from .ui.state import AppState
 
     settings = Settings.load()
-    state = AppState(uni, settings)
+    state = AppState(universe, settings)
     focus = FocusTracker()
-    win = MapWindow(state, focus)
+    window = MapWindow(state, focus)
     state.start()
     focus.start()
-    win.show()
-    if not settings.log_dir:
-        win.open_settings(0)
-    rc = app.exec()
+    window.show()
+    if not settings.log_directory:
+        window.open_settings(0)
+    exit_code = application.exec()
     state.stop()
-    return rc
+    return exit_code
 
 
 if __name__ == "__main__":

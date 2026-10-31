@@ -20,67 +20,130 @@ import sys
 import time
 import urllib.request
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path
+
+from ..validation import require_integer, require_number, require_text, require_type
 
 DATA = Path(__file__).resolve().parents[2] / "data"
 CACHE = DATA / "cache"
-OUT = DATA / "universe.sqlite"
+OUTPUT = DATA / "universe.sqlite"
 RESOLVED = DATA / "statics_resolved.json"
-UA = {"User-Agent": "homebound/0.1 (personal offline mapper; build script)"}
+HEADERS = {"User-Agent": "homebound/0.1 (personal offline mapper; build script)"}
+SCHEMA_VERSION = "2"         # bump together with db.SCHEMA_VERSION
 
 SDE_URL = "https://developers.eveonline.com/static-data/eve-online-static-data-latest-jsonl.zip"
-WANDERER = "https://raw.githubusercontent.com/wanderer-industries/wanderer/main/priv/repo/data/"
-ANOIK = "https://anoik.is/static/static.json"
-WHTYPE = "https://whtype.info/js/wormholes.js"
+WANDERER_URL = "https://raw.githubusercontent.com/wanderer-industries/wanderer/main/priv/repo/data/"
+ANOIK_URL = "https://anoik.is/static/static.json"
+WHTYPE_URL = "https://whtype.info/js/wormholes.js"
 # whtype.info "spawn_in" names -> our class codes (Jove Observatories / Drone Regions are k-space areas
 # that a few types also spawn in; the HS/LS/NS entries already cover those systems)
-WHTYPE_CLASS = {**{f"Class {i}": f"C{i}" for i in range(1, 7)}, "HighSec": "HS", "LowSec": "LS",
+WHTYPE_CLASS = {**{f"Class {number}": f"C{number}" for number in range(1, 7)}, "HighSec": "HS", "LowSec": "LS",
                 "NullSec": "NS", "Class 12 - Thera": "TH", "Class 13 - Shattered": "C13",
                 "Pochven ▲ Trig space": "PV", "Drifter wormholes": "DR"}
-SDE_FILES = ["mapSolarSystems.jsonl", "mapStargates.jsonl", "mapSecondarySuns.jsonl",
-             "mapRegions.jsonl", "mapConstellations.jsonl"]
 
 # secondary sun typeID -> effect key (matches theme/effects/effect-<key>.svg)
 SUN_EFFECT = {30574: "magnetar", 30575: "blackhole", 30576: "redgiant", 30577: "pulsar",
               30669: "wolfrayet", 30670: "cataclysmic"}
-WH_CLASS_LABEL = {1: "C1", 2: "C2", 3: "C3", 4: "C4", 5: "C5", 6: "C6", 12: "TH", 13: "C13",
-                  14: "DR", 15: "DR", 16: "DR", 17: "DR", 18: "DR", 25: "PV"}
-DEST_LABEL = {"c1": "C1", "c2": "C2", "c3": "C3", "c4": "C4", "c5": "C5", "c6": "C6",
-              "thera": "TH", "c13": "C13", "hs": "HS", "ls": "LS", "ns": "NS", "pochven": "PV",
-              "barbican": "DR", "conflux": "DR", "redoubt": "DR", "sentinel": "DR", "vidette": "DR",
-              "drifter": "DR"}
+WORMHOLE_CLASS_LABEL = {1: "C1", 2: "C2", 3: "C3", 4: "C4", 5: "C5", 6: "C6", 12: "TH", 13: "C13",
+                        14: "DR", 15: "DR", 16: "DR", 17: "DR", 18: "DR", 25: "PV"}
+ABYSSAL_CLASSES = (19, 20, 21, 22, 23)
+DESTINATION_LABEL = {"c1": "C1", "c2": "C2", "c3": "C3", "c4": "C4", "c5": "C5", "c6": "C6",
+                     "thera": "TH", "c13": "C13", "hs": "HS", "ls": "LS", "ns": "NS", "pochven": "PV",
+                     "barbican": "DR", "conflux": "DR", "redoubt": "DR", "sentinel": "DR", "vidette": "DR",
+                     "drifter": "DR"}
+
+SCHEMA = """
+    CREATE TABLE systems (id INTEGER PRIMARY KEY, name TEXT UNIQUE, system_class TEXT, wormhole_class_id INTEGER,
+                          security REAL, region TEXT, constellation TEXT, effect TEXT, wormhole_space INTEGER);
+    CREATE TABLE gates (system_a INTEGER, system_b INTEGER, PRIMARY KEY (system_a, system_b));
+    CREATE TABLE statics (system_id INTEGER, wormhole_type TEXT, PRIMARY KEY (system_id, wormhole_type));
+    CREATE TABLE wormhole_types (name TEXT PRIMARY KEY, destinations TEXT, lifetime_hours REAL, total_mass INTEGER,
+                                 max_jump_mass INTEGER, mass_regeneration INTEGER, is_static INTEGER,
+                                 spawns_in TEXT,      -- classes it can spawn in (Wanderer), e.g. 'C5,C6'
+                                 wanders_into TEXT);  -- classes it can wander into (whtype.info), NULL = no data
+    CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+    CREATE INDEX systems_name ON systems (name COLLATE NOCASE);
+    CREATE INDEX gates_b ON gates (system_b);
+"""
 
 
-def fetch(url: str, dest: Path, refresh: bool) -> Path:
-    if dest.exists() and not refresh:
-        return dest
+def fetch(url: str, destination: Path, refresh: bool) -> Path:
+    """Download a file into the cache unless it is already there.
+
+    Args:
+        url: Where to download from.
+        destination: The cache file.
+        refresh: Download even if the file exists.
+
+    Returns:
+        ``destination``.
+    """
+    require_text(url, "url")
+    require_type(destination, Path, "destination")
+    if destination.exists() and not refresh:
+        return destination
     print(f"  downloading {url}", file=sys.stderr)
-    with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=600) as r:
-        dest.write_bytes(r.read())
-    return dest
+    with urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=600) as response:
+        destination.write_bytes(response.read())
+    return destination
 
 
-def jsonl(z: zipfile.ZipFile, name: str):
-    with z.open(name) as f:
-        for line in io.TextIOWrapper(f, encoding="utf-8"):
+def json_lines(archive: zipfile.ZipFile, name: str) -> Iterator[dict]:
+    """Yield the records of one JSONL file inside the SDE zip, skipping blank lines.
+
+    Args:
+        archive: The opened SDE zip.
+        name: The member name, e.g. ``mapSolarSystems.jsonl``.
+
+    Returns:
+        An iterator over the decoded records.
+    """
+    require_type(archive, zipfile.ZipFile, "archive")
+    require_text(name, "name")
+    return _read_json_lines(archive, name)
+
+
+def _read_json_lines(archive: zipfile.ZipFile, name: str) -> Iterator[dict]:
+    """Yield the records of one JSONL member (the lazy half of ``json_lines``)."""
+    with archive.open(name) as member:
+        for line in io.TextIOWrapper(member, encoding="utf-8"):
             if line.strip():
                 yield json.loads(line)
 
 
-def whtype_wander(js: str) -> dict[str, list[str]]:
-    """{type: classes it can wander into} from whtype.info's WH_ENTRIES (only 'Wandering' respawns;
-    a static-only type is never found outside the systems that have it as a static)."""
-    out = {}
-    for m in re.finditer(r"wormhole:'(\w+)',\s*respawn:\[([^\]]*)\],\s*spawn_in:\[([^\]]*)\]", js):
-        name, respawn, spawn = m.groups()
+def whtype_wander(script: str) -> dict[str, list[str]]:
+    """Read where each type can wander from whtype.info's ``WH_ENTRIES``.
+
+    Only types that respawn as "Wandering" can be found outside the systems that have them as a
+    static, so a static-only type gets an empty list.
+
+    Args:
+        script: The text of ``wormholes.js``.
+
+    Returns:
+        ``{type code: [class, ...]}``.
+    """
+    require_type(script, str, "script")
+    wander: dict[str, list[str]] = {}
+    for match in re.finditer(r"wormhole:'(\w+)',\s*respawn:\[([^\]]*)\],\s*spawn_in:\[([^\]]*)\]", script):
+        name, respawn, spawn = match.groups()
         classes = re.findall(r"'([^']*)'", spawn)
-        out[name] = sorted({WHTYPE_CLASS[c] for c in classes if c in WHTYPE_CLASS}) if "Wandering" in respawn else []
-    return out
+        wander[name] = sorted({WHTYPE_CLASS[code] for code in classes if code in WHTYPE_CLASS}) if "Wandering" in respawn else []
+    return wander
 
 
-def kspace_label(sec: float) -> str:
-    # The client shows security rounded to one decimal; >= 0.5 shown is high-sec.
-    shown = round(sec, 1) if sec >= 0 else sec
+def known_space_label(security: float) -> str:
+    """Return HS, LS or NS for a security status, rounded the way the client shows it.
+
+    Args:
+        security: The true security status.
+
+    Returns:
+        ``"HS"`` (shown as 0.5 or more), ``"LS"`` (above 0.0) or ``"NS"``.
+    """
+    require_number(security, "security", -1.0, 1.0)
+    shown = round(security, 1) if security >= 0 else security
     if shown >= 0.45:
         return "HS"
     if shown > 0.0:
@@ -89,128 +152,175 @@ def kspace_label(sec: float) -> str:
 
 
 def zkill_statics(system_id: int) -> list[str] | None:
+    """Read the statics of a system from its zKillboard page.
+
+    Args:
+        system_id: The solar system ID.
+
+    Returns:
+        The sorted static codes, or None if the page has no statics line.
+    """
+    require_integer(system_id, "system_id", minimum=1)
     url = f"https://zkillboard.com/system/{system_id}/"
-    t = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30).read().decode("utf-8", "replace")
-    txt = html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", t)))
-    m = re.search(r"Statics:(.*?)(Alltime|$)", txt)
-    if not m:
+    page = urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=30).read()
+    text = html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page.decode("utf-8", "replace"))))
+    match = re.search(r"Statics:(.*?)(Alltime|$)", text)
+    if not match:
         return None
-    return sorted(re.findall(r"\(([A-Z]\d{3})\)", m.group(1)))
+    return sorted(re.findall(r"\(([A-Z]\d{3})\)", match.group(1)))
 
 
 def resolve_statics(known: dict[int, str], wanderer: dict[int, list], anoik: dict[int, list]) -> dict[int, list[str]]:
-    """Keyed by solarSystemID (sources disagree on Drifter system names)."""
+    """Merge the two statics sources, asking zKill (once, then pinned) where they disagree.
+
+    Args:
+        known: ``{system_id: name}`` of every system in the SDE.
+        wanderer: Statics per system from Wanderer.
+        anoik: Statics per system from anoik.is.
+
+    Returns:
+        ``{system_id: [static code, ...]}``, keyed by ID because the sources disagree on Drifter
+        system names.
+    """
+    for argument, name in ((known, "known"), (wanderer, "wanderer"), (anoik, "anoik")):
+        require_type(argument, dict, name)
     pinned = json.loads(RESOLVED.read_text()) if RESOLVED.exists() else {}
-    out: dict[int, list[str]] = {}
+    statics: dict[int, list[str]] = {}
     disputed = []
-    for sid in set(wanderer) | set(anoik):
-        if sid not in known:
+    for system_id in set(wanderer) | set(anoik):
+        if system_id not in known:
             continue
-        w, a = wanderer.get(sid), anoik.get(sid)
-        if w is not None and a is not None and w != a:
-            disputed.append(sid)
+        from_wanderer, from_anoik = wanderer.get(system_id), anoik.get(system_id)
+        if from_wanderer is not None and from_anoik is not None and from_wanderer != from_anoik:
+            disputed.append(system_id)
         else:
-            out[sid] = w if w is not None else a
-    for sid in sorted(disputed):
-        name = known[sid]
+            statics[system_id] = from_wanderer if from_wanderer is not None else from_anoik
+    for system_id in sorted(disputed):
+        name = known[system_id]
         if name in pinned:
-            out[sid] = pinned[name]["statics"]
+            statics[system_id] = pinned[name]["statics"]
             continue
-        print(f"  statics differ for {name}: wanderer={wanderer[sid]} anoik={anoik[sid]} -> asking zKill",
+        print(f"  statics differ for {name}: wanderer={wanderer[system_id]} anoik={anoik[system_id]} -> asking zKill",
               file=sys.stderr)
-        z = zkill_statics(sid)
+        from_zkill = zkill_statics(system_id)
         time.sleep(1.5)
-        chosen = z if z is not None else sorted(set(wanderer[sid]) | set(anoik[sid]))
-        pinned[name] = {"statics": chosen, "wanderer": wanderer[sid], "anoik": anoik[sid],
-                        "source": "zkill" if z is not None else "union"}
-        out[sid] = chosen
+        chosen = from_zkill if from_zkill is not None else sorted(set(wanderer[system_id]) | set(anoik[system_id]))
+        pinned[name] = {"statics": chosen, "wanderer": wanderer[system_id], "anoik": anoik[system_id],
+                        "source": "zkill" if from_zkill is not None else "union"}
+        statics[system_id] = chosen
     RESOLVED.write_text(json.dumps(pinned, indent=1, sort_keys=True))
-    return out
+    return statics
 
 
-def build(refresh: bool = False) -> None:
+def whole_number(value: object) -> int | None:
+    """Return a number from the Wanderer data as an int, or None if it isn't one.
+
+    Args:
+        value: A number, a numeric string, or anything else.
+
+    Returns:
+        The value truncated to an int, or None.
+    """
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def build(refresh: bool = False) -> Path:
+    """Download the sources (unless cached) and write data/universe.sqlite.
+
+    Args:
+        refresh: Download every source again.
+
+    Returns:
+        The path of the written file.
+    """
+    require_type(refresh, bool, "refresh")
     CACHE.mkdir(parents=True, exist_ok=True)
     sde = fetch(SDE_URL, CACHE / "sde.zip", refresh)
-    whs = json.loads(fetch(WANDERER + "wormholeSystems.json", CACHE / "wormholeSystems.json", refresh).read_text())
-    wht = json.loads(fetch(WANDERER + "wormholes.json", CACHE / "wormholes.json", refresh).read_text())
-    anoik = json.loads(fetch(ANOIK, CACHE / "anoik.json", refresh).read_text())
-    wander = whtype_wander(fetch(WHTYPE, CACHE / "whtype-wormholes.js", refresh).read_text())
+    wanderer_systems = json.loads(fetch(WANDERER_URL + "wormholeSystems.json", CACHE / "wormholeSystems.json",
+                                        refresh).read_text())
+    wanderer_types = json.loads(fetch(WANDERER_URL + "wormholes.json", CACHE / "wormholes.json", refresh).read_text())
+    anoik = json.loads(fetch(ANOIK_URL, CACHE / "anoik.json", refresh).read_text())
+    wander = whtype_wander(fetch(WHTYPE_URL, CACHE / "whtype-wormholes.js", refresh).read_text())
 
-    z = zipfile.ZipFile(sde)
-    regions = {d["_key"]: d for d in jsonl(z, "mapRegions.jsonl")}
-    consts = {d["_key"]: d for d in jsonl(z, "mapConstellations.jsonl")}
-    effects = {d["solarSystemID"]: SUN_EFFECT.get(d["typeID"]) for d in jsonl(z, "mapSecondarySuns.jsonl")}
+    archive = zipfile.ZipFile(sde)
+    regions = {record["_key"]: record for record in json_lines(archive, "mapRegions.jsonl")}
+    constellations = {record["_key"]: record for record in json_lines(archive, "mapConstellations.jsonl")}
+    effects = {record["solarSystemID"]: SUN_EFFECT.get(record["typeID"]) for record in json_lines(archive, "mapSecondarySuns.jsonl")}
 
     rows = []
-    for d in jsonl(z, "mapSolarSystems.jsonl"):
-        sid = d["_key"]
-        wc = (d.get("wormholeClassID") or consts[d["constellationID"]].get("wormholeClassID")
-              or regions[d["regionID"]].get("wormholeClassID"))
-        if wc in (19, 20, 21, 22, 23):  # abyssal pockets
+    for record in json_lines(archive, "mapSolarSystems.jsonl"):
+        system_id = record["_key"]
+        constellation = constellations[record["constellationID"]]
+        region = regions[record["regionID"]]
+        wormhole_class = (record.get("wormholeClassID") or constellation.get("wormholeClassID")
+                          or region.get("wormholeClassID"))
+        if wormhole_class in ABYSSAL_CLASSES:
             continue
-        sec = float(d.get("securityStatus", 0.0))
-        label = WH_CLASS_LABEL.get(wc) or kspace_label(sec)
-        rows.append((sid, d["name"]["en"], label, wc, sec, regions[d["regionID"]]["name"]["en"],
-                     consts[d["constellationID"]]["name"]["en"], effects.get(sid),
+        security = float(record.get("securityStatus", 0.0))
+        label = WORMHOLE_CLASS_LABEL.get(wormhole_class) or known_space_label(security)
+        rows.append((system_id, record["name"]["en"], label, wormhole_class, security, region["name"]["en"],
+                     constellation["name"]["en"], effects.get(system_id),
                      1 if label not in ("HS", "LS", "NS", "PV") else 0))
-    names = {r[1]: r[0] for r in rows}
 
     gates = set()
-    for d in jsonl(z, "mapStargates.jsonl"):
-        a, b = d["solarSystemID"], d["destination"]["solarSystemID"]
-        gates.add((min(a, b), max(a, b)))
+    for record in json_lines(archive, "mapStargates.jsonl"):
+        system_a, system_b = record["solarSystemID"], record["destination"]["solarSystemID"]
+        gates.add((min(system_a, system_b), max(system_a, system_b)))
 
-    w_stat = {x["solarSystemID"]: sorted(x["statics"] or []) for x in whs}
-    a_stat = {v["solarSystemID"]: sorted(v.get("statics") or []) for v in anoik["systems"].values()
-              if "solarSystemID" in v}
-    statics = resolve_statics({r[0]: r[1] for r in rows}, w_stat, a_stat)
-
-    if OUT.exists():
-        OUT.unlink()
-    db = sqlite3.connect(OUT)
-    db.executescript("""
-        CREATE TABLE systems (id INTEGER PRIMARY KEY, name TEXT UNIQUE, class TEXT, wh_class_id INTEGER,
-                              security REAL, region TEXT, constellation TEXT, effect TEXT, wspace INTEGER);
-        CREATE TABLE gates (a INTEGER, b INTEGER, PRIMARY KEY (a, b));
-        CREATE TABLE statics (system_id INTEGER, wh_type TEXT, PRIMARY KEY (system_id, wh_type));
-        CREATE TABLE wh_types (name TEXT PRIMARY KEY, dest TEXT, lifetime_h REAL, total_mass INTEGER,
-                               max_jump_mass INTEGER, mass_regen INTEGER, is_static INTEGER,
-                               src TEXT,     -- classes it can spawn in (Wanderer), e.g. 'C5,C6'
-                               wander TEXT); -- classes it can wander into (whtype.info), NULL = no data
-        CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
-        CREATE INDEX systems_name ON systems (name COLLATE NOCASE);
-        CREATE INDEX gates_b ON gates (b);
-    """)
-    db.executemany("INSERT INTO systems VALUES (?,?,?,?,?,?,?,?,?)", rows)
-    db.executemany("INSERT INTO gates VALUES (?,?)", sorted(gates))
-    db.executemany("INSERT INTO statics VALUES (?,?)",
-                   [(sid, t) for sid, ts in statics.items() for t in ts])
-
-    def num(v):
-        try:
-            return int(float(v))
-        except (TypeError, ValueError):
-            return None
+    wanderer_statics = {record["solarSystemID"]: sorted(record["statics"] or []) for record in wanderer_systems}
+    anoik_statics = {entry["solarSystemID"]: sorted(entry.get("statics") or []) for entry in anoik["systems"].values()
+                     if "solarSystemID" in entry}
+    statics = resolve_statics({row[0]: row[1] for row in rows}, wanderer_statics, anoik_statics)
 
     types = []
-    for t in wht:
-        dests = sorted({DEST_LABEL.get(x, x.upper()) for x in (t["dest"] or [])})
-        srcs = sorted({DEST_LABEL.get(x, x.upper()) for x in (t.get("src") or [])})
-        types.append((t["name"], ",".join(dests) or None,
-                      float(t["lifetime"]) if t.get("lifetime") else None,
-                      num(t.get("total_mass")), num(t.get("max_mass_per_jump")), num(t.get("mass_regen")),
-                      1 if t.get("static") else 0, ",".join(srcs) or None,
-                      ",".join(wander[t["name"]]) if t["name"] in wander else None))
-    db.executemany("INSERT INTO wh_types VALUES (?,?,?,?,?,?,?,?,?)", types)
-    build_no = next(iter(jsonl(z, "_sde.jsonl")), {}).get("buildNumber") if "_sde.jsonl" in z.namelist() else None
-    db.executemany("INSERT INTO meta VALUES (?,?)", [("sde_build", str(build_no)), ("built", time.strftime("%F %T"))])
-    db.commit()
-    db.close()
-    print(f"wrote {OUT}: {len(rows)} systems, {len(gates)} gates, "
-          f"{sum(len(v) for v in statics.values())} statics, {len(types)} WH types", file=sys.stderr)
+    for record in wanderer_types:
+        destinations = sorted({DESTINATION_LABEL.get(x, x.upper()) for x in (record["dest"] or [])})
+        spawns_in = sorted({DESTINATION_LABEL.get(x, x.upper()) for x in (record.get("src") or [])})
+        types.append((record["name"], ",".join(destinations) or None,
+                      float(record["lifetime"]) if record.get("lifetime") else None,
+                      whole_number(record.get("total_mass")), whole_number(record.get("max_mass_per_jump")),
+                      whole_number(record.get("mass_regen")), 1 if record.get("static") else 0,
+                      ",".join(spawns_in) or None,
+                      ",".join(wander[record["name"]]) if record["name"] in wander else None))
+
+    if OUTPUT.exists():
+        OUTPUT.unlink()
+    database = sqlite3.connect(OUTPUT)
+    database.executescript(SCHEMA)
+    database.executemany("INSERT INTO systems VALUES (?,?,?,?,?,?,?,?,?)", rows)
+    database.executemany("INSERT INTO gates VALUES (?,?)", sorted(gates))
+    database.executemany("INSERT INTO statics VALUES (?,?)",
+                         [(system_id, code) for system_id, codes in statics.items() for code in codes])
+    database.executemany("INSERT INTO wormhole_types VALUES (?,?,?,?,?,?,?,?,?)", types)
+    build_number = (next(iter(json_lines(archive, "_sde.jsonl")), {}).get("buildNumber")
+                    if "_sde.jsonl" in archive.namelist() else None)
+    database.executemany("INSERT INTO meta VALUES (?,?)", [("sde_build", str(build_number)),
+                                                           ("built", time.strftime("%F %T")),
+                                                           ("schema_version", SCHEMA_VERSION)])
+    database.commit()
+    database.close()
+    print(f"wrote {OUTPUT}: {len(rows)} systems, {len(gates)} gates, "
+          f"{sum(len(codes) for codes in statics.values())} statics, {len(types)} WH types", file=sys.stderr)
+    return OUTPUT
+
+
+def main(arguments: list[str] | None = None) -> int:
+    """Command-line entry point.
+
+    Args:
+        arguments: The command-line arguments, or None for ``sys.argv``.
+
+    Returns:
+        The exit code, 0.
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--refresh", action="store_true", help="re-download sources")
+    build(parser.parse_args(arguments).refresh)
+    return 0
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--refresh", action="store_true", help="re-download sources")
-    build(ap.parse_args().refresh)
+    sys.exit(main())
