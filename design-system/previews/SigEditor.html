@@ -1,0 +1,87 @@
+<!-- @dsCard group="Feedback" height=1420 width=1380 subtitle="Signature editor: the five states, plus the type dropdown open" -->
+<!doctype html>
+<html data-theme="dark">
+<head><link rel="stylesheet" href="../tokens.css"><link rel="stylesheet" href="../components/bundle.css"><script src="../components/bundle.js"></script><meta charset="utf-8"><style>
+.grid { display: grid; grid-template-columns: repeat(3, 420px); gap: 24px 28px; align-items: start; }
+.st { display: flex; flex-direction: column; gap: 8px; }
+.st > .lm-caption b { color: var(--ink); font-weight: 600; text-transform: none; letter-spacing: 0; margin-left: 6px; font-size: 12px; }
+/* one type row: code · dest badge · size · lifetime · total mass (right) · STATIC. Same painter for the closed combo and the list. */
+.tr { height: 26px; display: grid; grid-template-columns: 48px 40px 24px 36px 1fr auto; align-items: center; gap: 4px; padding: 0 8px; font-size: 12px; }
+.tr .c { font-family: var(--font-mono); font-weight: 700; font-size: 13px; }
+.tr .z, .tr .h, .tr .m { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); }
+.tr .z { color: var(--ink); } .tr .z.s { color: var(--edge-frig); font-weight: 700; }
+.tr .m { text-align: right; }
+.tr .stc { font-size: 10px; font-weight: 800; letter-spacing: .06em; color: var(--accent); margin-left: 4px; }
+.tr .w { grid-column: 2 / -1; color: var(--ink-faint); }
+.tr.unk .w { grid-column: 1 / -1; color: var(--ink-muted); font-size: 13px; }
+.tr.all { color: var(--accent); } .tr.all .w { grid-column: 1 / -1; color: var(--accent); }
+.tr.on { background: var(--accent-dim); box-shadow: inset 2px 0 0 var(--accent); }
+.combo-row { height: 30px; padding: 0 0 0 0; border: 1px solid var(--line-2); border-radius: var(--radius-2); background: var(--bg-3); display: flex; align-items: center; }
+.combo-row .tr { flex: 1; padding: 0 4px 0 6px; }
+.combo-row::after { content: "▾"; color: var(--ink-muted); padding: 0 8px; }
+.combo-row.is-focus { border-color: var(--accent-hover); outline: 2px solid var(--accent); outline-offset: 1px; }
+.pop { width: 440px; background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--radius-3); box-shadow: var(--shadow-toast); overflow: hidden; padding: 4px 0; }
+.pop .tr.dim .c, .pop .tr.dim .z { color: var(--ink-faint); }
+.pop .ft { padding: 6px 10px; border-top: 1px solid var(--line-1); margin-top: 4px; font-size: 11px; color: var(--ink-faint); }
+.pop .sep { height: 1px; background: var(--line-1); margin: 4px 0; }
+</style></head>
+<body>
+<div class="grid" id="g"></div>
+<script>
+var LM = window.Homebound;
+/* types that can show up in Home (C2): statics first, then wanderers that spawn in C2 · [code, dest, size, life, total kt, static] */
+var T = {
+  O477: ['C3', 'L', '16h', '2 000', 1], B274: ['HS', 'L', '24h', '2 000', 1],
+  A009: ['C13', 'S', '4.5h', '500'], C008: ['C5', 'S', '4.5h', '1 000'], E004: ['C1', 'S', '4.5h', '1 000'], F135: ['TH', 'L', '16h', '750'], F216: ['PV', 'L', '12h', '1 000'],
+  J377: ['LS', 'M', '24h', '1 000'], L005: ['C2', 'S', '4.5h', '1 000'], Q003: ['NS', 'S', '4.5h', '1 000'],
+  V753: ['C6', 'XL', '24h', '3 300'], H296: ['C5', 'XL', '24h', '3 300'], D382: ['C2', 'L', '16h', '2 000']
+};
+function row(code, cls, dim) {
+  if (!code) return '<div class="tr unk ' + (cls || '') + '"><span class="w">Unknown type</span></div>';
+  if (code === 'K162') return '<div class="tr ' + (cls || '') + '"><span class="c">K162</span><span class="w">exit · opened from the other side</span></div>';
+  if (code === 'all') return '<div class="tr all"><span class="w">Show all types …</span></div>';
+  var t = T[code];
+  return '<div class="tr ' + (cls || '') + (dim ? ' dim' : '') + '"><span class="c">' + code + '</span><span>' + LM.cls(t[0]) + '</span><span class="z' + (t[1] === 'S' ? ' s' : '') + '">' + t[1] + '</span><span class="h">' + t[2] + '</span><span class="m">' + t[3] + ' kt</span>' + (t[4] ? '<span class="stc">STATIC</span>' : '<span></span>') + '</div>';
+}
+var life = LM.lifeSeg, mass = LM.massSeg, size = LM.sizeSeg;
+function cap(t) { return '<span class="lm-caption">' + t + '</span>'; }
+function field(t, inner) { return '<div class="lm-field">' + cap(t) + inner + '</div>'; }
+function whFields(o) {
+  var h = field('Wormhole type', '<div class="combo-row' + (o.typeFocus ? ' is-focus' : '') + '">' + row(o.type) + '</div>' + (o.info ? '<span class="lm-help">' + o.info + '</span>' : ''));
+  if (o.type === 'K162') {
+    if (o.askDest !== false) h += field('Leads to', '<div class="lm-input combo">' + (o.dest ? LM.cls(o.dest) + '<span>' + o.destName + '</span>' : '<span class="ph">Unknown</span>') + '</div>');
+    h += field('Size', size(o.size));
+  }
+  h += field('Lifetime', life(o.life || 0) + (o.lifeHelp ? '<span class="lm-help">' + o.lifeHelp + '</span>' : ''));
+  h += field('Mass', mass(o.mass || 'fresh'));
+  return h;
+}
+function dlg(o) {
+  var h = '<div class="lm-dialog"><div class="hd"><div class="tt"><h3>Signature · <span class="lm-mono">' + o.sig + '</span></h3><span class="sub">' + o.sub + '</span></div><span class="x">✕</span></div><div class="bd">';
+  if (o.link) h += '<div class="lm-banner info"><span class="g">⇄</span><span>Linked to the connection <b>' + o.link + '</b>. Saving updates it too.</span></div>';
+  h += field('Group', '<div class="lm-input combo"><span class="lm-grp ' + o.gk + '">' + o.group + '</span></div>');
+  if (o.wh) h += '<div class="grp2">' + whFields(o) + '</div>';
+  h += field('Name', o.wh ? '<div class="lm-input is-disabled">Unstable Wormhole<span class="lock">from the scanner</span></div>'
+                          : '<div class="lm-input is-focus">' + o.name + '</div>');
+  h += '</div><div class="ft"><button class="lm-btn danger">✕ Delete sig</button><button class="lm-btn ghost">Cancel</button><button class="lm-btn primary">Save <span class="lm-kbd">Enter</span></button></div></div>';
+  return '<div class="st">' + cap(o.n + '<b>' + o.label + '</b>') + h + '</div>';
+}
+var g = '';
+g += dlg({n: '1', label: 'Wormhole, type unknown (most common)', sig: 'MMX-310', sub: 'Home (J161940)', group: 'Wormhole', gk: 'wh', wh: 1, type: '', typeFocus: 1,
+  info: 'Warp to the hole, check show info, then type the code: <span class="lm-mono">b2</span> jumps to B274.'});
+g += dlg({n: '2', label: 'K162: Leads to and Size shown', sig: 'KLV-554', sub: 'Home (J161940)', group: 'Wormhole', gk: 'wh', wh: 1, type: 'K162',
+  info: 'Exit of a hole opened from the other side: set where it leads and its size.', dest: 'C3', destName: 'Class 3', size: 'M', life: 2, mass: 'reduced',
+  lifeHelp: 'Set to &lt; 1h at 19:12 · removed at about 20:12.'});
+g += dlg({n: '3', label: 'Known type: the type says where and how big', sig: 'ABC-123', sub: 'Home (J161940)', group: 'Wormhole', gk: 'wh', wh: 1, type: 'B274',
+  info: '→ HS · Large (L) · 24h · 2 000 kt total · 375 kt per jump'});
+g += dlg({n: '4', label: 'Linked: values come from the connection', sig: 'QRT-801', sub: 'A2 (J163856) · leads to <b>C</b>', link: 'A2 ↔ C', group: 'Wormhole', gk: 'wh', wh: 1, type: 'V753',
+  info: '→ C6 · Capital (XL) · 24h · 3 300 kt total · 2 000 kt per jump', life: 1, mass: 'critical', lifeHelp: 'End of life since 17:55 · saving again keeps this clock.'});
+g += dlg({n: '5', label: 'Not a wormhole: Group and Name only', sig: 'ZOP-912', sub: 'A2 (J163856)', group: 'Data site', gk: 'data', name: 'Unsecured Perimeter Information Center'});
+var pop = '<div class="combo-row is-focus" style="width:440px">' + row('B274') + '</div><div class="pop" style="margin-top:2px">' + row('') + row('K162') + '<div class="sep"></div>' +
+  row('O477') + row('B274', 'on') + '<div class="sep"></div>' + ['A009', 'C008', 'E004', 'F135', 'F216', 'J377', 'L005', 'Q003'].map(function (c) { return row(c); }).join('') +
+  '<div class="sep"></div>' + row('all') + '<div class="ft">Type-ahead: <span class="lm-mono">b2</span> → B274. “Show all types” adds the rest, dimmed (they can\'t spawn in a C2).</div></div>';
+g += '<div class="st">' + cap('6<b>Type dropdown open: statics on top, “Show all types …” last</b>') + pop + '</div>';
+document.getElementById('g').innerHTML = g;
+</script>
+</body>
+</html>

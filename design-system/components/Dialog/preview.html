@@ -1,4 +1,4 @@
-<!-- @dsCard group="Feedback" height=560 width=900 -->
+<!-- @dsCard group="Feedback" height=400 width=900 -->
 <!doctype html>
 <html>
 <head><meta charset="utf-8"></head>
@@ -12,17 +12,21 @@
    <span class="lm-help">↑↓ to choose · Enter to link · Esc for "none of these"</span></div>
   <div class="ft"><button class="lm-btn ghost">None of these</button><button class="lm-btn primary">Link ABC-123</button></div>
 </div>
-<div class="lm-dialog" style="width:400px">
-  <div class="hd"><h3>Connection A2 ↔ A2a</h3><span class="x">✕</span></div>
+<div class="lm-dialog" style="width:420px">
+  <div class="hd"><div class="tt"><h3>Connection A2 ↔ A2a</h3><span class="sub">via ABC-123 in A2 · seen 1h 12m ago</span></div><span class="x">✕</span></div>
   <div class="bd">
-   <div class="lm-field"><span class="lm-caption">Wormhole type</span><div class="lm-input combo lm-mono">H296 <span class="lm-faint" style="font-family:var(--font-sans)">— to C5 · 3 000 000 000 kg</span></div></div>
-   <div class="lm-field"><span class="lm-caption">Mass</span><span class="lm-seg"><span>Fresh</span><span class="on">Reduced &lt;50%</span><span>Critical &lt;10%</span><span>Unknown</span></span></div>
-   <div class="lm-row"><span class="lm-check on"><i></i>End of life (◷ &lt; 4h)</span><span class="lm-check"><i></i>Frigate-only</span></div>
-   <div class="lm-help">Seen 1h 12m ago · EOL since 18:40 (est. 2h 08m left)</div></div>
+   <div class="lm-field"><span class="lm-caption">Wormhole type</span><div class="lm-input combo"><span class="lm-mono" style="font-weight:700;font-size:13px;width:44px">H296</span><span id="hb"></span><span class="lm-mono" style="font-size:11px;margin-left:6px">XL</span><span class="lm-mono lm-faint" style="font-size:11px;margin-left:10px">24h</span><span class="lm-mono lm-faint" style="font-size:11px;margin-left:auto;margin-right:6px">3 300 kt</span></div>
+    <span class="lm-help">→ C5 · Capital (XL) · 24h · 3 300 kt total · 2 000 kt per jump</span></div>
+   <div class="lm-field"><span class="lm-caption">Lifetime</span><div id="life"></div><span class="lm-help">End of life since 18:40 · removed at about 22:40</span></div>
+   <div class="lm-field"><span class="lm-caption">Mass</span><div id="mass"></div></div>
+   <span class="lm-help">Same fields as the signature editor (SigEditor). No Leads to: both ends are known. Size only for a K162.</span></div>
   <div class="ft"><button class="lm-btn danger" style="margin-right:auto">✕ Collapse</button><button class="lm-btn ghost">Cancel</button><button class="lm-btn primary">Save</button></div>
 </div></div>
 <script>
 var LM = window.Homebound;
+document.getElementById('hb').innerHTML = LM.cls('C5');
+document.getElementById('life').innerHTML = LM.lifeSeg(1);
+document.getElementById('mass').innerHTML = LM.massSeg('reduced');
 var s = [['ABC-123','H296','100%','on'],['MMX-310','?','38%',''],['QRT-801','V753','100%','']];
 document.getElementById('p').innerHTML = s.map(function(x,i){return '<div class="lm-choice ' + x[3] + '"><span class="lm-check lm-radio ' + x[3] + '"><i></i></span><span class="lm-mono" style="font-weight:700;font-size:13px">' + x[0] + '</span><span class="lm-mono lm-muted">' + x[1] + '</span><span class="end">' + (i==0?'<span class="lm-guess">BEST GUESS</span>':'') + '<span class="lm-mono lm-faint">' + x[2] + '</span></span></div>'}).join('');
 </script>

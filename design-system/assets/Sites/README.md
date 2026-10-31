@@ -1,0 +1,1 @@
+Signature and anomaly group glyphs, 16×16 SVG, one per group (Wormhole, Combat, Data, Relic, Gas, Ore, Ice, Unscanned). Single ink `#e6edf2` (the `ink` token); recolour in Qt to the group's token (see SiteIcon) with `QSvgRenderer` into a pixmap, then `CompositionMode_SourceIn`. Use at 14px, never below 12px. Anomalies use the same glyph as the matching signature group.

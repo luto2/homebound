@@ -202,3 +202,65 @@ body { padding: var(--sp-12); }
 .lm-bg-space { background: radial-gradient(circle at 70% 40%, #1b2a3a 0, #05070a 60%); }
 .lm-bg-blast { background: radial-gradient(circle at 60% 50%, #ffffff 0, #ffe9a8 18%, #ff9a3c 38%, #6a2a12 64%, #0a0d10 85%); }
 .lm-bg-ui { background: repeating-linear-gradient(0deg, #2b3a44 0 1px, #4d6170 1px 30px), linear-gradient(90deg, #8aa1b0, #31414c); }
+
+/* ---------- Additions: dialog subtitle, info banner, mass segments, menus, grouped table ---------- */
+.lm-dialog .hd .tt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.lm-dialog .hd .tt .sub { font-size: 12px; line-height: 16px; color: var(--ink-muted); }
+.lm-dialog .hd .tt .sub b { color: var(--ink); font-weight: 600; }
+.lm-dialog .hd { align-items: flex-start; }
+.lm-dialog .ft .lm-btn.danger { margin-right: auto; }
+.lm-dialog .grp2 { display: flex; flex-direction: column; gap: var(--sp-8); padding-top: var(--sp-12); border-top: 1px solid var(--line-1); }
+.lm-banner.info { background: var(--bg-3); border-color: var(--line-2); } .lm-banner.info .g { color: var(--accent); font-weight: 800; }
+.lm-input .lock { margin-left: auto; font-size: 11px; color: var(--ink-faint); }
+.lm-input .after { color: var(--ink-faint); font-family: var(--font-sans); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lm-check .auto { font-size: 10px; font-weight: 800; letter-spacing: .06em; color: var(--accent); margin-left: 2px; }
+.lm-codebox { display: flex; align-items: center; gap: var(--sp-8); height: 32px; padding: 0 4px 0 var(--sp-8); border: 1px solid var(--line-2); border-radius: var(--radius-2); background: var(--bg-0);
+  font-family: var(--font-mono); font-size: 11px; white-space: nowrap; overflow: hidden; }
+.lm-codebox .p { color: var(--ink-faint); } .lm-codebox .lm-btn { margin-left: auto; }
+
+/* mass: segmented choice that reuses the edge line + chip language (checkable QPushButtons with a painted QIcon) */
+.lm-mass { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-4); }
+.lm-mass span { height: 40px; border: 1px solid var(--line-2); border-radius: var(--radius-2); background: var(--bg-3); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  font-size: 12px; color: var(--ink-muted); }
+.lm-mass span svg { display: block; }
+.lm-mass span.on { border: 2px solid var(--accent); background: var(--accent-dim); color: var(--ink); font-weight: 600; }
+.lm-mass span .lm-elabel { height: 13px; }
+
+/* menu extras: shared by tray, context and map menus */
+.lm-menu.ctx { width: 236px; }
+.lm-menu .it .sub { margin-left: auto; color: var(--ink-faint); font-size: 11px; }
+.lm-menu .it .meta { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); white-space: nowrap; }
+.lm-menu .it .meta + .sub { margin-left: var(--sp-8); }
+.lm-menu .it .ic { width: 14px; text-align: center; flex: none; font-size: 12px; }
+.lm-menu .it .ic.danger { color: var(--danger); font-weight: 800; }
+.lm-menu .it.is-hover .ic, .lm-menu .it.is-hover .meta, .lm-menu .it.is-hover .sub { color: var(--ink-inverse); }
+.lm-menu .it.is-disabled .ic, .lm-menu .it.is-disabled .meta { color: var(--ink-disabled); }
+.lm-menu .it b.nm { font-weight: 600; }
+.lm-tip { position: absolute; background: var(--bg-3); color: var(--ink); border: 1px solid var(--line-2); padding: var(--sp-4) var(--sp-6); font-size: 12px; line-height: 16px; border-radius: var(--radius-1); white-space: nowrap; box-shadow: var(--shadow-toast); }
+
+/* grouped signature table: one header row per group (spans every column) */
+.lm-table tr.gh td { background: var(--bg-3); height: 22px; font-size: 12px; font-weight: 600; color: var(--ink); padding: 0 var(--sp-8) 0 6px; border-bottom: 1px solid var(--line-1); }
+.lm-table tr.gh:hover td, .lm-table tr.gh.is-hover td { background: var(--bg-4); }
+.lm-table tr.gh .car { display: inline-block; vertical-align: middle; line-height: 14px; width: 12px; color: var(--ink-muted); font-size: 10px; }
+.lm-table tr.gh .lm-grp { gap: 6px; }
+.lm-table tr.gh .cnt { float: right; font-family: var(--font-mono); font-size: 11px; font-weight: 400; color: var(--ink-faint); }
+.lm-table tr.gh .cnt .d { color: var(--warning); font-weight: 700; } .lm-table tr.gh .cnt .n { color: var(--success); font-weight: 700; }
+.lm-table tr.gh .ttl small { font-size: 12px; font-weight: 400; color: var(--ink-muted); }
+.lm-table tr.sec td { height: 20px; background: transparent; padding-top: 6px; }
+.lm-grp.ice::before { background: transparent; border-color: var(--accent); border-radius: 50%; }
+
+/* segmented choice (checkable QPushButtons): edge pen icon on top, label + edge chip below. Used by Lifetime, Mass, Size. */
+.lm-segs { display: grid; gap: var(--sp-4); }
+.lm-segs > span { min-height: 30px; padding: 4px 2px; border: 1px solid var(--line-2); border-radius: var(--radius-2); background: var(--bg-3); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  font-size: 12px; color: var(--ink-muted); white-space: nowrap; text-align: center; }
+.lm-segs > span svg { display: block; }
+.lm-segs .lb { display: inline-flex; align-items: center; gap: 4px; }
+.lm-segs .code { font-family: var(--font-mono); font-weight: 700; font-size: 12px; color: var(--ink); line-height: 12px; }
+.lm-segs .small { font-size: 11px; line-height: 13px; }
+.lm-segs > span.on { border: 2px solid var(--accent); background: var(--accent-dim); color: var(--ink); font-weight: 600; }
+.lm-segs .ch { font-size: 9px; font-weight: 800; padding: 0 3px; border-radius: 2px; line-height: 11px; color: var(--ink-inverse); font-family: var(--font-sans); }
+
+/* site glyphs (signature groups, anomalies): 14px in tables, 13px in dense rows, never below 12px */
+.lm-site { flex: none; display: inline-block; vertical-align: middle; }
+.lm-grp.has-ic::before { display: none; }
+.lm-grp.has-ic { gap: 6px; }

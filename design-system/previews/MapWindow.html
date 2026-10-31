@@ -8,6 +8,8 @@ body { padding: 0; }
 .tb .mark { font-weight: 800; letter-spacing: .14em; font-size: 11px; display: flex; align-items: center; gap: 6px; }
 .tb .grp { display: flex; align-items: center; gap: var(--sp-6); }
 .tb .sep { width: 1px; height: 20px; background: var(--line-1); }
+.mapbtn { height: 24px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border: 1px solid var(--accent); background: var(--accent-dim); border-radius: var(--radius-2); font-weight: 600; white-space: nowrap; }
+.mapbtn .g { color: var(--accent); } .mapbtn::after { content: "▾"; color: var(--ink-muted); margin-left: 2px; }
 .main { flex: 1; display: flex; min-height: 0; }
 .left { width: var(--size-panel-left); border-right: 1px solid var(--line-1); background: var(--bg-2); flex: none; display: flex; flex-direction: column; }
 .ph { height: 30px; display: flex; align-items: center; padding: 0 var(--sp-12); border-bottom: 1px solid var(--line-1); }
@@ -17,7 +19,8 @@ body { padding: 0; }
 .ch .st.on { color: var(--success); } .ch .st.off { color: var(--ink-faint); }
 .ch.active { background: var(--accent-dim); }
 .ch.offline .n, .ch.offline .loc { color: var(--ink-faint); }
-.canvas { flex: 1; position: relative; background-color: var(--bg-0); background-image: radial-gradient(var(--grid-dot) 1.2px, transparent 1.3px); background-size: var(--sp-24) var(--sp-24); overflow: hidden; }
+.canvas { flex: 1; position: relative; background-color: var(--bg-0); background-image: linear-gradient(var(--line-1) 1px, transparent 1px), linear-gradient(90deg, var(--line-1) 1px, transparent 1px), linear-gradient(var(--grid-dot) 1px, transparent 1px), linear-gradient(90deg, var(--grid-dot) 1px, transparent 1px);
+  background-size: 62px 62px, 62px 62px, 20.667px 20.667px, 20.667px 20.667px; overflow: hidden; }
 .canvas svg { position: absolute; inset: 0; }
 .legend { position: absolute; left: 12px; bottom: 12px; background: var(--bg-1); border: 1px solid var(--line-1); border-radius: var(--radius-3); padding: 8px 10px; display: grid; grid-template-columns: 44px auto; gap: 4px 8px; font-size: 11px; align-items: center; color: var(--ink-muted); }
 .zoom { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 4px; align-items: center; }
@@ -27,7 +30,7 @@ body { padding: 0; }
 .kv > span:nth-child(odd) { color: var(--ink-faint); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
 .sigs { padding: var(--sp-12); display: flex; flex-direction: column; gap: var(--sp-8); min-height: 0; }
 .sigs .lm-table td, .sigs .lm-table th { padding: 0 5px; }
-.sigs .lm-table .nm { max-width: 78px; overflow: hidden; text-overflow: ellipsis; }
+.sigs .lm-table .nm { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
 .sb { height: 24px; border-top: 1px solid var(--line-1); display: flex; align-items: center; gap: var(--sp-16); padding: 0 var(--sp-12); font-size: 11px; color: var(--ink-faint); flex: none; }
 .sb .ok { color: var(--success); }
 .toastpos { position: absolute; right: 12px; bottom: 52px; }
@@ -37,6 +40,7 @@ body { padding: 0; }
  <div class="tb">
   <span class="mark"><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="4" cy="11" r="2.4" fill="none" stroke="var(--accent)" stroke-width="1.5"/><circle cx="12" cy="5" r="2.4" fill="var(--accent)"/><path d="M5.8 9.3l4.4-2.6" stroke="var(--ink-muted)" stroke-width="1.5"/></svg>HOMEBOUND</span>
   <span class="sep"></span>
+  <span class="mapbtn" title="Maps"><span class="g">▦</span>Main</span>
   <span class="grp"><span class="lm-caption">Home</span><span class="lm-input combo" style="width:178px;height:24px">⌂&nbsp;<b>Home</b>&nbsp;<span class="lm-mono lm-muted" style="font-size:12px">J161940</span></span></span>
   <span class="grp"><span class="lm-caption">Naming</span><span class="lm-input combo" style="width:160px;height:24px;font-size:12px">Letters + digits</span></span>
   <span class="grp"><span class="lm-caption">Overlay</span><span class="lm-seg"><span>Off</span><span class="on">Follow active</span><span>Pinned</span><span>Always</span></span></span>
@@ -62,7 +66,7 @@ body { padding: 0; }
     <textarea class="lm-textarea" rows="2">LZRD Astrahus at P3. Active EU TZ. Rolled C static 18:20.</textarea>
    </div>
    <div class="sigs">
-    <div class="lm-row"><span style="font-size:15px;font-weight:600">Signatures</span><span class="lm-faint" style="font-size:12px">9 · pasted 2 min ago</span><button class="lm-btn primary sm" style="margin-left:auto">Paste sigs <span class="lm-kbd">Ctrl+V</span></button></div>
+    <div class="lm-row"><span style="font-size:15px;font-weight:600">Signatures</span><span class="lm-faint" style="font-size:12px">10 sigs · 2 anoms · pasted 2m ago</span><button class="lm-btn primary sm" style="margin-left:auto">Paste sigs <span class="lm-kbd">Ctrl+V</span></button></div>
     <div class="lm-banner warn"><span class="g">▲</span><span><b>3 missing</b> from last paste</span><span class="end"><button class="lm-btn sm">Keep</button><button class="lm-btn danger sm">✕ Delete missing</button></span></div>
     <table class="lm-table" id="sig"></table>
    </div>
@@ -89,7 +93,7 @@ var N = {
 N.th.j = 'Thera';
 var E = [
  ['home','jita',{type:'B274',mass:'fresh'}], ['home','a',{type:'O477',mass:'reduced'}], ['home','b',{type:'K162',mass:'unknown'}],
- ['a','ns',{type:'K346',mass:'fresh'}], ['a','a2',{type:'K162',mass:'critical'}], ['b','b1',{type:'Z647',mass:'fresh'}], ['b','kino',{type:'K162',mass:'reduced',eol:true}],
+ ['a','ns',{type:'K346',mass:'fresh'}], ['a','a2',{type:'K162',mass:'critical'}], ['b','b1',{type:'Z647',mass:'fresh'}], ['b','kino',{type:'K162',mass:'reduced',eol:2}],
  ['a2','a2a',{type:'H296',mass:'fresh',eol:true}], ['a2a','a2b',{type:'K162',mass:'fresh',frig:true}], ['a2','th',{type:'F135',mass:'fresh'}], ['a2','c',{type:'V753',mass:'critical',eol:true}]];
 var W = 168, H = 62, svg = '', lab = '';
 E.forEach(function(e){ var p = N[e[0]], q = N[e[1]]; var x1 = p.x + W/2, y1 = p.y + H/2, x2 = q.x + W/2, y2 = q.y + H/2;
@@ -97,7 +101,7 @@ E.forEach(function(e){ var p = N[e[0]], q = N[e[1]]; var x1 = p.x + W/2, y1 = p.
   lab += '<div style="position:absolute;left:' + ((x1 + x2)/2) + 'px;top:' + ((y1 + y2)/2 - 8) + 'px;transform:translateX(-50%)">' + LM.elabel(e[2]) + '</div>'; });
 document.getElementById('edges').innerHTML = svg; document.getElementById('labels').innerHTML = lab;
 document.getElementById('nodes').innerHTML = Object.keys(N).map(function(k){return LM.node(N[k])}).join('');
-document.getElementById('legend').innerHTML = [['fresh',{mass:'fresh'}],['reduced',{mass:'reduced'}],['critical',{mass:'critical'}],['EOL',{mass:'fresh',eol:true}],['frigate',{mass:'fresh',frig:true}],['unknown',{mass:'unknown'}]]
+document.getElementById('legend').innerHTML = [['fresh',{mass:'fresh'}],['reduced',{mass:'reduced'}],['critical',{mass:'critical'}],['◷ <4h',{mass:'fresh',eol:1}],['expired',{mass:'fresh',eol:3}],['frigate',{mass:'fresh',frig:true}],['unknown',{mass:'unknown'}]]
  .map(function(l){return '<svg width="44" height="12">' + LM.edgeSvg(4,6,40,6,l[1]).replace(/l5 5-5 5-5-5z/,'l4 4-4 4-4-4z') + '</svg><span>' + l[0] + '</span>'}).join('');
 var C = [[1,'Ryn Vass','A2a','C5','J120617',1,1],[2,'Kade Morrow','Home','C2','J161940',1,0],[4,'Ostrava','C','C6','J222911',1,0],[3,'Ilse Tarn','8 (Jita)','HS','Sirseshin',0,0]];
 document.getElementById('chars').innerHTML = C.map(function(c){return '<div class="ch' + (c[6]?' active':'') + (c[5]?'':' offline') + '">' + LM.chr(c[0]) + '<span class="n">' + c[1] + '</span><span class="st ' + (c[5]?'on">● online':'off">○ offline 2h') + '</span><span class="loc">' + LM.cls(c[3], c[3]=='HS'?'0.6':null) + '<b style="color:inherit">' + c[2] + '</b><span class="lm-mono">' + c[4] + '</span></span></div>'}).join('') +
@@ -107,17 +111,24 @@ document.getElementById('kv').innerHTML = '<span>Effect</span><span class="lm-fx
  '<span>Owner</span><span class="lm-row" style="gap:6px"><span class="lm-input combo" style="height:22px;width:190px;white-space:nowrap">' + LM.owner('LZRD',1) + '&nbsp;Lizard Kings</span></span>' +
  '<span>zKill</span><span class="lm-fxchip lm-mono">' + LM.zk('med') + '0 / 7 &nbsp;<span class="lm-faint" style="font-family:var(--font-sans)">kills 1h / 24h · last 3h ago</span></span>';
 var R = [
- ['', 'ABC-123','wh','WH','H296','→ A2a',100,'1h 12m','A2-1'],
- ['', 'KLV-554','wh','WH','K162','→ A',100,'2h 40m','A2-2'],
- ['', 'QRT-801','wh','WH','V753','→ C',100,'34m','A2-3','is-hover'],
- ['', 'XNE-118','wh','WH','F135','→ Thera',100,'51m','A2-4'],
- ['+', 'MMX-310','wh','WH','?','',38,'1m','','is-new'],
- ['', 'ZOP-912','data','Data','','Unsecured Perimeter Info',100,'5h 03m',''],
- ['−', 'HJK-447','combat','Combat','','Perimeter Hangar',100,'9h 15m','','is-missing'],
- ['−', 'PLW-662','relic','Relic','','Forgotten Frontier',100,'9h 15m','','is-missing'],
- ['−', 'UTE-071','unknown','?','','',12,'1d 2h','','is-missing']];
-var h = '<tr><th></th><th>Sig</th><th>Group</th><th>Type</th><th>Name</th><th class="num">Scan</th><th class="num">Age</th><th></th></tr>';
-R.forEach(function(r){ h += '<tr class="' + (r[9]||'') + '"><td class="flag">' + r[0] + '</td><td class="sig">' + r[1] + '</td><td><span class="lm-grp ' + r[2] + '">' + r[3] + '</span></td><td class="lm-mono">' + r[4] + '</td><td class="nm">' + r[5] + '</td><td class="num">' + r[6] + '%</td><td class="num">' + r[7] + '</td><td>' + (r[8] ? '<button class="lm-btn sm" title="Copy bookmark name">⧉ ' + r[8] + '</button>' : '') + '</td></tr>'; });
+ ['h', 'wh', 'Wormholes', '5 · <span class="n">1 +</span>', 1],
+ ['', 'ABC-123', 'H296', '→ A2a', 100, '1h 12m', 'A2-1'],
+ ['', 'KLV-554', 'K162', '→ A', 100, '2h 40m', 'A2-2'],
+ ['', 'QRT-801', 'V753', '→ C', 100, '34m', 'A2-3', 'is-hover'],
+ ['', 'XNE-118', 'F135', '→ Thera', 100, '51m', 'A2-4'],
+ ['+', 'MMX-310', '?', '', 38, '1m', '', 'is-new'],
+ ['h', 'data', 'Data', '1', 0],
+ ['h', 'combat', 'Combat', '1 · <span class="d">1 −</span>', 1],
+ ['−', 'HJK-447', '', 'Perimeter Hangar', 100, '9h 15m', '', 'is-missing'],
+ ['h', 'relic', 'Relic', '1 · <span class="d">1 −</span>', 1],
+ ['−', 'PLW-662', '', 'Forgotten Frontier', 100, '9h 15m', '', 'is-missing'],
+ ['h', 'unknown', 'Unscanned', '1 · <span class="d">1 −</span>', 1],
+ ['−', 'UTE-071', '', '', 12, '1d 2h', '', 'is-missing'],
+ ['h', 'combat', '<small>Anomalies ·</small> Combat', '2', 0]];
+var h = '<tr><th></th><th>Sig</th><th>Type</th><th>Name</th><th class="num">Scan</th><th class="num">Age</th><th></th></tr>';
+R.forEach(function(r){
+  if (r[0] === 'h') { h += '<tr class="gh"><td colspan="7"><span class="car">' + (r[4] ? '▾' : '▸') + '</span><span class="lm-grp ' + r[1] + ' ttl">' + r[2] + '</span><span class="cnt">' + r[3] + '</span></td></tr>'; return; }
+  h += '<tr class="' + (r[7]||'') + '"><td class="flag">' + r[0] + '</td><td class="sig">' + r[1] + '</td><td class="lm-mono">' + r[2] + '</td><td class="nm">' + r[3] + '</td><td class="num">' + r[4] + '%</td><td class="num">' + r[5] + '</td><td>' + (r[6] ? '<button class="lm-btn sm" title="Copy bookmark name">⧉ ' + r[6] + '</button>' : '') + '</td></tr>'; });
 document.getElementById('sig').innerHTML = h;
 </script>
 </body>

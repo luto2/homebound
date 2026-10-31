@@ -1,0 +1,17 @@
+<!-- @dsCard group="Feedback" height=270 width=480 subtitle="Shown before the main window when universe.sqlite is missing" -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+<div class="lm-dialog" style="width:440px">
+ <div class="hd"><span style="width:22px;height:22px;border-radius:50%;background:var(--danger);color:var(--ink-inverse);display:grid;place-items:center;font-weight:800;flex:none;margin-top:-1px">!</span>
+  <div class="tt"><h3>Map data is missing</h3><span class="sub">Homebound needs <span class="lm-mono">data/universe.sqlite</span> (systems, classes, statics) and can't start without it.</span></div></div>
+ <div class="bd">
+  <div class="lm-field"><span class="lm-caption">Build it once, from the project folder</span>
+   <div class="lm-codebox"><span class="p">$</span><span>uv run python -m homebound.universe.build_static</span><button class="lm-btn sm icon" style="width:24px" title="Copy command">⧉</button></div>
+   <span class="lm-help">Downloads the static data export (about 100 MB) and takes a minute or two. Then start Homebound again.</span></div>
+ </div>
+ <div class="ft"><span class="start lm-mono">~/Projects/local-mapper</span><button class="lm-btn ghost">Open folder</button><button class="lm-btn primary">Quit</button></div>
+</div>
+</body>
+</html>

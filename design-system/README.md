@@ -49,7 +49,7 @@ Use `mono-sig` for signature IDs, `mono-data`/`mono-small` for J-names, WH types
 
 ## Spacing, radii, borders
 
-- 2-based steps `sp-2` … `sp-32`; default gap `sp-8`, panel padding `sp-12`, dialog padding `sp-16`, map grid `sp-24`.
+- 2-based steps `sp-2` … `sp-32`; default gap `sp-8`, panel padding `sp-12`, dialog padding `sp-16`, map grid cell = node height / 3 (≈ 20.7px, see MapWindow).
 - Square panels and tables (`radius-0`); `radius-1` badges, `radius-2` controls, `radius-3` nodes/overlay/toasts, `radius-4` dialogs/menus. Nothing is pill-shaped.
 - Borders over shadows. Shadows only lift floating things: `shadow-node`, `shadow-toast`, `shadow-dialog`.
 - Fixed metrics live in the `size` family: controls 26px, rows 22px, toolbar 36px, nodes 168×62, docks 220/440, overlay 320 wide with 20px rows.
@@ -75,12 +75,13 @@ A frameless, always-on-top, click-through window over the game, showing one char
 
 ## Iconography
 
+- **Site glyphs**: the *Sites* asset group, one per signature group (wormhole, combat, data, relic, gas, ore, ice, unscanned), same grid and stroke as the effect glyphs; see SiteIcon.
 - **Effect glyphs**: the *Effects* asset group, 16×16 SVG, single ink `#e6edf2` (`ink`). Their path data also lives in `components/bundle.js` (`FX`) for building `QPainterPath`s.
 - **UI glyphs** are Unicode from the sans face (✓ ✕ ▲ ⌂ ⧉ ↗ ⚙ ◷); if a glyph is missing in the fallback font, swap it for a Breeze icon from the system theme via `QIcon.fromTheme` (e.g. `edit-copy`, `configure`, `go-home`).
 - No app logo exists yet. The toolbar and cover use the wordmark "HOMEBOUND" in plain type next to a two-node glyph built from the edge and node styles; replace it when a mark is designed.
 
 ## Screens
 
-Mockups are in the component list under *Screens*: **MapWindow** (a 12-system chain with every node, edge and sig state), **OverlayStates** (normal, k-space distance, unlocked, empty), **NamingDialog** and **Settings**. The other dialogs (sig picker, connection editor) are in **Dialog**; the unknown-jump toast is in **Toast**; the tray menu in **TrayMenu**.
+Mockups are in the component list under *Screens*: **MapWindow** (a 12-system chain with every node, edge and sig state), **OverlayStates** (normal, k-space distance, unlocked, empty), **NamingDialog** and **Settings**. The other dialogs are in **Dialog** (sig picker, connection editor), **SigEditor** (signature editor, all states), **PromptDialog** (new/rename map, rename/add system), **ConfirmDialog** (delete map, plus the Undo toast for other destructive actions) and **StartupError**. The unknown-jump toast is in **Toast**; menus are in **TrayMenu**, **ContextMenu** (node, edge, background, character row) and **MapMenu** (map switcher).
 
 Implementation notes for QSS and QPainter are in the *Qt implementation* section.

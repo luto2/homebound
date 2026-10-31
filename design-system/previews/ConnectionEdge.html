@@ -1,15 +1,15 @@
-<!-- @dsCard group="Map" height=290 width=760 -->
+<!-- @dsCard group="Map" height=358 width=760 -->
 <!doctype html>
 <html data-theme="dark">
 <head><link rel="stylesheet" href="../tokens.css"><link rel="stylesheet" href="../components/bundle.css"><script src="../components/bundle.js"></script><meta charset="utf-8"></head>
 <body>
 
-<div style="position:relative;height:260px;background:var(--bg-0)"><svg id="s" width="760" height="260" style="position:absolute;inset:0"></svg><div id="l"></div></div>
+<div style="position:relative;height:328px;background:var(--bg-0)"><svg id="s" width="760" height="328" style="position:absolute;inset:0"></svg><div id="l"></div></div>
 <script>
 var LM = window.Homebound;
 var rows = [
  ['Fresh', {type:'B274', mass:'fresh'}], ['Reduced <50%', {type:'O477', mass:'reduced'}], ['Critical <10%', {type:'K162', mass:'critical'}],
- ['EOL (+ fresh)', {type:'H296', mass:'fresh', eol:true}], ['Critical + EOL', {type:'V753', mass:'critical', eol:true}], ['Frigate-only', {type:'E004', mass:'fresh', frig:true}], ['Unknown', {type:'K162', mass:'unknown'}]];
+ ['Lifetime < 4h', {type:'H296', mass:'fresh', eol:1}], ['Lifetime < 1h', {type:'N062', mass:'reduced', eol:2}], ['Critical + < 4h', {type:'V753', mass:'critical', eol:1}], ['Expired', {type:'D382', mass:'fresh', eol:3}], ['Frigate-only', {type:'E004', mass:'fresh', frig:true}], ['Unknown', {type:'K162', mass:'unknown'}]];
 var svg = '', lab = '';
 rows.forEach(function(r, i){ var y = 22 + i * 34;
   svg += LM.edgeSvg(180, y, 600, y, r[1]);

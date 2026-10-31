@@ -1,0 +1,32 @@
+<!-- @dsCard group="Badges" height=330 width=760 subtitle="Site glyphs for signature and anomaly groups" -->
+<!doctype html>
+<html data-theme="dark">
+<head><link rel="stylesheet" href="../tokens.css"><link rel="stylesheet" href="../components/bundle.css"><script src="../components/bundle.js"></script><meta charset="utf-8"><style>
+.big { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; }
+.big > div { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px 8px; background: var(--bg-2); border: 1px solid var(--line-1); border-radius: var(--radius-2); }
+.big .n { font-size: 11px; color: var(--ink-muted); text-align: center; line-height: 14px; }
+.big .t { font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); }
+.rows { display: grid; grid-template-columns: 120px 1fr; gap: 10px 12px; align-items: center; margin-top: 14px; }
+.grey { filter: grayscale(1); }
+.hd { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; background: var(--bg-3); font-size: 12px; font-weight: 600; border-radius: var(--radius-1); }
+.hd small { font-weight: 400; color: var(--ink-muted); font-size: 12px; }
+</style></head>
+<body>
+<div class="big" id="big"></div>
+<div class="rows">
+ <span class="lm-caption">14px · table</span><span class="lm-row" id="r14" style="gap:14px"></span>
+ <span class="lm-caption">12px · smallest</span><span class="lm-row" id="r12" style="gap:14px"></span>
+ <span class="lm-caption">Greyscale</span><span class="lm-row grey" id="rg" style="gap:14px"></span>
+ <span class="lm-caption">Group headers</span><span class="lm-row" id="hd" style="gap:6px"></span>
+</div>
+<script>
+var LM = window.Homebound, K = ['wormhole', 'combat', 'data', 'relic', 'gas', 'ore', 'ice', 'unknown'];
+document.getElementById('big').innerHTML = K.map(function (k) { return '<div>' + LM.site(k, 32) + '<span class="n">' + LM.SITE[k][0] + '</span><span class="t">' + LM.SITE[k][1] + '</span></div>'; }).join('');
+document.getElementById('r14').innerHTML = K.map(function (k) { return LM.site(k, 14); }).join('');
+document.getElementById('r12').innerHTML = K.map(function (k) { return LM.site(k, 12); }).join('');
+document.getElementById('rg').innerHTML = K.map(function (k) { return LM.site(k, 14); }).join('');
+document.getElementById('hd').innerHTML = [['wormhole', 'Wormholes'], ['relic', 'Relic'], ['combat', 'Combat', 1], ['ore', 'Ore', 1], ['gas', 'Gas', 1]]
+  .map(function (h) { return '<span class="hd">' + LM.site(h[0]) + (h[2] ? '<small>Anomalies ·</small>' : '') + h[1] + '</span>'; }).join('');
+</script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+<!-- @dsCard group="Navigation" height=330 width=1240 subtitle="Right-click menus: system node, connection, map background, character row" -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><style>
+.row { display: flex; gap: 24px; align-items: flex-start; }
+.st { display: flex; flex-direction: column; gap: 8px; position: relative; }
+.lm-menu.ctx.narrow { width: 230px; } .lm-menu .it { white-space: nowrap; }
+</style></head>
+<body>
+<div class="row" id="r"></div>
+<script>
+/* item: [check, label, meta, cls, ic]  · '-' = separator · ['#', caption] = section */
+function menu(items, w) {
+  return '<div class="lm-menu ctx' + (w ? ' ' + w : '') + '">' + items.map(function (i) {
+    if (i === '-') return '<div class="sep"></div>';
+    if (i[0] === '#') return '<div class="sec">' + i[1] + '</div>';
+    return '<div class="it ' + (i[3] || '') + '"><span class="' + (i[4] ? 'ic ' + i[4] : 'ck') + '">' + (i[0] || '') + '</span><span>' + i[1] + '</span>' + (i[2] ? '<span class="meta">' + i[2] + '</span>' : '') + '</div>';
+  }).join('') + '</div>';
+}
+function st(cap, html, extra) { return '<div class="st"><span class="lm-caption">' + cap + '</span>' + html + (extra || '') + '</div>'; }
+var r = '';
+r += st('System node · A2', menu([['', 'Rename …', 'F2'], ['', 'Set as home'], ['', 'Change static / hole …'], '-', ['', 'Request zKill now'], '-', ['✕', 'Remove from map', 'Del', '', 'danger']]));
+r += st('Connection · A2 ↔ C', menu([['', 'Edit connection …', 'Enter'], '-', ['#', 'Mass'], ['●', 'Fresh'], ['', 'Reduced · R'], ['', 'Critical · CRIT', '', 'is-hover'], '-', ['#', 'Lifetime'], ['', 'Stable'], ['●', '◷ < 4h'], ['', '◷ < 1h'], ['', '✕ Expired'], '-', ['✕', 'Collapse', '', '', 'danger']]));
+r += st('Map background', menu([['', 'Add system …', 'Ins'], ['', 'Fit chain', 'F']], 'narrow'));
+r += st('System node · Home', menu([['', 'Rename …', 'F2'], ['', 'Set as home', '', 'is-disabled'], ['', 'Change static / hole …', '', 'is-disabled'], '-', ['', 'Request zKill now'], '-', ['✕', 'Remove from map', '', 'is-disabled', 'danger']]),
+  '<div class="lm-tip" style="left:130px;top:208px">Home can’t be removed. Set another home first.</div>');
+r += st('Character row · Ryn Vass', menu([['', 'Pin overlay to this character'], ['', 'Show on map', 'Space']], 'narrow'));
+document.getElementById('r').innerHTML = r;
+</script>
+</body>
+</html>

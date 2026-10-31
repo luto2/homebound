@@ -136,7 +136,7 @@ class EdgeItem(QGraphicsPathItem):
 
 **Hatch for stale**: `QBrush(color("line-1"), Qt.BDiagPattern)` over the node body, then paint content with `p.setOpacity(OP["op-stale"])`.
 
-**Dot grid**: override `QGraphicsView.drawBackground`, fill `bg-0`, then draw points every `sp-24` scene units with `QPen(color("grid-dot"), 2.4, cap=Qt.RoundCap)` and `setCosmetic(True)`. Skip the grid below 0.35 zoom.
+**Line grid**: override `QGraphicsView.drawBackground`, fill `bg-0`, then draw hairlines (`QPen(..., 1)`, `setCosmetic(True)`) on a square cell of **node height / 3** (62 / 3 ≈ 20.7 scene units), so a node is exactly 3 cells tall. Minor lines in `grid-dot`; every 3rd line (one node height) in `line-1`, drawn after the minor ones so it sits on top. Below 45% zoom draw only the major lines (minor ones would be < 9px apart); below 20% fill plain `bg-0`. Nodes snap to the cell; new children go 12 cells right and 5 cells down per sibling. App: `painting.draw_line_grid(p, rect, step, major_every=3, minor=zoom >= 0.45)`.
 
 **Overlay text with halo**:
 

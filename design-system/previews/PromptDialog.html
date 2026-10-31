@@ -1,0 +1,39 @@
+<!-- @dsCard group="Feedback" height=540 width=900 subtitle="One text-prompt dialog for new map, rename map, rename system, add system" -->
+<!doctype html>
+<html data-theme="dark">
+<head><link rel="stylesheet" href="../tokens.css"><link rel="stylesheet" href="../components/bundle.css"><script src="../components/bundle.js"></script><meta charset="utf-8"><style>
+.grid { display: grid; grid-template-columns: repeat(2, 420px); gap: 24px 28px; align-items: start; }
+.st { display: flex; flex-direction: column; gap: 8px; position: relative; }
+.st > .lm-caption b { color: var(--ink); font-weight: 600; text-transform: none; letter-spacing: 0; margin-left: 6px; font-size: 12px; }
+.ac { position: absolute; left: 17px; right: 17px; background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--radius-2); box-shadow: var(--shadow-toast); padding: 4px 0; z-index: 2; }
+.ac .o { height: 24px; display: flex; align-items: center; gap: 8px; padding: 0 8px; font-size: 12px; }
+.ac .o .c { font-family: var(--font-mono); font-weight: 700; } .ac .o .c mark { background: none; color: var(--accent); text-decoration: underline; }
+.ac .o .r { margin-left: auto; color: var(--ink-faint); font-size: 11px; }
+.ac .o.on { background: var(--accent); color: var(--ink-inverse); } .ac .o.on .r, .ac .o.on mark { color: var(--ink-inverse); }
+</style></head>
+<body>
+<div class="grid" id="g"></div>
+<script>
+var LM = window.Homebound;
+function dlg(o) {
+  var h = '<div class="lm-dialog"><div class="hd"><div class="tt"><h3>' + o.title + '</h3><span class="sub">' + o.sub + '</span></div><span class="x">✕</span></div><div class="bd">';
+  h += '<div class="lm-field"><span class="lm-caption">' + o.cap + '</span><div class="lm-input ' + (o.state || 'is-focus') + (o.mono ? ' lm-mono' : '') + '">' + o.val + (o.end || '') + '</div>' + (o.help ? '<span class="lm-help ' + (o.hk || '') + '">' + o.help + '</span>' : '') + '</div>';
+  h += '</div><div class="ft"><span class="start">' + (o.foot || '') + '</span><button class="lm-btn ghost">Cancel</button><button class="lm-btn primary"' + (o.off ? ' disabled' : '') + '>' + o.ok + '</button></div></div>';
+  return '<div class="st">' + '<span class="lm-caption">' + o.n + '<b>' + o.label + '</b></span>' + h + (o.after || '') + '</div>';
+}
+var g = '';
+g += dlg({n: 'New map', label: 'invalid: name already used', title: 'New map', sub: 'Each map has its own systems, sigs and home system.', cap: 'Map name', val: 'Corp', state: 'is-invalid',
+  help: '✕ A map called “Corp” already exists.', hk: 'err', ok: 'Create map', off: 1, foot: 'Opens Settings → Home next'});
+g += dlg({n: 'Rename map', label: 'prefilled, text selected', title: 'Rename map', sub: 'Main · home J161940', cap: 'New name',
+  val: '<span style="background:var(--accent);color:var(--ink-inverse);padding:0 1px">Main</span>', help: 'Letters, digits, spaces and - _ . (max 32).', ok: 'Rename'});
+g += dlg({n: 'Rename system', label: 'empty restores the scheme name', title: 'Rename system', sub: '<b>A2</b> · <span class="lm-mono">J163856</span> · C5', cap: 'Custom name',
+  val: '<span class="ph">A2</span>', end: '<span class="lm-faint" style="margin-left:auto;font-size:11px">scheme name</span>', help: 'Leave empty to use the scheme name (A2).', ok: 'Use scheme name'});
+var opts = [['J1638', '91', 'C3', '', 1], ['J1638', '56', 'C5', 'already on this map', 0], ['J1638', '32', 'C1', '', 0], ['J1638', '04', 'C4', '', 0]];
+var ac = '<div class="ac" style="top:166px">' + opts.map(function (o) { return '<div class="o' + (o[4] ? ' on' : '') + '"' + (o[3] ? ' style="color:var(--ink-disabled)"' : '') + '><span class="c"><mark>' + o[0] + '</mark>' + o[1] + '</span>' + LM.cls(o[2]) + '<span class="r">' + o[3] + '</span></div>'; }).join('') + '</div>';
+g += dlg({n: 'Add system', label: 'autocomplete over all system names', title: 'Add system', sub: 'Placed where you right-clicked · linked to <b>A2</b> (selected)', cap: 'System name', mono: 1,
+  val: '<span>J1638<span style="border-left:1px solid var(--ink);margin:0 1px"></span><span style="background:var(--accent-dim)">91</span></span>', end: '<span class="lm-kbd" style="margin-left:auto">Tab</span>',
+  help: '✓ J163891 · C3 · added with a WH connection to A2', hk: 'ok', ok: 'Add system', after: ac});
+document.getElementById('g').innerHTML = g;
+</script>
+</body>
+</html>

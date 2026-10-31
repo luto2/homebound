@@ -1,0 +1,36 @@
+<!-- @dsCard group="Feedback" height=330 width=900 subtitle="Delete map confirmation, and the Undo toast for smaller destructive actions" -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><style>
+.row { display: flex; gap: 28px; align-items: flex-start; }
+.st { display: flex; flex-direction: column; gap: 8px; }
+.st > .lm-caption b { color: var(--ink); font-weight: 600; text-transform: none; letter-spacing: 0; margin-left: 6px; font-size: 12px; }
+.loss { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line-1); border-radius: var(--radius-2); background: var(--bg-1); }
+.loss div { padding: 8px 10px; border-right: 1px solid var(--line-1); } .loss div:last-child { border-right: 0; }
+.loss b { display: block; font-family: var(--font-mono); font-size: 15px; line-height: 18px; }
+.loss span { font-size: 11px; color: var(--ink-faint); }
+.lm-toast .g.ok { background: var(--ink-muted); }
+.lm-toast .timer b.u { background: var(--ink-muted); width: 70%; }
+</style></head>
+<body>
+<div class="row">
+ <div class="st"><span class="lm-caption">Confirm<b>Delete map (the only action that asks)</b></span>
+  <div class="lm-dialog" style="width:420px">
+   <div class="hd"><div class="tt"><h3>Delete the map “Corp”?</h3><span class="sub">This deletes its file and can't be undone.</span></div><span class="x">✕</span></div>
+   <div class="bd">
+    <div class="loss"><div><b>23</b><span>systems</span></div><div><b>61</b><span>signatures</span></div><div><b>4d</b><span>last activity</span></div></div>
+    <span class="lm-help">Home J120617 · file <span class="lm-mono">maps/corp.db</span> (+ -wal, -shm). Characters and settings are kept.</span>
+   </div>
+   <div class="ft"><button class="lm-btn danger">✕ Delete map</button><button class="lm-btn is-focus">Cancel <span class="lm-kbd">Esc</span></button></div>
+  </div>
+ </div>
+ <div class="st"><span class="lm-caption">Undo toast<b>collapse, remove, delete sigs</b></span>
+  <div class="lm-toast"><span class="g ok">↶</span><div style="flex:1"><div class="t">Collapsed A2 ↔ C</div><div class="s">C and 2 systems behind it were removed from the map.</div>
+   <div class="acts"><button class="lm-btn primary sm">Undo <span class="lm-kbd">Ctrl+Z</span></button><span class="lm-faint" style="margin-left:auto;font-size:11px">8s</span></div><div class="timer"><b class="u"></b></div></div></div>
+  <div class="lm-toast"><span class="g ok">↶</span><div style="flex:1"><div class="t">Deleted 3 missing sigs</div><div class="s">HJK-447, PLW-662, UTE-071 in A2</div>
+   <div class="acts"><button class="lm-btn primary sm">Undo <span class="lm-kbd">Ctrl+Z</span></button><span class="lm-faint" style="margin-left:auto;font-size:11px">8s</span></div><div class="timer"><b class="u" style="width:35%"></b></div></div></div>
+  <div class="lm-toast"><span class="g ok" style="background:var(--success)">✓</span><div style="flex:1"><div class="t">Map “Corp” deleted</div><div class="s">Switched to Main.</div></div></div>
+ </div>
+</div>
+</body>
+</html>
