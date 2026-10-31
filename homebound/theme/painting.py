@@ -281,6 +281,7 @@ def edge_pens() -> dict[str, QPen]:
         "unknown": QPen(color("edge-unknown"), PX["edge-w-fresh"], Qt.PenStyle.CustomDashLine),
         "frig": QPen(color("edge-frig"), PX["edge-w-frig"]),
         "eol": QPen(color("edge-eol"), PX["edge-w-eol"], Qt.PenStyle.CustomDashLine, Qt.PenCapStyle.RoundCap),
+        "eol1h": QPen(color("edge-eol"), PX["edge-w-eol"], Qt.PenStyle.CustomDashLine, Qt.PenCapStyle.RoundCap),
         "selected": QPen(color("accent"), PX["edge-w-fresh"] + 6),
     }
     w = PX["edge-w-critical"]
@@ -288,7 +289,8 @@ def edge_pens() -> dict[str, QPen]:
     w = PX["edge-w-fresh"]
     pens["unknown"].setDashPattern([3 / w, 5 / w])
     w = PX["edge-w-eol"]
-    pens["eol"].setDashPattern([0.01, 9 / w])
+    pens["eol"].setDashPattern([0.01, 9 / w])      # < 4h: a dot every 9px
+    pens["eol1h"].setDashPattern([0.01, 5 / w])    # < 1h: denser = sooner
     c = color("accent")
     c.setAlphaF(.35)
     pens["selected"].setColor(c)
@@ -338,6 +340,28 @@ def draw_dot_grid(p: QPainter, rect: QRectF, step: float | None = None) -> None:
             x += step
         y += step
     p.drawPoints(pts)
+
+
+def draw_line_grid(p: QPainter, rect: QRectF, step: float, major_every: int = 3, minor: bool = True) -> None:
+    """Square grid of hairlines; every `major_every`-th line (one node height) is a little brighter."""
+    import math
+    p.fillRect(rect, color("bg-0"))
+    minor_pen = QPen(color("grid-dot"), 1)
+    major_pen = QPen(color("line-1"), 1)
+    for pen in (minor_pen, major_pen):
+        pen.setCosmetic(True)
+    i0, i1 = math.floor(rect.left() / step), math.ceil(rect.right() / step)
+    j0, j1 = math.floor(rect.top() / step), math.ceil(rect.bottom() / step)
+    for major in (False, True):  # minor first so major lines sit on top
+        if not major and not minor:
+            continue
+        p.setPen(major_pen if major else minor_pen)
+        for i in range(i0, i1 + 1):
+            if (i % major_every == 0) == major:
+                p.drawLine(QPointF(i * step, rect.top()), QPointF(i * step, rect.bottom()))
+        for j in range(j0, j1 + 1):
+            if (j % major_every == 0) == major:
+                p.drawLine(QPointF(rect.left(), j * step), QPointF(rect.right(), j * step))
 
 
 def opacity(name: str) -> float:

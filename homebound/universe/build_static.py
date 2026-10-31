@@ -40,7 +40,8 @@ WH_CLASS_LABEL = {1: "C1", 2: "C2", 3: "C3", 4: "C4", 5: "C5", 6: "C6", 12: "TH"
                   14: "DR", 15: "DR", 16: "DR", 17: "DR", 18: "DR", 25: "PV"}
 DEST_LABEL = {"c1": "C1", "c2": "C2", "c3": "C3", "c4": "C4", "c5": "C5", "c6": "C6",
               "thera": "TH", "c13": "C13", "hs": "HS", "ls": "LS", "ns": "NS", "pochven": "PV",
-              "barbican": "DR", "conflux": "DR", "redoubt": "DR", "sentinel": "DR", "vidette": "DR"}
+              "barbican": "DR", "conflux": "DR", "redoubt": "DR", "sentinel": "DR", "vidette": "DR",
+              "drifter": "DR"}
 
 
 def fetch(url: str, dest: Path, refresh: bool) -> Path:
@@ -154,7 +155,8 @@ def build(refresh: bool = False) -> None:
         CREATE TABLE gates (a INTEGER, b INTEGER, PRIMARY KEY (a, b));
         CREATE TABLE statics (system_id INTEGER, wh_type TEXT, PRIMARY KEY (system_id, wh_type));
         CREATE TABLE wh_types (name TEXT PRIMARY KEY, dest TEXT, lifetime_h REAL, total_mass INTEGER,
-                               max_jump_mass INTEGER, mass_regen INTEGER, is_static INTEGER);
+                               max_jump_mass INTEGER, mass_regen INTEGER, is_static INTEGER,
+                               src TEXT);  -- classes it can spawn in, e.g. 'C5,C6'
         CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
         CREATE INDEX systems_name ON systems (name COLLATE NOCASE);
         CREATE INDEX gates_b ON gates (b);
@@ -173,11 +175,12 @@ def build(refresh: bool = False) -> None:
     types = []
     for t in wht:
         dests = sorted({DEST_LABEL.get(x, x.upper()) for x in (t["dest"] or [])})
+        srcs = sorted({DEST_LABEL.get(x, x.upper()) for x in (t.get("src") or [])})
         types.append((t["name"], ",".join(dests) or None,
                       float(t["lifetime"]) if t.get("lifetime") else None,
                       num(t.get("total_mass")), num(t.get("max_mass_per_jump")), num(t.get("mass_regen")),
-                      1 if t.get("static") else 0))
-    db.executemany("INSERT INTO wh_types VALUES (?,?,?,?,?,?,?)", types)
+                      1 if t.get("static") else 0, ",".join(srcs) or None))
+    db.executemany("INSERT INTO wh_types VALUES (?,?,?,?,?,?,?,?)", types)
     build_no = next(iter(jsonl(z, "_sde.jsonl")), {}).get("buildNumber") if "_sde.jsonl" in z.namelist() else None
     db.executemany("INSERT INTO meta VALUES (?,?)", [("sde_build", str(build_no)), ("built", time.strftime("%F %T"))])
     db.commit()

@@ -39,8 +39,11 @@ class Overlay(QWidget):
 
     # ------------------------------------------------------------ window flags / position
     def _apply_flags(self):
+        # EVE clients run fullscreen, and KWin stacks the active fullscreen window above "keep above"
+        # windows. Bypassing the window manager (override-redirect on XWayland) makes the overlay an
+        # unmanaged window, which KWin keeps above everything, fullscreen games included.
         flags = (Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool
-                 | Qt.WindowType.WindowDoesNotAcceptFocus)
+                 | Qt.WindowType.WindowDoesNotAcceptFocus | Qt.WindowType.X11BypassWindowManagerHint)
         if not self.unlocked:
             flags |= Qt.WindowType.WindowTransparentForInput
         vis = self.isVisible()
@@ -109,6 +112,7 @@ class Overlay(QWidget):
             if not self.isVisible():
                 self._restore_pos()
                 self.show()
+            self.raise_()
             self.update()
         else:
             self.hide()

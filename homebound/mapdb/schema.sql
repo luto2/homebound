@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS systems (
     notes        TEXT DEFAULT '',
     added_at     TEXT NOT NULL,
     scanned_at   TEXT,
-    pinned       INTEGER DEFAULT 0 -- keep when cleaning up
+    pinned       INTEGER DEFAULT 0, -- keep when cleaning up
+    confirmed    INTEGER DEFAULT 1  -- 0: added by hand, no character has been here yet
 );
 
 CREATE TABLE IF NOT EXISTS connections (
@@ -23,11 +24,13 @@ CREATE TABLE IF NOT EXISTS connections (
     sig_a       TEXT, sig_b TEXT,  -- sig IDs on each side
     wh_type     TEXT,              -- type of the side that isn't K162, if known
     mass        TEXT DEFAULT 'fresh' CHECK (mass IN ('fresh','reduced','critical','unknown')),
-    eol         INTEGER DEFAULT 0,
-    eol_at      TEXT,
+    eol         INTEGER DEFAULT 0, -- lifetime: 0 stable, 1 < 4h, 2 < 1h, 3 expired
+    eol_at      TEXT,              -- when the lifetime state was set
     frig        INTEGER DEFAULT 0,
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL,
+    size        TEXT,              -- S/M/L/XL by hand, only when the type doesn't say (K162/unknown)
+    confirmed   INTEGER DEFAULT 1, -- 0: drawn by hand, nobody has jumped it yet
     UNIQUE (a, b)
 );
 
@@ -40,6 +43,13 @@ CREATE TABLE IF NOT EXISTS signatures (
     scan_pct   REAL,
     hole_index INTEGER,            -- bookmark index reserved for this WH sig
     state      TEXT DEFAULT '',    -- '' | new | missing
+    kind       TEXT DEFAULT 'sig', -- sig (Cosmic Signature) | anom (Cosmic Anomaly)
+    dest       TEXT,               -- WH: class it leads to (for K162 / unknown types), e.g. C5, HS
+    mass       TEXT,               -- WH: fresh | reduced | critical | unknown (NULL = not set)
+    eol        INTEGER DEFAULT 0,  -- WH: lifetime 0 stable, 1 < 4h, 2 < 1h, 3 expired
+    eol_at     TEXT,
+    frig       INTEGER DEFAULT 0,  -- WH: frigate only (size S)
+    size       TEXT,               -- WH: S/M/L/XL by hand for K162 / unknown type
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     PRIMARY KEY (system_id, sig_id)

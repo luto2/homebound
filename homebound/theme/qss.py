@@ -1,5 +1,6 @@
 """App stylesheet and palette built from tokens (design-system/qt-implementation.md §2)."""
 import re
+from importlib.resources import files
 
 from .tokens import HEX, PX, color, qss_color
 
@@ -7,6 +8,7 @@ QSS = """
 QWidget            { background: {bg-1}; color: {ink}; font-family: "Noto Sans"; font-size: 13px; }
 QMainWindow::separator { background: {line-1}; width: 1px; height: 1px; }
 QDockWidget > QWidget, QDialog { background: {bg-2}; }
+QDialog .QWidget, QDialog QLabel, QDialog QCheckBox, QDialog QRadioButton { background: transparent; }
 QDockWidget::title { background: {bg-3}; padding: {sp-4}px {sp-8}px; }
 QFrame[role="divider"] { background: {line-1}; max-height: 1px; }
 QFrame[role="panel"]   { background: {bg-2}; }
@@ -21,12 +23,15 @@ QPushButton:hover, QToolButton:hover   { background: {bg-4}; }
 QPushButton:pressed, QToolButton:pressed { background: {bg-2}; }
 QPushButton:focus                      { border: 2px solid {accent}; }
 QPushButton:disabled, QToolButton:disabled { color: {ink-disabled}; border-color: {line-1}; background: {bg-2}; }
-QToolButton:checked                    { background: {accent-dim}; border: 1px solid {accent}; color: {ink}; }
+QToolButton:checked, QPushButton:checked { background: {accent-dim}; border: 1px solid {accent}; color: {ink}; }
 QPushButton[variant="primary"]         { background: {accent}; border-color: {accent}; color: {ink-inverse}; font-weight: 600; }
 QPushButton[variant="primary"]:hover   { background: {accent-hover}; border-color: {accent-hover}; }
 QPushButton[variant="danger"]          { background: {danger-dim}; border-color: {danger}; color: {danger}; font-weight: 600; }
 QPushButton[variant="ghost"], QToolButton[variant="ghost"] { background: transparent; border-color: transparent; color: {ink-muted}; }
 QPushButton[variant="ghost"]:hover, QToolButton[variant="ghost"]:hover { background: {bg-4}; color: {ink}; }
+QToolButton[variant="map"] { background: {accent-dim}; border-color: {accent}; font-weight: 600; }
+QToolButton[variant="map"]:hover { background: {accent-dim}; border-color: {accent-hover}; }
+QPushButton[variant="primary"]:disabled, QPushButton[variant="danger"]:disabled { background: {bg-2}; border-color: {line-1}; color: {ink-disabled}; font-weight: 400; }
 QPushButton[size="sm"] { min-height: 18px; padding: 0 {sp-6}px; font-size: 11px; }
 
 QLineEdit, QComboBox, QPlainTextEdit, QSpinBox {
@@ -34,6 +39,7 @@ QLineEdit, QComboBox, QPlainTextEdit, QSpinBox {
     selection-background-color: {accent}; selection-color: {ink-inverse}; min-height: {size-control-inner}px; }
 QPlainTextEdit { padding: {sp-4}px {sp-8}px; }
 QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus, QSpinBox:focus { border: 2px solid {accent}; }
+QLineEdit:disabled, QComboBox:disabled { background: {bg-2}; border-color: {line-1}; color: {ink-muted}; }
 QLineEdit[state="valid"]   { border-color: {success}; }
 QLineEdit[state="invalid"] { border-color: {danger}; background: {danger-dim}; }
 QLineEdit[mono="true"]     { font-family: "Hack", "Noto Sans Mono", "DejaVu Sans Mono"; font-size: 12px; }
@@ -55,9 +61,14 @@ QCheckBox::indicator, QRadioButton::indicator { width: 14px; height: 14px; borde
 QCheckBox::indicator { border-radius: {radius-1}px; }
 QRadioButton::indicator { border-radius: 7px; }
 QCheckBox::indicator:checked, QRadioButton::indicator:checked { background: {accent}; border-color: {accent}; }
+QCheckBox::indicator:checked    { image: url({icon-check}); }
+QRadioButton::indicator:checked { image: url({icon-radio}); }
+QCheckBox::indicator:hover, QRadioButton::indicator:hover { border-color: {accent}; }
+QCheckBox::indicator:disabled, QRadioButton::indicator:disabled { background: {bg-2}; border-color: {line-1}; }
 
 QFrame[card="true"] { background: {bg-3}; border: 1px solid {line-1}; border-radius: {radius-3}px; }
 QFrame[card="true"][selected="true"] { background: {accent-dim}; border: 1px solid {accent}; }
+QFrame[banner="info"]    { background: {bg-3}; border: 1px solid {line-2}; border-radius: {radius-2}px; }
 QFrame[banner="warning"] { background: {warning-dim}; border: 1px solid {warning}; border-radius: {radius-2}px; }
 QFrame[banner="success"] { background: {success-dim}; border: 1px solid {success}; border-radius: {radius-2}px; }
 QFrame[banner="danger"]  { background: {danger-dim};  border: 1px solid {danger};  border-radius: {radius-2}px; }
@@ -87,6 +98,12 @@ QMenu { background: {bg-2}; border: 1px solid {line-2}; border-radius: {radius-4
 QMenu::item { padding: 0 {sp-12}px 0 {sp-8}px; min-height: 26px; background: transparent; }
 QMenu::item:selected { background: {accent}; color: {ink-inverse}; }
 QMenu::item:disabled { color: {ink-disabled}; }
+QMenu::indicator { width: 14px; height: 14px; left: {sp-6}px; }
+QMenu::indicator:non-exclusive:checked { image: url({icon-menu-check}); }
+QMenu::indicator:exclusive:checked { image: url({icon-menu-dot}); }
+QMenu::indicator:selected:non-exclusive:checked { image: url({icon-check}); }
+QMenu::indicator:selected:exclusive:checked { image: url({icon-radio}); }
+QMenu::icon { left: {sp-6}px; }
 QMenu::separator { height: 1px; background: {line-1}; margin: {sp-4}px 0; }
 QToolTip { background: {bg-3}; color: {ink}; border: 1px solid {line-2}; padding: {sp-4}px {sp-6}px; }
 """
@@ -97,6 +114,11 @@ _PLACEHOLDER = re.compile(r"\{([A-Za-z0-9_.-]+)\}")
 def build_qss() -> str:
     vals = {k: qss_color(k) for k in HEX} | {k: f"{v:g}" for k, v in PX.items()}
     vals["size-control-inner"] = f"{PX['size-control'] - 2:g}"
+    icons = files("homebound.theme").joinpath("icons")
+    vals["icon-check"] = str(icons.joinpath("check.svg"))
+    vals["icon-radio"] = str(icons.joinpath("radio-dot.svg"))
+    vals["icon-menu-check"] = str(icons.joinpath("menu-check.svg"))
+    vals["icon-menu-dot"] = str(icons.joinpath("menu-dot.svg"))
     return _PLACEHOLDER.sub(lambda m: vals[m.group(1)], QSS)
 
 

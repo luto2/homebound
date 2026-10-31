@@ -72,7 +72,8 @@ class ZkillFetcher:
                 self.q.put(-sid - 2 if force else sid)
 
     def _run(self):
-        store = Store(self.db_path)  # own connection for this thread
+        path = self.db_path
+        store = Store(path)  # own connection for this thread
         client = httpx.Client(headers={"User-Agent": UA, "Accept-Encoding": "gzip"}, timeout=30)
         while not self._stop:
             item = self.q.get()
@@ -81,6 +82,10 @@ class ZkillFetcher:
             force = item < -1
             sid = -item - 2 if force else item
             self.pending.discard(sid)
+            if self.db_path != path:  # the user switched maps
+                store.close()
+                path = self.db_path
+                store = Store(path)
             if not self.enabled or (not force and is_fresh(store.zkill(sid))):
                 continue
             try:

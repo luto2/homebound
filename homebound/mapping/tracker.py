@@ -11,11 +11,12 @@ is emitted so the UI can confirm "was this the static?" / "which sig?".
 from dataclasses import dataclass, field
 
 from ..logs.parser import SystemChange
-from ..mapdb.store import Store
+from ..mapdb.store import LIFE_LEFT, Store
 from ..universe.db import Universe
 from .naming import Namer, StaticGuess, guess_static, next_hole_index, next_level_index, path_of, static_slots
 
-CHILD_DX, CHILD_DY = 252, 96
+GRID = 62 / 3                          # map grid cell = 1/3 of the node height (token size-node-h)
+CHILD_DX, CHILD_DY = 12 * GRID, 5 * GRID  # offset of a new child from its parent, in whole grid cells
 
 
 @dataclass
@@ -56,6 +57,12 @@ class MapChanged:
     pass
 
 
+def hole_size(uni: Universe, wh_type: str | None, size: str | None) -> str | None:
+    """S/M/L/XL: from the type when it says, else what was set by hand (K162 / unknown type)."""
+    t = uni.wh_type(wh_type) if wh_type and wh_type.upper() != "K162" else None
+    return (t.size if t else None) or size
+
+
 def is_wh_side(uni: Universe, sid: int) -> bool:
     s = uni.by_id(sid)
     return bool(s and (s.wspace or s.cls in ("PV", "TH")))
@@ -72,6 +79,8 @@ class Tracker:
         sid = sys_.id if sys_ else None
         prev = self.store.set_character(ch.char_id, ch.char_name, sid, ch.at.isoformat())
         events: list = [Moved(ch.char_id, ch.char_name, sid, prev)]
+        if sid is not None and self.confirm(system_id=sid):
+            events.append(MapChanged())  # a character is there: a hand-added system is real
         if ch.first or sid is None or prev is None or prev == sid:
             return events
         if self.uni.gate_adjacent(prev, sid):
@@ -83,7 +92,7 @@ class Tracker:
         return events
 
     # ------------------------------------------------------------ map building
-    def ensure_system(self, sid: int, near: int | None = None) -> bool:
+    def ensure_system(self, sid: int, near: int | None = None, confirmed: bool = True) -> bool:
         if self.store.has_system(sid):
             return False
         x = y = 0.0
@@ -94,26 +103,37 @@ class Tracker:
         else:
             others = self.store.systems()
             y = max((s.y for s in others), default=-CHILD_DY * 3) + CHILD_DY * 3
-        self.store.add_system(sid, x=x, y=y)
+        self.store.add_system(sid, x=x, y=y, confirmed=int(confirmed))
         return True
 
-    def unlinked_wh_sigs(self, sid: int) -> list[str]:
+    def unlinked_wh_sigs(self, sid: int, to_cls: str | None = None) -> list[str]:
+        """Unlinked WH sigs in sid. With to_cls, only those that can lead to that class: sigs of unknown
+        type and K162s always count (a K162's destination is typed in by hand and may be wrong)."""
         linked = {c.sig_on(sid) for c in self.store.connections_of(sid)}
-        return [s.sig_id for s in self.store.signatures(sid)
-                if s.grp == "wormhole" and s.sig_id not in linked and s.state != "missing"]
+        out = []
+        for s in self.store.signatures(sid):
+            if s.grp != "wormhole" or s.kind == "anom" or s.sig_id in linked or s.state == "missing":
+                continue
+            t = self.uni.wh_type(s.type) if s.type and s.type.upper() != "K162" else None
+            if to_cls and t and t.dest and to_cls not in t.dest:
+                continue
+            out.append(s.sig_id)
+        return out
 
-    def add_wormhole(self, a: int, b: int, char_name: str = "") -> list:
+    def add_wormhole(self, a: int, b: int, char_name: str = "", manual: bool = False) -> list:
+        """Connect a and b. manual: drawn / added by hand, so it (and any system it creates) stays
+        unconfirmed until a character jumps it."""
         events: list = [MapChanged()]
-        a_new = self.ensure_system(a)
+        a_new = self.ensure_system(a, confirmed=not manual)
         b_existed = self.store.has_system(b)
         if b_existed and a_new:
             # Came from outside into a known system: the new side hangs under the known one.
             self.store.update_system(a, x=self.store.system(b).x - CHILD_DX, y=self.store.system(b).y)
-            self.store.add_connection(a, b)
+            self._connect(a, b, manual)
             return events + self._attach(b, a, char_name)
         if not b_existed:
-            self.ensure_system(b, near=a)
-        self.store.add_connection(a, b)
+            self.ensure_system(b, near=a, confirmed=not manual)
+        self._connect(a, b, manual)
 
         bs = self.store.system(b)
         root_a, _ = path_of(self.store, a)
@@ -122,6 +142,28 @@ class Tracker:
         if not becomes_child:
             return events
         return events + self._attach(a, b, char_name)
+
+    def _connect(self, a: int, b: int, manual: bool) -> None:
+        c = self.store.connection(a, b)
+        if c is None:
+            self.store.add_connection(a, b, confirmed=0 if manual else 1)
+        elif not manual and not c.confirmed:
+            self.confirm(conn_id=c.id)  # someone just jumped the hand-drawn connection
+
+    def confirm(self, system_id: int | None = None, conn_id: int | None = None, with_connections=False) -> bool:
+        """Mark a hand-added system and/or connection as real. Returns True if anything changed."""
+        changed = False
+        if system_id is not None and (ms := self.store.system(system_id)):
+            if not ms.confirmed:
+                self.store.update_system(system_id, confirmed=1)
+                changed = True
+            if with_connections:
+                for c in self.store.connections_of(system_id):
+                    changed |= self.confirm(conn_id=c.id)
+        if conn_id is not None and (c := self.store.connection_by_id(conn_id)) and not c.confirmed:
+            self.store.update_connection(conn_id, confirmed=1)
+            changed = True
+        return changed
 
     def _attach(self, a: int, b: int, char_name: str) -> list:
         """Make b a child of a, provisionally named by the best guess; ask if unsure."""
@@ -135,13 +177,14 @@ class Tracker:
         previous = {"parent_id": bs.parent_id, "hole_index": bs.hole_index, "level_index": bs.level_index}
         self.store.update_system(b, parent_id=a, hole_index=hole, level_index=level)
 
-        cands = self.unlinked_wh_sigs(a)
+        cands = self.unlinked_wh_sigs(a, self.uni.by_id(b).cls)
         if len(cands) == 1:
             self.link_sig(conn.id, a, cands[0], hole)
             cands = []
-        if not guess.applies or (guess.certain and not cands and self.auto_when_certain):
-            if guess.applies:
-                events.append(AutoNamed(b, self.namer.display(b), previous))
+        if not guess.applies and not cands:
+            return events  # can't be the static and no sig to pick: nothing to ask
+        if guess.applies and guess.certain and not cands and self.auto_when_certain:
+            events.append(AutoNamed(b, self.namer.display(b), previous))
             return events
         events.append(NamingRequest(a, b, conn.id, guess, cands, char_name))
         return events
@@ -152,12 +195,45 @@ class Tracker:
             self.store.update_signature(system_id, sig_id, hole_index=hole_index)
         sig = self.store.signature(system_id, sig_id)
         c = self.store.connection_by_id(conn_id)
-        if sig and sig.type and sig.type != "K162" and c and not c.wh_type:
-            self.store.update_connection(conn_id, wh_type=sig.type)
+        if not (sig and c):
+            return
+        kw = {}
+        if sig.type and sig.type != "K162" and not c.wh_type:
+            kw["wh_type"] = sig.type
+        # WH details entered on the sig before the jump carry over to the connection
+        if sig.mass:
+            kw["mass"] = sig.mass
+        if sig.eol and sig.eol > c.eol:
+            kw |= {"eol": sig.eol, "eol_at": sig.eol_at}
+        if sig.size and not c.size:
+            kw["size"] = sig.size
+        if hole_size(self.uni, kw.get("wh_type", c.wh_type) or sig.type, kw.get("size", c.size)) == "S" or sig.frig:
+            kw["frig"] = 1
+        if kw:
+            self.store.update_connection(conn_id, **kw)
+
+    def save_sig(self, system_id: int, sig_id: str, values: dict) -> int | None:
+        """Store edits from the sig dialog; mirror WH details onto the linked connection.
+        Returns the linked connection id, if any."""
+        self.store.update_signature(system_id, sig_id, **values)
+        conn = next((c for c in self.store.connections_of(system_id) if c.sig_on(system_id) == sig_id), None)
+        if not conn:
+            return None
+        if values.get("grp", "wormhole") != "wormhole":
+            self.store.set_connection_sig(conn.id, system_id, None)  # no longer a wormhole: unlink
+            return None
+        kw = {k: values[k] for k in ("mass", "eol", "frig", "size") if k in values}
+        code = values.get("type")
+        if code and code != "K162":
+            kw["wh_type"] = code
+        if kw:
+            self.store.update_connection(conn.id, **kw)
+        return conn.id
 
     # ------------------------------------------------------------ expiry
     def expire(self, now=None) -> int:
-        """Drop connections past their lifetime (type lifetime, else 48h; EOL + 4h) and orphaned systems.
+        """Drop connections past their lifetime (type lifetime, else 48h; < 4h / < 1h / expired counted
+        from when that state was set) and orphaned systems.
         Returns the number of connections removed."""
         from datetime import datetime, timedelta, timezone
         now = now or datetime.now(timezone.utc)
@@ -166,8 +242,8 @@ class Tracker:
             t = self.uni.wh_type(c.wh_type) if c.wh_type else None
             life = timedelta(hours=t.lifetime_h if t and t.lifetime_h else 48)
             dead = now - datetime.fromisoformat(c.created_at) > life
-            if c.eol and c.eol_at:
-                dead |= now - datetime.fromisoformat(c.eol_at) > timedelta(hours=4)
+            if c.eol in LIFE_LEFT and c.eol_at:
+                dead |= now - datetime.fromisoformat(c.eol_at) > LIFE_LEFT[c.eol]
             if dead:
                 self.store.remove_connection(c.id)
                 removed += 1

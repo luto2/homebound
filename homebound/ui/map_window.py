@@ -2,7 +2,7 @@
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QIcon, QKeySequence, QPainter, QPen, QPixmap, QShortcut
 from PySide6.QtWidgets import (
-    QApplication, QButtonGroup, QCompleter, QDialog, QDockWidget, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
+    QApplication, QButtonGroup, QCompleter, QDialog, QDockWidget, QHBoxLayout, QLabel, QLineEdit,
     QMainWindow, QMenu, QPushButton, QSystemTrayIcon, QToolButton, QVBoxLayout, QWidget, QWidgetAction,
 )
 
@@ -11,7 +11,8 @@ from ..theme import painting as P
 from ..theme.qss import build_qss
 from ..theme.tokens import OP, PX, color, font
 from .char_dock import CharDock
-from .dialogs import ConnectionDialog, NamingDialog
+from . import menus as M
+from .dialogs import AddSystemDialog, ConnectionDialog, NamingDialog, PromptDialog
 from .map_scene import MapScene, MapView
 from .overlay import Overlay
 from .settings_dialog import SettingsDialog
@@ -77,14 +78,32 @@ class MapArea(QWidget):
         zl.insertWidget(1, self.zlabel)
         view.zoomChanged.connect(lambda z: self.zlabel.setText(f"{z * 100:.0f}%"))
         self.legend = Legend(self)
+        # which map is open, top-right; only shown when there's more than one (spec: MapMenu)
+        self.map_tag = QLabel(self)
+        self.map_tag.setStyleSheet(f"background: {color('bg-1').name()}; border: 1px solid {color('line-1').name()};"
+                                   f" border-radius: {PX['radius-2']:g}px; padding: 2px {PX['sp-8']:g}px;")
+        self.map_tag.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.map_tag.hide()
         self.scrim = Scrim(self)
         self.scrim.hide()
+
+    def set_map_tag(self, name: str | None):
+        if name:
+            self.map_tag.setText(f"<span style='color:{color('ink-faint').name()}; font-size:11px; font-weight:600;"
+                                 f" letter-spacing:0.6px'>MAP</span>&nbsp; <b>{name}</b>")
+            self.map_tag.adjustSize()
+        self.map_tag.setVisible(bool(name))
+        self._place_tag()
+
+    def _place_tag(self):
+        self.map_tag.move(self.width() - self.map_tag.width() - PX["sp-12"], PX["sp-12"])
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self.zoom.adjustSize()
         self.zoom.move(self.width() - self.zoom.width() - PX["sp-16"], self.height() - self.zoom.height() - PX["sp-12"])
         self.legend.reposition()
+        self._place_tag()
         self.scrim.setGeometry(self.rect())
         if hasattr(self, "toasts"):
             self.toasts.layout()
@@ -92,7 +111,7 @@ class MapArea(QWidget):
 
 class Legend(QWidget):
     ITEMS = [("fresh", "Fresh"), ("reduced", "Reduced · R"), ("critical", "Critical · CRIT"),
-             ("eol", "End of life · EOL"), ("frig", "Frigate only · F"), ("unknown", "Unknown · ?")]
+             ("eol", "End of life · <4h / <1h"), ("frig", "Frigate only · F"), ("unknown", "Unknown · ?")]
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -165,6 +184,7 @@ class MapWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, d)
         self.panel = SystemPanel(state)
         self.panel.toast.connect(lambda k, t: self.toasts.show(k, t))
+        self.panel.undoable.connect(self.offer_undo)
         d = QDockWidget("System", self)
         d.setObjectName("system")
         d.setWidget(self.panel)
@@ -181,6 +201,7 @@ class MapWindow(QMainWindow):
         self.scene.edgeContextMenu.connect(self._edge_menu)
         self.scene.edgeActivated.connect(self.edit_connection)
         self.scene.backgroundContextMenu.connect(self._bg_menu)
+        self.scene.linkRequested.connect(self.link_systems)
         state.namingRequested.connect(self.queue_naming)
         state.unknownJump.connect(self._unknown_jump)
         state.autoNamed.connect(self._auto_named)
@@ -192,6 +213,12 @@ class MapWindow(QMainWindow):
         QShortcut(QKeySequence.StandardKey.Paste, self, activated=self._paste_shortcut,
                   context=Qt.ShortcutContext.WindowShortcut)
         QShortcut(QKeySequence.StandardKey.Find, self, activated=lambda: self.find.setFocus())
+        # the keys the context menus show; only while the map has focus, so text fields keep them
+        for key, fn in (("F2", self._key_rename), ("Del", self._key_remove), ("Ins", self._key_add),
+                        ("F", self.fit_chain), ("Return", self._key_edit_edge)):
+            QShortcut(QKeySequence(key), self.view, activated=fn, context=Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        QShortcut(QKeySequence.StandardKey.Undo, self, activated=self.toasts.trigger_undo,
+                  context=Qt.ShortcutContext.WindowShortcut)
         QTimer.singleShot(0, self.fit_chain)
         self._sync_settings()
 
@@ -210,6 +237,16 @@ class MapWindow(QMainWindow):
         word.setFont(f)
         tb.addWidget(word)
         tb.addSeparator()
+        self.map_btn = QToolButton()
+        self.map_btn.setToolTip("Map: each map has its own systems, home and naming scheme")
+        self.map_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.map_btn.setProperty("variant", "map")
+        self.map_btn.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0; }")
+        self.map_menu = M.menu(self.map_btn)
+        self.map_menu.setStyleSheet(build_qss())
+        self.map_menu.aboutToShow.connect(self._fill_map_menu)
+        self.map_btn.setMenu(self.map_menu)
+        tb.addWidget(self.map_btn)
         self.home_btn = QToolButton()
         self.home_btn.setToolTip("Home system (Settings)")
         self.home_btn.clicked.connect(lambda: self.open_settings(1))
@@ -338,8 +375,116 @@ class MapWindow(QMainWindow):
         self.activateWindow()
 
     # ------------------------------------------------------------ settings sync
+    # ------------------------------------------------------------ maps
+    def _fill_map_menu(self):
+        from ..mapdb.store import map_stats
+        from .map_scene import age_text
+        st = self.state.settings
+        m = self.map_menu
+        m.clear()
+        m.setMinimumWidth(300)
+        M.section(m, "Maps")
+        grp = QActionGroup(m)
+        for name, info in st.maps.items():
+            home = info.get("home_system") or "no home"
+            stats = map_stats(st.map_path(name))
+            last = age_text(stats["last"])
+            last = "now" if last in ("", "0m") and stats["last"] else (last or "–")
+            M.item(m, f"{name}  ·  {home}\t{stats['systems']} sys · {last}", lambda n=name: self.switch_map(n),
+                   checked=name == st.active_map, group=grp)
+        m.addSeparator()
+        M.item(m, "New map …", self.new_map)
+        M.item(m, f"Rename “{st.active_map}” …", self.rename_map)
+        others = [n for n in st.maps if n != st.active_map]
+        dm = M.menu(m)
+        dm.setTitle("Delete map")
+        dm.setEnabled(bool(others))
+        if not others:
+            dm.menuAction().setToolTip("There's only one map.")
+        for n in others:
+            M.item(dm, n, lambda n=n: self.delete_map(n), danger=True)
+        M.item(dm, f"{st.active_map} is open: switch first", enabled=False)
+        m.addMenu(dm)
+
+    def switch_map(self, name: str):
+        if name == self.state.settings.active_map:
+            return
+        self.state.switch_map(name)
+        self.toasts.show("ok", f"Map “{name}”")
+        QTimer.singleShot(0, self.fit_chain)
+
+    def _map_name_check(self, keep: str | None = None):
+        maps = self.state.settings.maps
+
+        def check(text):
+            if not text:
+                return False, "✕ The map needs a name."
+            if text in maps and text != keep:
+                return False, f"✕ A map called “{text}” already exists."
+            if len(text) > 32:
+                return False, "✕ At most 32 characters."
+            return True, ""
+        return check
+
+    def new_map(self):
+        st = self.state.settings
+        dlg = PromptDialog(self, "New map", "Each map has its own systems, sigs and home system.", "Map name",
+                           validate=self._map_name_check(), primary="Create map",
+                           hint="Letters, digits, spaces and - _ . (max 32).", foot_note="Opens Settings → Home next")
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        name = dlg.text()
+        try:
+            st.add_map(name)
+        except ValueError as e:
+            self.toasts.show("err", str(e))
+            return
+        st.save()
+        self.switch_map(name.strip())
+        self.open_settings(1)  # set its home
+
+    def rename_map(self):
+        st = self.state.settings
+        old = st.active_map
+        home = st.maps.get(old, {}).get("home_system") or st.home_system
+        dlg = PromptDialog(self, "Rename map", f"{old} · home {home}" if home else f"{old} · no home", "New name", old,
+                           validate=self._map_name_check(keep=old), primary="Rename",
+                           hint="Letters, digits, spaces and - _ . (max 32).")
+        if dlg.exec() != QDialog.DialogCode.Accepted or dlg.text() == old:
+            return
+        name = dlg.text()
+        try:
+            st.rename_map(old, name)
+        except ValueError as e:
+            self.toasts.show("err", str(e))
+            return
+        st.save()
+        self._sync_settings()
+
+    def delete_map(self, name: str):
+        from .dialogs import ConfirmDeleteMapDialog
+        st = self.state.settings
+        info = st.maps.get(name, {})
+        dlg = ConfirmDeleteMapDialog(self, name, st.map_path(name), info.get("home_system", ""))
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            path = st.remove_map(name)
+        except ValueError as e:
+            self.toasts.show("err", str(e))
+            return
+        st.save()
+        for suffix in ("", "-wal", "-shm"):
+            p = path.with_name(path.name + suffix)
+            if p.exists():
+                p.unlink()
+        self.toasts.show("ok", f"Map “{name}” deleted")
+
     def _sync_settings(self):
         st = self.state.settings
+        self.map_btn.setText(f"▦ {st.active_map} ▾")
+        self.setWindowTitle(f"Homebound · {st.active_map}" if len(st.maps) > 1 else "Homebound")
+        self.area.set_map_tag(st.active_map if len(st.maps) > 1 else None)
         self.home_btn.setText(f"⌂ {st.home_system}" if st.home_system else "⌂ Set home")
         self.scheme.setCurrentIndex(max(0, self.scheme.findData(st.naming_scheme)))
         for b in self.mode_btns.buttons():
@@ -469,25 +614,58 @@ class MapWindow(QMainWindow):
     # ------------------------------------------------------------ context menus
     def _node_menu(self, sid, pos):
         st = self.state
-        m = QMenu(self)
-        m.addAction("Rename …", lambda: self._rename(sid))
-        m.addAction("Set as home", lambda: self._set_home(sid))
-        if st.store.system(sid).parent_id:
-            m.addAction("Change static / hole …", lambda: self._rename_hole(sid))
+        m = M.menu(self)
+        node = self.scene.nodes.get(sid)
+        is_home = sid == st.home_id
+        if node and node.unconfirmed:
+            M.item(m, "✓ Mark as confirmed", lambda: self._confirm(system_id=sid))
+            m.addSeparator()
+        M.item(m, "Rename …", lambda: self._rename(sid), "F2")
+        M.item(m, "Draw connection from here", lambda: self.scene.start_link(sid), "Shift+drag")
+        M.item(m, "Set as home", lambda: self._set_home(sid), enabled=not is_home, why="This is already home.")
+        has_parent = bool(st.store.system(sid).parent_id)
+        M.item(m, "Change static / hole …", lambda: self._rename_hole(sid), enabled=has_parent,
+               why="Home has no parent hole." if is_home else "Not connected to a parent system.")
         m.addSeparator()
-        m.addAction("Request zKill now", lambda: st.zkill.request([sid], force=True))
+        M.item(m, "Request zKill now", lambda: st.zkill.request([sid], force=True))
         m.addSeparator()
-        a = m.addAction("✕ Remove from map", lambda: self._remove(sid))
-        a.setEnabled(sid != st.home_id)
+        M.item(m, "Remove from map", lambda: self._remove(sid), "Del", danger=True, enabled=not is_home,
+               why="Home can't be removed. Set another home first.")
         m.exec(pos)
+
+    def _selected_system(self):
+        sid = self.state.selected
+        return sid if sid and self.state.store.has_system(sid) else None
+
+    def _key_rename(self):
+        if sid := self._selected_system():
+            self._rename(sid)
+
+    def _key_remove(self):
+        sid = self._selected_system()
+        if sid and sid != self.state.home_id:
+            self._remove(sid)
+
+    def _key_add(self):
+        self._add_system(self.view.mapToScene(self.view.viewport().rect().center()))
+
+    def _key_edit_edge(self):
+        from .map_scene import ConnectionEdge
+        edge = next((i for i in self.scene.selectedItems() if isinstance(i, ConnectionEdge)), None)
+        if edge:
+            self.edit_connection(edge.conn.id)
 
     def _rename(self, sid):
         st = self.state
         ms = st.store.system(sid)
-        t, ok = QInputDialog.getText(self, "Rename", f"Custom name for {st.uni.by_id(sid).name} (empty = scheme name)",
-                                     text=ms.custom_name or "")
-        if ok:
-            st.store.update_system(sid, custom_name=t.strip() or None)
+        s = st.uni.by_id(sid)
+        auto = st.namer.scheme_label(sid)
+        dlg = PromptDialog(self, "Rename system", f"<b>{st.namer.display(sid)}</b> · {s.name} · {s.cls}", "Custom name",
+                           ms.custom_name or "", validate=lambda t: (True, ""),
+                           primary=lambda t: "Rename" if t else "Use scheme name", placeholder=auto,
+                           end_text="scheme name", hint=f"Leave empty to use the scheme name ({auto}).")
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            st.store.update_system(sid, custom_name=dlg.text() or None)
             st.mapChanged.emit()
 
     def _rename_hole(self, sid):
@@ -498,8 +676,8 @@ class MapWindow(QMainWindow):
         c = st.store.connection(ms.parent_id, sid)
         if not c:
             return
-        req = NamingRequest(ms.parent_id, sid, c.id, guess_static(st.store, st.uni, ms.parent_id, sid),
-                            st.tracker.unlinked_wh_sigs(ms.parent_id))
+        req = NamingRequest(ms.parent_id, sid, c.id, guess_static(st.store, st.uni, ms.parent_id, sid, strict=False),
+                            st.tracker.unlinked_wh_sigs(ms.parent_id, st.uni.by_id(sid).cls))
         self.queue_naming(req)
 
     def _set_home(self, sid):
@@ -518,30 +696,52 @@ class MapWindow(QMainWindow):
                 st.store.update_system(node.id, parent_id=chain[i - 1].id, hole_index=chain[i - 1].hole_index)
         st.apply_settings()
 
+    def offer_undo(self, title: str, detail: str, snap):
+        """Undo toast for a destructive action; `snap` is store.snapshot() from just before it."""
+        st = self.state
+        store = st.store
+
+        def undo():
+            if st.store is not store:       # switched maps in the meantime
+                self.toasts.show("err", "Can't undo: that was on another map")
+                return
+            store.restore(snap)
+            st.mapChanged.emit()
+            if st.selected:
+                st.systemUpdated.emit(st.selected)
+        self.toasts.undo(title, detail, undo)
+
     def _remove(self, sid):
-        self.state.store.remove_system(sid)
-        if self.state.selected == sid:
-            self.state.select(0)
-        self.state.mapChanged.emit()
+        st = self.state
+        name, n = st.namer.display(sid), len(st.store.connections_of(sid))
+        snap = st.store.snapshot()
+        st.store.remove_system(sid)
+        if st.selected == sid:
+            st.select(0)
+        st.mapChanged.emit()
+        self.offer_undo(f"Removed {name} from the map",
+                        f"Its {n} connection{'s' if n != 1 else ''} went with it." if n else "It had no connections.", snap)
 
     def _edge_menu(self, cid, pos):
         st = self.state
         c = st.store.connection_by_id(cid)
-        m = QMenu(self)
-        m.addAction("Edit connection …", lambda: self.edit_connection(cid))
+        m = M.menu(self)
+        if not c.confirmed:
+            M.item(m, "✓ Mark as confirmed", lambda: self._confirm(conn_id=cid))
+            m.addSeparator()
+        M.item(m, "Edit connection …", lambda: self.edit_connection(cid), "Enter")
         m.addSeparator()
-        for key, label in (("fresh", "Mass fresh"), ("reduced", "Mass reduced · R"), ("critical", "Mass critical · CRIT")):
-            a = m.addAction(label, lambda key=key: self._set_conn(cid, mass=key))
-            a.setCheckable(True)
-            a.setChecked(c.mass == key)
-        a = m.addAction("◷ End of life", lambda: self._set_conn(cid, eol=0 if c.eol else 1))
-        a.setCheckable(True)
-        a.setChecked(bool(c.eol))
-        a = m.addAction("Frigate only", lambda: self._set_conn(cid, frig=0 if c.frig else 1))
-        a.setCheckable(True)
-        a.setChecked(bool(c.frig))
+        M.section(m, "Mass")
+        grp = QActionGroup(m)
+        for key, label in (("fresh", "Fresh"), ("reduced", "Reduced · R"), ("critical", "Critical · CRIT")):
+            M.item(m, label, lambda key=key: self._set_conn(cid, mass=key), checked=c.mass == key, group=grp)
         m.addSeparator()
-        m.addAction("✕ Collapse", lambda: self._collapse(cid))
+        M.section(m, "Lifetime")
+        grp = QActionGroup(m)
+        for key, label in ((0, "Stable"), (1, "◷ < 4h"), (2, "◷ < 1h"), (3, "✕ Expired")):
+            M.item(m, label, lambda key=key: self._set_conn(cid, eol=key), checked=c.eol == key, group=grp)
+        m.addSeparator()
+        M.item(m, "Collapse", lambda: self._collapse(cid), danger=True)
         m.exec(pos)
 
     def _set_conn(self, cid, **kw):
@@ -562,50 +762,60 @@ class MapWindow(QMainWindow):
         c = st.store.connection_by_id(cid)
         if not c:
             return
+        na, nb = st.namer.display(c.a), st.namer.display(c.b)
+        names = {c.a: na, c.b: nb}
+        snap = st.store.snapshot()
         st.store.remove_connection(cid)
         for side in (c.a, c.b):
             sig = c.sig_on(side)
             if sig:
                 st.store.delete_signatures(side, [sig])
         # drop systems that are no longer connected to anything (except home / pinned)
+        gone = []
         for sid in (c.a, c.b):
             ms = st.store.system(sid)
             if ms and sid != st.home_id and not ms.pinned and not st.store.connections_of(sid):
                 st.store.remove_system(sid)
+                gone.append(names[sid])
         for s in st.store.systems():
             if s.parent_id and not st.store.connection(s.parent_id, s.id):
                 st.store.update_system(s.id, parent_id=None, hole_index=None)
         st.mapChanged.emit()
-        self.toasts.show("ok", "Connection collapsed")
+        detail = (f"{' and '.join(gone)} {'was' if len(gone) == 1 else 'were'} removed from the map." if gone
+                  else "Both systems stay on the map.")
+        self.offer_undo(f"Collapsed {na} ↔ {nb}", detail, snap)
 
     def _bg_menu(self, scene_pos, pos):
-        m = QMenu(self)
-        m.addAction("Add system …", lambda: self._add_system(scene_pos))
-        m.addAction("Fit chain", self.fit_chain)
+        m = M.menu(self)
+        M.item(m, "Add system …", lambda: self._add_system(scene_pos), "Ins")
+        M.item(m, "Fit chain", self.fit_chain, "F")
         m.exec(pos)
 
     def _add_system(self, scene_pos):
         st = self.state
-        dlg = QInputDialog(self)
-        dlg.setWindowTitle("Add system")
-        dlg.setLabelText("System name (J-name or k-space)")
-        le = dlg.findChild(QLineEdit)
-        if le:
-            comp = QCompleter(sorted(st.uni.all_names()), le)
-            comp.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-            le.setCompleter(comp)
-        if dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-        s = st.uni.by_name(dlg.textValue())
-        if not s:
-            self.toasts.show("err", f"Unknown system {dlg.textValue()}")
+        target = st.selected if st.selected and st.store.has_system(st.selected) else None
+        dlg = AddSystemDialog(self, st, target)
+        if dlg.exec() != QDialog.DialogCode.Accepted or not (s := dlg.system()):
             return
         if not st.store.has_system(s.id):
-            st.store.add_system(s.id, x=scene_pos.x(), y=scene_pos.y())
-        if st.selected and st.selected != s.id and st.store.has_system(st.selected):
-            st.dispatch(st.tracker.add_wormhole(st.selected, s.id))
+            st.store.add_system(s.id, x=scene_pos.x(), y=scene_pos.y(), confirmed=0)
+        if target and target != s.id:
+            st.dispatch(st.tracker.add_wormhole(target, s.id, manual=True))
         st.mapChanged.emit()
         st.select(s.id)
+
+    def link_systems(self, a: int, b: int):
+        """A connection drawn by hand (Shift+drag, or 'Draw connection from here')."""
+        st = self.state
+        if st.store.connection(a, b):
+            self.toasts.show("info", f"{st.namer.display(a)} and {st.namer.display(b)} are already connected")
+            return
+        st.dispatch(st.tracker.add_wormhole(a, b, manual=True))
+        self.toasts.show("warn", f"{st.namer.display(a)} ↔ {st.namer.display(b)} added, unconfirmed until someone jumps it")
+
+    def _confirm(self, system_id=None, conn_id=None):
+        if self.state.tracker.confirm(system_id=system_id, conn_id=conn_id, with_connections=system_id is not None):
+            self.state.mapChanged.emit()
 
     def closeEvent(self, e):
         if self.tray.isVisible():

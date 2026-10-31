@@ -1,10 +1,11 @@
 """Left dock: characters with marker, online state and current system (spec: MapWindow)."""
 from PySide6.QtCore import QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QPainter
-from PySide6.QtWidgets import QListWidget, QListWidgetItem, QMenu, QStyle, QStyledItemDelegate
+from PySide6.QtWidgets import QListWidget, QListWidgetItem, QStyle, QStyledItemDelegate
 
 from ..theme import painting as P
 from ..theme.tokens import PX, color, font
+from . import menus as M
 from .map_scene import age_text
 
 ROW_H = 44
@@ -80,6 +81,9 @@ class CharDock(QListWidget):
         self.setMouseTracking(True)
         self.setMinimumWidth(int(PX["size-panel-left"]))
         self.itemDoubleClicked.connect(self._goto)
+        from PySide6.QtGui import QKeySequence, QShortcut
+        QShortcut(QKeySequence("Space"), self, activated=lambda: self.currentItem() and self._goto(self.currentItem()),
+                  context=Qt.ShortcutContext.WidgetShortcut)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._menu)
         state.charactersChanged.connect(self.reload)
@@ -106,7 +110,9 @@ class CharDock(QListWidget):
         if not it:
             return
         cid = it.data(Qt.ItemDataRole.UserRole)[0]
-        m = QMenu(self)
-        m.addAction("Pin overlay to this character", lambda: self.pinRequested.emit(cid))
-        m.addAction("Show on map", lambda: self._goto(it))
+        m = M.menu(self)
+        M.item(m, "Pin overlay to this character", lambda: self.pinRequested.emit(cid))
+        sid = it.data(Qt.ItemDataRole.UserRole)[2]
+        M.item(m, "Show on map", lambda: self._goto(it), "Space",
+               enabled=bool(sid and self.state.store.has_system(sid)), why="Not in a system on this map.")
         m.exec(self.mapToGlobal(pos))

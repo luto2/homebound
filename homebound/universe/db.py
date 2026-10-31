@@ -34,6 +34,23 @@ class WhType:
     total_mass: int | None
     max_jump_mass: int | None
     is_static: bool
+    src: tuple[str, ...] = ()  # classes this type can spawn in
+
+    @property
+    def size(self) -> str | None:
+        """Largest ship class that fits: S (frigate), M (cruiser/BC), L (battleship), XL (capital)."""
+        return size_for_jump_mass(self.max_jump_mass)
+
+
+# max mass per jump (kg) -> size class; the sizes CCP uses are 5, 62, 375 and ≥ 1000 kt
+SIZES = ["S", "M", "L", "XL"]
+SIZE_NAMES = {"S": "Frigate", "M": "Medium", "L": "Large", "XL": "Capital"}
+
+
+def size_for_jump_mass(m: int | None) -> str | None:
+    if not m:
+        return None
+    return "S" if m <= 5e6 else "M" if m <= 62e6 else "L" if m <= 375e6 else "XL"
 
 
 class Universe:
@@ -58,9 +75,12 @@ class Universe:
             self._adj.setdefault(a, set()).add(b)
             self._adj.setdefault(b, set()).add(a)
         self._types: dict[str, WhType] = {}
-        for name, dest, life, tm, mj, st in self.db.execute(
-                "SELECT name, dest, lifetime_h, total_mass, max_jump_mass, is_static FROM wh_types"):
-            self._types[name] = WhType(name, tuple(dest.split(",")) if dest else (), life, tm, mj, bool(st))
+        cols = {r[1] for r in self.db.execute("PRAGMA table_info(wh_types)")}
+        src = "src" if "src" in cols else "NULL"  # universe.sqlite built before src existed
+        for name, dest, life, tm, mj, st, sr in self.db.execute(
+                f"SELECT name, dest, lifetime_h, total_mass, max_jump_mass, is_static, {src} FROM wh_types"):
+            self._types[name] = WhType(name, tuple(dest.split(",")) if dest else (), life, tm, mj, bool(st),
+                                       tuple(sr.split(",")) if sr else ())
 
     # ---- systems
     def by_name(self, name: str) -> System | None:
@@ -103,6 +123,21 @@ class Universe:
     # ---- wormhole types
     def wh_type(self, name: str) -> WhType | None:
         return self._types.get(name.upper())
+
+    def wh_type_names(self) -> list[str]:
+        return sorted(self._types)
+
+    def wh_types_from(self, sid: int) -> list[WhType]:
+        """Types that can be found in this system: its statics plus wanderers that spawn in its class.
+        K162 is not included (it can appear anywhere)."""
+        s = self.by_id(sid)
+        if not s:
+            return []
+        out = {t.name: t for t in self.static_types(sid)}
+        for t in self._types.values():
+            if t.name != "K162" and s.cls in t.src and not t.is_static:
+                out.setdefault(t.name, t)
+        return sorted(out.values(), key=lambda t: (t.name not in s.statics, t.name))
 
     def static_types(self, sid: int) -> list[WhType]:
         s = self._by_id.get(sid)

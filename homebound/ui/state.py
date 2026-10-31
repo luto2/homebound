@@ -7,13 +7,14 @@ from ..mapdb.store import Store
 from ..mapping import chain as chain_mod
 from ..mapping.naming import Namer
 from ..mapping.tracker import AutoNamed, MapChanged, Moved, NamingRequest, Tracker, UnknownJump
-from ..settings import DATA_DIR, Settings
+from ..settings import Settings
 from ..universe.db import Universe
 from ..zkill import ZkillFetcher
 
 
 class AppState(QObject):
     mapChanged = Signal()                 # structure changed (systems/connections)
+    mapSwitched = Signal(str)             # another map file is now active (name)
     systemUpdated = Signal(int)           # details/sigs/zkill of one system
     charactersChanged = Signal()
     characterMoved = Signal(int)          # char id
@@ -31,7 +32,7 @@ class AppState(QObject):
         super().__init__()
         self.uni = uni
         self.settings = settings
-        self.db_path = str(db_path or DATA_DIR / "map.db")
+        self.db_path = str(db_path or settings.map_path())
         self.store = Store(self.db_path)
         self.namer = Namer(self.store, uni, settings.naming_scheme, self.home_id)
         self.tracker = Tracker(self.store, uni, self.namer, settings.auto_name_when_certain)
@@ -62,6 +63,33 @@ class AppState(QObject):
 
     def stop(self):
         self.zkill.stop()
+
+    # ------------------------------------------------------------ maps
+    def switch_map(self, name: str) -> None:
+        """Make another map active. Character locations come along, so tracking carries on."""
+        st = self.settings
+        if name == st.active_map or name not in st.maps:
+            return
+        chars = list(self.store.characters())
+        st.switch_map(name)
+        st.save()
+        self.store.close()
+        self.db_path = str(st.map_path())
+        self.store = Store(self.db_path)
+        for r in chars:
+            self.store.set_character(r["id"], r["name"], r["system_id"], r["seen_at"] or "")
+        self.namer.store = self.tracker.store = self.store
+        self.namer.scheme_key = st.naming_scheme
+        self.namer.home_id = self.home_id
+        self.zkill.db_path = self.db_path
+        if self.home_id and not self.store.has_system(self.home_id):
+            self.store.add_system(self.home_id)
+        self.selected = 0
+        self.selectionChanged.emit(0)
+        self.mapSwitched.emit(name)
+        self.settingsChanged.emit()
+        self.mapChanged.emit()
+        self.charactersChanged.emit()
 
     # ------------------------------------------------------------ settings
     @property

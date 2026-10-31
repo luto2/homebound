@@ -6,7 +6,7 @@ import sys
 def main() -> int:
     # The overlay needs always-on-top, click-through and move(); those work reliably on KWin via XWayland.
     os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
-    from PySide6.QtWidgets import QApplication, QMessageBox
+    from PySide6.QtWidgets import QApplication
 
     from .settings import Settings
     from .theme.qss import apply_theme
@@ -21,8 +21,10 @@ def main() -> int:
 
     try:
         uni = Universe()
-    except FileNotFoundError as e:
-        QMessageBox.critical(None, "Homebound", str(e))
+    except FileNotFoundError:
+        from .ui.dialogs import StartupErrorDialog
+        from .universe.db import DEFAULT_PATH
+        StartupErrorDialog(DEFAULT_PATH, "uv run python -m homebound.universe.build_static").exec()
         return 1
 
     from .ui.focus import FocusTracker

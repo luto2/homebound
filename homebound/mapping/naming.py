@@ -22,6 +22,26 @@ def _digit(h: int) -> str:
     return str(h) if h < 10 else chr(ord("a") + h - 10)
 
 
+# Chain root letters, after the EVE University WHC System Naming Scheme
+# (wiki.eveuniversity.org/WHC_Mapping_Scheme): A and B are kept for the static chains, all other
+# chains take Z Y W U S R Q O M K I E D in that order. Never used: C (wormhole class), F (frigate
+# hole), G (sounds like B/E), H/L/N (high/low/null-sec suffix), J (J-names), P and V (sound like B),
+# T (Pochven), X (sounds like "Eggs").
+STATIC_LETTERS = "AB"
+ROOT_LETTERS = "ZYWUSRQOMKIED"
+
+
+def chain_letter(hole: int, statics: int = 1) -> str:
+    """Letter of the chain behind home's hole `hole` (1..statics are the statics)."""
+    if hole <= 0:
+        return "?"
+    if hole <= min(statics, len(STATIC_LETTERS)):
+        return STATIC_LETTERS[hole - 1]
+    i = hole - min(statics, len(STATIC_LETTERS)) - 1  # a 3rd static (none exist today) would get Z
+    n = len(ROOT_LETTERS)
+    return ROOT_LETTERS[i % n] * (i // n + 1)  # Z … D, then ZZ, YY, …
+
+
 def _letter(i: int, upper: bool = True) -> str:
     """1 -> A, 26 -> Z, 27 -> AA"""
     s = ""
@@ -37,32 +57,34 @@ class Scheme:
     title: str
     description: str
 
-    def name(self, path: list[int], level_index: int | None) -> str:
+    def name(self, path: list[int], level_index: int | None, statics: int = 1) -> str:
+        """path: hole indices from the root; statics: number of static slots in the root."""
         raise NotImplementedError
 
 
 class NumericPath(Scheme):
-    def name(self, path, level_index):
+    def name(self, path, level_index, statics=1):
         return "".join(_digit(h) for h in path)
 
 
 class A2a(Scheme):
-    def name(self, path, level_index):
-        return f"{_letter(path[0])}{len(path)}{_letter((level_index or 0) + 1, upper=False)}"
+    def name(self, path, level_index, statics=1):
+        return f"{chain_letter(path[0], statics)}{len(path)}{_letter((level_index or 0) + 1, upper=False)}"
 
 
 class LetterNumeric(Scheme):
-    def name(self, path, level_index):
-        return _letter(path[0]) + "".join(_digit(h) for h in path[1:])
+    def name(self, path, level_index, statics=1):
+        return chain_letter(path[0], statics) + "".join(_digit(h) for h in path[1:])
 
 
 SCHEMES: dict[str, Scheme] = {
     "numeric": NumericPath("numeric", "Numeric path",
                            "Each hop adds the hole number; the static is always 1. Home → 1 → 12 → 123."),
     "a2a": A2a("a2a", "Chain · depth · position",
-               "Chain letter from home (A = static), jumps deep, then the system's letter at that depth. A1a, A2a, A2b, B1a."),
+               "Chain letter from home (A = static, B = 2nd static, then Z, Y, W … as on EVE Uni; no C), "
+               "jumps deep, then the system's letter at that depth. A1a, A2a, A2b, Z1a."),
     "letter_numeric": LetterNumeric("letter_numeric", "Letter-led numeric",
-                                    "Like numeric, but the first hop from home is a capital letter. A → A2 → A23."),
+                                    "Like numeric, but the first hop from home is a chain letter (same letters as above). A → A2 → A23, Z."),
 }
 
 
@@ -145,13 +167,18 @@ class Namer:
         ms = self.store.system(sid)
         if ms and ms.custom_name:
             return ms.custom_name
+        return self.scheme_label(sid)
+
+    def scheme_label(self, sid: int) -> str:
+        """The name the naming scheme gives, ignoring a custom name."""
+        ms = self.store.system(sid)
         root, path = path_of(self.store, sid)
         if not path:
             if root == self.home_id:
                 return HOME_NAME
             s = self.uni.by_id(sid)
             return s.name if s else str(sid)
-        label = self.scheme.name(path, ms.level_index if ms else None)
+        label = self.scheme.name(path, ms.level_index if ms else None, static_slots(self.uni, root))
         return label if root == self.home_id or self.home_id is None else "~" + label
 
     def display(self, sid: int) -> str:
@@ -168,7 +195,7 @@ class Namer:
         path = path + [hole_index]
         if level_index is None:
             level_index = next_level_index(self.store, root, path)
-        label = self.scheme.name(path, level_index)
+        label = self.scheme.name(path, level_index, static_slots(self.uni, root))
         return label if root == self.home_id or self.home_id is None else "~" + label
 
     def bookmark(self, sid: int, hole_index: int) -> str:
@@ -182,14 +209,16 @@ class Namer:
 
 @dataclass
 class StaticGuess:
-    applies: bool    # False when the parent has no static (k-space, Thera) -> no question
+    applies: bool    # False when no static can lead here (k-space parent, or wrong class) -> no question
     guess: bool
     certain: bool
     reason: str
 
 
 def guess_static(store: Store, uni: Universe, parent_id: int, child_id: int,
-                 sig_type: str | None = None) -> StaticGuess:
+                 sig_type: str | None = None, strict: bool = True) -> StaticGuess:
+    """strict: a child whose class no static leads to can't be the static, so don't ask.
+    strict=False keeps the question (the user picked "Change static / hole" by hand)."""
     parent, child = uni.by_id(parent_id), uni.by_id(child_id)
     if not parent or not child or not static_slots(uni, parent_id):
         return StaticGuess(False, False, True, "No static in the parent system")
@@ -202,7 +231,7 @@ def guess_static(store: Store, uni: Universe, parent_id: int, child_id: int,
     dests = [d for t in types for d in t.dest]
     names = ", ".join(f"{t.name} → {'/'.join(t.dest)}" for t in types) or "unknown"
     if child.cls not in dests:
-        return StaticGuess(True, False, True, f"Static {names}; this is {child.cls}")
+        return StaticGuess(not strict, False, True, f"Static {names}; this is {child.cls}, so not the static")
     slot = static_slot_for(uni, parent_id, child.cls)
     taken = [c for c in store.children(parent_id) if c.hole_index == slot and c.id != child_id]
     if taken:

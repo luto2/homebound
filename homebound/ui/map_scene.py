@@ -6,11 +6,15 @@ from PySide6.QtCore import QLineF, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFontMetricsF, QPainter, QPainterPath, QPainterPathStroker, QPen, QPolygonF
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsObject, QGraphicsScene, QGraphicsView, QStyle
 
+from ..mapdb.store import LIFE_1H, LIFE_4H, LIFE_CHIP, LIFE_EXPIRED, LIFE_LABEL, LIFE_LEFT
+from ..mapping.tracker import hole_size
 from ..theme import painting as P
+from ..universe.db import SIZE_NAMES
 from ..theme.tokens import OP, PX, color, font
 from ..zkill import is_fresh
 
 W, H = PX["size-node-w"], PX["size-node-h"]
+GRID = H / 3  # background grid cell: a third of a system node's height; nodes snap to it
 STALE_AFTER = timedelta(hours=24)
 
 
@@ -26,6 +30,17 @@ def age_text(iso: str | None) -> str:
         return f"{h}h {m}m" if m else f"{h}h"
     dd, h = divmod(h, 24)
     return f"{dd}d {h}h" if h else f"{dd}d"
+
+
+def removed_in(conn) -> str:
+    """Time until tracker.expire drops the connection, e.g. "7 min" / "2h 10m"."""
+    if not conn.eol_at or conn.eol not in LIFE_LEFT:
+        return "?"
+    left = datetime.fromisoformat(conn.eol_at) + LIFE_LEFT[conn.eol] - datetime.now(timezone.utc)
+    m = max(0, int(left.total_seconds() // 60))
+    if m < 60:
+        return f"{m} min"
+    return f"{m // 60}h {m % 60}m"
 
 
 def elide(text: str, f, width: float) -> str:
@@ -55,6 +70,9 @@ class SystemNode(QGraphicsObject):
         self.name = st.namer.label(self.sid)
         self.zk = st.store.zkill(self.sid) if st.settings.zkill_enabled else None
         self.chars = st.chars_in(self.sid)
+        # added by hand and not seen yet, or attached to a hand-drawn connection nobody has jumped
+        self.unconfirmed = bool(self.ms and (not self.ms.confirmed or
+                                             any(not c.confirmed for c in st.store.connections_of(self.sid))))
         self.stale = bool(self.ms and self.ms.scanned_at and
                           datetime.now(timezone.utc) - datetime.fromisoformat(self.ms.scanned_at) > STALE_AFTER)
         self.setToolTip(self._tooltip())
@@ -73,6 +91,8 @@ class SystemNode(QGraphicsObject):
             bits.append(f"Owner: {self.ms.owner_ticker} {self.ms.owner_note or ''}")
         if self.chars:
             bits.append("Here: " + ", ".join(c[1] for c in self.chars))
+        if self.unconfirmed:
+            bits.append("▲ Unconfirmed: added by hand, or on a connection nobody has jumped yet")
         return "<br>".join(bits)
 
     @property
@@ -107,12 +127,18 @@ class SystemNode(QGraphicsObject):
             p.setBrush(P.stale_brush())
             p.setPen(Qt.PenStyle.NoPen)
             p.drawRoundedRect(body, PX["radius-3"], PX["radius-3"])
+        if self.unconfirmed:
+            p.setPen(QPen(color("warning"), 2, Qt.PenStyle.DashLine))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(body.adjusted(1, 1, -1, -1), PX["radius-3"], PX["radius-3"])
         if selected:
             p.setPen(QPen(color("accent"), 2))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawRoundedRect(body.adjusted(-1, -1, 1, 1), PX["radius-3"] + 1, PX["radius-3"] + 1)
         if self.sid == self.state.home_id:
             P.draw_chip(p, W - 46, -7, "⌂ HOME", color("accent"), h=13)
+        if self.unconfirmed:
+            P.draw_chip(p, 8, -7, "▲ UNCONFIRMED", color("warning"), h=13)
 
         if self.stale:
             p.setOpacity(OP["op-stale"])
@@ -216,8 +242,7 @@ class SystemNode(QGraphicsObject):
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
-            g = PX["sp-12"]
-            return QPointF(round(value.x() / g) * g, round(value.y() / g) * g)
+            return QPointF(round(value.x() / GRID) * GRID, round(value.y() / GRID) * GRID)
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             for e in self.edges:
                 e.adjust()
@@ -259,10 +284,15 @@ class ConnectionEdge(QGraphicsItem):
         parts = [c.wh_type or "Unknown type",
                  {"fresh": "Mass fresh", "reduced": "Mass reduced (<50%)", "critical": "Mass critical (<10%)",
                   "unknown": "Mass unknown"}[c.mass]]
-        if c.eol:
-            parts.append(f"End of life since {age_text(c.eol_at)}")
-        if c.frig:
-            parts.append("Frigate only")
+        if c.eol == LIFE_EXPIRED:
+            parts.append(f"Expired · removed in {removed_in(c)}")
+        elif c.eol:
+            parts.append(f"Lifetime {LIFE_LABEL[c.eol]} (set {age_text(c.eol_at)} ago)")
+        size = hole_size(self.state.uni, c.wh_type, c.size)
+        if size:
+            parts.append(SIZE_NAMES[size] + (" only" if size == "S" else ""))
+        if not c.confirmed:
+            parts.append("Unconfirmed: drawn by hand, nobody has jumped it yet")
         parts.append(f"Age {age_text(c.created_at)}")
         return " · ".join(parts)
 
@@ -304,8 +334,10 @@ class ConnectionEdge(QGraphicsItem):
             chips.append((t, color(tok)))
         if c.frig:
             chips.append(("F", color("edge-frig")))
-        if c.eol:
-            chips.append(("◷ EOL", color("edge-eol")))
+        if c.eol in LIFE_CHIP:
+            chips.append((LIFE_CHIP[c.eol], color("danger") if c.eol == LIFE_EXPIRED else color("edge-eol")))
+        if not c.confirmed:
+            chips.append(("▲ UNCONF", color("warning")))
         return chips
 
     def _plate_rect(self) -> QRectF:
@@ -325,12 +357,22 @@ class ConnectionEdge(QGraphicsItem):
         pens = ConnectionEdge.PENS
         if self.isSelected():
             p.strokePath(path, pens["selected"])
-        if c.eol:
-            p.strokePath(path, pens["eol"])
+        if not c.confirmed:
+            casing = QPen(color("warning"), 7, Qt.PenStyle.DashLine, Qt.PenCapStyle.FlatCap)
+            casing.setDashPattern([3, 2])
+            p.strokePath(path, casing)
+        if c.eol in (LIFE_4H, LIFE_1H):
+            p.strokePath(path, pens["eol1h" if c.eol == LIFE_1H else "eol"])
         pen = QPen(pens["frig" if c.frig else c.mass])
         if self.hover:
             pen.setWidthF(pen.widthF() + 1)
-        p.strokePath(path, pen)
+        if c.eol == LIFE_EXPIRED:   # fading out
+            p.save()
+            p.setOpacity(0.4)
+            p.strokePath(path, pen)
+            p.restore()
+        else:
+            p.strokePath(path, pen)
         if c.frig:
             m = self.path.pointAtPercent(0.5) + QPointF(0, 14)
             d = QPolygonF([m + QPointF(0, -5), m + QPointF(5, 0), m + QPointF(0, 5), m + QPointF(-5, 0)])
@@ -358,6 +400,7 @@ class ConnectionEdge(QGraphicsItem):
 
     def hoverEnterEvent(self, e):
         self.hover = True
+        self.setToolTip(self._tooltip())   # ages and the expiry countdown move on
         self.update()
 
     def hoverLeaveEvent(self, e):
@@ -370,6 +413,7 @@ class MapScene(QGraphicsScene):
     edgeContextMenu = Signal(int, object)     # connection id, screen pos
     edgeActivated = Signal(int)
     backgroundContextMenu = Signal(object, object)  # scene pos, screen pos
+    linkRequested = Signal(int, int)          # draw a connection: from sid, to sid
 
     def __init__(self, state):
         super().__init__()
@@ -377,6 +421,9 @@ class MapScene(QGraphicsScene):
         self.nodes: dict[int, SystemNode] = {}
         self.edges: dict[int, ConnectionEdge] = {}
         self.setSceneRect(-5000, -5000, 10000, 10000)
+        self._link_from: SystemNode | None = None   # drawing a connection from this node
+        self._link_line = None
+        self._link_click = False                    # started from the menu: finish on the next click
         state.mapChanged.connect(self.rebuild)
         state.systemUpdated.connect(self.refresh_system)
         state.charactersChanged.connect(self.refresh_all)
@@ -435,6 +482,74 @@ class MapScene(QGraphicsScene):
         else:
             self.backgroundContextMenu.emit(e.scenePos(), e.screenPos())
 
+    # ------------------------------------------------------------ drawing connections
+    def node_at(self, pos) -> "SystemNode | None":
+        return next((i for i in self.items(pos) if isinstance(i, SystemNode)), None)
+
+    def start_link(self, sid: int, click_mode: bool = True):
+        """Rubber-band line from sid; finished by releasing (Shift+drag) or clicking (menu) on another system."""
+        from PySide6.QtWidgets import QGraphicsLineItem
+        n = self.nodes.get(sid)
+        if not n:
+            return
+        self.cancel_link()
+        self._link_from, self._link_click = n, click_mode
+        pen = QPen(color("warning"), 2, Qt.PenStyle.DashLine)
+        pen.setCosmetic(True)
+        self._link_line = QGraphicsLineItem(QLineF(n.center(), n.center()))
+        self._link_line.setPen(pen)
+        self._link_line.setZValue(10)
+        self.addItem(self._link_line)
+        for v in self.views():
+            v.viewport().setCursor(Qt.CursorShape.CrossCursor)
+
+    def cancel_link(self):
+        if self._link_line is not None:
+            self.removeItem(self._link_line)
+        self._link_from, self._link_line = None, None
+        for v in self.views():
+            v.viewport().unsetCursor()
+
+    def _finish_link(self, pos):
+        src, dst = self._link_from, self.node_at(pos)
+        self.cancel_link()
+        if src and dst and dst is not src:
+            self.linkRequested.emit(src.sid, dst.sid)
+
+    def mousePressEvent(self, e):
+        if self._link_from is not None and self._link_click:
+            self._finish_link(e.scenePos())
+            e.accept()
+            return
+        if e.button() == Qt.MouseButton.LeftButton and e.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+            if n := self.node_at(e.scenePos()):
+                self.start_link(n.sid, click_mode=False)
+                e.accept()
+                return
+        super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        if self._link_from is not None:
+            dst = self.node_at(e.scenePos())
+            end = dst.center() if dst and dst is not self._link_from else e.scenePos()
+            self._link_line.setLine(QLineF(self._link_from.center(), end))
+            e.accept()
+            return
+        super().mouseMoveEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        if self._link_from is not None and not self._link_click:
+            self._finish_link(e.scenePos())
+            e.accept()
+            return
+        super().mouseReleaseEvent(e)
+
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key.Key_Escape and self._link_from is not None:
+            self.cancel_link()
+            return
+        super().keyPressEvent(e)
+
     def mouseDoubleClickEvent(self, e):
         item = self.itemAt(e.scenePos(), self.views()[0].transform()) if self.views() else None
         if isinstance(item, ConnectionEdge):
@@ -482,10 +597,11 @@ class MapView(QGraphicsView):
         self.set_zoom(self.zoom() * math.pow(1.0015, e.angleDelta().y()))
 
     def drawBackground(self, p: QPainter, rect: QRectF):
-        if self.zoom() < 0.35:
+        if self.zoom() < 0.2:
             p.fillRect(rect, color("bg-0"))
         else:
-            P.draw_dot_grid(p, rect)
+            # minor lines would be < 9px apart below 0.45: show only the node-height lines then
+            P.draw_line_grid(p, rect, GRID, 3, minor=self.zoom() >= 0.45)
 
     def fit(self, rect: QRectF):
         if rect.isNull():

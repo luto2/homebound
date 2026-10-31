@@ -170,7 +170,7 @@ class SettingsDialog(QDialog):
         repolish(self.log)
 
     def _home_page(self, v):
-        v.addWidget(caption("Home system"))
+        v.addWidget(caption(f"Home system · map “{self.s.active_map}”"))
         self.home = QLineEdit(self.s.home_system)
         self.home.setProperty("mono", "true")
         self.home.setPlaceholderText("J-name or system name, e.g. J161940")
@@ -219,9 +219,9 @@ class SettingsDialog(QDialog):
     @staticmethod
     def _scheme_preview(key) -> str:
         sch = get_scheme(key)
-        # Home → static → its static, its 2nd hole; Home's 2nd hole
+        # Home → static → its static, its 2nd hole; Home's 2nd hole (home with one static)
         paths = [([1], 0), ([1, 1], 0), ([1, 2], 1), ([2], 0)]
-        names = [sch.name(p, li) for p, li in paths]
+        names = [sch.name(p, li, 1) for p, li in paths]
         return (f"Home → {names[0]} → {names[1]}, {names[2]}   ·   Home → {names[3]}"
                 f"      bookmark in {names[0]}: {names[0]}-1, {names[0]}-2, {names[0]}-0")
 

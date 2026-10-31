@@ -71,6 +71,7 @@ class OwnerSwatch(QComboBox):
 
 class SystemPanel(QWidget):
     toast = Signal(str, str)   # kind, text
+    undoable = Signal(str, str, object)   # title, detail, store snapshot from before
 
     def __init__(self, state):
         super().__init__()
@@ -172,7 +173,7 @@ class SystemPanel(QWidget):
         bl = QHBoxLayout(self.banner)
         bl.setContentsMargins(PX["sp-8"], PX["sp-4"], PX["sp-4"], PX["sp-4"])
         self.banner_text = QLabel()
-        self.banner_text.setStyleSheet(f"color: {color('warning').name()}; font-weight: 600;")
+        self.banner_text.setStyleSheet("background: transparent; border: 0;")
         keep = QPushButton("Keep")
         keep.setProperty("variant", "ghost")
         keep.clicked.connect(self._keep_missing)
@@ -186,6 +187,7 @@ class SystemPanel(QWidget):
 
         self.table = SigTable(state)
         self.table.copied.connect(lambda lbl: self.toast.emit("ok", f"Copied bookmark name {lbl}"))
+        self.table.editRequested.connect(self.edit_sig)
         self.table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         b.addWidget(self.table, 1)
 
@@ -245,14 +247,25 @@ class SystemPanel(QWidget):
         else:
             self.zk.setText("loading …")
         self.table.load(self.sid)
-        sigs = self.table.m.rows
+        sigs = self.table.m.sigs
         missing = [x for x in sigs if x.state == "missing"]
+        anoms = sum(1 for x in sigs if x.kind == "anom")
         scanned = f"last paste {age_text(ms.scanned_at)} ago" if ms.scanned_at else "never pasted"
-        self.sig_meta.setText(f"{len(sigs)} · {scanned}")
+        self.sig_meta.setText(f"{len(sigs) - anoms} sigs · {anoms} anoms · {scanned}")
         self.banner.setVisible(bool(missing))
         if missing:
-            self.banner_text.setText(f"▲ {len(missing)} not in the last paste")
-            self.del_btn.setText(f"✕ Delete missing ({len(missing)})")
+            m_anom = sum(1 for x in missing if x.kind == "anom")
+            m_sig = len(missing) - m_anom
+            what = " and ".join(t for t in (f"{m_sig} sig{'s' if m_sig != 1 else ''}" if m_sig else "",
+                                            f"{m_anom} anom{'s' if m_anom != 1 else ''}" if m_anom else "") if t)
+            # a paste only flags the kinds it contains: say which ones it left alone
+            untouched = "anomalies untouched" if not m_anom and anoms else "signatures untouched" if not m_sig and \
+                len(sigs) > anoms else ""
+            faint = color("ink-faint").name()
+            self.banner_text.setText(
+                f"<span style='color:{color('warning').name()}; font-weight:800'>▲</span>&nbsp; <b>{what} missing</b>"
+                " from the last paste" + (f" <span style='color:{faint}'>· {untouched}</span>" if untouched else ""))
+            self.del_btn.setText(f"✕ Delete {len(missing)}")
 
     # ------------------------------------------------------------ actions
     def paste(self):
@@ -266,8 +279,25 @@ class SystemPanel(QWidget):
             self.toast.emit("err", "Clipboard has no scanner rows. Expected lines like ABC-123<tab>Cosmic Signature …")
             return
         r = sigparse.merge(self.state.store, self.sid, parsed)
-        self.toast.emit("ok", f"{len(parsed)} sigs · {len(r.added)} new · {len(r.updated)} updated · {len(r.missing)} missing")
+        anoms = sum(1 for p in parsed if p.kind == "anom")
+        what = f"{len(parsed) - anoms} sigs" + (f" + {anoms} anoms" if anoms else "")
+        self.toast.emit("ok", f"{what} · {len(r.added)} new · {len(r.updated)} updated · {len(r.missing)} missing")
         self.state.systemUpdated.emit(self.sid)
+
+    def edit_sig(self, sig):
+        from PySide6.QtWidgets import QDialog
+        from .dialogs import SigDialog
+        st = self.state
+        conn = next((c for c in st.store.connections_of(self.sid) if c.sig_on(self.sid) == sig.sig_id), None)
+        dlg = SigDialog(self.window(), st, sig, conn)
+        dlg.delete.connect(lambda: self._delete([sig.sig_id]))
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        linked = st.tracker.save_sig(self.sid, sig.sig_id, dlg.values())
+        self.refresh()
+        st.systemUpdated.emit(self.sid)
+        if linked or conn:
+            st.mapChanged.emit()
 
     def _keep_missing(self):
         for s in self.state.store.signatures(self.sid):
@@ -277,21 +307,26 @@ class SystemPanel(QWidget):
 
     def _delete_missing(self):
         ids = [s.sig_id for s in self.state.store.signatures(self.sid) if s.state == "missing"]
-        self._delete(ids)
+        self._delete(ids, "missing ")
 
     def _delete_selected(self):
         self._delete(self.table.selected_sigs())
 
-    def _delete(self, ids):
+    def _delete(self, ids, what=""):
         if not ids:
             return
         st = self.state
+        snap = st.store.snapshot()
+        shown = ", ".join(ids[:3]) + (f" and {len(ids) - 3} more" if len(ids) > 3 else "")
+        title = f"Deleted {len(ids)} {what}sig{'s' if len(ids) != 1 else ''}" if len(ids) > 1 or what else f"Deleted {ids[0]}"
+        detail = f"{shown} in {st.namer.display(self.sid)}"
         for c in st.store.connections_of(self.sid):
             if c.sig_on(self.sid) in ids:
                 st.store.set_connection_sig(c.id, self.sid, None)
         st.store.delete_signatures(self.sid, ids)
         self.refresh()
         st.systemUpdated.emit(self.sid)
+        self.undoable.emit(title, detail, snap)
 
     def _save_name(self):
         if self.sid:

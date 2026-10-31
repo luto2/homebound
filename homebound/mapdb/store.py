@@ -1,9 +1,18 @@
 """SQLite persistence for the map (systems, connections, signatures, characters, zKill cache)."""
 import sqlite3
 from dataclasses import dataclass, fields
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from importlib.resources import files
 from pathlib import Path
+
+
+# Wormhole lifetime state, stored in the `eol` column of connections and signatures.
+# eol_at is when the current state was set; the hole is gone LIFE_LEFT after that.
+LIFE_STABLE, LIFE_4H, LIFE_1H, LIFE_EXPIRED = 0, 1, 2, 3
+LIFE_LABEL = {LIFE_STABLE: "Stable", LIFE_4H: "< 4h", LIFE_1H: "< 1h", LIFE_EXPIRED: "Expired"}
+LIFE_CHIP = {LIFE_4H: "◷ <4h", LIFE_1H: "◷ <1h", LIFE_EXPIRED: "✕ EXP"}
+LIFE_LEFT = {LIFE_4H: timedelta(hours=4), LIFE_1H: timedelta(hours=1),
+             LIFE_EXPIRED: timedelta(minutes=10)}  # expired: keep it visible for a few minutes
 
 
 def now_iso() -> str:
@@ -26,6 +35,7 @@ class MapSystem:
     added_at: str = ""
     scanned_at: str | None = None
     pinned: int = 0
+    confirmed: int = 1           # 0: added by hand, no character has been here yet
 
 
 @dataclass
@@ -37,11 +47,13 @@ class Connection:
     sig_b: str | None = None
     wh_type: str | None = None
     mass: str = "fresh"
-    eol: int = 0
+    eol: int = 0                 # LIFE_* state
     eol_at: str | None = None
     frig: int = 0
     created_at: str = ""
     updated_at: str = ""
+    size: str | None = None      # S/M/L/XL, set by hand only when the type doesn't say (K162/unknown)
+    confirmed: int = 1           # 0: drawn by hand, nobody has jumped it yet
 
     def other(self, sid: int) -> int:
         return self.b if sid == self.a else self.a
@@ -62,6 +74,30 @@ class Signature:
     state: str = ""
     created_at: str = ""
     updated_at: str = ""
+    kind: str = "sig"
+    dest: str | None = None
+    mass: str | None = None
+    eol: int = 0                 # LIFE_* state
+    eol_at: str | None = None
+    frig: int = 0
+    size: str | None = None
+
+
+SIG_COLS = [f.name for f in fields(Signature)]
+
+# columns added after the first release: (table, column, declaration)
+MIGRATIONS = [
+    ("signatures", "kind", "TEXT DEFAULT 'sig'"),
+    ("signatures", "dest", "TEXT"),
+    ("signatures", "mass", "TEXT"),
+    ("signatures", "eol", "INTEGER DEFAULT 0"),
+    ("signatures", "eol_at", "TEXT"),
+    ("signatures", "frig", "INTEGER DEFAULT 0"),
+    ("signatures", "size", "TEXT"),
+    ("connections", "size", "TEXT"),
+    ("connections", "confirmed", "INTEGER DEFAULT 1"),
+    ("systems", "confirmed", "INTEGER DEFAULT 1"),
+]
 
 
 @dataclass
@@ -85,7 +121,41 @@ class Store:
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(self.path)
         self.db.row_factory = sqlite3.Row
+        self._migrate()
         self.db.executescript(files("homebound.mapdb").joinpath("schema.sql").read_text())
+
+    def _migrate(self) -> None:
+        """Add columns that older map files lack (CREATE TABLE IF NOT EXISTS won't)."""
+        for table, col, decl in MIGRATIONS:
+            have = {r[1] for r in self.db.execute(f"PRAGMA table_info({table})")}
+            if have and col not in have:
+                self.db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+        self.db.commit()
+
+    def close(self) -> None:
+        self.db.close()
+
+    # ------------------------------------------------------------ undo
+    SNAPSHOT_KEYS = {"systems": ("id",), "connections": ("id",), "signatures": ("system_id", "sig_id")}
+
+    def snapshot(self) -> dict[str, list[dict]]:
+        """Map rows before a destructive action, for one level of Undo (spec: ConfirmDialog)."""
+        return {t: [dict(r) for r in self.db.execute(f"SELECT * FROM {t}")] for t in self.SNAPSHOT_KEYS}
+
+    def restore(self, snap: dict[str, list[dict]]) -> None:
+        """Put back every snapshot row (systems first, so foreign keys hold). Rows added since stay;
+        rows that still exist get their old values back. Updates in place, so no cascades fire."""
+        self.db.execute("PRAGMA defer_foreign_keys = ON")   # parents may come back after children
+        with self.db:
+            for table, keys in self.SNAPSHOT_KEYS.items():
+                for row in snap.get(table, []):
+                    cols = [c for c in row if c not in keys]
+                    cur = self.db.execute(
+                        f"UPDATE {table} SET {', '.join(f'{c}=?' for c in cols)} WHERE "
+                        + " AND ".join(f"{k}=?" for k in keys), [row[c] for c in cols] + [row[k] for k in keys])
+                    if cur.rowcount == 0:
+                        self.db.execute(f"INSERT OR IGNORE INTO {table} ({', '.join(row)}) "
+                                        f"VALUES ({', '.join('?' * len(row))})", list(row.values()))
 
     # ------------------------------------------------------------ systems
     def system(self, sid: int) -> MapSystem | None:
@@ -151,8 +221,13 @@ class Store:
 
     def update_connection(self, cid: int, **kw) -> None:
         kw["updated_at"] = now_iso()
-        if kw.get("eol") and "eol_at" not in kw:
-            kw["eol_at"] = now_iso()
+        if "eol_at" not in kw and "eol" in kw:
+            # restart the clock only when the state changes; saving the same state again keeps it
+            c = self.connection_by_id(cid)
+            if not kw["eol"]:
+                kw["eol_at"] = None
+            elif c and c.eol != kw["eol"]:
+                kw["eol_at"] = now_iso()
         self.db.execute(f"UPDATE connections SET {', '.join(f'{k}=?' for k in kw)} WHERE id=?", [*kw.values(), cid])
         self.db.commit()
 
@@ -176,16 +251,23 @@ class Store:
 
     def upsert_signature(self, s: Signature) -> None:
         t = now_iso()
-        self.db.execute("""
-            INSERT INTO signatures (system_id, sig_id, grp, type, name, scan_pct, hole_index, state, created_at, updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?)
-            ON CONFLICT (system_id, sig_id) DO UPDATE SET grp=excluded.grp, type=excluded.type, name=excluded.name,
-                scan_pct=excluded.scan_pct, hole_index=excluded.hole_index, state=excluded.state, updated_at=excluded.updated_at
-        """, (s.system_id, s.sig_id, s.grp, s.type, s.name, s.scan_pct, s.hole_index, s.state, s.created_at or t, t))
+        vals = {c: getattr(s, c) for c in SIG_COLS} | {"created_at": s.created_at or t, "updated_at": t}
+        keep = ("system_id", "sig_id", "created_at")
+        self.db.execute(f"""
+            INSERT INTO signatures ({','.join(SIG_COLS)}) VALUES ({','.join('?' * len(SIG_COLS))})
+            ON CONFLICT (system_id, sig_id) DO UPDATE SET
+                {', '.join(f'{c}=excluded.{c}' for c in SIG_COLS if c not in keep)}
+        """, list(vals.values()))
         self.db.commit()
 
     def update_signature(self, sid: int, sig_id: str, **kw) -> None:
         kw["updated_at"] = now_iso()
+        if "eol_at" not in kw and "eol" in kw:
+            old = self.signature(sid, sig_id)
+            if not kw["eol"]:
+                kw["eol_at"] = None
+            elif old and old.eol != kw["eol"]:
+                kw["eol_at"] = now_iso()
         self.db.execute(f"UPDATE signatures SET {', '.join(f'{k}=?' for k in kw)} WHERE system_id=? AND sig_id=?",
                         [*kw.values(), sid, sig_id])
         self.db.commit()
@@ -226,3 +308,24 @@ class Store:
     def put(self, key: str, value: str) -> None:
         self.db.execute("INSERT OR REPLACE INTO kv VALUES (?,?)", (key, value))
         self.db.commit()
+
+
+def map_stats(path) -> dict:
+    """Systems, signatures and last activity of a map file, without opening it as a Store."""
+    out = {"systems": 0, "signatures": 0, "last": None}
+    if not Path(path).exists():
+        return out
+    db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        out["systems"] = db.execute("SELECT count(*) FROM systems").fetchone()[0]
+        out["signatures"] = db.execute("SELECT count(*) FROM signatures").fetchone()[0]
+        out["last"] = max(filter(None, (
+            db.execute("SELECT max(added_at) FROM systems").fetchone()[0],
+            db.execute("SELECT max(updated_at) FROM connections").fetchone()[0],
+            db.execute("SELECT max(updated_at) FROM signatures").fetchone()[0])), default=None)
+    except sqlite3.Error:
+        pass
+    finally:
+        db.close()
+    return out
+
