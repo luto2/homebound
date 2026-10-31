@@ -1,11 +1,12 @@
 """Dialogs (spec: Dialog, NamingDialog): naming question + sig picker, connection editor."""
 from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QFontMetricsF, QKeySequence, QPainter, QShortcut
+from PySide6.QtGui import QFontMetricsF, QIcon, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QDialog, QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QRadioButton, QStyle, QStyledItemDelegate, QVBoxLayout, QWidget,
 )
 
+from ..theme import painting as P
 from ..theme.qss import repolish
 from ..theme.tokens import PX, color, font
 
@@ -300,8 +301,9 @@ class SigDialog(BaseDialog):
 
         self.caption("Group")
         self.group = QComboBox()
+        self.group.setIconSize(QSize(16, 16))
         for key, label in SIG_GROUPS:
-            self.group.addItem(label, key)
+            self.group.addItem(QIcon(P.site_pixmap(key, 16, self.devicePixelRatioF())), label, key)
         self.group.setCurrentIndex(max(0, self.group.findData(sig.grp or "unknown")))
         self.body.addWidget(self.group)
 

@@ -8,7 +8,7 @@ from importlib.resources import files
 
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import (
-    QBrush, QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen, QPixmap, QPolygonF,
+    QBrush, QColor, QFont, QFontMetricsF, QImage, QPainter, QPainterPath, QPen, QPixmap, QPolygonF,
 )
 from PySide6.QtSvg import QSvgRenderer
 
@@ -133,6 +133,50 @@ def draw_effect(p: QPainter, x: float, y: float, effect: str | None, size: int =
         return 0.0
     dpr = p.device().devicePixelRatioF() if p.device() else 1.0
     p.drawPixmap(QPointF(x, y), effect_pixmap(effect, size, dpr))
+    return float(size)
+
+
+# ---------------------------------------------------------------- sites
+
+# signature group -> colour token. The EVE bracket icons are white with a dark shadow; they are
+# tinted by brightness so the shadow drops out on dark rows. "unknown" is our own SVG.
+SITE_TOKENS = {"wormhole": "accent", "combat": "danger", "data": "ink-muted", "relic": "warning",
+               "gas": "success", "ore": "warning", "ice": "accent", "unknown": "ink-faint"}
+
+
+@lru_cache(maxsize=64)
+def site_pixmap(grp: str | None, size: int = 16, dpr: float = 1.0) -> QPixmap:
+    grp = grp if grp in SITE_TOKENS else "unknown"
+    tint = color(SITE_TOKENS[grp])
+    n = int(size * dpr)
+    if grp == "unknown":
+        px = QPixmap(n, n)
+        px.fill(Qt.GlobalColor.transparent)
+        p = QPainter(px)
+        QSvgRenderer(files("homebound.theme").joinpath("sites/site-unknown.svg").read_bytes()).render(p)
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+        p.fillRect(px.rect(), tint)
+        p.end()
+    else:
+        src = QImage()
+        src.loadFromData(files("homebound.theme").joinpath(f"sites/site-{grp}.png").read_bytes())
+        src = src.convertToFormat(QImage.Format.Format_ARGB32)
+        out = QImage(src.size(), QImage.Format.Format_ARGB32)
+        for y in range(src.height()):
+            for x in range(src.width()):
+                c = src.pixelColor(x, y)
+                a = c.alpha() * c.lightnessF()
+                out.setPixelColor(x, y, QColor(tint.red(), tint.green(), tint.blue(), int(a)))
+        # 16px originals: keep them pixel-exact at 1x, smooth only when scaling
+        mode = Qt.TransformationMode.FastTransformation if n % 16 == 0 else Qt.TransformationMode.SmoothTransformation
+        px = QPixmap.fromImage(out.scaled(n, n, Qt.AspectRatioMode.KeepAspectRatio, mode))
+    px.setDevicePixelRatio(dpr)
+    return px
+
+
+def draw_site(p: QPainter, x: float, y: float, grp: str | None, size: int = 16) -> float:
+    dpr = p.device().devicePixelRatioF() if p.device() else 1.0
+    p.drawPixmap(QPointF(x, y), site_pixmap(grp, size, dpr))
     return float(size)
 
 

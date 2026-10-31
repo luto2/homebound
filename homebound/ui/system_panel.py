@@ -58,6 +58,22 @@ class BadgeStrip(QWidget):
         p.end()
 
 
+class ElideLabel(QLabel):
+    """Plain-text label that ends in … when it doesn't fit, instead of widening its dock."""
+
+    def __init__(self, text=""):
+        super().__init__(text)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+
+    def paintEvent(self, e):
+        from PySide6.QtGui import QPainter
+        p = QPainter(self)
+        p.setPen(self.palette().color(self.foregroundRole()))
+        r = self.contentsRect()
+        p.drawText(r, int(self.alignment() | Qt.AlignmentFlag.AlignVCenter),
+                   self.fontMetrics().elidedText(self.text(), Qt.TextElideMode.ElideRight, r.width()))
+
+
 class OwnerSwatch(QComboBox):
     def __init__(self):
         super().__init__()
@@ -104,6 +120,7 @@ class SystemPanel(QWidget):
         b.addLayout(row)
         self.real = QLabel()
         self.real.setProperty("role", "help")
+        self.real.setWordWrap(True)
         b.addWidget(self.real)
         self.badges = BadgeStrip(state)
         b.addWidget(self.badges)
@@ -135,6 +152,7 @@ class SystemPanel(QWidget):
         cap.setFixedWidth(52)
         self.zk = QLabel()
         self.zk.setProperty("role", "mono")
+        self.zk.setWordWrap(True)   # long zKill lines wrap instead of widening the dock
         self.zk_refresh = QPushButton("Refresh")
         self.zk_refresh.setProperty("variant", "ghost")
         self.zk_refresh.clicked.connect(lambda: state.zkill.request([self.sid], force=True))
@@ -158,7 +176,7 @@ class SystemPanel(QWidget):
         srow = QHBoxLayout()
         t = QLabel("Signatures")
         t.setProperty("role", "title")
-        self.sig_meta = QLabel()
+        self.sig_meta = ElideLabel()
         self.sig_meta.setProperty("role", "help")
         self.paste_btn = QPushButton("Paste sigs (Ctrl+V)")
         self.paste_btn.setProperty("variant", "primary")
@@ -174,6 +192,7 @@ class SystemPanel(QWidget):
         bl.setContentsMargins(PX["sp-8"], PX["sp-4"], PX["sp-4"], PX["sp-4"])
         self.banner_text = QLabel()
         self.banner_text.setStyleSheet("background: transparent; border: 0;")
+        self.banner_text.setWordWrap(True)
         keep = QPushButton("Keep")
         keep.setProperty("variant", "ghost")
         keep.clicked.connect(self._keep_missing)

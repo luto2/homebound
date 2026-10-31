@@ -19,6 +19,7 @@ For the overlay to follow the focused client on Plasma Wayland, open **Settings 
 ## Static data
 - **CCP SDE**: systems, classes, security, stargates, effects (via secondary sun type).
 - **Wanderer** (MIT) `wormholeSystems.json` / `wormholes.json` and **anoik.is** `static.json`: statics and wormhole types.
+- **whtype.info** `wormholes.js`: which classes each type can wander into, so the type dropdown only offers holes that can actually be there.
 - Where Wanderer and anoik disagree on a system's statics, the build asks zKillboard's system page and pins the answer in `data/statics_resolved.json`.
 
 ## Using it

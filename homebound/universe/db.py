@@ -34,7 +34,8 @@ class WhType:
     total_mass: int | None
     max_jump_mass: int | None
     is_static: bool
-    src: tuple[str, ...] = ()  # classes this type can spawn in
+    src: tuple[str, ...] = ()  # classes this type can spawn in (Wanderer data)
+    wander: tuple[str, ...] | None = None  # classes it can wander into (whtype.info); None = unknown
 
     @property
     def size(self) -> str | None:
@@ -77,10 +78,12 @@ class Universe:
         self._types: dict[str, WhType] = {}
         cols = {r[1] for r in self.db.execute("PRAGMA table_info(wh_types)")}
         src = "src" if "src" in cols else "NULL"  # universe.sqlite built before src existed
-        for name, dest, life, tm, mj, st, sr in self.db.execute(
-                f"SELECT name, dest, lifetime_h, total_mass, max_jump_mass, is_static, {src} FROM wh_types"):
+        wander = "wander" if "wander" in cols else "NULL"
+        for name, dest, life, tm, mj, st, sr, wa in self.db.execute(
+                f"SELECT name, dest, lifetime_h, total_mass, max_jump_mass, is_static, {src}, {wander} FROM wh_types"):
             self._types[name] = WhType(name, tuple(dest.split(",")) if dest else (), life, tm, mj, bool(st),
-                                       tuple(sr.split(",")) if sr else ())
+                                       tuple(sr.split(",")) if sr else (),
+                                       None if wa is None else tuple(x for x in wa.split(",") if x))
 
     # ---- systems
     def by_name(self, name: str) -> System | None:
@@ -128,14 +131,15 @@ class Universe:
         return sorted(self._types)
 
     def wh_types_from(self, sid: int) -> list[WhType]:
-        """Types that can be found in this system: its statics plus wanderers that spawn in its class.
-        K162 is not included (it can appear anywhere)."""
+        """Types that can be found in this system: its statics plus the types that wander into its
+        class (whtype.info; Wanderer's src for types it doesn't know). K162 is not included."""
         s = self.by_id(sid)
         if not s:
             return []
         out = {t.name: t for t in self.static_types(sid)}
         for t in self._types.values():
-            if t.name != "K162" and s.cls in t.src and not t.is_static:
+            can = s.cls in t.wander if t.wander is not None else (s.cls in t.src and not t.is_static)
+            if t.name != "K162" and can:
                 out.setdefault(t.name, t)
         return sorted(out.values(), key=lambda t: (t.name not in s.statics, t.name))
 

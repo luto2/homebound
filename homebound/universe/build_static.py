@@ -4,6 +4,7 @@ Sources (downloaded once into data/cache/, everything afterwards is offline):
   * CCP SDE (JSONL): systems, security, wormhole class, stargates, secondary suns (= WH effect)
   * Wanderer (MIT) wormholeSystems.json + wormholes.json: statics per J-system, WH type info
   * anoik.is static.json: second statics source
+  * whtype.info wormholes.js: where each type can wander (spawn as a non-static hole)
 Statics where Wanderer and anoik disagree are resolved against zkillboard.com's system page
 and the resolution is pinned in data/statics_resolved.json so later builds don't need zKill.
 
@@ -30,6 +31,12 @@ UA = {"User-Agent": "homebound/0.1 (personal offline mapper; build script)"}
 SDE_URL = "https://developers.eveonline.com/static-data/eve-online-static-data-latest-jsonl.zip"
 WANDERER = "https://raw.githubusercontent.com/wanderer-industries/wanderer/main/priv/repo/data/"
 ANOIK = "https://anoik.is/static/static.json"
+WHTYPE = "https://whtype.info/js/wormholes.js"
+# whtype.info "spawn_in" names -> our class codes (Jove Observatories / Drone Regions are k-space areas
+# that a few types also spawn in; the HS/LS/NS entries already cover those systems)
+WHTYPE_CLASS = {**{f"Class {i}": f"C{i}" for i in range(1, 7)}, "HighSec": "HS", "LowSec": "LS",
+                "NullSec": "NS", "Class 12 - Thera": "TH", "Class 13 - Shattered": "C13",
+                "Pochven ▲ Trig space": "PV", "Drifter wormholes": "DR"}
 SDE_FILES = ["mapSolarSystems.jsonl", "mapStargates.jsonl", "mapSecondarySuns.jsonl",
              "mapRegions.jsonl", "mapConstellations.jsonl"]
 
@@ -58,6 +65,17 @@ def jsonl(z: zipfile.ZipFile, name: str):
         for line in io.TextIOWrapper(f, encoding="utf-8"):
             if line.strip():
                 yield json.loads(line)
+
+
+def whtype_wander(js: str) -> dict[str, list[str]]:
+    """{type: classes it can wander into} from whtype.info's WH_ENTRIES (only 'Wandering' respawns;
+    a static-only type is never found outside the systems that have it as a static)."""
+    out = {}
+    for m in re.finditer(r"wormhole:'(\w+)',\s*respawn:\[([^\]]*)\],\s*spawn_in:\[([^\]]*)\]", js):
+        name, respawn, spawn = m.groups()
+        classes = re.findall(r"'([^']*)'", spawn)
+        out[name] = sorted({WHTYPE_CLASS[c] for c in classes if c in WHTYPE_CLASS}) if "Wandering" in respawn else []
+    return out
 
 
 def kspace_label(sec: float) -> str:
@@ -116,6 +134,7 @@ def build(refresh: bool = False) -> None:
     whs = json.loads(fetch(WANDERER + "wormholeSystems.json", CACHE / "wormholeSystems.json", refresh).read_text())
     wht = json.loads(fetch(WANDERER + "wormholes.json", CACHE / "wormholes.json", refresh).read_text())
     anoik = json.loads(fetch(ANOIK, CACHE / "anoik.json", refresh).read_text())
+    wander = whtype_wander(fetch(WHTYPE, CACHE / "whtype-wormholes.js", refresh).read_text())
 
     z = zipfile.ZipFile(sde)
     regions = {d["_key"]: d for d in jsonl(z, "mapRegions.jsonl")}
@@ -156,7 +175,8 @@ def build(refresh: bool = False) -> None:
         CREATE TABLE statics (system_id INTEGER, wh_type TEXT, PRIMARY KEY (system_id, wh_type));
         CREATE TABLE wh_types (name TEXT PRIMARY KEY, dest TEXT, lifetime_h REAL, total_mass INTEGER,
                                max_jump_mass INTEGER, mass_regen INTEGER, is_static INTEGER,
-                               src TEXT);  -- classes it can spawn in, e.g. 'C5,C6'
+                               src TEXT,     -- classes it can spawn in (Wanderer), e.g. 'C5,C6'
+                               wander TEXT); -- classes it can wander into (whtype.info), NULL = no data
         CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
         CREATE INDEX systems_name ON systems (name COLLATE NOCASE);
         CREATE INDEX gates_b ON gates (b);
@@ -179,8 +199,9 @@ def build(refresh: bool = False) -> None:
         types.append((t["name"], ",".join(dests) or None,
                       float(t["lifetime"]) if t.get("lifetime") else None,
                       num(t.get("total_mass")), num(t.get("max_mass_per_jump")), num(t.get("mass_regen")),
-                      1 if t.get("static") else 0, ",".join(srcs) or None))
-    db.executemany("INSERT INTO wh_types VALUES (?,?,?,?,?,?,?,?)", types)
+                      1 if t.get("static") else 0, ",".join(srcs) or None,
+                      ",".join(wander[t["name"]]) if t["name"] in wander else None))
+    db.executemany("INSERT INTO wh_types VALUES (?,?,?,?,?,?,?,?,?)", types)
     build_no = next(iter(jsonl(z, "_sde.jsonl")), {}).get("buildNumber") if "_sde.jsonl" in z.namelist() else None
     db.executemany("INSERT INTO meta VALUES (?,?)", [("sde_build", str(build_no)), ("built", time.strftime("%F %T"))])
     db.commit()

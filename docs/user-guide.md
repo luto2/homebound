@@ -147,7 +147,8 @@ Sigs that are no longer in the scanner are flagged `−` and struck through. A b
 - Rows are grouped: Wormholes, Combat, Data, Relic, Gas, Ore, Ice and Unscanned, then *Anomalies · Combat*, *Anomalies · Ore* and so on.
 - Click a group header to collapse it. Homebound remembers this per map. A group with new or missing rows always opens, so you never miss a change.
 - The header shows the count, plus `· 1 −` / `· 1 +` when rows are missing or new.
-- Drag the column edges to resize them. The widths are remembered.
+- Click a column header (Sig, Type, Name, Scan, Age) to sort the rows inside every group; click it again to reverse. Homebound remembers the order per map.
+- Drag the rules between the column headers to resize them. The widths are remembered.
 - Select rows and click *Delete selected* to remove them.
 - For a wormhole sig, the Name column shows where it leads (`→ A2`) or what you entered in the editor (`→ C3 · M · ◷ <1h · R`).
 
@@ -168,7 +169,7 @@ Double-click a sig (not an anomaly) to enter what the scanner can't show.
 The type dropdown lists, in this order:
 1. Unknown and K162.
 2. This system's statics.
-3. Every type that can spawn in this class, A–Z.
+3. Every type that can wander into this class, A–Z (from whtype.info; a type that only ever spawns as another system's static isn't listed).
 4. *Show all types …*, which adds the rest, dimmed.
 
 The **lifetime clock** starts when you set a state, and the line under Lifetime shows it, for example "End of life since 17:55 · removed at about 21:55". The connection is removed 4h, 1h or 10 min after the state was set. Saving the same state again keeps the clock.

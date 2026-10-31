@@ -7,27 +7,25 @@ import json
 from dataclasses import dataclass
 
 from PySide6.QtCore import QAbstractTableModel, QEvent, QModelIndex, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QFontMetricsF, QPainter, QPen, QPolygonF
+from PySide6.QtGui import QFontMetricsF, QPainter, QPen
 from PySide6.QtCore import QPointF
 from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QStyle, QStyledItemDelegate, QTableView
 
+from ..theme import painting as P
 from ..theme.tokens import PX, color, font
 from .map_scene import age_text
 
 COLS = ["", "Sig", "Group", "Type", "Name", "Scan", "Age", ""]
 C_FLAG, C_SIG, C_GRP, C_TYPE, C_NAME, C_SCAN, C_AGE, C_ACT = range(8)
 # starting widths; Name gets the rest
-DEFAULT_WIDTHS = {C_FLAG: 16, C_SIG: 76, C_GRP: 60, C_TYPE: 44, C_SCAN: 40, C_AGE: 44, C_ACT: 84}
+DEFAULT_WIDTHS = {C_FLAG: 16, C_SIG: 76, C_GRP: 60, C_TYPE: 44, C_SCAN: 40, C_AGE: 60, C_ACT: 84}
+MIN_WIDTHS = {C_AGE: 56}   # "12h 32m" must fit
+SORTABLE = (C_SIG, C_TYPE, C_NAME, C_SCAN, C_AGE)
 GROUP_WORD = {"wormhole": "WH", "combat": "Combat", "data": "Data", "relic": "Relic", "gas": "Gas",
               "ore": "Ore", "ice": "Ice", "unknown": "?", None: "—"}
 GROUP_TITLE = {"wormhole": "Wormholes", "combat": "Combat", "data": "Data", "relic": "Relic", "gas": "Gas",
                "ore": "Ore", "ice": "Ice", "unknown": "Unscanned"}
 MASS_CHIP = {"reduced": "R", "critical": "CRIT"}
-# group -> (shape, token)
-BULLET = {"wormhole": ("dot", "accent"), "combat": ("diamond", "danger"), "data": ("square", "ink-muted"),
-          "relic": ("square", "warning"), "gas": ("ring", "success"), "ore": ("box", "warning"),
-          "ice": ("ring", "accent"),
-          "unknown": ("dashed", "ink-faint"), None: ("dashed", "ink-faint")}
 
 
 @dataclass
@@ -60,6 +58,31 @@ class SigModel(QAbstractTableModel):
         self.leads: dict[str, tuple[int, str]] = {}   # sig -> (system id, display name)
         self.copied: str | None = None
 
+    def sort_state(self) -> tuple[int, bool]:
+        """(column, descending) rows are sorted by inside each group; default: sig ID ascending."""
+        try:
+            col, desc = json.loads(self.state.store.get("sig_sort", "[1, false]"))
+            return (col if col in SORTABLE else C_SIG), bool(desc)
+        except (ValueError, TypeError):
+            return C_SIG, False
+
+    def set_sort(self, col: int, desc: bool):
+        self.state.store.put("sig_sort", json.dumps([col, desc]))
+        self.load(self.sid)
+
+    def _sort_key(self, col: int):
+        def text(x):
+            return (self.data(self.createIndex(0, C_NAME), Qt.ItemDataRole.DisplayRole, x) or "").lower()
+        if col == C_TYPE:
+            return lambda x: (not x.type, x.type or "", x.sig_id)        # empty types last
+        if col == C_NAME:
+            return lambda x: (not text(x), text(x), x.sig_id)
+        if col == C_SCAN:
+            return lambda x: (x.scan_pct is None, x.scan_pct or 0, x.sig_id)
+        if col == C_AGE:
+            return lambda x: (x.created_at or "", x.sig_id)
+        return lambda x: x.sig_id
+
     def collapsed(self) -> set[str]:
         try:
             return set(json.loads(self.state.store.get("sig_collapsed", "[]")))
@@ -76,29 +99,31 @@ class SigModel(QAbstractTableModel):
         self.sid = sid
         st = self.state
         self.sigs = st.store.signatures(sid) if sid else []
-        groups: dict[str, list] = {}
-        for x in self.sigs:
-            groups.setdefault(group_key(x), []).append(x)
-        collapsed = self.collapsed()
-        self.rows = []
-        for key in sorted(groups, key=_group_sort):
-            kind, grp = key.split(":", 1)
-            title = GROUP_TITLE.get(grp, grp.title())
-            if kind == "anom":
-                title = f"Anomalies · {title}"
-            members = groups[key]
-            # a group with something new or missing stays open so the change is visible
-            shut = key in collapsed and not any(x.state for x in members)
-            self.rows.append(GroupHeader(key, title, len(members), shut,
-                                         sum(x.state == "missing" for x in members), sum(x.state == "new" for x in members)))
-            if not shut:
-                self.rows += members
         self.leads = {}
         for c in st.store.connections_of(sid) if sid else []:
             sig = c.sig_on(sid)
             if sig:
                 other = c.other(sid)
                 self.leads[sig] = (other, st.namer.display(other))
+        groups: dict[str, list] = {}
+        for x in self.sigs:
+            groups.setdefault(group_key(x), []).append(x)
+        collapsed = self.collapsed()
+        col, desc = self.sort_state()
+        sort_key = self._sort_key(col)
+        self.rows = []
+        for key in sorted(groups, key=_group_sort):
+            kind, grp = key.split(":", 1)
+            title = GROUP_TITLE.get(grp, grp.title())
+            if kind == "anom":
+                title = f"Anomalies · {title}"
+            members = sorted(groups[key], key=sort_key, reverse=desc)
+            # a group with something new or missing stays open so the change is visible
+            shut = key in collapsed and not any(x.state for x in members)
+            self.rows.append(GroupHeader(key, title, len(members), shut,
+                                         sum(x.state == "missing" for x in members), sum(x.state == "new" for x in members)))
+            if not shut:
+                self.rows += members
         # provisional bookmark numbers for unlinked, unreserved WH sigs: sequential, not all the same
         self.provisional: dict[str, int] = {}
         if sid:
@@ -128,10 +153,12 @@ class SigModel(QAbstractTableModel):
             return COLS[section].upper()
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.TextAlignmentRole and section in (C_SCAN, C_AGE):
             return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.ToolTipRole and section in SORTABLE:
+            return "Click to sort inside each group, again to reverse · drag the edge to resize"
         return None
 
-    def data(self, idx, role=Qt.ItemDataRole.DisplayRole):
-        s = self.rows[idx.row()]
+    def data(self, idx, role=Qt.ItemDataRole.DisplayRole, sig=None):
+        s = sig if sig is not None else self.rows[idx.row()]
         c = idx.column()
         if role == Qt.ItemDataRole.UserRole:
             return s
@@ -282,11 +309,10 @@ class SigDelegate(QStyledItemDelegate):
                 p.setPen(QPen(color("warning"), 1.2))
                 p.drawLine(QPointF(tr.left(), y), QPointF(tr.left() + fm.horizontalAdvance(text), y))
         elif c == C_GRP:
-            shape, tok = BULLET.get(s.grp, BULLET[None])
-            self._bullet(p, tr.left() + 4, r.center().y(), shape, color(tok))
+            P.draw_site(p, tr.left(), r.center().y() - 8, s.grp)
             p.setFont(font("ui-small"))
             p.setPen(ink)
-            p.drawText(tr.adjusted(14, 0, 0, 0), Qt.AlignmentFlag.AlignVCenter, text)
+            p.drawText(tr.adjusted(20, 0, 0, 0), Qt.AlignmentFlag.AlignVCenter, text)
         elif c in (C_TYPE, C_SCAN, C_AGE):
             p.setFont(font("mono-data"))
             p.setPen(ink if c == C_TYPE else muted)
@@ -321,9 +347,8 @@ class SigDelegate(QStyledItemDelegate):
         f.setWeight(f.Weight.DemiBold)
         p.setFont(f)
         p.setPen(color("ink"))
-        shape, tok = BULLET.get(h.key.split(":", 1)[1], BULLET[None])
-        self._bullet(p, r.left() + PX["sp-6"] + 18, r.center().y(), shape, color(tok))
-        tr = r.adjusted(PX["sp-6"] + 28, 0, -PX["sp-8"], 0)
+        P.draw_site(p, r.left() + PX["sp-6"] + 12, r.center().y() - 8, h.key.split(":", 1)[1])
+        tr = r.adjusted(PX["sp-6"] + 34, 0, -PX["sp-8"], 0)
         if h.title.startswith("Anomalies · "):   # "Anomalies ·" muted and regular, the group name as usual
             pre = "Anomalies · "
             rf = font("ui-small")
@@ -360,21 +385,6 @@ class SigDelegate(QStyledItemDelegate):
             return False
         from datetime import datetime, timedelta, timezone
         return datetime.now(timezone.utc) - datetime.fromisoformat(ms.scanned_at) > timedelta(hours=24)
-
-    @staticmethod
-    def _bullet(p, x, y, shape, c):
-        p.setPen(QPen(c, 1.3))
-        p.setBrush(c if shape in ("dot", "diamond", "square") else Qt.BrushStyle.NoBrush)
-        if shape in ("dot", "ring"):
-            p.drawEllipse(QPointF(x, y), 3.5, 3.5)
-        elif shape == "diamond":
-            p.drawPolygon(QPolygonF([QPointF(x, y - 4), QPointF(x + 4, y), QPointF(x, y + 4), QPointF(x - 4, y)]))
-        elif shape in ("square", "box"):
-            p.drawRect(QRectF(x - 3.5, y - 3.5, 7, 7))
-        else:
-            pen = QPen(c, 1, Qt.PenStyle.DashLine)
-            p.setPen(pen)
-            p.drawRect(QRectF(x - 3.5, y - 3.5, 7, 7))
 
     def editorEvent(self, event, model, opt, idx):
         s = idx.data(Qt.ItemDataRole.UserRole)
@@ -417,7 +427,17 @@ class SigTable(QTableView):
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         h = self.horizontalHeader()
         h.setHighlightSections(False)
-        h.setStyleSheet("QHeaderView::section { padding: 0 4px; }")
+        # a visible rule between columns shows where to grab for resizing
+        line, hover = color("line-2").name(), color("bg-4").name()
+        h.setStyleSheet(f"QHeaderView::section {{ padding: 0 4px; border-right: 1px solid {line}; }}"
+                        f"QHeaderView::section:last {{ border-right: 0; }}"
+                        f"QHeaderView::section:hover {{ background: {hover}; }}")
+        # click a header to sort the rows inside every group; click again to reverse
+        h.setSectionsClickable(True)
+        h.setSortIndicatorShown(True)
+        col, desc = self.m.sort_state()
+        h.setSortIndicator(col, Qt.SortOrder.DescendingOrder if desc else Qt.SortOrder.AscendingOrder)
+        h.sectionClicked.connect(self._sort_clicked)
         # Every column can be resized by dragging its right edge. Name takes up whatever the others
         # give or take, so the table always fits the panel; dragging Name's own edge trades with Scan.
         h.setStretchLastSection(False)
@@ -425,7 +445,7 @@ class SigTable(QTableView):
         h.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         saved = state.settings.sig_columns
         for col, w in DEFAULT_WIDTHS.items():
-            h.resizeSection(col, int(saved.get(str(col), w)))
+            h.resizeSection(col, max(MIN_WIDTHS.get(col, 0), int(saved.get(str(col), w))))
         self.setColumnHidden(C_GRP, True)  # the group headers say it; the space goes to Name
         self._fitting = False
         h.sectionResized.connect(self._section_resized)
@@ -434,6 +454,16 @@ class SigTable(QTableView):
 
     def load(self, sid: int):
         self.m.load(sid)
+
+    def _sort_clicked(self, col: int):
+        h = self.horizontalHeader()
+        cur, desc = self.m.sort_state()
+        if col not in SORTABLE:
+            h.setSortIndicator(cur, Qt.SortOrder.DescendingOrder if desc else Qt.SortOrder.AscendingOrder)
+            return
+        desc = not desc if col == cur else False
+        h.setSortIndicator(col, Qt.SortOrder.DescendingOrder if desc else Qt.SortOrder.AscendingOrder)
+        self.m.set_sort(col, desc)
 
     # ------------------------------------------------------------ column sizes
     def _visible_cols(self):
