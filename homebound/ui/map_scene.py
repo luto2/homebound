@@ -135,10 +135,11 @@ class SystemNode(QGraphicsObject):
             p.setPen(QPen(color("accent"), 2))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawRoundedRect(body.adjusted(-1, -1, 1, 1), PX["radius-3"] + 1, PX["radius-3"] + 1)
+        self._tab_x = 8.0   # where the character markers start on the top edge
         if self.sid == self.state.home_id:
             P.draw_chip(p, W - 46, -7, "⌂ HOME", color("accent"), h=13)
         if self.unconfirmed:
-            P.draw_chip(p, 8, -7, "▲ UNCONFIRMED", color("warning"), h=13)
+            self._tab_x += P.draw_chip(p, 8, -7, "▲ UNCONFIRMED", color("warning"), h=13) + 4
 
         if self.stale:
             p.setOpacity(OP["op-stale"])
@@ -222,14 +223,20 @@ class SystemNode(QGraphicsObject):
         P.draw_zk(p, x, y, lvl, recent)
 
     def _chars(self, p):
+        """Character markers on the top edge, after the UNCONFIRMED tag and clear of the HOME tab;
+        whatever doesn't fit becomes a "+n" chip."""
         if not self.chars:
             return
-        x = 8
-        shown = self.chars if len(self.chars) <= 3 else self.chars[:2]
-        for _, _, slot in shown:
+        x = getattr(self, "_tab_x", 8.0)
+        right = (W - 46 - 4) if self.sid == self.state.home_id else (W - 8)
+        step, more_w = 16, 24          # marker 14 + gap 2; room for a "+n" chip
+        n = len(self.chars)
+        fit = max(0, int((right - x) // step))
+        shown = n if n <= min(3, fit) else max(0, min(2, (right - x - more_w) // step))
+        for _, _, slot in self.chars[:int(shown)]:
             x += P.draw_char_marker(p, x, -7, slot) + 2
-        if len(self.chars) > 3:
-            P.draw_chip(p, x, -6, f"+{len(self.chars) - 2}", color("bg-4"), ink=color("ink"))
+        if shown < n:
+            P.draw_chip(p, x, -6, f"+{n - int(shown)}", color("bg-4"), ink=color("ink"))
 
     # ------------------------------------------------------------ interaction
     def hoverEnterEvent(self, e):
