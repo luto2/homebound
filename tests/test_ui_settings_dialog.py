@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QFileDialog
 
+import homebound.settings as settings_module
 import homebound.ui.settings_dialog as dialog_module
 from conftest import HOME, UNIVERSE, pick_system
 from homebound.ui.settings_dialog import PAGES, SettingsDialog
@@ -111,6 +112,35 @@ def test_log_timer_validates_after_typing(dialog, tmp_path) -> None:
     assert dialog.log_timer.isActive()
     dialog.log_timer.timeout.emit()
     assert dialog.log_help.property("role") == "help-err"
+
+
+def test_log_folder_unset(dialog) -> None:
+    """An empty field is "unset" (not the working directory), shown as a neutral hint."""
+    dialog.log_directory.setText("   ")
+    assert dialog.validate_log_directory() == "unset"
+    assert dialog.log_help.property("role") == "help" and "No folder set" in dialog.log_help.text()
+    assert dialog.log_directory.property("state") == ""
+
+
+def test_save_blocked_by_missing_log_folder(dialog, state, tmp_path) -> None:
+    """A folder that doesn't exist keeps the dialog open on the log page with the reason, and saves nothing."""
+    before = state.settings.log_directory
+    dialog.nav.setCurrentRow(PAGES.index("Overlay"))
+    dialog.log_directory.setText(str(tmp_path / "nope"))
+    dialog.home.setText("")
+    assert dialog.save() is False
+    assert dialog.result() != dialog.DialogCode.Accepted
+    assert dialog.stack.currentIndex() == PAGES.index("Log folder")
+    assert dialog.log_help.property("role") == "help-err" and "can't be saved" in dialog.log_help.text()
+    assert state.settings.log_directory == before and state.settings.home_system == HOME.name
+    assert not (tmp_path / "settings.json").exists() or "nope" not in (tmp_path / "settings.json").read_text()
+
+
+def test_save_allows_empty_log_folder(dialog, state) -> None:
+    """An empty log folder field saves (first start without EVE installed yet)."""
+    dialog.log_directory.setText("")
+    assert dialog.save() is True
+    assert dialog.result() == dialog.DialogCode.Accepted and state.settings.log_directory == ""
 
 
 def test_browse_sets_folder(dialog, monkeypatch, tmp_path) -> None:
@@ -283,6 +313,13 @@ def test_overlay_ranges(dialog) -> None:
     assert (dialog.text_size.minimum(), dialog.text_size.maximum()) == dialog_module.TEXT_SIZE_RANGE
     assert (dialog.radius.minimum(), dialog.radius.maximum()) == dialog_module.RADIUS_RANGE
     assert (dialog.opacity.minimum(), dialog.opacity.maximum()) == dialog_module.OPACITY_RANGE
+
+
+def test_overlay_ranges_match_settings() -> None:
+    """The spin boxes and the slider use the ranges the settings clamp loaded values to."""
+    assert dialog_module.TEXT_SIZE_RANGE == settings_module.OVERLAY_TEXT_SIZE_RANGE
+    assert dialog_module.RADIUS_RANGE == settings_module.KNOWN_SPACE_RADIUS_RANGE
+    assert dialog_module.OPACITY_RANGE == (55, 92)
 
 
 # ---------------------------------------------------------------- zKill

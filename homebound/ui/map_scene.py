@@ -93,8 +93,6 @@ def elide(text: str, text_font: QFont, width: float) -> str:
 class SystemNode(QGraphicsObject):
     """One mapped system on the canvas: name, class badge, statics, owner, zKill and character markers."""
 
-    moved = Signal(int, float, float)
-
     def __init__(self, state, system_id: int) -> None:
         """Create the node and load its data.
 
@@ -261,14 +259,32 @@ class SystemNode(QGraphicsObject):
             painter.setPen(color("ink-muted"))
             painter.drawText(QPointF(subtitle_x, 5 + metrics.ascent()),
                              elide(subtitle.strip(), subtitle_font, right - subtitle_x))
-        if level_of_detail < 0.6:
+        if level_of_detail < 0.6 and self.system:
             painting.draw_class_badge(
                 painter, NODE_WIDTH - 8 - painting.class_badge_width(self.system.system_class), 9,
                 self.system.system_class)
 
     def _paint_details(self, painter: QPainter) -> None:
-        """Draw line 2 (class, effect, statics, J-name) and line 3 (owner, stale age)."""
+        """Draw line 2 (class, effect, statics, J-name) and line 3 (owner, stale age).
+
+        A system missing from the universe data (e.g. an old map on newer data) has no line 2.
+        """
         x, line_two, line_three = 8, 25, 44
+        if self.system:
+            self._paint_system_line(painter, x, line_two)
+        if self.mapped and self.mapped.owner_ticker:
+            painting.draw_owner(painter, x, line_three, self.mapped.owner_ticker, self.mapped.owner_slot or 1,
+                                home=self.system_id == self.state.home_id)
+        if self.stale:
+            meta_font = font("node-meta")
+            painter.setFont(meta_font)
+            painter.setPen(color("ink-faint"))
+            painter.drawText(QRectF(x, line_three, NODE_WIDTH - 16, 14),
+                             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                             f"stale {age_text(self.mapped.scanned_at)}")
+
+    def _paint_system_line(self, painter: QPainter, x: float, line_two: float) -> None:
+        """Draw line 2 from the universe data: class badge, effect, statics and, in w-space, the J-name."""
         system = self.system
         cursor = x + painting.draw_class_badge(
             painter, x, line_two, system.system_class, system.security if self.known_space else None) + 5
@@ -286,16 +302,6 @@ class SystemNode(QGraphicsObject):
             painter.setPen(color("ink-muted"))
             painter.drawText(QRectF(cursor, line_two, static_x - cursor - 2, 16), Qt.AlignmentFlag.AlignVCenter,
                              elide(system.name, mono_font, static_x - cursor - 2))
-        if self.mapped and self.mapped.owner_ticker:
-            painting.draw_owner(painter, x, line_three, self.mapped.owner_ticker, self.mapped.owner_slot or 1,
-                                home=self.system_id == self.state.home_id)
-        if self.stale:
-            meta_font = font("node-meta")
-            painter.setFont(meta_font)
-            painter.setPen(color("ink-faint"))
-            painter.drawText(QRectF(x, line_three, NODE_WIDTH - 16, 14),
-                             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                             f"stale {age_text(self.mapped.scanned_at)}")
 
     @staticmethod
     def _static_width(system_class: str) -> float:

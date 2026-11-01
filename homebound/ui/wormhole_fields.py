@@ -152,12 +152,17 @@ class WormholeTypeCombo(QComboBox):
         self.view().setMinimumWidth(440)
         self.setMinimumHeight(ROW_HEIGHT + 4)
         self.setMaxVisibleItems(14)
-        self.show_all = bool(current and current not in self.possible and current != "K162")
+        known_codes = set(universe.wormhole_type_names()) | {"K162"}
+        # a stored code the universe data doesn't know (a typo, or a type removed since) stays
+        # selectable, so saving without touching the field keeps it
+        self.unlisted = current if current and current not in known_codes else None
+        self.show_all = bool(current and current not in self.possible and current not in ("K162", self.unlisted))
         self._fill(current or "")
         self.activated.connect(self._activated)
 
     def _fill(self, current: str) -> int:
-        """Fill in: Unknown · K162 | statics | types that spawn here, A–Z | Show all types … (or the rest, dimmed).
+        """Fill in: Unknown · K162 (· an unlisted stored code) | statics | types that spawn here, A–Z |
+        Show all types … (or the rest, dimmed).
 
         Returns:
             The number of items, separators included.
@@ -168,7 +173,8 @@ class WormholeTypeCombo(QComboBox):
         spawn = [code for code in self.possible if code not in statics]
         shown = {"", "K162", *statics, *spawn}
         extra = sorted(name for name in self.state.universe.wormhole_type_names() if name not in shown) if self.show_all else []
-        for codes in (["", "K162"], statics, spawn, extra if self.show_all else [SHOW_ALL]):
+        first = ["", "K162"] + ([self.unlisted] if self.unlisted else [])
+        for codes in (first, statics, spawn, extra if self.show_all else [SHOW_ALL]):
             if not codes:
                 continue
             if self.count():
@@ -176,8 +182,8 @@ class WormholeTypeCombo(QComboBox):
             for code in codes:
                 self.rows[code] = TypeRow(code, self.state.universe, self.statics)
                 self.addItem(code or "Unknown", code)
-                if code in extra:
-                    self.setItemData(self.count() - 1, True, DIMMED_ROLE)  # can't spawn here: dimmed
+                if code in extra or code == self.unlisted:
+                    self.setItemData(self.count() - 1, True, DIMMED_ROLE)  # can't spawn here / unknown: dimmed
         self.setCurrentIndex(max(0, self.findData(current)))
         self.blockSignals(False)
         return self.count()
@@ -537,6 +543,8 @@ class WormholeFields(QWidget):
             example = next(iter(self.type.statics), None) or next(iter(self.type.possible), None)
             return ("Warp to the hole, check show info, then type the code"
                     + (f": {example[:2].lower()} jumps to {example}." if example else "."))
+        if code == self.type.unlisted:
+            return f"{code} is not a known wormhole type: kept as stored, pick the right type to fix it."
         return ""
 
     def _sync_type(self, *_: object) -> None:

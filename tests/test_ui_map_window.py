@@ -173,6 +173,18 @@ def test_map_menu_lists_maps_and_commands(window) -> None:
     assert not delete.menu().isEnabled()
 
 
+def test_delete_map_menu_switch_note_only_with_other_maps(window) -> None:
+    """The "X is open: switch first" row appears in the delete submenu only when other maps are listed."""
+    settings = window.state.settings
+    note = f"{settings.active_map} is open: switch first"
+    alone = find_action(window._fill_map_menu(), "Delete map").menu()
+    assert [action.text() for action in alone.actions()] == []
+    settings.add_map("Other")
+    listed = [action for action in find_action(window._fill_map_menu(), "Delete map").menu().actions()]
+    assert [action.text() for action in listed] == ["Other", note]
+    assert not listed[-1].isEnabled()
+
+
 def test_new_map_creates_and_switches(window, modal) -> None:
     """Accepting the New map dialog creates the map, switches to it and opens Settings on Home."""
     modal.handler = lambda dialog: (dialog.field.setText("Second"), 1)[1]

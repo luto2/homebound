@@ -691,6 +691,32 @@ def test_reserve_index_stores(state, model) -> None:
     assert state.store.signature(HOME.id, "WH-001").hole_index == index   # kept
 
 
+def test_provisional_index_of_typed_static(state, model) -> None:
+    """A sig typed as home's static (H296) is numbered with the static slot, like next_hole_index; the rest follow."""
+    add_signature(state, "WH-001", group="wormhole")
+    add_signature(state, "WH-002", group="wormhole", type="H296")
+    model.load(HOME.id)
+    label = state.namer.label(HOME.id)
+    slots = len(UNIVERSE.static_types(HOME.id))
+    assert model.provisional == {"WH-001": slots + 1, "WH-002": 1}
+    assert model.bookmark_for(state.store.signature(HOME.id, "WH-002")) == f"{label}-1"
+    assert model.reserve_index(state.store.signature(HOME.id, "WH-002"), dry_run=True) == 1
+
+
+def test_provisional_index_of_typed_static_when_slot_taken(state, model) -> None:
+    """A typed static whose slot a mapped hole or another typed sig already holds is numbered after the statics."""
+    child = pick_system("C5", exclude={HOME.id})
+    state.store.add_system(child.id, parent_id=HOME.id, hole_index=1)
+    add_signature(state, "WH-001", group="wormhole", type="H296")
+    model.load(HOME.id)
+    slots = len(UNIVERSE.static_types(HOME.id))
+    assert model.provisional == {"WH-001": slots + 1}
+    state.store.remove_system(child.id)
+    add_signature(state, "WH-002", group="wormhole", type="H296")
+    model.load(HOME.id)
+    assert sorted(model.provisional.values()) == [1, slots + 1]
+
+
 def test_bookmark_for_reserved_index(state, model) -> None:
     """A stored hole index is used as is."""
     add_signature(state, "WH-001", group="wormhole", hole_index=7)

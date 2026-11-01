@@ -11,7 +11,8 @@ from PySide6.QtWidgets import (
 
 from ..logs.parser import LogFile
 from ..mapping.naming import SCHEMES, scheme_for_key
-from ..settings import detect_log_directories
+from ..settings import (KNOWN_SPACE_RADIUS_RANGE, OVERLAY_OPACITY_RANGE, OVERLAY_TEXT_SIZE_RANGE,
+                        detect_log_directories)
 from ..theme.qss import repolish
 from ..theme.tokens import PIXELS, color
 from ..validation import require_integer, require_text, require_type
@@ -26,9 +27,9 @@ OVERLAY_MODES = [
     ("pinned_always", "Pinned character · always shown", "The pinned character's chain, visible all the time."),
 ]
 LOG_VALIDATION_DELAY_MS = 300
-OPACITY_RANGE = (55, 92)
-TEXT_SIZE_RANGE = (11, 14)
-RADIUS_RANGE = (0, 15)
+OPACITY_RANGE = tuple(round(fraction * 100) for fraction in OVERLAY_OPACITY_RANGE)   # slider in percent
+TEXT_SIZE_RANGE = OVERLAY_TEXT_SIZE_RANGE
+RADIUS_RANGE = KNOWN_SPACE_RADIUS_RANGE
 KWIN_BANNERS = {
     "active": ("success", "✓ Installed and running", "Reinstall"),
     "inactive": ("warning", "▲ Installed but not enabled. Enable it here, or in System Settings → Window Management → KWin Scripts.", "Enable"),
@@ -217,9 +218,17 @@ class SettingsDialog(QDialog):
         """Check the folder in the field and show the result.
 
         Returns:
-            ``"valid"`` (has Local logs), ``"empty"`` (folder without logs) or ``"invalid"`` (not a folder).
+            ``"valid"`` (has Local logs), ``"empty"`` (folder without logs), ``"unset"`` (field empty:
+            no character tracking yet, allowed so a first start without EVE can be saved) or
+            ``"invalid"`` (not a folder; Save is blocked).
         """
-        folder = Path(self.log_directory.text().strip()).expanduser()
+        text = self.log_directory.text().strip()
+        if not text:
+            set_help(self.log_help, "No folder set: characters aren't tracked until you choose one.", "help")
+            self.log_directory.setProperty("state", "")
+            repolish(self.log_directory)
+            return "unset"
+        folder = Path(text).expanduser()
         exists = folder.is_dir()
         files = [LogFile.from_path(path) for path in folder.glob("Local_*.txt")] if exists else []
         files = [file for file in files if file]
@@ -434,11 +443,23 @@ class SettingsDialog(QDialog):
         return succeeded
 
     # ------------------------------------------------------------ save
-    def save(self) -> None:
+    def save(self) -> bool:
         """Write the edited settings to the application state, apply them and close.
 
-        An unknown home system text keeps the previous home instead of clearing it.
+        An unknown home system text keeps the previous home instead of clearing it. A log folder
+        that doesn't exist blocks saving: the dialog stays open on the log folder page with the
+        reason shown (an empty field is allowed).
+
+        Returns:
+            Whether the settings were saved.
         """
+        self.log_timer.stop()
+        if self.validate_log_directory() == "invalid":
+            self.nav.setCurrentRow(PAGES.index("Log folder"))
+            set_help(self.log_help, "✕ Folder not found, so the settings can't be saved. Choose the "
+                     "…/EVE/logs/Chatlogs folder, or clear the field to set it later.", "help-err")
+            self.log_directory.setFocus()
+            return False
         edited = self.edited
         edited.log_directory = self.log_directory.text().strip()
         home_text = self.home.text().strip()
@@ -459,3 +480,4 @@ class SettingsDialog(QDialog):
         self.state.settings.__dict__.update(copy.deepcopy(edited.__dict__))
         self.state.apply_settings()
         self.accept()
+        return True
