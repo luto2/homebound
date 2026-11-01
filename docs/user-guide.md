@@ -56,7 +56,7 @@ Then set your **Home system** (autocomplete over every system name) and pick a *
 | System (right) | The selected system: custom name, owner, notes, zKill activity, and the signature table. |
 | Status bar | Log watcher, zKill and KWin focus-script health, each with ✓ / ▲ / ✕. |
 
-**System nodes** show the custom or scheme name, class, J-name, effect, statics, zKill activity, owner and the characters in it. Home has a `⌂ HOME` tab. Systems whose sigs haven't been pasted for 24h are hatched, faded and marked `stale`.
+**System nodes** show the custom or scheme name, class, J-name, effect, statics, zKill activity, owner and the characters in it. Home has a `⌂ HOME` tab. A system whose last sig paste is older than the rescan threshold (24h by default, see [Settings](#12-settings)) is hatched and faded and gets a grey `SCAN 26h` tab on its top edge. A wormhole system that was never pasted gets `NO SCAN`; k-space systems don't. Hover a node to see the age and the threshold.
 
 **Connection lines** show the hole's state:
 
@@ -141,6 +141,8 @@ Every wormhole sig in the table has a copy button such as `⧉ 12-1`:
 New sigs get a `+`. Known sigs are updated, but known information is never replaced with less (a named site stays named).
 
 Sigs that are no longer in the scanner are flagged `−` and struck through. A banner says how many, for example "2 sigs missing from the last paste · anomalies untouched". Choose **Keep** or **✕ Delete n**. Only the kinds in the paste are checked: if you paste just signatures, your anomalies stay as they are, and the other way round.
+
+The summary above the table says when you last pasted, for example "last paste 2h ago". Once that is older than the rescan threshold, it turns amber and reads "▲ rescan due", and the rows are drawn faint. An empty system gives nothing to paste: right-click it on the map → **Mark as scanned now**. This also quiets `NO SCAN` on a system you don't care about. It only changes the time of the last paste, so there's nothing to undo.
 
 ### The table
 
@@ -286,6 +288,7 @@ While the main window is hidden, toasts are also sent as desktop notifications.
 | Log folder | The EVE `Chatlogs` folder, with Browse and Auto-detect. |
 | Home system | Home for the open map. |
 | Naming scheme | The three schemes with a preview each, and *Don't ask when the guess is certain*. |
+| Signatures | *Rescan due after* 1–72 h (default 24): from then on a system shows `SCAN 26h` and its sigs are drawn faint. |
 | Overlay | Mode, background opacity (55–92%), text size (11–14px), k-space radius in gate jumps. |
 | zKill | Turn zKillboard lookups on or off. |
 | KWin focus script | Shows whether the script is installed and active; Install, Reinstall, Remove. |

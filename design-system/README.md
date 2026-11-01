@@ -26,7 +26,7 @@ Dark only for now (`dark` theme); a light theme is optional and low priority.
 
 - **Neutrals**: canvas `bg-0`, window `bg-1`, panels/dialogs/nodes `bg-2`, inputs/headers `bg-3`, hover `bg-4`. Dividers `line-1`; control borders `line-2` (3:1). Text `ink` → `ink-muted` → `ink-faint`; `ink-disabled` only for disabled controls. Every bright fill (class badges, owner tags, markers, primary buttons) takes `ink-inverse` text.
 - **Accent** (`accent`, ice blue) means *you are here / you chose this*: selection, focus, primary action, current overlay row. Nothing else.
-- **Status**: `success` teal ✓, `warning` amber ▲, `danger` vermillion ✕/!. Success is teal so it sits off the red–green axis and stays distinct from danger for deuteranopes; each always carries its glyph. `*-dim` variants are 15% fills behind `ink`. Stale data uses `stale` hatching plus a "stale 14m" label.
+- **Status**: `success` teal ✓, `warning` amber ▲, `danger` vermillion ✕/!. Success is teal so it sits off the red–green axis and stays distinct from danger for deuteranopes; each always carries its glyph. `*-dim` variants are 15% fills behind `ink`. Stale data uses `stale` hatching plus a label: a `SCAN 26h` tab on map nodes, "stale 14m" elsewhere.
 - **Space classes** (13): `class-c1` … `class-c6` run cool to hot (sky → blue → teal → olive → orange → red) so difficulty reads as temperature; Thera violet, C13 silver with a notch, Drifter pink, Pochven bronze with a cut corner. **W-space badges are filled, k-space (`class-hs/ls/ns`) are outlined** and carry the security number. Labels are always printed.
 - **Effects** (7): each has its own glyph *and* an `effect-*` ink; the glyph is what identifies it.
 - **Connections**: `edge-fresh` neutral, `edge-reduced` amber, `edge-critical` vermillion, `edge-eol` violet casing, `edge-frig` teal, `edge-unknown` grey. Width and dash do the primary work (see ConnectionEdge).
@@ -65,7 +65,7 @@ Use `mono-sig` for signature IDs, `mono-data`/`mono-small` for J-names, WH types
 | Danger | `danger` border/text + ✕ or !, `danger-dim` fill |
 | Success | `success` + ✓ |
 | Disabled | `ink-disabled` text, `line-1` border, `bg-2` fill, icons at `op-disabled` |
-| Stale | 45° hatch, content at `op-stale`, "stale 3h" label |
+| Stale (rescan due) | 45° hatch, content at `op-stale`, grey `SCAN 26h` tab on the top edge after `▲ UNCONFIRMED`; a never-scanned w-space node has only a `NO SCAN` tab, no hatch |
 
 Focus ring and all meaningful marks meet 3:1 on every surface; all text tokens meet 4.5:1 on the grounds their notes name.
 

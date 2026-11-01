@@ -280,6 +280,17 @@ def test_saved_unknown_scheme_falls_back_to_numeric(monkeypatch, tmp_path, kwin,
     assert SettingsDialog(None, state).scheme_cards["numeric"].radio.isChecked()
 
 
+# ---------------------------------------------------------------- signatures
+def test_rescan_due_spin_box(monkeypatch, tmp_path, kwin, qt_application) -> None:
+    """The rescan spin box shows the saved hours, in the range the settings clamp to."""
+    state = make_state(monkeypatch, tmp_path, rescan_due_hours=12)
+    dialog = SettingsDialog(None, state, PAGES.index("Signatures"))
+    assert dialog.rescan_due.value() == 12
+    assert dialog.rescan_due.suffix() == " h"
+    assert (dialog.rescan_due.minimum(), dialog.rescan_due.maximum()) == dialog_module.RESCAN_RANGE
+    assert dialog_module.RESCAN_RANGE == settings_module.RESCAN_DUE_HOURS_RANGE == (1, 72)
+
+
 # ---------------------------------------------------------------- overlay
 def test_overlay_defaults(dialog) -> None:
     """The overlay page starts in follow mode, with no pinned character and the saved opacity as a percentage."""
@@ -345,7 +356,7 @@ def test_zkill_checkbox_reflects_setting(monkeypatch, tmp_path, kwin, qt_applica
 def test_kwin_states(state, kwin, status, button, remove_visible, banner) -> None:
     """Each KWin script status sets the action button text, the Remove button and the banner style."""
     kwin["status"] = status
-    dialog = SettingsDialog(None, state, 5)
+    dialog = SettingsDialog(None, state, PAGES.index("KWin focus script"))
     dialog.show()
     assert dialog.kwin_status == status
     assert dialog.kwin_button.text() == button
@@ -404,6 +415,7 @@ def test_save_writes_settings(dialog, state, tmp_path) -> None:
     dialog.opacity.setValue(80)
     dialog.text_size.setValue(13)
     dialog.radius.setValue(4)
+    dialog.rescan_due.setValue(6)
     dialog.zkill.setChecked(True)
     applied = []
     state.settingsChanged.connect(lambda: applied.append(True))
@@ -417,11 +429,13 @@ def test_save_writes_settings(dialog, state, tmp_path) -> None:
     assert settings.overlay_opacity == 0.8
     assert settings.overlay_text_size == 13
     assert settings.known_space_radius == 4
+    assert settings.rescan_due_hours == 6
     assert settings.zkill_enabled is True
     assert applied
     assert state.zkill.enabled is True
     saved = json.loads((tmp_path / "settings.json").read_text())
     assert saved["overlay_text_size"] == 13 and saved["naming_scheme"] == key
+    assert saved["rescan_due_hours"] == 6
 
 
 def test_save_clears_home_when_field_empty(dialog, state) -> None:

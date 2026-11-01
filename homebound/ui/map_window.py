@@ -888,6 +888,7 @@ class MapWindow(QMainWindow):
         menus.item(menu, "Change static / hole …", lambda: self._rename_hole(system_id), enabled=bool(mapped.parent_id),
                    why="Home has no parent hole." if is_home else "Not connected to a parent system.")
         menu.addSeparator()
+        menus.item(menu, "Mark as scanned now", lambda: state.mark_scanned(system_id))
         menus.item(menu, "Request zKill now", lambda: state.zkill.request([system_id], force=True))
         menu.addSeparator()
         menus.item(menu, "Remove from map", lambda: self._remove(system_id), "Del", danger=True,

@@ -6,7 +6,6 @@ Each group has a header row that collapses it; collapsed groups are remembered p
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 
 from PySide6.QtCore import (QAbstractItemModel, QAbstractTableModel, QEvent, QModelIndex, QPersistentModelIndex,
                             QPointF, QRect, QRectF, Qt, QTimer, Signal)
@@ -38,7 +37,6 @@ GROUP_TITLES = {"wormhole": "Wormholes", "combat": "Combat", "data": "Data", "re
                 "ore": "Ore", "ice": "Ice", "unknown": "Unscanned"}
 MASS_CHIPS = {"reduced": "R", "critical": "CRIT"}
 ANOMALY_PREFIX = "Anomalies · "
-STALE_AFTER = timedelta(hours=24)
 COPIED_FEEDBACK_MS = 1500
 WIDTH_SAVE_DELAY_MS = 600
 
@@ -506,11 +504,8 @@ class SignatureDelegate(QStyledItemDelegate):
         painter.restore()
 
     def is_stale(self) -> bool:
-        """Return whether the system's last paste is over a day old (rows are drawn faint)."""
-        mapped = self.model.state.store.system(self.model.system_id) if self.model.system_id else None
-        if not mapped or not mapped.scanned_at:
-            return False
-        return datetime.now(timezone.utc) - datetime.fromisoformat(mapped.scanned_at) > STALE_AFTER
+        """Return whether a rescan of the system is due (rows are drawn faint)."""
+        return bool(self.model.system_id) and self.model.state.scan_status(self.model.system_id).state == "due"
 
     def editorEvent(self, event: QEvent, model: QAbstractItemModel, option: QStyleOptionViewItem,
                     index: QModelIndex) -> bool:

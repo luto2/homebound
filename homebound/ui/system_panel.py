@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 from ..mapdb.store import Connection, Signature
 from ..mapping import signature_parser
 from ..theme import painting
+from ..theme.qss import repolish
 from ..theme.tokens import PIXELS, color, font
 from ..validation import require_integer, require_type
 from .map_scene import age_text
@@ -170,6 +171,7 @@ class SystemPanel(QWidget):
         state.systemUpdated.connect(lambda system_id: system_id == self.system_id and self.refresh())
         state.mapChanged.connect(self.refresh)
         state.settingsChanged.connect(self.refresh)
+        state.scanAgeTick.connect(self.refresh_scan_age)
         self.set_system(state.selected)
 
     def _build_details(self, body: QVBoxLayout) -> None:
@@ -331,13 +333,28 @@ class SystemPanel(QWidget):
         self.table.load(self.system_id)
         signatures = self.table.signature_model.signatures
         missing = [signature for signature in signatures if signature.state == "missing"]
-        anomalies = sum(1 for signature in signatures if signature.kind == "anom")
-        scanned = f"last paste {age_text(mapped.scanned_at)} ago" if mapped.scanned_at else "never pasted"
-        self.signature_summary.setText(f"{len(signatures) - anomalies} sigs · {anomalies} anoms · {scanned}")
+        self.refresh_scan_age()
         self.banner.setVisible(bool(missing))
         if missing:
             self.banner_text.setText(missing_banner_html(missing, signatures))
             self.delete_missing_button.setText(f"✕ Delete {len(missing)}")
+
+    def refresh_scan_age(self) -> None:
+        """Update the sig summary (counts, age of the last paste, rescan due) and repaint the rows (faint when due)."""
+        if not self.system_id:
+            return
+        signatures = self.table.signature_model.signatures
+        anomalies = sum(1 for signature in signatures if signature.kind == "anom")
+        status = self.state.scan_status(self.system_id)
+        scanned = f"last paste {status.age_text} ago" if status.age_text else "never pasted"
+        if status.state == "due":
+            scanned += " · ▲ rescan due"
+        self.signature_summary.setText(f"{len(signatures) - anomalies} sigs · {anomalies} anoms · {scanned}")
+        role = "help-warn" if status.state == "due" else "help"
+        if self.signature_summary.property("role") != role:
+            self.signature_summary.setProperty("role", role)
+            repolish(self.signature_summary)
+        self.table.viewport().update()
 
     # ------------------------------------------------------------ actions
     def paste(self) -> signature_parser.MergeResult | None:

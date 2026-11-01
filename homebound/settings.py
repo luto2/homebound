@@ -24,8 +24,9 @@ RENAMED_KEYS = {"log_dir": "log_directory", "overlay_pinned_char": "overlay_pinn
 OVERLAY_OPACITY_RANGE = (0.55, 0.92)
 OVERLAY_TEXT_SIZE_RANGE = (11, 14)        # px
 KNOWN_SPACE_RADIUS_RANGE = (0, 15)        # gate jumps
+RESCAN_DUE_HOURS_RANGE = (1, 72)          # hours
 SETTING_RANGES = {"overlay_opacity": OVERLAY_OPACITY_RANGE, "overlay_text_size": OVERLAY_TEXT_SIZE_RANGE,
-                  "known_space_radius": KNOWN_SPACE_RADIUS_RANGE}
+                  "known_space_radius": KNOWN_SPACE_RADIUS_RANGE, "rescan_due_hours": RESCAN_DUE_HOURS_RANGE}
 
 
 def clamp_to_range(key: str, value: int | float) -> int | float:
@@ -52,6 +53,7 @@ class Settings:
     overlay_positions: dict = field(default_factory=dict)        # mode -> [x, y]
     known_space_radius: int = 5
     zkill_enabled: bool = True
+    rescan_due_hours: int = 24            # a system's last paste this old is due for a rescan
     unknown_jump_default: str = "ignore"  # "add" | "ignore"
     character_slots: dict = field(default_factory=dict)          # character id (str) -> marker slot 1..6
     signature_column_widths: dict = field(default_factory=dict)  # sig table column (str) -> width px

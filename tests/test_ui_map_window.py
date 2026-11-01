@@ -569,6 +569,16 @@ def test_node_menu_confirm_and_zkill(window, modal, monkeypatch) -> None:
     assert window._confirm(system_id=child.id) is False
 
 
+def test_node_menu_mark_scanned(window, modal) -> None:
+    """Mark as scanned now sets the last paste to now, so a never-scanned node loses its NO SCAN tab."""
+    child = add_child(window)
+    assert window.scene.nodes[child.id].scan_status.state == "never"
+    modal.menu_handler = pick("Mark as scanned now")
+    window._node_menu(child.id, QPoint(0, 0))
+    assert window.state.store.system(child.id).scanned_at
+    assert window.scene.nodes[child.id].scan_status.state == "fresh"
+
+
 def test_node_menu_draw_connection_and_links(window, modal) -> None:
     """'Draw connection from here' starts a link; link_systems adds or reports a duplicate."""
     child = add_child(window)
