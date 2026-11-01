@@ -179,6 +179,20 @@ def test_switch_map_carries_characters(state, monkeypatch, tmp_path) -> None:
     assert (tmp_path / "settings.json").exists()
 
 
+def test_switch_map_skips_legacy_character_rows(state) -> None:
+    """Character rows without a name or time (legacy data) are left behind; the switch and the other rows go on."""
+    state.store.set_character(9, "Pilot", HOME.id, "2026-10-30T12:00:00+00:00")
+    state.store.database.execute("INSERT INTO characters (id, name, system_id, seen_at) VALUES (10, NULL, ?, NULL)",
+                                 (HOME.id,))
+    state.store.database.execute("INSERT INTO characters (id, name, system_id, seen_at) VALUES (11, 'Old', ?, NULL)",
+                                 (HOME.id,))
+    state.store.database.commit()
+    state.settings.add_map("Second", home_system=HOME.name, naming_scheme="numeric")
+    assert state.switch_map("Second") is True
+    assert [row["id"] for row in state.store.characters()] == [9]
+    assert state.character_location(9) == HOME.id
+
+
 def test_apply_settings(state, tmp_path) -> None:
     """New settings reach namer, tracker, zKill and the watcher (log folder change)."""
     settings = state.settings

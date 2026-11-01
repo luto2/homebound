@@ -57,6 +57,22 @@ def test_request_skips_queued_systems_and_disabled_fetcher(fetcher) -> None:
         fetcher.request(["J161940"])
 
 
+def test_forced_request_upgrades_a_queued_system(fetcher, monkeypatch) -> None:
+    """A forced request for a system already queued without force makes the worker fetch it even when fresh."""
+    monkeypatch.setattr(zkill, "REQUEST_INTERVAL", 0)
+    fetched = []
+    monkeypatch.setattr(zkill.ZkillFetcher, "_fetch",
+                        lambda self, client, store, system_id: fetched.append(system_id) or True)
+    Store(fetcher.database_path).set_zkill_stats(ZkillStats(HOME.id, 0, 0, 0, None, utc_now_iso()))
+    assert fetcher.request([HOME.id]) == 1
+    assert fetcher.request([HOME.id], force=True) == 1      # upgraded, not queued twice
+    assert fetcher.request([HOME.id], force=True) == 0      # already forced
+    assert fetcher.queue.qsize() == 1
+    fetcher.queue.put(None)
+    fetcher._run()
+    assert fetched == [HOME.id] and not fetcher.pending and not fetcher.forced
+
+
 def test_fetcher_needs_callables(tmp_path) -> None:
     """The callbacks must be callable."""
     with pytest.raises(TypeError):

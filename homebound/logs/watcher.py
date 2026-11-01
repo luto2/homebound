@@ -3,6 +3,7 @@
 `LogScanner` is Qt-free (poll() returns events) so it can be tested and replayed;
 `LogWatcher` drives it from a QTimer and re-emits as Qt signals.
 """
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -107,11 +108,18 @@ class LogScanner:
             state: The character; its offset and pending line are updated.
             quiet: First scan of an existing file: keep only the final location, as a non-jump.
 
+        A file that got shorter than the offset was rewritten: it is read again from the top like
+        a new file (header included, history collapsed to the last location).
+
         Returns:
             The system changes found.
         """
+        read_header = state.name is None
         try:
             with open(state.file.path, "rb") as log:
+                if os.fstat(log.fileno()).st_size < state.offset:
+                    state.offset, state.pending, state.session_seen_change = 0, "", False
+                    read_header = quiet = True
                 log.seek(state.offset)
                 data = log.read()
         except OSError:
@@ -125,7 +133,7 @@ class LogScanner:
         state.offset += usable
         lines = text.split("\n")
         state.pending = lines.pop()  # may be partial
-        if state.name is None:
+        if read_header:
             name, _ = parse_header(text)
             if name:
                 state.name = name
