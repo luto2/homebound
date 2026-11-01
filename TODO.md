@@ -5,11 +5,7 @@ part of the cleanup and are listed so the behaviour change is on record.
 
 ## To do
 
-- **Decide on the `__main__` guards.** `homebound/__main__.py` and `universe/build_static.py` still
-  have their `if __name__ == "__main__":` line uncovered (the first would launch the GUI). Adding
-  `exclude_also` for that pattern under `[tool.coverage.report]` would bring the total to 100%.
-- **One long line in `tests/test_ui_map_scene.py`** (the expired-chips assert in
-  `test_chips_per_state`) is still over 120 characters.
+Nothing open.
 
 ## Fixed in the TODO sweep (2026-11-01)
 
@@ -37,6 +33,7 @@ Behaviour changes worth knowing:
   text size (11–14), known-space radius (0–15) and opacity (0.55–0.92) live in `settings.py`, and a
   hand-edited value outside them is clamped on load, so the app and the dialog see the same value.
 - **Delete map submenu** only has the "X is open: switch first" row when other maps are listed.
+- Coverage ignores the `if __name__ == "__main__":` guards (`exclude_also` in `pyproject.toml`).
 - Tests: return annotations, full names and docstrings on nested fakes throughout `tests/`; 175
   generated docstrings rewritten to say what each test checks; the last coverage gaps closed in a
   new `tests/test_coverage_gaps.py`, and the dead `AutoNamed` branch in `logs/replay.py` removed.
