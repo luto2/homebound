@@ -4,7 +4,8 @@ import pytest
 from conftest import HOME, UNIVERSE, MapSimulation, pick_system
 from homebound.mapdb.store import Signature, Store
 from homebound.mapping.naming import (SCHEMES, ChainDepthPositionScheme, Namer, Scheme, chain_letter, guess_static,
-                                      hole_digit, hole_path, letters_for_number, next_hole_index, scheme_for_key,
+                                      hole_digit, hole_path, letters_for_number, next_hole_index, next_level_index,
+                                      scheme_for_key,
                                       static_slot_count, static_slot_for_class)
 
 
@@ -13,6 +14,57 @@ def test_hole_digits() -> None:
     assert [hole_digit(i) for i in (0, 1, 9, 10, 11)] == ["0", "1", "9", "a", "b"]
     with pytest.raises(ValueError):
         hole_digit(-1)
+
+
+def test_hole_digits_past_z_are_bracketed_numbers() -> None:
+    """Index 35 is still ``z``; 36 and up are the number in brackets, never punctuation like ``{``."""
+    assert [hole_digit(hole_index) for hole_index in (35, 36, 37, 100)] == ["z", "(36)", "(37)", "(100)"]
+    assert SCHEMES["numeric"].name([1, 36], None) == "1(36)"
+    assert SCHEMES["letter_numeric"].name([2, 61], None) == "Z(61)"
+
+
+def test_next_level_index_counts_the_same_depth_in_the_same_chain() -> None:
+    """The count matches the systems whose hole path has the same root, depth and first hop."""
+    store = Store(":memory:")
+    store.add_system(1)
+    store.add_system(2, parent_id=1, hole_index=1)
+    store.add_system(3, parent_id=1, hole_index=2)
+    store.add_system(4, parent_id=2, hole_index=2)
+    store.add_system(5, parent_id=2, hole_index=3)
+    store.add_system(6, parent_id=3, hole_index=2)
+    store.add_system(7, parent_id=4, hole_index=2)
+    store.add_system(8)
+    store.add_system(9, parent_id=8, hole_index=1)
+    assert next_level_index(store, 1, [1]) == 1
+    assert next_level_index(store, 1, [1, 5]) == 2
+    assert next_level_index(store, 1, [2, 5]) == 1
+    assert next_level_index(store, 1, [1, 2, 5]) == 1
+    assert next_level_index(store, 1, [1, 2, 2, 5]) == 0
+    assert next_level_index(store, 1, [3]) == 0
+    assert next_level_index(store, 8, [1, 1]) == 0
+    assert next_level_index(store, 1, []) == 0
+
+
+def test_next_level_index_reads_only_the_chain_behind_the_first_hop() -> None:
+    """The count walks down from the root, not up from every system on the map."""
+    store = Store(":memory:")
+    store.add_system(1)
+    for system_id in range(2, 202):
+        store.add_system(system_id, parent_id=1, hole_index=system_id)
+    store.add_system(500, parent_id=1, hole_index=1)
+    store.add_system(501, parent_id=500, hole_index=2)
+    visited: list[int] = []
+    original_children = store.children
+
+    def counting_children(system_id: int) -> list:
+        """Record which systems' children are read."""
+        visited.append(system_id)
+        return original_children(system_id)
+
+    store.children = counting_children
+    store.systems = lambda: pytest.fail("next_level_index must not list the whole map")
+    assert next_level_index(store, 1, [1, 3]) == 1
+    assert visited == [1, 500]
 
 
 def test_chain_letters_follow_eve_uni() -> None:

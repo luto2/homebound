@@ -252,6 +252,7 @@ def test_expire_drops_old_connections_and_orphans(simulation) -> None:
     """Connections go after their lifetime; systems left alone go with them."""
     c5 = pick_system("C5", exclude={HOME.id})
     simulation.tracker.apply_naming(simulation.naming_request(simulation.jump(c5.name)), is_static=True)
+    simulation.jump(HOME.name)
     connection = simulation.store.connection(HOME.id, c5.id)
     created = datetime.fromisoformat(connection.created_at)
     assert simulation.tracker.expire(created + timedelta(hours=47)) == 0
@@ -271,6 +272,45 @@ def test_expire_clears_the_parent_of_systems_that_stay(simulation) -> None:
     connection = simulation.store.connection(HOME.id, c5.id)
     assert simulation.tracker.expire(datetime.fromisoformat(connection.created_at) + timedelta(days=3)) == 1
     assert simulation.store.system(c5.id).parent_id is None
+
+
+def test_expire_keeps_systems_no_expired_connection_touched(simulation) -> None:
+    """A hand-added system without a link survives an unrelated expiry; the expired end goes."""
+    c5 = pick_system("C5", exclude={HOME.id})
+    c3 = pick_system("C3", exclude={HOME.id, c5.id})
+    simulation.tracker.apply_naming(simulation.naming_request(simulation.jump(c5.name)), is_static=True)
+    simulation.jump(HOME.name)
+    assert simulation.tracker.ensure_system(c3.id, confirmed=False)
+    connection = simulation.store.connection(HOME.id, c5.id)
+    assert simulation.tracker.expire(datetime.fromisoformat(connection.created_at) + timedelta(days=3)) == 1
+    assert not simulation.store.has_system(c5.id)
+    assert simulation.store.has_system(c3.id)
+
+
+def test_expire_keeps_the_system_a_character_is_in(simulation) -> None:
+    """The far end of an expired connection stays while a pilot sits in it, without a parent."""
+    c5 = pick_system("C5", exclude={HOME.id})
+    simulation.tracker.apply_naming(simulation.naming_request(simulation.jump(c5.name)), is_static=True)
+    connection = simulation.store.connection(HOME.id, c5.id)
+    assert simulation.tracker.expire(datetime.fromisoformat(connection.created_at) + timedelta(days=3)) == 1
+    assert simulation.store.has_system(c5.id) and simulation.store.system(c5.id).parent_id is None
+
+
+def test_expire_keeps_the_chain_behind_an_expired_connection(simulation) -> None:
+    """Only the expired connection's ends are checked: a system that still links on down the chain stays."""
+    c5 = pick_system("C5", exclude={HOME.id})
+    c3 = pick_system("C3", exclude={HOME.id, c5.id})
+    simulation.tracker.apply_naming(simulation.naming_request(simulation.jump(c5.name)), is_static=True)
+    simulation.jump(c3.name)
+    simulation.jump(HOME.name)
+    first_link = simulation.store.connection(HOME.id, c5.id)
+    created = datetime.fromisoformat(first_link.created_at)
+    simulation.store.update_connection(first_link.id, lifetime=LIFETIME_1H, lifetime_set_at=created.isoformat())
+    assert simulation.tracker.expire(created + timedelta(hours=2)) == 1
+    assert simulation.store.connection(c5.id, c3.id)
+    assert simulation.store.has_system(c5.id) and simulation.store.has_system(c3.id)
+    assert simulation.store.system(c5.id).parent_id is None
+    assert simulation.store.system(c3.id).parent_id == c5.id
 
 
 def test_lifetime_levels_expire_and_k162_size(simulation) -> None:
