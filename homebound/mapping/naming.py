@@ -28,16 +28,25 @@ ROOT_LETTERS = "ZYWUSRQOMKIED"
 
 
 def hole_digit(hole_index: int) -> str:
-    """Return one character for a hole index: 1–9 as digits, 10 and up as a, b, c ….
+    """Return the name part for a hole index: 0–9 as digits, 10–35 as a–z, 36 and up as ``(36)``.
+
+    Past ``z`` the index is written as its decimal number in parentheses. Capital letters would
+    clash with the chain letters of the letter-led scheme (Z followed by hole Z reads as chain ZZ),
+    and more small letters would make paths ambiguous (``aa`` could be 10, 10). A bracketed number
+    can't be mistaken for either and has no upper limit.
 
     Args:
         hole_index: The hole index, 0 or more.
 
     Returns:
-        A single character (two or more for indices past ``z``).
+        One character up to 35, otherwise the bracketed number.
     """
     require_integer(hole_index, "hole_index", minimum=0)
-    return str(hole_index) if hole_index < 10 else chr(ord("a") + hole_index - 10)
+    if hole_index < 10:
+        return str(hole_index)
+    if hole_index < 36:
+        return chr(ord("a") + hole_index - 10)
+    return f"({hole_index})"
 
 
 def chain_letter(hole_index: int, statics: int = 1) -> str:
@@ -253,13 +262,21 @@ def next_level_index(store: Store, root_id: int, path_prefix: list[int]) -> int:
         The 0-based position the new system takes at its depth.
     """
     require_type(path_prefix, list, "path_prefix")
-    depth, first = len(path_prefix), path_prefix[0] if path_prefix else None
-    count = 0
-    for system in store.systems():
-        root, path = hole_path(store, system.id)
-        if root == root_id and len(path) == depth and path and path[0] == first:
-            count += 1
-    return count
+    if not path_prefix:
+        return 0
+    # Walk down from the root instead of walking up from every system: only the subtree behind
+    # the first hop is visited, one level at a time.
+    level = [child for child in store.children(root_id) if (child.hole_index or 0) == path_prefix[0]]
+    seen = {root_id} | {system.id for system in level}
+    for _ in range(len(path_prefix) - 1):
+        next_level = []
+        for system in level:
+            for child in store.children(system.id):
+                if child.id not in seen:
+                    seen.add(child.id)
+                    next_level.append(child)
+        level = next_level
+    return len(level)
 
 
 # ---------------------------------------------------------------- display

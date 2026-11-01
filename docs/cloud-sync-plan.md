@@ -1,7 +1,7 @@
 # Homebound Cloud Sync: design plan
 
 > **STATUS: WIP. This is a design only. Do not implement it yet.**
-> Open questions are in §13. Nothing here should change the local-mapper work that is going on now, except the small "keep sync possible" notes in §9.
+> Open questions are in §15. Nothing here should change the local-mapper work that is going on now, except the small "keep sync possible" notes in §9.
 
 ## 1. Goals and non-goals
 
@@ -258,8 +258,44 @@ Protection comes from:
 
 This decision can be revisited if a group asks for it.
 
-## 13. Open questions
+## 13. Decided: no free trial
 
-- **Free trial:** yes or no, and how long?
+The local app is the free version. Cloud sync is paid from the first day.
+
+## 14. Hosting and backups
+
+**Decided: Hetzner.** The setup spec is in [`hosting-hetzner.md`](hosting-hetzner.md). The Oracle notes below are kept for reference.
+
+### Oracle Cloud Always Free
+**Idle reclaim:** Oracle reclaims Always Free VMs that are *idle*, not ones that are switched off. Running 24/7 doesn't help.
+- An instance counts as idle when, over 7 days, its 95th-percentile CPU, network and (for A1) memory use all stay under about 20%. Oracle has changed this threshold over time, from 10% to 15% to 20%.
+- An idle relay like this would almost certainly fall under it.
+- The usual fix is to upgrade the account to Pay As You Go. Always Free resources stay free on PAYG, and idle reclaim doesn't apply there. Set a budget alert at €1 so nothing is billed by surprise.
+- The alternative is a "keep busy" load script. That is fragile and works against the "resource light" goal.
+
+**Other caveats:**
+- A1 (ARM) capacity is often unavailable in popular regions.
+- The free tier can change at Oracle's discretion.
+
+**Storage included:**
+- 200 GB of block storage, with 5 volume backups.
+- About 20 GB of Object Storage, which is S3-compatible.
+- 2 Autonomous Databases. These are Oracle DB, not SQLite, so we won't use them.
+
+### Hetzner
+- The smallest VPS costs a few € a month.
+- There is no reclaim policy, and it's predictable.
+- Backups cost 20% extra on the VPS price. A Storage Box can be added for off-site copies.
+
+### Backup plan (either host)
+- Use **Litestream** to stream the server's SQLite continuously to S3-compatible object storage. It restores to any point in time.
+- Back up to a **different provider** from the VPS, so it is truly off-site:
+  - on Oracle: Hetzner Storage Box, Backblaze B2, or a home machine
+  - on Hetzner: OCI Object Storage (free), B2, or a home machine
+- Encrypt the backups at rest, e.g. with `age`, or through Litestream's own encryption if it is available then.
+- Restore-test the backups monthly.
+- Don't back up live presence. It is never stored anyway.
+
+## 15. Open questions
+
 - **Mapper character name:** for example "Homebound Mapper" (the name must be free in-game).
-- **Hosting:** Hetzner or Oracle free tier? Oracle is free but can reclaim idle VMs, while Hetzner costs about €4/month and is predictable.

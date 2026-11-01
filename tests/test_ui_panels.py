@@ -1,5 +1,6 @@
 """Offscreen tests of the system panel (details, signatures) and the signature table."""
 import json
+from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -16,6 +17,7 @@ from homebound.ui.signature_table import (
     SORTABLE, GroupHeader, SignatureModel, SignatureTable, group_key, group_sort_key,
     is_wormhole_signature)
 from homebound.ui.system_panel import (BadgeStrip, ElideLabel, OwnerSwatch, SystemPanel, missing_banner_html, plural)
+from homebound.ui.state import AppState
 from ui_helpers import make_state
 
 
@@ -25,7 +27,7 @@ def iso_ago(**delta) -> str:
 
 
 @pytest.fixture
-def state(qt_application, monkeypatch, tmp_path):
+def state(qt_application, monkeypatch, tmp_path) -> Iterator[AppState]:
     """An AppState on a temporary map (home on it, nothing selected)."""
     app_state = make_state(monkeypatch, tmp_path)
     yield app_state
@@ -33,7 +35,7 @@ def state(qt_application, monkeypatch, tmp_path):
 
 
 @pytest.fixture
-def panel(state, qt_application):
+def panel(state, qt_application) -> SystemPanel:
     """A system panel, shown, with home selected."""
     system_panel = SystemPanel(state)
     system_panel.resize(420, 700)
@@ -72,10 +74,10 @@ def test_plural() -> None:
         plural("3", "sig")
 
 
-def banner_signatures():
+def banner_signatures() -> list[Signature]:
     """Three signatures and two anomalies."""
-    return ([Signature(1, f"S{i}", kind="sig", state="missing" if i == 0 else "") for i in range(3)]
-            + [Signature(1, f"A{i}", kind="anom", state="missing" if i == 0 else "") for i in range(2)])
+    return ([Signature(1, f"S{number}", kind="sig", state="missing" if number == 0 else "") for number in range(3)]
+            + [Signature(1, f"A{number}", kind="anom", state="missing" if number == 0 else "") for number in range(2)])
 
 
 def test_missing_banner_names_the_kind_left_alone(qt_application) -> None:
@@ -103,8 +105,8 @@ def test_badge_strip_paints_all_variants(state, qt_application) -> None:
     strip = BadgeStrip(state)
     strip.resize(300, 22)
     strip.grab()   # no system: paints nothing
-    with_effect = next(s for s in UNIVERSE.all_systems() if s.effect and s.statics)
-    kspace = next(s for s in UNIVERSE.all_systems() if s.known_space)
+    with_effect = next(system for system in UNIVERSE.all_systems() if system.effect and system.statics)
+    kspace = next(system for system in UNIVERSE.all_systems() if system.known_space)
     for system in (HOME, with_effect, kspace):
         strip.set_system(system.id)
         assert strip.system_id == system.id
@@ -128,7 +130,7 @@ def test_elide_label_elides_to_its_width(qt_application) -> None:
 def test_owner_swatch_has_ten_slots(qt_application) -> None:
     """The combo offers the ten owner colours with their slot as data."""
     swatch = OwnerSwatch()
-    assert [swatch.itemData(i) for i in range(swatch.count())] == list(range(1, 11))
+    assert [swatch.itemData(row) for row in range(swatch.count())] == list(range(1, 11))
 
 
 # ---------------------------------------------------------------- panel basics
@@ -317,7 +319,7 @@ def test_paste_errors(state, qt_application) -> None:
 
 
 # ---------------------------------------------------------------- editing
-def paste_sample(state):
+def paste_sample(state) -> None:
     """Merge SCAN into home."""
     signature_parser.merge_signatures(state.store, HOME.id, signature_parser.parse_scanner_text(SCAN))
 
@@ -328,7 +330,8 @@ def test_edit_signature_accepted(state, panel, modal) -> None:
     signature = state.store.signature(HOME.id, "DEF-456")
     updated = collect(state.systemUpdated)
 
-    def fill(dialog):
+    def fill(dialog) -> int:
+        """Make the signature a gas site called Mykoserocin and accept."""
         dialog.group.setCurrentIndex(dialog.group.findData("gas"))
         dialog.name.setText("Mykoserocin")
         return 1
@@ -384,7 +387,7 @@ def test_dialog_delete_button_deletes(state, panel, modal) -> None:
 
 
 # ---------------------------------------------------------------- keep / delete
-def flag_missing(state):
+def flag_missing(state) -> None:
     """Paste SCAN, then a paste without GHI-789 and XYZ-000 flags them missing."""
     paste_sample(state)
     signature_parser.merge_signatures(state.store, HOME.id, signature_parser.parse_scanner_text(
@@ -397,7 +400,7 @@ def test_keep_missing_clears_the_flag(state, panel) -> None:
     panel.refresh()
     assert panel.banner.isVisible()
     assert panel.keep_missing() == 1
-    assert all(s.state != "missing" for s in state.store.signatures(HOME.id))
+    assert all(signature.state != "missing" for signature in state.store.signatures(HOME.id))
     assert panel.banner.isHidden()
     assert panel.keep_missing() == 0
 
@@ -405,7 +408,8 @@ def test_keep_missing_clears_the_flag(state, panel) -> None:
 def test_delete_missing_is_undoable(state, panel) -> None:
     """Deleting the missing rows offers an Undo with the snapshot from before."""
     flag_missing(state)
-    missing = [s.signature_id for s in state.store.signatures(HOME.id) if s.state == "missing"]
+    missing = [signature.signature_id for signature in state.store.signatures(HOME.id)
+               if signature.state == "missing"]
     undo = collect(panel.undoable)
     assert panel.delete_missing() == len(missing) == 1
     title, detail, snapshot = undo[0]
@@ -425,7 +429,7 @@ def test_delete_selected_and_unlinking(state, panel, qt_application) -> None:
     panel.refresh()
     assert panel.delete_selected() == 0   # nothing selected
     model = panel.table.signature_model
-    row = next(i for i, r in enumerate(model.rows) if getattr(r, "signature_id", "") == "ABC-123")
+    row = next(index for index, entry in enumerate(model.rows) if getattr(entry, "signature_id", "") == "ABC-123")
     panel.table.selectRow(row)
     assert panel.table.selected_signatures() == ["ABC-123"]
     undo = collect(panel.undoable)
@@ -455,14 +459,14 @@ def test_copy_toast_from_the_table(state, panel) -> None:
 
 # ---------------------------------------------------------------- table: model
 @pytest.fixture
-def model(state):
+def model(state) -> SignatureModel:
     """A signature model on home."""
     signature_model = SignatureModel(state)
     signature_model.load(HOME.id)
     return signature_model
 
 
-def mixed_signatures(state):
+def mixed_signatures(state) -> None:
     """Wormholes, gas, an unscanned one and two anomalies."""
     add_signature(state, "CCC-333", group="wormhole", type="H296", name="Unstable Wormhole", scan_percent=100.0,
                   created_at=iso_ago(hours=3))
@@ -475,7 +479,7 @@ def mixed_signatures(state):
 
 
 def test_group_helpers() -> None:
-    """Group keys, ordering and the wormhole test."""
+    """group_key joins kind and group; wormholes sort first, then gas; anomalies never count as wormhole sigs."""
     assert group_key(Signature(1, "A", group="gas")) == "sig:gas"
     assert group_key(Signature(1, "A", kind="anom")) == "anom:unknown"
     keys = ["anom:combat", "sig:gas", "sig:wormhole", "sig:strange", "anom:ore"]
@@ -492,9 +496,9 @@ def test_rows_are_grouped_with_headers(state, model) -> None:
     mixed_signatures(state)
     assert model.load(HOME.id) == 5 + 6
     headers = [row for row in model.rows if isinstance(row, GroupHeader)]
-    assert [h.key for h in headers] == ["sig:wormhole", "sig:gas", "sig:unknown", "anom:combat", "anom:strange"]
-    assert [h.title for h in headers] == ["Wormholes", "Gas", "Unscanned", "Anomalies · Combat",
-                                          "Anomalies · Strange"]
+    assert [header.key for header in headers] == ["sig:wormhole", "sig:gas", "sig:unknown", "anom:combat", "anom:strange"]
+    assert [header.title for header in headers] == ["Wormholes", "Gas", "Unscanned", "Anomalies · Combat",
+                                                    "Anomalies · Strange"]
     assert headers[0].count == 2
     assert model.signature_at(0) is None and model.signature_at(1).signature_id == "AAA-111"
     assert model.signature_at(-1) is None and model.signature_at(99) is None
@@ -579,7 +583,7 @@ def test_sort_by_scan_puts_unscanned_last(state, model) -> None:
     add_signature(state, "BBB-222", group="gas", scan_percent=80.0)
     add_signature(state, "CCC-333", group="gas", scan_percent=20.0)
     model.set_sort(COLUMN_SCAN, False)
-    assert [r.signature_id for r in model.rows[1:]] == ["CCC-333", "BBB-222", "AAA-111"]
+    assert [row.signature_id for row in model.rows[1:]] == ["CCC-333", "BBB-222", "AAA-111"]
 
 
 def test_header_data(model) -> None:
@@ -602,8 +606,10 @@ def test_cell_data_and_flags(state, model) -> None:
     model.load(HOME.id)
     display, tooltip = Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ToolTipRole
 
-    def cell(signature_id, column, role=display):
-        row = next(i for i, r in enumerate(model.rows) if getattr(r, "signature_id", None) == signature_id)
+    def cell(signature_id: str, column: int, role: Qt.ItemDataRole = display) -> object:
+        """Return the model data of a signature's cell."""
+        row = next(index for index, entry in enumerate(model.rows)
+                   if getattr(entry, "signature_id", None) == signature_id)
         return model.data(model.index(row, column), role)
 
     assert model.data(model.index(0, 0), display) == "Wormholes"
@@ -662,7 +668,7 @@ def test_bookmark_for_unlinked_and_provisional(state, model) -> None:
     add_signature(state, "WH-001", group="wormhole")
     add_signature(state, "WH-002", group="wormhole")
     model.load(HOME.id)
-    first, second = (state.store.signature(HOME.id, f"WH-00{i}") for i in (1, 2))
+    first, second = (state.store.signature(HOME.id, f"WH-00{number}") for number in (1, 2))
     label = state.namer.label(HOME.id)
     slots = len(UNIVERSE.static_types(HOME.id))
     assert model.provisional == {"WH-001": slots + 1, "WH-002": slots + 2}
@@ -689,6 +695,32 @@ def test_reserve_index_stores(state, model) -> None:
     assert model.reserve_index(second) == 1
     assert state.store.signature(HOME.id, "WH-002").hole_index == 1
     assert state.store.signature(HOME.id, "WH-001").hole_index == index   # kept
+
+
+def test_provisional_index_of_typed_static(state, model) -> None:
+    """A sig typed as home's static (H296) is numbered with the static slot, like next_hole_index; the rest follow."""
+    add_signature(state, "WH-001", group="wormhole")
+    add_signature(state, "WH-002", group="wormhole", type="H296")
+    model.load(HOME.id)
+    label = state.namer.label(HOME.id)
+    slots = len(UNIVERSE.static_types(HOME.id))
+    assert model.provisional == {"WH-001": slots + 1, "WH-002": 1}
+    assert model.bookmark_for(state.store.signature(HOME.id, "WH-002")) == f"{label}-1"
+    assert model.reserve_index(state.store.signature(HOME.id, "WH-002"), dry_run=True) == 1
+
+
+def test_provisional_index_of_typed_static_when_slot_taken(state, model) -> None:
+    """A typed static whose slot a mapped hole or another typed sig already holds is numbered after the statics."""
+    child = pick_system("C5", exclude={HOME.id})
+    state.store.add_system(child.id, parent_id=HOME.id, hole_index=1)
+    add_signature(state, "WH-001", group="wormhole", type="H296")
+    model.load(HOME.id)
+    slots = len(UNIVERSE.static_types(HOME.id))
+    assert model.provisional == {"WH-001": slots + 1}
+    state.store.remove_system(child.id)
+    add_signature(state, "WH-002", group="wormhole", type="H296")
+    model.load(HOME.id)
+    assert sorted(model.provisional.values()) == [1, slots + 1]
 
 
 def test_bookmark_for_reserved_index(state, model) -> None:
@@ -726,7 +758,7 @@ def test_bookmark_for_linked_child_and_home(state, panel) -> None:
 
 # ---------------------------------------------------------------- table widget
 @pytest.fixture
-def table(state, qt_application):
+def table(state, qt_application) -> SignatureTable:
     """A signature table, shown, on home."""
     signature_table = SignatureTable(state)
     signature_table.resize(420, 400)
@@ -737,7 +769,8 @@ def table(state, qt_application):
 
 def row_of(table, signature_id) -> int:
     """Return the row of a signature in the table."""
-    return next(i for i, r in enumerate(table.signature_model.rows) if getattr(r, "signature_id", None) == signature_id)
+    return next(index for index, entry in enumerate(table.signature_model.rows)
+                if getattr(entry, "signature_id", None) == signature_id)
 
 
 def test_table_setup(table) -> None:
@@ -775,7 +808,7 @@ def test_sort_clicked(state, table) -> None:
 
 
 def test_header_row_spans_and_load_count(state, table) -> None:
-    """Group headers span all columns."""
+    """load returns the row count with headers; header rows span all 8 columns, signature rows don't."""
     mixed_signatures(state)
     assert table.load(HOME.id) == 11
     assert table.columnSpan(0, 0) == 8
@@ -828,10 +861,11 @@ def test_copy_row_of_linked_hole_does_not_reserve(state, table) -> None:
 def test_column_fitting_and_stored_widths(state, table, qt_application) -> None:
     """Name absorbs the width; dragging a column keeps the table fitting; widths are saved."""
     header = table.horizontalHeader()
-    visible = [c for c in range(8) if not table.isColumnHidden(c)]
+    visible = [column for column in range(8) if not table.isColumnHidden(column)]
 
-    def total():
-        return sum(header.sectionSize(c) for c in visible)
+    def total() -> int:
+        """Return the summed width of the visible columns."""
+        return sum(header.sectionSize(column) for column in visible)
 
     assert total() == table.viewport().width()
     header.resizeSection(COLUMN_SIGNATURE, 110)
@@ -843,7 +877,7 @@ def test_column_fitting_and_stored_widths(state, table, qt_application) -> None:
     assert total() == table.viewport().width()
     saved = table.store_widths()
     assert saved[str(COLUMN_SIGNATURE)] == 110
-    assert set(saved) == {str(c) for c in table_module.DEFAULT_WIDTHS}
+    assert set(saved) == {str(column) for column in table_module.DEFAULT_WIDTHS}
     assert state.settings.signature_column_widths == saved
 
 
@@ -851,8 +885,8 @@ def test_dragging_name_wider_than_scan_can_give_caps_name(state, table, qt_appli
     """When Scan is used up, Name is capped instead."""
     header = table.horizontalHeader()
     header.resizeSection(COLUMN_NAME, 2000)
-    visible = [c for c in range(8) if not table.isColumnHidden(c)]
-    assert sum(header.sectionSize(c) for c in visible) == table.viewport().width()
+    visible = [column for column in range(8) if not table.isColumnHidden(column)]
+    assert sum(header.sectionSize(column) for column in visible) == table.viewport().width()
     assert header.sectionSize(COLUMN_SCAN) >= 16
 
 
@@ -926,7 +960,7 @@ def test_delegate_staleness(state, table) -> None:
 
 
 # ---------------------------------------------------------------- painting
-def populate_everything(state):
+def populate_everything(state) -> None:
     """Every row kind: linked, new, missing, anomalies, wormhole with chips, unscanned."""
     child = pick_system("C5", exclude={HOME.id})
     state.dispatch(state.tracker.add_wormhole(HOME.id, child.id))
@@ -982,7 +1016,7 @@ def test_paint_delegate_directly_with_hover(state, table, qt_application) -> Non
 
 
 def test_table_header_view_paints(table) -> None:
-    """The header section styling renders."""
+    """The styled column header grabs to a non-empty image."""
     assert not table.horizontalHeader().grab().isNull()
 
 

@@ -120,7 +120,9 @@ class AppState(QObject):
         self.database_path = str(settings.map_path())
         self.store = Store(self.database_path)
         for row in characters:
-            self.store.set_character(row["id"], row["name"], row["system_id"], row["seen_at"] or "")
+            if not all(isinstance(row[column], str) and row[column].strip() for column in ("name", "seen_at")):
+                continue  # legacy row without a name or time: set_character would refuse it
+            self.store.set_character(row["id"], row["name"], row["system_id"], row["seen_at"])
         self.namer.store = self.tracker.store = self.store
         self.namer.scheme_key = settings.naming_scheme
         self.namer.home_id = self.home_id

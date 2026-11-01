@@ -89,6 +89,7 @@ class ZkillFetcher:
         self.on_update, self.on_status = on_update, on_status
         self.queue: queue.Queue[tuple[int, bool] | None] = queue.Queue()
         self.pending: set[int] = set()
+        self.forced: set[int] = set()      # queued systems that are to be fetched even if fresh
         self._pending_lock = threading.Lock()
         self.enabled = True
         self._stopping = False
@@ -104,14 +105,17 @@ class ZkillFetcher:
         self.queue.put(_STOP)
 
     def request(self, system_ids: Iterable[int], force: bool = False) -> int:
-        """Queue systems for a fetch; systems already queued are skipped.
+        """Queue systems for a fetch; systems already queued are not queued twice.
+
+        A forced request for a system that is already queued without force upgrades the queued
+        entry, so it is fetched even if the cache is fresh.
 
         Args:
             system_ids: The systems.
             force: Fetch even if the cache is fresh.
 
         Returns:
-            The number of systems queued.
+            The number of systems queued or upgraded to forced.
         """
         system_ids = list(system_ids)
         for system_id in system_ids:
@@ -122,8 +126,13 @@ class ZkillFetcher:
         for system_id in system_ids:
             with self._pending_lock:
                 if system_id in self.pending:
+                    if force and system_id not in self.forced:
+                        self.forced.add(system_id)
+                        queued += 1
                     continue
                 self.pending.add(system_id)
+                if force:
+                    self.forced.add(system_id)
             self.queue.put((system_id, force))
             queued += 1
         return queued
@@ -145,19 +154,27 @@ class ZkillFetcher:
             system_id, force = item
             with self._pending_lock:
                 self.pending.discard(system_id)
+                force = force or system_id in self.forced
+                self.forced.discard(system_id)
             if self.database_path != path:  # the user switched maps
                 store.close()
                 path = self.database_path
                 store = Store(path)
             if not self.enabled or (not force and is_fresh(store.zkill_stats(system_id))):
                 continue
-            self._fetch(client, store, system_id)
+            self._fetch(client, store, system_id, force=force)
             time.sleep(REQUEST_INTERVAL)
         client.close()
         store.close()
 
-    def _fetch(self, client: httpx.Client, store: Store, system_id: int) -> bool:
+    def _fetch(self, client: httpx.Client, store: Store, system_id: int, force: bool = False) -> bool:
         """Fetch and store the stats of one system.
+
+        Args:
+            client: The HTTP client.
+            store: The map store the stats go into.
+            system_id: The system.
+            force: The fetch was forced; a retry after a rate limit stays forced.
 
         Returns:
             True if new stats were stored.
@@ -166,7 +183,7 @@ class ZkillFetcher:
             response = client.get(API_URL.format(system_id))
             if response.status_code == 429:
                 time.sleep(RATE_LIMIT_PAUSE)
-                self.request([system_id])
+                self.request([system_id], force=force)
                 return False
             response.raise_for_status()
             data = response.json()

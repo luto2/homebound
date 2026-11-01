@@ -378,10 +378,13 @@ class Tracker:
 
     # ------------------------------------------------------------ expiry
     def expire(self, now: datetime | None = None) -> int:
-        """Drop connections past their lifetime, and the systems left without connections.
+        """Drop connections past their lifetime, and the systems they leave without connections.
 
         A connection lives as long as its type says (48h if unknown); < 4h, < 1h and expired count
-        from when that state was set. Home and pinned systems stay.
+        from when that state was set. Only an end of an expired connection that has no connection
+        left goes with it; systems further down the chain keep their own connections and stay, and
+        so does a system added by hand that no expired connection touched. Home, pinned systems and
+        systems a character is in stay.
 
         Args:
             now: The current time (UTC), or None for the clock.
@@ -392,6 +395,7 @@ class Tracker:
         require_type(now, (datetime, type(None)), "now")
         now = now or datetime.now(timezone.utc)
         removed = 0
+        expired_ends: set[int] = set()
         for connection in self.store.connections():
             known = self.universe.wormhole_type(connection.wormhole_type) if connection.wormhole_type else None
             hours = known.lifetime_hours if known and known.lifetime_hours else DEFAULT_LIFETIME_HOURS
@@ -401,12 +405,14 @@ class Tracker:
                 dead |= now - set_at > LIFETIME_REMAINING[connection.lifetime]
             if dead:
                 self.store.remove_connection(connection.id)
+                expired_ends.update((connection.system_a, connection.system_b))
                 removed += 1
         if removed:
-            home = self.namer.home_id
-            for system in self.store.systems():
-                if system.id != home and not system.pinned and not self.store.connections_of_system(system.id):
-                    self.store.remove_system(system.id)
+            occupied = {character["system_id"] for character in self.store.characters()}
+            for system_id in expired_ends - occupied - {self.namer.home_id}:
+                system = self.store.system(system_id)
+                if system and not system.pinned and not self.store.connections_of_system(system_id):
+                    self.store.remove_system(system_id)
             for system in self.store.systems():
                 if system.parent_id and not self.store.connection(system.parent_id, system.id):
                     self.store.update_system(system.id, parent_id=None, hole_index=None)

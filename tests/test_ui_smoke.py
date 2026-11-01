@@ -1,15 +1,17 @@
 """Build the whole main window offscreen and drive the common flows once."""
+from collections.abc import Iterator
+
 import pytest
 
 from conftest import HOME, SCAN, pick_system
 from homebound.mapping import signature_parser
+from homebound.ui.map_window import MapWindow
 from ui_helpers import FakeFocus, make_state
 
 
 @pytest.fixture
-def window(qt_application, monkeypatch, tmp_path, modal):
+def window(qt_application, monkeypatch, tmp_path, modal) -> Iterator[MapWindow]:
     """The main window on a temporary map, shown offscreen."""
-    from homebound.ui.map_window import MapWindow
     state = make_state(monkeypatch, tmp_path)
     window = MapWindow(state, FakeFocus())
     window.show()

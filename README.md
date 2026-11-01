@@ -64,3 +64,9 @@ Code layout notes: signature scan parsing is `homebound/mapping/signature_parser
 Schema changes: the map database (settings keys, tables and columns were renamed to unabbreviated names, e.g. `log_dir` is now `log_directory`) and `data/universe.sqlite` changed. Old map files migrate automatically when they are opened. `universe.sqlite` must be rebuilt once with `uv run python -m homebound.universe.build_static`, which works offline from `data/cache`.
 
 The UI follows `design-system/`: tokens, component specs and Qt notes.
+
+## License
+
+Homebound is free software under the [GNU General Public License v3.0 or later](LICENSE).
+
+The licence covers Homebound's own code. Bundled third-party data keeps its own terms: the CCP SDE and EVE icons are used under CCP's licence, and the Wanderer data under MIT.

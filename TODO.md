@@ -5,56 +5,40 @@ part of the cleanup and are listed so the behaviour change is on record.
 
 ## To do
 
-- **Back up the map before the first start after the cleanup.** Opening an old map file renames its
-  columns in place (`sig_id` → `signature_id`, `eol` → `lifetime`, `grp` → `group`, `kv` →
-  `key_value` …); older Homebound versions can't open it afterwards. Copy
-  `~/.local/share/homebound/` first.
-- **Check the app live.** All UI checks after the cleanup ran offscreen: start Homebound, jump,
-  paste sigs, edit a sig and a connection, switch maps, check the overlay over a fullscreen client
-  and a desktop notification while the window is hidden.
-- **Finish the rules in `tests/`.** Fixtures and helper functions still lack return annotations,
-  some loops use short variables (`c`, `e`, `i`, `s`), and a few tiny nested fakes have no
-  docstrings.
-- **Rewrite the generated test docstrings.** About 170 were made from the test names ("Foo bar
-  baz.") and say little; describe what each test checks instead.
-- **Close the last coverage gaps** if worth it: `logs/replay.py` quiet-mode branches,
-  `logs/watcher.py` 95-96 and 117-118, `settings.py` Steam library parse (248-249), `zkill.py` 99,
-  `universe/db.py` 254, `theme/tokens.py` 21.
-- **Decide on the open bugs below**, in particular expiry removing hand-added systems and the
-  typed-static bookmark slot.
+Nothing open.
 
-## Open
+## Fixed in the TODO sweep (2026-11-01)
 
-- **Expiry removes hand-added systems.** `Tracker.expire` drops every non-home, unpinned system that
-  has no connections as soon as *any* connection expires. A system added by hand without a link
-  (Add system … with nothing selected) disappears with an unrelated expiry, and so does a system a
-  character is sitting in.
-- **Forced zKill refresh can be swallowed.** `ZkillFetcher.request(..., force=True)` skips a system
-  that is already queued without force, so "Request zKill now" does nothing while a normal fetch
-  for that system is waiting and the cache is fresh.
-- **Hole indices from 36 up get punctuation.** `naming.hole_digit` maps 10–35 to a–z, then goes on
-  to `{`, `|`, … No chain gets that wide in practice, but the name would be wrong.
-- **Truncated log files are never read again.** `LogScanner` keeps its byte offset per file; if the
-  client ever rewrites a log under the same name with less data, the offset is past the end and
-  nothing new is read until the next session file appears.
-- **`next_level_index` walks the whole map for every new system** (`hole_path` per system), so it is
-  O(n²) per jump. Fine for chains of tens of systems; slow for hundreds.
-- **Typed-static wormholes copy as the wrong slot.** `SignatureModel._provisional_indices`
-  (`ui/signature_table.py`) numbers every unlinked wormhole signature after the static slots, even
-  one typed as the system's own static (H296 in J161940), so it copies as `Home-3` instead of the
-  static slot `Home-1` that `next_hole_index` would give.
-- **A mistyped wormhole type is erased on save.** `WormholeTypeCombo` falls back to "Unknown" when
-  the stored type code isn't in the universe data (e.g. a typo); saving the dialog then wipes the code.
-- **Switching maps can fail on a legacy character row.** `AppState.switch_map` copies characters
-  with `set_character`, which needs a non-empty name and `seen_at`; a legacy row with NULL values
-  raises `ValueError` halfway through the switch.
-- **Dead and fragile node code.** `SystemNode.moved` is never emitted (dead API), and
-  `SystemNode.paint` assumes the system exists in the universe data.
-- **Settings dialog accepts bad values.** Save isn't blocked when the log folder is invalid (only a
-  warning is shown), and a saved `overlay_text_size` / `known_space_radius` outside the spin-box
-  range is clamped silently.
-- **Delete map submenu always has the "X is open: switch first" row.** It is added even when there
-  is no other map (the submenu is then disabled anyway), so it never shows an empty list.
+Behaviour changes worth knowing:
+
+- **Expiry** only looks at the two ends of each connection that just expired. An end goes when it
+  has no connection left, unless it is home, pinned or a character is in it. A hand-added system
+  with no link survives an unrelated expiry; a chain past an expired link stays as its own root.
+- **Hole indices from 36 up** are written as a bracketed number, `(36)`, instead of `{`, `|` …
+  (uppercase would read as a chain letter, `aa` as two holes).
+- **`next_level_index`** walks only the children of the one chain instead of the whole map.
+- **Forced zKill requests** upgrade an entry already queued without force, and a forced fetch that
+  hits HTTP 429 is queued again as forced.
+- **A log file rewritten shorter** under the same name is read from the top again, like a first
+  scan: the header is parsed again and the old history collapses to the last location.
+- **`switch_map`** skips legacy character rows without a name or `seen_at` instead of failing.
+- **Typed statics** get their static slot (`Home-1`) when no mapped child or other sig holds it; a
+  second sig of the same static type is numbered after the statics.
+- **A wormhole code not in the universe data** is kept as a dimmed "unlisted" row and survives a
+  save; the info line says it is not a known type.
+- **`SystemNode.moved`** was removed; `paint` draws a system missing from the universe data without
+  the class/effect/statics line.
+- **Settings dialog:** a non-existent log folder blocks Save (the dialog stays on the Log folder page
+  and says why); an empty field is allowed and no longer means the working directory. The ranges of
+  text size (11–14), known-space radius (0–15) and opacity (0.55–0.92) live in `settings.py`, and a
+  hand-edited value outside them is clamped on load, so the app and the dialog see the same value.
+- **Delete map submenu** only has the "X is open: switch first" row when other maps are listed.
+- Coverage ignores the `if __name__ == "__main__":` guards (`exclude_also` in `pyproject.toml`).
+- Tests: return annotations, full names and docstrings on nested fakes throughout `tests/`; 175
+  generated docstrings rewritten to say what each test checks; the last coverage gaps closed in a
+  new `tests/test_coverage_gaps.py`, and the dead `AutoNamed` branch in `logs/replay.py` removed.
+- Done before the sweep: the map was backed up before the first start after the cleanup, and the app
+  was checked live.
 
 ## Fixed during the cleanup
 

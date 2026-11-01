@@ -1,7 +1,7 @@
 """Shared fixtures: the real universe data, a scripted map, and an offscreen Qt application."""
 import gc
 import os
-from collections.abc import Iterator
+from collections.abc import Callable, Collection, Iterator
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -12,13 +12,13 @@ from homebound.logs.parser import SystemChange  # noqa: E402
 from homebound.mapdb.store import Store  # noqa: E402
 from homebound.mapping.naming import Namer  # noqa: E402
 from homebound.mapping.tracker import NamingRequest, Tracker  # noqa: E402
-from homebound.universe.db import Universe, load_universe  # noqa: E402
+from homebound.universe.db import System, Universe, load_universe  # noqa: E402
 
 UNIVERSE = load_universe()
 HOME = UNIVERSE.by_name("J161940")  # C5, static H296 -> C5
 
 
-def pick_system(system_class: str, statics_to: str | None = None, exclude=()) -> object:
+def pick_system(system_class: str, statics_to: str | None = None, exclude: Collection[int] = ()) -> System:
     """Return the system with the lowest ID of a class, optionally with a single static to a class.
 
     Raises:
@@ -64,7 +64,7 @@ SCAN = ("ABC-123\tCosmic Signature\tWormhole\tUnstable Wormhole\t100,0%\t4,32 AU
 
 
 @pytest.fixture(autouse=True)
-def close_databases(monkeypatch: pytest.MonkeyPatch):
+def close_databases(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Close every Store and Universe a test (or the code under test) opened, so no connection leaks."""
     opened: list[object] = []
 
@@ -162,7 +162,7 @@ def modal(monkeypatch, qt_application) -> ModalResponder:
     class AnsweringMenu(QMenu):
         """A menu whose exec() asks the responder instead of blocking."""
 
-        def exec(self, *arguments):
+        def exec(self, *arguments: object) -> object:
             """Record the menu and trigger the action the handler picks."""
             return responder.answer_menu(self, *arguments)
 
@@ -171,10 +171,10 @@ def modal(monkeypatch, qt_application) -> ModalResponder:
 
         nullDevice = staticmethod(QProcess.nullDevice)
 
-        def __init__(self, *arguments):
+        def __init__(self, *arguments: object) -> None:
             """Ignore everything."""
 
-        def __getattr__(self, name):
+        def __getattr__(self, name: str) -> Callable[..., None]:
             """Accept any QProcess call."""
             return lambda *arguments, **keywords: None
 

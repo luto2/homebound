@@ -11,6 +11,7 @@ from homebound.mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, L
                                    ZkillStats)
 from homebound.ui import map_scene
 from homebound.ui.map_scene import (GRID, ConnectionEdge, MapScene, MapView, SystemNode, age_text, elide, removed_in)
+from homebound.ui.state import AppState
 from ui_helpers import make_state
 
 
@@ -20,7 +21,7 @@ def iso_ago(**delta) -> str:
 
 
 @pytest.fixture
-def state(monkeypatch, tmp_path, qt_application):
+def state(monkeypatch, tmp_path, qt_application) -> AppState:
     """An AppState on a temp map with home plus a high-sec and a wormhole neighbour connected to it."""
     app_state = make_state(monkeypatch, tmp_path)
     app_state.store.add_system(HOME.id, x=0, y=0)
@@ -34,7 +35,7 @@ def state(monkeypatch, tmp_path, qt_application):
 
 
 @pytest.fixture
-def scene(state):
+def scene(state) -> MapScene:
     """A MapScene with a view attached (context menus and hit tests need one)."""
     map_scene_ = MapScene(state)
     map_scene_.view = MapView(map_scene_)
@@ -70,7 +71,8 @@ def paint_item(item, zoom: float, selected: bool = False) -> QImage:
     return image
 
 
-def mouse_event(kind, scene_position, button=Qt.MouseButton.LeftButton, modifiers=Qt.KeyboardModifier.NoModifier):
+def mouse_event(kind, scene_position, button=Qt.MouseButton.LeftButton,
+                modifiers=Qt.KeyboardModifier.NoModifier) -> QGraphicsSceneMouseEvent:
     """Build a scene mouse event."""
     event = QGraphicsSceneMouseEvent(kind)
     event.setScenePos(scene_position)
@@ -89,55 +91,57 @@ def make_connection(**values) -> Connection:
 
 
 class TestHelpers:
+    """The age, removal-countdown and elide helpers."""
+
     @pytest.mark.parametrize("delta,expected", [
         (dict(seconds=5), "0m"), (dict(minutes=5, seconds=5), "5m"), (dict(hours=2, seconds=5), "2h"),
         (dict(hours=2, minutes=10, seconds=5), "2h 10m"), (dict(days=3, seconds=5), "3d"),
         (dict(days=3, hours=4, seconds=5), "3d 4h")])
     def test_age_text(self, delta, expected) -> None:
-        """Age text."""
+        """Ages show the two largest units (d/h/m), dropping zero parts; under a minute is "0m"."""
         assert age_text(iso_ago(**delta)) == expected
 
     def test_age_text_empty(self) -> None:
-        """Age text empty."""
+        """No timestamp (None or "") gives an empty age."""
         assert age_text(None) == "" and age_text("") == ""
 
     def test_age_text_rejects_non_text(self) -> None:
-        """Age text rejects non text."""
+        """A non-string timestamp raises TypeError."""
         with pytest.raises(TypeError):
             age_text(5)
 
     def test_removed_in(self) -> None:
-        """Removed in."""
+        """An expired hole set 3 minutes ago is removed in 6-7 min; a < 4h hole set an hour ago in about 2h."""
         connection = make_connection(lifetime=LIFETIME_EXPIRED, lifetime_set_at=iso_ago(minutes=3))
         assert removed_in(connection) in ("6 min", "7 min")
         long_one = make_connection(lifetime=LIFETIME_4H, lifetime_set_at=iso_ago(hours=1))
         assert removed_in(long_one).startswith("2h ")
 
     def test_removed_in_overdue_is_zero(self) -> None:
-        """Removed in overdue is zero."""
+        """An expired hole past its removal time shows "0 min", never a negative time."""
         connection = make_connection(lifetime=LIFETIME_EXPIRED,
                                      lifetime_set_at=iso_ago(minutes=LIFETIME_REMAINING[LIFETIME_EXPIRED].seconds))
         assert removed_in(connection) == "0 min"
 
     def test_removed_in_unknown(self) -> None:
-        """Removed in unknown."""
+        """Without a lifetime, or with a lifetime but no time it was set, the countdown is "?"."""
         assert removed_in(make_connection()) == "?"
         assert removed_in(make_connection(lifetime=LIFETIME_1H)) == "?"
 
     def test_removed_in_rejects_wrong_type(self) -> None:
-        """Removed in rejects wrong type."""
+        """A non-Connection raises TypeError."""
         with pytest.raises(TypeError):
             removed_in("x")
 
     def test_elide(self, qt_application) -> None:
-        """Elide."""
+        """Text that fits is unchanged; text that doesn't is cut short and ends in an ellipsis."""
         text_font = QFont()
         assert elide("short", text_font, 500) == "short"
         shortened = elide("a very long system name indeed", text_font, 40)
         assert shortened.endswith("…") and len(shortened) < 30
 
     def test_elide_validates(self, qt_application) -> None:
-        """Elide validates."""
+        """elide raises TypeError for a non-font, a non-string text or a non-integer width."""
         with pytest.raises(TypeError):
             elide("x", "font", 10)
         with pytest.raises(TypeError):
@@ -146,32 +150,47 @@ class TestHelpers:
             elide("x", QFont(), "10")
 
     def test_aliases(self) -> None:
-        """Aliases."""
+        """W and H alias the node width and height, and the grid step is a third of the node height."""
         assert (map_scene.W, map_scene.H) == (map_scene.NODE_WIDTH, map_scene.NODE_HEIGHT)
         assert GRID == map_scene.NODE_HEIGHT / 3
 
 
 class TestSystemNode:
+    """System nodes: data, tooltip, painting, markers and dragging."""
+
     def test_refresh_loads_data(self, state, scene) -> None:
-        """Refresh loads data."""
+        """A node loads its system and map row; home is w-space, confirmed and fresh, the high-sec node k-space."""
         node = scene.nodes[HOME.id]
         assert node.system.id == HOME.id and node.mapped is not None
         assert node.name and not node.stale and not node.unconfirmed
         assert node.known_space is False and scene.nodes[state.k_space.id].known_space is True
 
     def test_rejects_bad_id(self, state) -> None:
-        """Rejects bad id."""
+        """A non-integer system ID raises TypeError."""
         with pytest.raises(TypeError):
             SystemNode(state, "x")
 
     def test_unknown_system_tooltip(self, state, qt_application) -> None:
-        """Unknown system tooltip."""
+        """A node for an ID the universe doesn't know has no system and shows the bare ID as tooltip."""
         node = SystemNode(state, 1)   # not a real system
         assert node.system is None and node.toolTip() == "1"
         assert node.known_space is False
 
+    @pytest.mark.parametrize("zoom", [1.0, 0.5, 0.2])
+    def test_unknown_system_paints(self, state, qt_application, zoom) -> None:
+        """A system missing from the universe data paints at every level of detail without raising."""
+        state.store.add_system(1)
+        state.store.update_system(1, owner_ticker="ABCD")
+        node = SystemNode(state, 1)
+        node.stale = True
+        assert node.system is None and not paint_item(node, zoom).isNull()
+
+    def test_has_no_moved_signal(self) -> None:
+        """The never-emitted ``moved`` signal is gone (positions are saved by the scene)."""
+        assert not hasattr(SystemNode, "moved")
+
     def test_tooltip_contents(self, state, scene) -> None:
-        """Tooltip contents."""
+        """The tooltip lists the name, region, statics, owner and characters here, and no Unconfirmed line."""
         state.store.update_system(HOME.id, owner_ticker="ABCD", owner_note="friends")
         state.characters_in = lambda system_id: [(1, "Pilot One", 1)] if system_id == HOME.id else []
         node = scene.nodes[HOME.id]
@@ -182,8 +201,8 @@ class TestSystemNode:
         assert HOME.region in tip
 
     def test_tooltip_effect(self, state, scene) -> None:
-        """Tooltip effect."""
-        with_effect = next(s for s in UNIVERSE.all_systems() if s.effect and s.id != HOME.id)
+        """A system with an effect names the effect in its tooltip."""
+        with_effect = next(system for system in UNIVERSE.all_systems() if system.effect and system.id != HOME.id)
         state.store.add_system(with_effect.id)
         scene.rebuild()
         assert "Unconfirmed" not in scene.nodes[with_effect.id].toolTip()
@@ -191,7 +210,7 @@ class TestSystemNode:
         assert painting.EFFECT_NAMES[with_effect.effect] in scene.nodes[with_effect.id].toolTip()
 
     def test_unconfirmed_from_system_or_connection(self, state, scene) -> None:
-        """Unconfirmed from system or connection."""
+        """A node is unconfirmed when its system is, or when one of its connections is; the tooltip says so."""
         state.store.update_system(state.wormhole.id, confirmed=0)
         scene.nodes[state.wormhole.id].refresh()
         assert scene.nodes[state.wormhole.id].unconfirmed
@@ -202,7 +221,7 @@ class TestSystemNode:
         assert scene.nodes[HOME.id].unconfirmed
 
     def test_stale(self, state, scene) -> None:
-        """Stale."""
+        """A system scanned 30 hours ago is stale; one scanned an hour ago is not."""
         state.store.update_system(HOME.id, scanned_at=iso_ago(hours=30))
         scene.nodes[HOME.id].refresh()
         assert scene.nodes[HOME.id].stale
@@ -211,26 +230,27 @@ class TestSystemNode:
         assert not scene.nodes[HOME.id].stale
 
     def test_geometry(self, scene) -> None:
-        """Geometry."""
+        """The bounding rect contains the shape, and center() is the middle of the node."""
         node = scene.nodes[HOME.id]
         assert node.boundingRect().contains(node.shape().boundingRect())
         assert node.center() == node.pos() + QPointF(map_scene.NODE_WIDTH / 2, map_scene.NODE_HEIGHT / 2)
 
     @pytest.mark.parametrize("zoom", [0.1, 0.25, 0.4, 0.7, 1.0, 2.0])
     def test_paint_levels_of_detail(self, scene, zoom) -> None:
-        """Paint levels of detail."""
+        """A node paints at every zoom level of detail without errors."""
         for system_id in (HOME.id,):
             image = paint_item(scene.nodes[system_id], zoom)
             assert not image.isNull()
 
     def test_paint_every_variant(self, state, scene) -> None:
-        """Paint every variant."""
+        """Nodes with owner, stale scan, unconfirmed state, custom name, zKill stats, characters and hover paint."""
         state.store.update_system(HOME.id, owner_ticker="ABCD", owner_slot=2, scanned_at=iso_ago(hours=30),
                                   confirmed=0)
         state.store.update_system(state.k_space.id, custom_name="Custom")
         state.store.set_zkill_stats(ZkillStats(HOME.id, 3, 12, 0, iso_ago(minutes=2), iso_ago(minutes=1)))
         state.settings.zkill_enabled = True
-        state.characters_in = lambda system_id: [(i, f"Pilot {i}", i % 5 + 1) for i in range(1, 6)]
+        state.characters_in = lambda system_id: [(character_id, f"Pilot {character_id}", character_id % 5 + 1)
+                                                 for character_id in range(1, 6)]
         scene.rebuild()
         for node in scene.nodes.values():
             assert node.zkill is None or node.zkill.kills_1h == 3
@@ -239,8 +259,8 @@ class TestSystemNode:
                 assert not paint_item(node, zoom, selected=True).isNull()
 
     def test_paint_subtitle_and_effect(self, state, scene) -> None:
-        """Paint subtitle and effect."""
-        with_effect = next(s for s in UNIVERSE.all_systems() if s.effect and s.id != HOME.id)
+        """A renamed w-space system with an effect and a renamed k-space system (real name as subtitle) paint."""
+        with_effect = next(system for system in UNIVERSE.all_systems() if system.effect and system.id != HOME.id)
         state.store.add_system(with_effect.id, x=500, y=500)
         scene.rebuild()
         node = scene.nodes[with_effect.id]
@@ -252,7 +272,7 @@ class TestSystemNode:
         assert not paint_item(high_security, 1.0).isNull()
 
     def test_zkill_level_and_width(self, state, scene) -> None:
-        """Zkill level and width."""
+        """No stats means level none; a kill minutes ago adds the recent mark (34 px), an hour-old one doesn't (18 px)."""
         node = scene.nodes[HOME.id]
         assert node._zkill_level() == ("none", False)
         node.zkill = ZkillStats(HOME.id, 0, 0, 0, None, iso_ago())
@@ -266,8 +286,9 @@ class TestSystemNode:
 
     @pytest.mark.parametrize("count", [1, 2, 3, 4, 8])
     def test_character_markers_overflow(self, state, scene, count) -> None:
-        """Character markers overflow."""
-        state.characters_in = lambda system_id: [(i, f"P{i}", i + 1) for i in range(count)]
+        """Nodes with one to eight characters keep them all and paint without errors."""
+        state.characters_in = lambda system_id: [(character_id, f"P{character_id}", character_id + 1)
+                                                 for character_id in range(count)]
         node = scene.nodes[state.k_space.id]
         node.refresh()
         assert len(node.characters) == count
@@ -277,13 +298,13 @@ class TestSystemNode:
         assert not paint_item(home, 1.0).isNull()
 
     def test_character_markers_without_characters(self, scene) -> None:
-        """Character markers without characters."""
+        """A node with no characters still paints."""
         node = scene.nodes[HOME.id]
         node.characters = []
         assert paint_item(node, 1.0) is not None
 
     def test_hover_events(self, scene) -> None:
-        """Hover events."""
+        """Hover enter sets the hover flag; hover leave clears it."""
         node = scene.nodes[HOME.id]
         node.hoverEnterEvent(None)
         assert node.hover
@@ -291,7 +312,7 @@ class TestSystemNode:
         assert not node.hover
 
     def test_move_snaps_to_grid_and_moves_edges(self, scene) -> None:
-        """Move snaps to grid and moves edges."""
+        """Moving a node snaps it to the grid and redraws its connections."""
         node = scene.nodes[HOME.id]
         edge = node.edges[0]
         before = edge.line
@@ -301,12 +322,12 @@ class TestSystemNode:
         assert edge.line != before
 
     def test_selecting_updates_state(self, state, scene) -> None:
-        """Selecting updates state."""
+        """Selecting a node makes its system the selected one in the state."""
         scene.nodes[state.k_space.id].setSelected(True)
         assert state.selected == state.k_space.id
 
     def test_mouse_release_stores_position(self, state, scene) -> None:
-        """Mouse release stores position."""
+        """Releasing the mouse after a move saves the new position to the store and the node's map row."""
         node = scene.nodes[HOME.id]
         node.setPos(GRID * 10, GRID * 4)
         node.mouseReleaseEvent(mouse_event(QEvent.Type.GraphicsSceneMouseRelease, node.pos()))
@@ -315,15 +336,17 @@ class TestSystemNode:
         assert node.mapped.x == stored.x
 
     def test_mouse_release_without_move_keeps_store(self, state, scene, monkeypatch) -> None:
-        """Mouse release without move keeps store."""
+        """Releasing the mouse without moving writes nothing to the store."""
         node = scene.nodes[HOME.id]
         calls = []
-        monkeypatch.setattr(state.store, "update_system", lambda *a, **k: calls.append(k))
+        monkeypatch.setattr(state.store, "update_system", lambda *arguments, **changes: calls.append(changes))
         node.mouseReleaseEvent(mouse_event(QEvent.Type.GraphicsSceneMouseRelease, node.pos()))
         assert calls == []
 
 
 class TestConnectionEdge:
+    """Connection edges: tooltip, chips, geometry and painting."""
+
     def edge_for(self, scene, state, **changes) -> ConnectionEdge:
         """Update the home <-> k-space connection and return its refreshed edge."""
         connection = state.store.connection(HOME.id, state.k_space.id)
@@ -334,7 +357,7 @@ class TestConnectionEdge:
         return edge
 
     def test_constructor_validates(self, state, scene) -> None:
-        """Constructor validates."""
+        """An edge needs a Connection and two nodes; anything else raises TypeError."""
         connection = state.store.connection(HOME.id, state.k_space.id)
         with pytest.raises(TypeError):
             ConnectionEdge(state, "x", scene.nodes[HOME.id], scene.nodes[state.k_space.id])
@@ -344,12 +367,12 @@ class TestConnectionEdge:
             ConnectionEdge(state, connection, scene.nodes[HOME.id], 3)
 
     def test_refresh_validates(self, scene) -> None:
-        """Refresh validates."""
+        """Refreshing an edge with None raises TypeError."""
         with pytest.raises(TypeError):
             next(iter(scene.edges.values())).refresh(None)
 
     def test_edges_registered_on_nodes(self, state, scene) -> None:
-        """Edges registered on nodes."""
+        """Each node knows its edges: home has both connections, the k-space node one."""
         assert len(scene.edges) == 2
         assert len(scene.nodes[HOME.id].edges) == 2
         assert len(scene.nodes[state.k_space.id].edges) == 1
@@ -357,11 +380,11 @@ class TestConnectionEdge:
     @pytest.mark.parametrize("mass,text", [("fresh", "Mass fresh"), ("reduced", "Mass reduced (<50%)"),
                                            ("critical", "Mass critical (<10%)"), ("unknown", "Mass unknown")])
     def test_tooltip_mass(self, state, scene, mass, text) -> None:
-        """Tooltip mass."""
+        """The tooltip spells out each mass state."""
         assert text in self.edge_for(scene, state, mass=mass).toolTip()
 
     def test_tooltip_lifetime_states(self, state, scene) -> None:
-        """Tooltip lifetime states."""
+        """The tooltip shows < 4h with its age, expired with the removal countdown, and no lifetime line when stable."""
         tip = self.edge_for(scene, state, lifetime=LIFETIME_4H, lifetime_set_at=iso_ago(minutes=30)).toolTip()
         assert "Lifetime < 4h (set 30m ago)" in tip
         tip = self.edge_for(scene, state, lifetime=LIFETIME_EXPIRED, lifetime_set_at=iso_ago(minutes=1)).toolTip()
@@ -369,7 +392,7 @@ class TestConnectionEdge:
         assert "Lifetime" not in self.edge_for(scene, state, lifetime=0).toolTip()
 
     def test_tooltip_size_type_unconfirmed(self, state, scene) -> None:
-        """Tooltip size type unconfirmed."""
+        """The tooltip starts with the type and shows the age and Unconfirmed; an untyped hole shows its hand-set size."""
         tip = self.edge_for(scene, state, confirmed=0).toolTip()
         assert tip.startswith("H296") and "Unconfirmed" in tip and "Age 2" not in tip
         assert "Age " in tip
@@ -378,7 +401,7 @@ class TestConnectionEdge:
         assert edge.toolTip().startswith("Unknown type") and "only" in edge.toolTip()
 
     def test_hover_refreshes_tooltip(self, state, scene) -> None:
-        """Hover refreshes tooltip."""
+        """Hover enter sets the hover flag and rebuilds the tooltip; hover leave clears the flag."""
         edge = self.edge_for(scene, state)
         edge.setToolTip("")
         edge.hoverEnterEvent(None)
@@ -387,18 +410,18 @@ class TestConnectionEdge:
         assert not edge.hover
 
     def test_chips_per_state(self, state, scene) -> None:
-        """Chips per state."""
+        """A fresh, stable, confirmed hole has no chips; mass, frigate, lifetime and unconfirmed states add theirs."""
         assert self.edge_for(scene, state)._chips() == []
-        assert [t for t, _ in self.edge_for(scene, state, mass="reduced")._chips()] == ["R"]
-        assert [t for t, _ in self.edge_for(scene, state, mass="critical")._chips()] == ["CRIT"]
-        assert [t for t, _ in self.edge_for(scene, state, mass="unknown")._chips()] == ["?"]
+        assert [text for text, _ in self.edge_for(scene, state, mass="reduced")._chips()] == ["R"]
+        assert [text for text, _ in self.edge_for(scene, state, mass="critical")._chips()] == ["CRIT"]
+        assert [text for text, _ in self.edge_for(scene, state, mass="unknown")._chips()] == ["?"]
         edge = self.edge_for(scene, state, mass="fresh", frigate_only=1, lifetime=LIFETIME_1H, confirmed=0)
-        assert [t for t, _ in edge._chips()] == ["F", "◷ <1h", "▲ UNCONF"]
-        assert [t for t, _ in self.edge_for(scene, state, lifetime=LIFETIME_EXPIRED)._chips()][-2:] == ["F", "✕ EXP"] \
-            or "✕ EXP" in [t for t, _ in self.edge_for(scene, state, lifetime=LIFETIME_EXPIRED)._chips()]
+        assert [text for text, _ in edge._chips()] == ["F", "◷ <1h", "▲ UNCONF"]
+        assert [text for text, _ in self.edge_for(scene, state, lifetime=LIFETIME_EXPIRED)._chips()][-2:] == ["F", "✕ EXP"] \
+            or "✕ EXP" in [text for text, _ in self.edge_for(scene, state, lifetime=LIFETIME_EXPIRED)._chips()]
 
     def test_plate_grows_with_chips(self, state, scene) -> None:
-        """Plate grows with chips."""
+        """More chips make the label plate wider, and the bounding rect still contains it."""
         plain = self.edge_for(scene, state, mass="fresh", frigate_only=0, lifetime=0, confirmed=1)
         narrow = plain._plate_rect().width()
         busy = self.edge_for(scene, state, mass="critical", frigate_only=1, lifetime=LIFETIME_1H, confirmed=0)
@@ -406,13 +429,13 @@ class TestConnectionEdge:
         assert busy.boundingRect().contains(busy._plate_rect())
 
     def test_shape_covers_curve_and_plate(self, state, scene) -> None:
-        """Shape covers curve and plate."""
+        """The hit-test shape contains the middle of the curve and the label plate."""
         edge = self.edge_for(scene, state)
         assert edge.shape().contains(edge.path.pointAtPercent(0.5))
         assert edge.shape().contains(edge._plate_rect().center())
 
     def test_adjust_horizontal_and_vertical(self, state, scene) -> None:
-        """Adjust horizontal and vertical."""
+        """Edges run left to right or top to bottom, and stay valid when the nodes swap sides."""
         horizontal = scene.edges[state.store.connection(HOME.id, state.k_space.id).id]
         assert horizontal.line.x2() > horizontal.line.x1()
         vertical = scene.edges[state.store.connection(HOME.id, state.wormhole.id).id]
@@ -431,7 +454,7 @@ class TestConnectionEdge:
         {"confirmed": 0}, {"wormhole_type": None}])
     @pytest.mark.parametrize("zoom", [0.3, 1.0])
     def test_paint_states(self, state, scene, changes, zoom) -> None:
-        """Paint states."""
+        """Edges paint in every mass, lifetime, frigate, confirmation and type state, hovered and selected or not."""
         edge = self.edge_for(scene, state, **changes)
         edge.hover = bool(changes)
         edge.setSelected(bool(changes))
@@ -439,27 +462,29 @@ class TestConnectionEdge:
         assert not image.isNull()
 
     def test_paint_through_scene_render(self, scene) -> None:
-        """Paint through scene render."""
+        """Rendering the whole scene draws visible pixels."""
         image = render(scene, 1.0)
         assert any(image.pixel(x, y) != 0 for x in range(0, 400, 7) for y in range(0, 400, 7))
 
 
 class TestMapScene:
+    """The scene: building items, refreshing and selection."""
+
     def test_builds_items(self, state, scene) -> None:
-        """Builds items."""
+        """The scene has a node per mapped system, an edge per connection, and positions snapped to the grid."""
         assert set(scene.nodes) == {HOME.id, state.k_space.id, state.wormhole.id}
         assert len(scene.edges) == 2
         assert scene.nodes[state.k_space.id].pos() == QPointF(round(300 / GRID) * GRID, 0)
 
     def test_connection_to_unmapped_system_is_skipped(self, state, scene, monkeypatch) -> None:
-        """Connection to unmapped system is skipped."""
+        """A connection to a system that isn't on the map gets no edge."""
         extra = Connection(99, HOME.id, 12345, created_at=iso_ago())
         monkeypatch.setattr(state.store, "connections", lambda: [extra])
         scene.rebuild()
         assert scene.edges == {}
 
     def test_rebuild_after_removal_and_addition(self, state, scene) -> None:
-        """Rebuild after removal and addition."""
+        """mapChanged drops removed systems and adds new ones, keeping the existing node objects."""
         state.store.remove_system(state.wormhole.id)
         new_system = pick_system("C5", exclude=(HOME.id,))
         state.store.add_system(new_system.id, x=90, y=90)
@@ -470,7 +495,7 @@ class TestMapScene:
         assert len(scene.edges) == 1 and len(kept_node.edges) == 1
 
     def test_refresh_system_updates_node_and_edges(self, state, scene) -> None:
-        """Refresh system updates node and edges."""
+        """systemUpdated refreshes the node's edges from the store; an ID not on the map is ignored."""
         connection = state.store.connection(HOME.id, state.k_space.id)
         state.store.update_connection(connection.id, mass="critical")
         state.systemUpdated.emit(HOME.id)
@@ -478,19 +503,19 @@ class TestMapScene:
         scene.refresh_system(999999)   # not on the map: ignored
 
     def test_refresh_system_with_deleted_connection(self, state, scene) -> None:
-        """Refresh system with deleted connection."""
+        """Refreshing a system whose connection was deleted doesn't fail; the edge keeps its last data."""
         connection = state.store.connection(HOME.id, state.k_space.id)
         state.store.remove_connection(connection.id)
         scene.refresh_system(HOME.id)   # edge keeps its last connection
 
     def test_refresh_all_on_characters_changed(self, state, scene) -> None:
-        """Refresh all on characters changed."""
+        """charactersChanged refreshes every node, so character markers move to the right system."""
         state.characters_in = lambda system_id: [(1, "Pilot", 1)] if system_id == state.k_space.id else []
         state.charactersChanged.emit()
         assert scene.nodes[state.k_space.id].characters and not scene.nodes[HOME.id].characters
 
     def test_selection_follows_state(self, state, scene) -> None:
-        """Selection follows state."""
+        """Selecting a system in the state selects only its node; an unknown ID is ignored."""
         state.select(state.wormhole.id)
         assert scene.nodes[state.wormhole.id].isSelected()
         state.select(state.k_space.id)
@@ -498,13 +523,13 @@ class TestMapScene:
         scene._select(424242)   # unknown: ignored
 
     def test_node_at(self, scene) -> None:
-        """Node at."""
+        """node_at finds the node under a point and None over empty space."""
         home = scene.nodes[HOME.id]
         assert scene.node_at(home.center()) is home
         assert scene.node_at(QPointF(-3000, -3000)) is None
 
     def test_chain_rect(self, state, scene) -> None:
-        """Chain rect."""
+        """chain_rect covers the whole map or one system's chain; unknown IDs give the whole map, text IDs TypeError."""
         whole = scene.chain_rect()
         assert whole.contains(scene.nodes[state.k_space.id].sceneBoundingRect())
         assert scene.chain_rect(HOME.id) == whole
@@ -518,7 +543,7 @@ class TestMapScene:
             scene.chain_rect("x")
 
     def test_chain_rect_empty(self, monkeypatch, tmp_path, qt_application) -> None:
-        """Chain rect empty."""
+        """A scene without systems has a null chain rect."""
         app_state = make_state(monkeypatch, tmp_path)
         app_state.store.remove_system(HOME.id) if app_state.store.has_system(HOME.id) else None
         empty = MapScene(app_state)
@@ -526,8 +551,10 @@ class TestMapScene:
 
 
 class TestLinkDrawing:
+    """Drawing a new connection by click mode or shift-drag."""
+
     def test_start_and_cancel(self, state, scene) -> None:
-        """Start and cancel."""
+        """start_link draws a line from the node with a cross cursor; cancel_link removes it (False if there is none)."""
         assert scene.start_link(HOME.id) is True
         assert scene._link_from is scene.nodes[HOME.id] and scene._link_line in scene.items()
         assert scene.view.viewport().cursor().shape() == Qt.CursorShape.CrossCursor
@@ -536,25 +563,25 @@ class TestLinkDrawing:
         assert scene.cancel_link() is False
 
     def test_start_unknown_system(self, scene) -> None:
-        """Start unknown system."""
+        """Starting a link from a system not on the map returns False."""
         assert scene.start_link(424242) is False and scene._link_from is None
 
     def test_start_validates(self, scene) -> None:
-        """Start validates."""
+        """A non-integer system ID raises TypeError."""
         with pytest.raises(TypeError):
             scene.start_link("x")
 
     def test_restart_replaces_line(self, state, scene) -> None:
-        """Restart replaces line."""
+        """Starting a second link removes the first line and starts from the new node."""
         scene.start_link(HOME.id)
         first = scene._link_line
         scene.start_link(state.k_space.id)
         assert first not in scene.items() and scene._link_from is scene.nodes[state.k_space.id]
 
     def test_click_mode_finishes_on_press(self, state, scene) -> None:
-        """Click mode finishes on press."""
+        """In click mode, pressing on another node requests a link between the two and ends link mode."""
         requested = []
-        scene.linkRequested.connect(lambda a, b: requested.append((a, b)))
+        scene.linkRequested.connect(lambda from_id, to_id: requested.append((from_id, to_id)))
         scene.start_link(state.wormhole.id)
         event = mouse_event(QEvent.Type.GraphicsSceneMousePress, scene.nodes[state.k_space.id].center())
         scene.mousePressEvent(event)
@@ -562,9 +589,9 @@ class TestLinkDrawing:
         assert scene._link_from is None
 
     def test_click_on_background_or_same_node_requests_nothing(self, state, scene) -> None:
-        """Click on background or same node requests nothing."""
+        """Pressing on empty space or on the start node ends link mode without a request."""
         requested = []
-        scene.linkRequested.connect(lambda a, b: requested.append((a, b)))
+        scene.linkRequested.connect(lambda from_id, to_id: requested.append((from_id, to_id)))
         scene.start_link(HOME.id)
         scene.mousePressEvent(mouse_event(QEvent.Type.GraphicsSceneMousePress, QPointF(-3000, -3000)))
         scene.start_link(HOME.id)
@@ -572,9 +599,9 @@ class TestLinkDrawing:
         assert requested == [] and scene._link_from is None
 
     def test_shift_drag_flow(self, state, scene) -> None:
-        """Shift drag flow."""
+        """Shift-drag from a node draws a line that follows the cursor or snaps to nodes; release on another links them."""
         requested = []
-        scene.linkRequested.connect(lambda a, b: requested.append((a, b)))
+        scene.linkRequested.connect(lambda from_id, to_id: requested.append((from_id, to_id)))
         home, other = scene.nodes[HOME.id], scene.nodes[state.k_space.id]
         press = mouse_event(QEvent.Type.GraphicsSceneMousePress, home.center(), modifiers=Qt.KeyboardModifier.ShiftModifier)
         scene.mousePressEvent(press)
@@ -590,20 +617,20 @@ class TestLinkDrawing:
         assert requested == [(HOME.id, state.k_space.id)] and scene._link_from is None
 
     def test_release_in_click_mode_keeps_link(self, state, scene) -> None:
-        """Release in click mode keeps link."""
+        """In click mode a mouse release doesn't end the link."""
         scene.start_link(HOME.id, click_mode=True)
         scene.mouseReleaseEvent(mouse_event(QEvent.Type.GraphicsSceneMouseRelease, QPointF(0, 0)))
         assert scene._link_from is not None
         scene.cancel_link()
 
     def test_shift_click_on_background_passes_through(self, scene) -> None:
-        """Shift click on background passes through."""
+        """Shift-press on empty space starts no link."""
         scene.mousePressEvent(mouse_event(QEvent.Type.GraphicsSceneMousePress, QPointF(-3000, -3000),
                                           modifiers=Qt.KeyboardModifier.ShiftModifier))
         assert scene._link_from is None
 
     def test_plain_events_pass_through(self, state, scene) -> None:
-        """Plain events pass through."""
+        """Press, move and release without shift or link mode start no link."""
         center = scene.nodes[HOME.id].center()
         scene.mousePressEvent(mouse_event(QEvent.Type.GraphicsSceneMousePress, center))
         scene.mouseMoveEvent(mouse_event(QEvent.Type.GraphicsSceneMouseMove, center))
@@ -611,7 +638,7 @@ class TestLinkDrawing:
         assert scene._link_from is None
 
     def test_escape_cancels(self, scene) -> None:
-        """Escape cancels."""
+        """Escape cancels a link in progress; other keys pass through."""
         scene.start_link(HOME.id)
         scene.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Escape, Qt.KeyboardModifier.NoModifier))
         assert scene._link_from is None
@@ -619,21 +646,24 @@ class TestLinkDrawing:
 
 
 class TestSceneSignals:
+    """Context menu and double-click signals of the scene."""
+
     def context_event(self, position: QPointF) -> QGraphicsSceneContextMenuEvent:
+        """Build a context menu event at a scene position."""
         event = QGraphicsSceneContextMenuEvent(QEvent.Type.GraphicsSceneContextMenu)
         event.setScenePos(position)
         event.setScreenPos(QPoint(5, 6))
         return event
 
     def test_node_menu(self, state, scene) -> None:
-        """Node menu."""
+        """A right-click on a node emits nodeContextMenu with its system ID."""
         received = []
         scene.nodeContextMenu.connect(lambda system_id, position: received.append(system_id))
         scene.contextMenuEvent(self.context_event(scene.nodes[HOME.id].center()))
         assert received == [HOME.id]
 
     def test_edge_menu(self, state, scene) -> None:
-        """Edge menu."""
+        """A right-click on an edge emits edgeContextMenu with its connection ID."""
         received = []
         scene.edgeContextMenu.connect(lambda connection_id, position: received.append(connection_id))
         edge = scene.edges[state.store.connection(HOME.id, state.k_space.id).id]
@@ -641,14 +671,14 @@ class TestSceneSignals:
         assert received == [edge.connection.id]
 
     def test_background_menu(self, scene) -> None:
-        """Background menu."""
+        """A right-click on empty space emits backgroundContextMenu with the scene position."""
         received = []
         scene.backgroundContextMenu.connect(lambda scene_position, screen_position: received.append(scene_position))
         scene.contextMenuEvent(self.context_event(QPointF(-3000, -3000)))
         assert received == [QPointF(-3000, -3000)]
 
     def test_menu_without_view_is_background(self, state, qt_application) -> None:
-        """Menu without view is background."""
+        """Without a view, a right-click even over a node counts as a background click."""
         bare = MapScene(state)
         received = []
         bare.backgroundContextMenu.connect(lambda scene_position, screen_position: received.append(1))
@@ -656,7 +686,7 @@ class TestSceneSignals:
         assert received == [1]
 
     def test_double_click_edge(self, state, scene) -> None:
-        """Double click edge."""
+        """Double-clicking an edge emits edgeActivated with its ID; double-clicking empty space emits nothing."""
         received = []
         scene.edgeActivated.connect(received.append)
         edge = scene.edges[state.store.connection(HOME.id, state.k_space.id).id]
@@ -668,8 +698,10 @@ class TestSceneSignals:
 
 
 class TestMapView:
+    """The view: zoom, fit and background drawing."""
+
     def test_zoom_clamps(self, scene, qt_application) -> None:
-        """Zoom clamps."""
+        """set_zoom clamps to 0.2-2.5, returns the zoom used and emits zoomChanged each time."""
         view = scene.view
         changes = []
         view.zoomChanged.connect(changes.append)
@@ -679,14 +711,14 @@ class TestMapView:
         assert view.zoom() == pytest.approx(0.2) and len(changes) == 3
 
     def test_set_zoom_validates(self, scene) -> None:
-        """Set zoom validates."""
+        """A text or bool zoom raises TypeError."""
         with pytest.raises(TypeError):
             scene.view.set_zoom("big")
         with pytest.raises(TypeError):
             scene.view.set_zoom(True)
 
     def test_wheel_zooms(self, scene) -> None:
-        """Wheel zooms."""
+        """Scrolling the wheel up zooms in."""
         from PySide6.QtCore import QPointF as Point
         from PySide6.QtGui import QWheelEvent
         view = scene.view
@@ -697,7 +729,7 @@ class TestMapView:
         assert view.zoom() > 1.0
 
     def test_fit(self, scene) -> None:
-        """Fit."""
+        """fit zooms to show a rectangle (at most 1.2 here) and returns False for an empty one."""
         view = scene.view
         view.resize(800, 600)
         assert view.fit(scene.chain_rect()) is True
@@ -705,19 +737,19 @@ class TestMapView:
         assert view.fit(QRectF()) is False
 
     def test_fit_small_rectangle_caps_zoom(self, scene) -> None:
-        """Fit small rectangle caps zoom."""
+        """Fitting a tiny rectangle stops at zoom 1.0 instead of magnifying it."""
         scene.view.resize(800, 600)
         scene.view.fit(QRectF(0, 0, 10, 10))
         assert scene.view.zoom() == pytest.approx(1.0)
 
     def test_fit_validates(self, scene) -> None:
-        """Fit validates."""
+        """A tuple instead of a QRectF raises TypeError."""
         with pytest.raises(TypeError):
             scene.view.fit((0, 0, 1, 1))
 
     @pytest.mark.parametrize("zoom", [0.3, 0.5, 1.0])
     def test_grab_draws_background(self, scene, zoom) -> None:
-        """Grab draws background."""
+        """The view grabs to an image of its size at each zoom level."""
         view = scene.view
         view.resize(500, 400)
         view.set_zoom(zoom)
@@ -725,7 +757,7 @@ class TestMapView:
         assert image.width() == 500
 
     def test_background_below_minimum_zoom_fills(self, scene, monkeypatch) -> None:
-        """Background below minimum zoom fills."""
+        """Below the grid's minimum zoom the background is still filled."""
         view = scene.view
         monkeypatch.setattr(MapView, "zoom", lambda self: 0.1)
         image = QImage(50, 50, QImage.Format.Format_ARGB32)

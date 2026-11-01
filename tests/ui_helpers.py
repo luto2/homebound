@@ -1,11 +1,15 @@
 """Helpers for the offscreen UI tests: isolated settings, a fake focus tracker and a ready AppState."""
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QRect, Signal
 
 import homebound.settings as settings_module
 from conftest import HOME, UNIVERSE
 from homebound.settings import Settings
+
+if TYPE_CHECKING:
+    from homebound.ui.state import AppState
 
 
 class FakeFocus(QObject):
@@ -30,7 +34,7 @@ def isolated_settings(monkeypatch, folder: Path, **values) -> Settings:
     return settings
 
 
-def make_state(monkeypatch, folder: Path, **values):
+def make_state(monkeypatch, folder: Path, **values) -> "AppState":
     """Return an AppState on a temporary map (zKill off, nothing started)."""
     from homebound.ui.state import AppState
     return AppState(UNIVERSE, isolated_settings(monkeypatch, folder, **values))

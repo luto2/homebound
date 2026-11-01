@@ -4,23 +4,75 @@ import pytest
 from conftest import HOME, UNIVERSE, MapSimulation, pick_system
 from homebound.mapdb.store import Signature, Store
 from homebound.mapping.naming import (SCHEMES, ChainDepthPositionScheme, Namer, Scheme, chain_letter, guess_static,
-                                      hole_digit, hole_path, letters_for_number, next_hole_index, scheme_for_key,
+                                      hole_digit, hole_path, letters_for_number, next_hole_index, next_level_index,
+                                      scheme_for_key,
                                       static_slot_count, static_slot_for_class)
 
 
 def test_hole_digits() -> None:
     """Indices below 10 are digits, then letters."""
-    assert [hole_digit(i) for i in (0, 1, 9, 10, 11)] == ["0", "1", "9", "a", "b"]
+    assert [hole_digit(index) for index in (0, 1, 9, 10, 11)] == ["0", "1", "9", "a", "b"]
     with pytest.raises(ValueError):
         hole_digit(-1)
 
 
+def test_hole_digits_past_z_are_bracketed_numbers() -> None:
+    """Index 35 is still ``z``; 36 and up are the number in brackets, never punctuation like ``{``."""
+    assert [hole_digit(hole_index) for hole_index in (35, 36, 37, 100)] == ["z", "(36)", "(37)", "(100)"]
+    assert SCHEMES["numeric"].name([1, 36], None) == "1(36)"
+    assert SCHEMES["letter_numeric"].name([2, 61], None) == "Z(61)"
+
+
+def test_next_level_index_counts_the_same_depth_in_the_same_chain() -> None:
+    """The count matches the systems whose hole path has the same root, depth and first hop."""
+    store = Store(":memory:")
+    store.add_system(1)
+    store.add_system(2, parent_id=1, hole_index=1)
+    store.add_system(3, parent_id=1, hole_index=2)
+    store.add_system(4, parent_id=2, hole_index=2)
+    store.add_system(5, parent_id=2, hole_index=3)
+    store.add_system(6, parent_id=3, hole_index=2)
+    store.add_system(7, parent_id=4, hole_index=2)
+    store.add_system(8)
+    store.add_system(9, parent_id=8, hole_index=1)
+    assert next_level_index(store, 1, [1]) == 1
+    assert next_level_index(store, 1, [1, 5]) == 2
+    assert next_level_index(store, 1, [2, 5]) == 1
+    assert next_level_index(store, 1, [1, 2, 5]) == 1
+    assert next_level_index(store, 1, [1, 2, 2, 5]) == 0
+    assert next_level_index(store, 1, [3]) == 0
+    assert next_level_index(store, 8, [1, 1]) == 0
+    assert next_level_index(store, 1, []) == 0
+
+
+def test_next_level_index_reads_only_the_chain_behind_the_first_hop() -> None:
+    """The count walks down from the root, not up from every system on the map."""
+    store = Store(":memory:")
+    store.add_system(1)
+    for system_id in range(2, 202):
+        store.add_system(system_id, parent_id=1, hole_index=system_id)
+    store.add_system(500, parent_id=1, hole_index=1)
+    store.add_system(501, parent_id=500, hole_index=2)
+    visited: list[int] = []
+    original_children = store.children
+
+    def counting_children(system_id: int) -> list:
+        """Record which systems' children are read."""
+        visited.append(system_id)
+        return original_children(system_id)
+
+    store.children = counting_children
+    store.systems = lambda: pytest.fail("next_level_index must not list the whole map")
+    assert next_level_index(store, 1, [1, 3]) == 1
+    assert visited == [1, 500]
+
+
 def test_chain_letters_follow_eve_uni() -> None:
     """A/B for statics, then Z, Y, W …, never letters that are hard to tell apart."""
-    assert [chain_letter(h, 1) for h in range(1, 6)] == ["A", "Z", "Y", "W", "U"]
-    assert [chain_letter(h, 2) for h in range(1, 5)] == ["A", "B", "Z", "Y"]
+    assert [chain_letter(hole, 1) for hole in range(1, 6)] == ["A", "Z", "Y", "W", "U"]
+    assert [chain_letter(hole, 2) for hole in range(1, 5)] == ["A", "B", "Z", "Y"]
     assert chain_letter(1, 0) == "Z" and chain_letter(0, 1) == "?"
-    assert not {chain_letter(h, 2) for h in range(1, 16)} & set("CFGHJLNPTVX")
+    assert not {chain_letter(hole, 2) for hole in range(1, 16)} & set("CFGHJLNPTVX")
     assert chain_letter(14, 1) == "D" and chain_letter(15, 1) == "ZZ"
     with pytest.raises(TypeError):
         chain_letter("1")
@@ -28,7 +80,7 @@ def test_chain_letters_follow_eve_uni() -> None:
 
 def test_letters_for_number() -> None:
     """1 → A, 26 → Z, 27 → AA, small letters on request."""
-    assert [letters_for_number(n) for n in (0, 1, 26, 27, 52)] == ["", "A", "Z", "AA", "AZ"]
+    assert [letters_for_number(number) for number in (0, 1, 26, 27, 52)] == ["", "A", "Z", "AA", "AZ"]
     assert letters_for_number(2, upper=False) == "b"
 
 
