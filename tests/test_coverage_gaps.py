@@ -103,7 +103,7 @@ def test_fetcher_thread_starts_and_stops(tmp_path, monkeypatch) -> None:
     fetched: list[int] = []
     fetch_done = threading.Event()
 
-    def fake_fetch(self, client, store, system_id: int) -> bool:
+    def fake_fetch(self, client, store, system_id: int, force: bool = False) -> bool:
         """Record the fetch on the worker thread and signal the test."""
         fetched.append(system_id)
         fetch_done.set()

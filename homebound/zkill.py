@@ -162,13 +162,19 @@ class ZkillFetcher:
                 store = Store(path)
             if not self.enabled or (not force and is_fresh(store.zkill_stats(system_id))):
                 continue
-            self._fetch(client, store, system_id)
+            self._fetch(client, store, system_id, force=force)
             time.sleep(REQUEST_INTERVAL)
         client.close()
         store.close()
 
-    def _fetch(self, client: httpx.Client, store: Store, system_id: int) -> bool:
+    def _fetch(self, client: httpx.Client, store: Store, system_id: int, force: bool = False) -> bool:
         """Fetch and store the stats of one system.
+
+        Args:
+            client: The HTTP client.
+            store: The map store the stats go into.
+            system_id: The system.
+            force: The fetch was forced; a retry after a rate limit stays forced.
 
         Returns:
             True if new stats were stored.
@@ -177,7 +183,7 @@ class ZkillFetcher:
             response = client.get(API_URL.format(system_id))
             if response.status_code == 429:
                 time.sleep(RATE_LIMIT_PAUSE)
-                self.request([system_id])
+                self.request([system_id], force=force)
                 return False
             response.raise_for_status()
             data = response.json()

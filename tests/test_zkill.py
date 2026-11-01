@@ -62,7 +62,7 @@ def test_forced_request_upgrades_a_queued_system(fetcher, monkeypatch) -> None:
     monkeypatch.setattr(zkill, "REQUEST_INTERVAL", 0)
     fetched = []
     monkeypatch.setattr(zkill.ZkillFetcher, "_fetch",
-                        lambda self, client, store, system_id: fetched.append(system_id) or True)
+                        lambda self, client, store, system_id, force=False: fetched.append(system_id) or True)
     Store(fetcher.database_path).set_zkill_stats(ZkillStats(HOME.id, 0, 0, 0, None, utc_now_iso()))
     assert fetcher.request([HOME.id]) == 1
     assert fetcher.request([HOME.id], force=True) == 1      # upgraded, not queued twice
@@ -99,13 +99,22 @@ def test_rate_limit_queues_the_system_again(fetcher, tmp_path, monkeypatch) -> N
     assert HOME.id in fetcher.pending
 
 
+def test_rate_limit_keeps_a_forced_fetch_forced(fetcher, tmp_path, monkeypatch) -> None:
+    """A forced fetch that hits HTTP 429 is queued again as forced, so the retry ignores a fresh cache."""
+    monkeypatch.setattr(zkill.time, "sleep", lambda seconds: None)
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(429)))
+    assert fetcher._fetch(client, Store(tmp_path / "map.db"), HOME.id, force=True) is False
+    assert HOME.id in fetcher.forced
+    assert fetcher.queue.get_nowait() == (HOME.id, True)
+
+
 def test_worker_thread_fetches_skips_fresh_and_follows_map_switches(fetcher, tmp_path, monkeypatch) -> None:
     """The worker skips fresh systems unless forced, reopens the store on a map switch and stops."""
     monkeypatch.setattr(zkill, "REQUEST_INTERVAL", 0)
     other = str(tmp_path / "other.db")
     fetched = []
 
-    def fake_fetch(self, client, store, system_id) -> bool:
+    def fake_fetch(self, client, store, system_id, force: bool = False) -> bool:
         """Record the fetch and switch maps after the first one."""
         fetched.append((store.path, system_id))
         self.database_path = other
