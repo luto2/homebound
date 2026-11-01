@@ -12,14 +12,14 @@ from PySide6.QtWidgets import (
 from ..logs.parser import LogFile
 from ..mapping.naming import SCHEMES, scheme_for_key
 from ..settings import (KNOWN_SPACE_RADIUS_RANGE, OVERLAY_OPACITY_RANGE, OVERLAY_TEXT_SIZE_RANGE,
-                        detect_log_directories)
+                        RESCAN_DUE_HOURS_RANGE, detect_log_directories)
 from ..theme.qss import repolish
 from ..theme.tokens import PIXELS, color
 from ..validation import require_integer, require_text, require_type
 from . import focus
 from .state import AppState
 
-PAGES = ["Log folder", "Home system", "Naming scheme", "Overlay", "zKill", "KWin focus script"]
+PAGES = ["Log folder", "Home system", "Naming scheme", "Signatures", "Overlay", "zKill", "KWin focus script"]
 OVERLAY_MODES = [
     ("off", "Off", "No overlay."),
     ("follow", "Follow active client", "Shows the chain of the character whose EVE window is focused. Hidden when no EVE client is focused."),
@@ -30,6 +30,7 @@ LOG_VALIDATION_DELAY_MS = 300
 OPACITY_RANGE = tuple(round(fraction * 100) for fraction in OVERLAY_OPACITY_RANGE)   # slider in percent
 TEXT_SIZE_RANGE = OVERLAY_TEXT_SIZE_RANGE
 RADIUS_RANGE = KNOWN_SPACE_RADIUS_RANGE
+RESCAN_RANGE = RESCAN_DUE_HOURS_RANGE
 KWIN_BANNERS = {
     "active": ("success", "✓ Installed and running", "Reinstall"),
     "inactive": ("warning", "▲ Installed but not enabled. Enable it here, or in System Settings → Window Management → KWin Scripts.", "Enable"),
@@ -134,8 +135,8 @@ class SettingsDialog(QDialog):
         self.nav.addItems(PAGES)
         self.nav.setFixedWidth(190)
         self.stack = QStackedWidget()
-        builders = (self._build_log_page, self._build_home_page, self._build_naming_page, self._build_overlay_page,
-                    self._build_zkill_page, self._build_kwin_page)
+        builders = (self._build_log_page, self._build_home_page, self._build_naming_page,
+                    self._build_signatures_page, self._build_overlay_page, self._build_zkill_page, self._build_kwin_page)
         for build in builders:
             widget = QWidget()
             layout = QVBoxLayout(widget)
@@ -317,6 +318,22 @@ class SettingsDialog(QDialog):
         return (f"Home → {names[0]} → {names[1]}, {names[2]}   ·   Home → {names[3]}"
                 f"      bookmark in {names[0]}: {names[0]}-1, {names[0]}-2, {names[0]}-0")
 
+    # ------------------------------------------------------------ signatures
+    def _build_signatures_page(self, layout: QVBoxLayout) -> None:
+        """Build the signatures page: when a system is due for a rescan."""
+        layout.addWidget(caption("Signatures"))
+        rescan_row = QHBoxLayout()
+        rescan_row.addWidget(QLabel("Rescan due after"))
+        self.rescan_due = QSpinBox()
+        self.rescan_due.setRange(*RESCAN_RANGE)
+        self.rescan_due.setSuffix(" h")
+        self.rescan_due.setValue(self.edited.rescan_due_hours)
+        rescan_row.addWidget(self.rescan_due)
+        rescan_row.addStretch(1)
+        layout.addLayout(rescan_row)
+        layout.addWidget(help_label("A system whose last signature paste is this old is marked for a rescan. "
+                                    "Wormhole systems that were never pasted are marked too."))
+
     # ------------------------------------------------------------ overlay
     def _build_overlay_page(self, layout: QVBoxLayout) -> None:
         """Build the overlay page: mode, pinned character, look and k-space radius."""
@@ -476,6 +493,7 @@ class SettingsDialog(QDialog):
         edited.overlay_opacity = self.opacity.value() / 100
         edited.overlay_text_size = self.text_size.value()
         edited.known_space_radius = self.radius.value()
+        edited.rescan_due_hours = self.rescan_due.value()
         edited.zkill_enabled = self.zkill.isChecked()
         self.state.settings.__dict__.update(copy.deepcopy(edited.__dict__))
         self.state.apply_settings()

@@ -40,6 +40,7 @@ The full manual is in [docs/user-guide.md](docs/user-guide.md). In short:
 - **Sigs**: select a system, copy the probe scanner (Ctrl+A, Ctrl+C), then press Ctrl+V in Homebound.
   - Signatures and anomalies are grouped (Wormholes, Data, Gas …, Anomalies · Combat, Anomalies · Ore …). Click a group header to collapse it.
   - Sigs missing from a paste are flagged, and you choose Keep or Delete. Only the kinds in the paste are checked, so pasting just signatures leaves anomalies alone.
+  - A system whose last paste is older than the rescan threshold (Settings → Signatures, 24h by default) gets a `SCAN 26h` tab and is hatched. A wormhole system never pasted shows `NO SCAN`. For an empty system, use right-click → *Mark as scanned now*.
   - Double-click a sig to enter what the scanner can't show: WH type (a dropdown of the types possible in that system, statics first), lifetime (stable, < 4h, < 1h, expired) and mass. For a K162 you also set where it leads and its size; any other type gives both. Once the hole is jumped, these carry over to the connection.
 - **Undo**: collapsing a connection, removing a system and deleting sigs happen at once and show an Undo toast for 8 s (Ctrl+Z). Only deleting a whole map asks first.
   - Sig table columns can be resized by dragging the header edges.

@@ -1,11 +1,14 @@
 """Shared application state: store, universe, naming, tracker, watcher, zKill -> Qt signals."""
+from datetime import datetime, timedelta, timezone
+
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from ..logs.parser import SystemChange
 from ..logs.watcher import LogWatcher
-from ..mapdb.store import Store
+from ..mapdb.store import Store, utc_now_iso
 from ..mapping.chain import Chain, resolve_chain
 from ..mapping.naming import Namer
+from ..mapping.scan_status import ScanStatus, scan_status
 from ..mapping.tracker import AutoNamed, MapChanged, Moved, NamingRequest, Tracker, UnknownJump
 from ..settings import Settings
 from ..universe.db import Universe
@@ -13,6 +16,7 @@ from ..validation import require_integer, require_type
 from ..zkill import ZkillFetcher
 
 EXPIRY_INTERVAL_MS = 5 * 60 * 1000
+SCAN_AGE_INTERVAL_MS = 60 * 1000
 
 
 class AppState(QObject):
@@ -30,6 +34,7 @@ class AppState(QObject):
     settingsChanged = Signal()
     status = Signal(str, str, str)        # source (logs|zkill|kwin), level, text
     followedChanged = Signal(object)      # character id or None (overlay target)
+    scanAgeTick = Signal()                # once a minute: scan ages moved on, rescan states may change
     _zkillUpdated = Signal(int)
     _zkillStatus = Signal(str, str)
 
@@ -61,6 +66,7 @@ class AppState(QObject):
         self.zkill = ZkillFetcher(self.database_path, self._zkillUpdated.emit, self._zkillStatus.emit)
         self.zkill.enabled = settings.zkill_enabled
         self._expiry_timer: QTimer | None = None
+        self._scan_age_timer: QTimer | None = None
         self._ensure_home()
 
     def _ensure_home(self) -> bool:
@@ -75,12 +81,14 @@ class AppState(QObject):
         return False
 
     def start(self) -> None:
-        """Start the log watcher, the zKill thread and the expiry timer."""
+        """Start the log watcher, the zKill thread, the expiry timer and the scan age tick."""
         self.watcher.start()
         self.zkill.start()
         self.expire()
         self._expiry_timer = QTimer(self, interval=EXPIRY_INTERVAL_MS, timeout=self.expire)
         self._expiry_timer.start()
+        self._scan_age_timer = QTimer(self, interval=SCAN_AGE_INTERVAL_MS, timeout=self.scanAgeTick.emit)
+        self._scan_age_timer.start()
 
     def expire(self) -> int:
         """Drop expired connections and tell the views if anything went.
@@ -99,6 +107,8 @@ class AppState(QObject):
         self.watcher.timer.stop()
         if self._expiry_timer:
             self._expiry_timer.stop()
+        if self._scan_age_timer:
+            self._scan_age_timer.stop()
 
     # ------------------------------------------------------------ maps
     def switch_map(self, name: str) -> bool:
@@ -135,6 +145,37 @@ class AppState(QObject):
         self.mapChanged.emit()
         self.charactersChanged.emit()
         return True
+
+    # ------------------------------------------------------------ scan status
+    def scan_status(self, system_id: int) -> ScanStatus:
+        """Return the rescan status of a system, with the threshold from the settings.
+
+        A system that isn't on the map counts as never pasted.
+
+        Raises:
+            TypeError: If ``system_id`` is not an integer.
+        """
+        require_integer(system_id, "system_id")
+        mapped = self.store.system(system_id)
+        system = self.universe.by_id(system_id)
+        return scan_status(mapped.scanned_at if mapped else None, datetime.now(timezone.utc),
+                           timedelta(hours=self.settings.rescan_due_hours),
+                           wormhole=bool(system and system.wormhole_space))
+
+    def mark_scanned(self, system_id: int) -> bool:
+        """Set a system's last paste to now, e.g. for an empty system that gives nothing to paste.
+
+        Returns:
+            True if the system is on the map and was changed.
+
+        Raises:
+            TypeError: If ``system_id`` is not an integer.
+        """
+        require_integer(system_id, "system_id")
+        changed = self.store.update_system(system_id, scanned_at=utc_now_iso())
+        if changed:
+            self.systemUpdated.emit(system_id)
+        return changed
 
     # ------------------------------------------------------------ settings
     @property

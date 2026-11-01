@@ -21,7 +21,7 @@ from homebound.mapping.tracker import AutoNamed, MapChanged, Moved, NamingReques
 from homebound.ui import menus
 from homebound.ui.character_dock import CharacterDock, CharacterDelegate
 from homebound.ui.overlay import MODE_LABELS, Overlay, OverlayFonts
-from homebound.ui.state import AppState
+from homebound.ui.state import SCAN_AGE_INTERVAL_MS, AppState
 from homebound.ui.toast import KINDS, MAX_TOASTS, Toast, ToastHost
 from ui_helpers import FakeFocus, isolated_settings, make_state
 
@@ -135,9 +135,29 @@ def test_start_and_stop(state, monkeypatch) -> None:
     status = spy(state.status)
     state.start()
     assert started == ["zkill"] and state._expiry_timer.isActive()
+    assert state._scan_age_timer.isActive() and state._scan_age_timer.interval() == SCAN_AGE_INTERVAL_MS
     assert state.watcher.timer.isActive() and status[0][0] == "logs"
     state.stop()
     assert started == ["zkill", "stop"] and not state._expiry_timer.isActive() and not state.watcher.timer.isActive()
+    assert not state._scan_age_timer.isActive()
+
+
+def test_scan_status_and_mark_scanned(state) -> None:
+    """The state's scan status uses the threshold from the settings; marking a system scanned makes it fresh."""
+    assert state.scan_status(HOME.id).state == "never"
+    assert state.scan_status(123456789).state == "fresh"            # unknown and not on the map
+    state.store.update_system(HOME.id, scanned_at=(datetime.now(timezone.utc) - timedelta(hours=13)).isoformat())
+    assert state.scan_status(HOME.id).state == "fresh"
+    state.settings.rescan_due_hours = 12
+    assert state.scan_status(HOME.id).state == "due"
+    updated = spy(state.systemUpdated)
+    assert state.mark_scanned(HOME.id) is True and updated == [(HOME.id,)]
+    assert state.scan_status(HOME.id).state == "fresh"
+    assert state.mark_scanned(123456789) is False and len(updated) == 1
+    with pytest.raises(TypeError):
+        state.scan_status("x")
+    with pytest.raises(TypeError):
+        state.mark_scanned("x")
 
 
 def test_zkill_signals_are_forwarded(state) -> None:

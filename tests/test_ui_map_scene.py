@@ -10,7 +10,9 @@ from conftest import HOME, UNIVERSE, pick_system
 from homebound.mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, LIFETIME_REMAINING, Connection,
                                    ZkillStats)
 from homebound.ui import map_scene
-from homebound.ui.map_scene import (GRID, ConnectionEdge, MapScene, MapView, SystemNode, age_text, elide, removed_in)
+from homebound.mapping.scan_status import ScanStatus
+from homebound.ui.map_scene import (GRID, ConnectionEdge, MapScene, MapView, SystemNode, age_text, elide, removed_in,
+                                    scan_tab_label)
 from homebound.ui.state import AppState
 from ui_helpers import make_state
 
@@ -159,10 +161,11 @@ class TestSystemNode:
     """System nodes: data, tooltip, painting, markers and dragging."""
 
     def test_refresh_loads_data(self, state, scene) -> None:
-        """A node loads its system and map row; home is w-space, confirmed and fresh, the high-sec node k-space."""
+        """A node loads its system and map row; home is w-space, confirmed and never scanned, the high-sec node k-space."""
         node = scene.nodes[HOME.id]
         assert node.system.id == HOME.id and node.mapped is not None
-        assert node.name and not node.stale and not node.unconfirmed
+        assert node.name and node.scan_status.state == "never" and not node.unconfirmed
+        assert scene.nodes[state.k_space.id].scan_status.state == "fresh"
         assert node.known_space is False and scene.nodes[state.k_space.id].known_space is True
 
     def test_rejects_bad_id(self, state) -> None:
@@ -182,7 +185,7 @@ class TestSystemNode:
         state.store.add_system(1)
         state.store.update_system(1, owner_ticker="ABCD")
         node = SystemNode(state, 1)
-        node.stale = True
+        node.scan_status = ScanStatus("due", "1d 2h", timedelta(hours=26))
         assert node.system is None and not paint_item(node, zoom).isNull()
 
     def test_has_no_moved_signal(self) -> None:
@@ -220,14 +223,101 @@ class TestSystemNode:
         scene.nodes[HOME.id].refresh()
         assert scene.nodes[HOME.id].unconfirmed
 
-    def test_stale(self, state, scene) -> None:
-        """A system scanned 30 hours ago is stale; one scanned an hour ago is not."""
+    def test_scan_status(self, state, scene) -> None:
+        """A system scanned 30 hours ago is due, one scanned an hour ago fresh; the tooltip says so."""
         state.store.update_system(HOME.id, scanned_at=iso_ago(hours=30))
         scene.nodes[HOME.id].refresh()
-        assert scene.nodes[HOME.id].stale
+        assert scene.nodes[HOME.id].scan_status.state == "due"
+        assert "Last paste 1d 6h ago: rescan due (threshold 24h)" in scene.nodes[HOME.id].toolTip()
         state.store.update_system(HOME.id, scanned_at=iso_ago(hours=1))
         scene.nodes[HOME.id].refresh()
-        assert not scene.nodes[HOME.id].stale
+        assert scene.nodes[HOME.id].scan_status.state == "fresh"
+        assert "rescan" not in scene.nodes[HOME.id].toolTip()
+
+    def test_never_scanned_only_in_wormhole_space(self, state, scene) -> None:
+        """Never pasted: w-space says "Never scanned", k-space is fresh and says nothing."""
+        assert "Never scanned" in scene.nodes[state.wormhole.id].toolTip()
+        assert scene.nodes[state.k_space.id].scan_status.state == "fresh"
+        assert "scanned" not in scene.nodes[state.k_space.id].toolTip()
+
+    def test_threshold_from_settings(self, state, scene) -> None:
+        """The rescan threshold follows ``rescan_due_hours``."""
+        state.store.update_system(HOME.id, scanned_at=iso_ago(hours=13))
+        scene.nodes[HOME.id].refresh()
+        assert scene.nodes[HOME.id].scan_status.state == "fresh"
+        state.settings.rescan_due_hours = 12
+        state.settingsChanged.emit()
+        assert scene.nodes[HOME.id].scan_status.state == "due"
+        assert "(threshold 12h)" in scene.nodes[HOME.id].toolTip()
+
+    def test_scan_tab_label(self) -> None:
+        """Fresh has no tab; due shows its age, never says NO SCAN; compact is just SCAN."""
+        due = ScanStatus("due", "1d 2h", timedelta(hours=26))
+        assert scan_tab_label(ScanStatus("fresh", "3h", timedelta(hours=3))) == ""
+        assert scan_tab_label(due) == "SCAN 26h" and scan_tab_label(ScanStatus("never")) == "NO SCAN"
+        assert scan_tab_label(due, compact=True) == "SCAN" == scan_tab_label(ScanStatus("never"), compact=True)
+        assert scan_tab_label(ScanStatus("fresh"), compact=True) == ""
+        with pytest.raises(TypeError):
+            scan_tab_label("due")
+
+    def _chips(self, monkeypatch, node) -> list[tuple[float, str, float]]:
+        """Paint a node and return its top-edge chips as (x, text, width)."""
+        chips = []
+        original = map_scene.painting.draw_chip
+
+        def record(painter, x, y, text, *args, **kwargs):
+            width = original(painter, x, y, text, *args, **kwargs)
+            if y < 0:                    # on the top edge
+                chips.append((x, text, width))
+            return width
+        monkeypatch.setattr(map_scene.painting, "draw_chip", record)
+        paint_item(node, 1.0)
+        return chips
+
+    def test_scan_tab_drawn(self, monkeypatch, state, scene) -> None:
+        """The tab is drawn for due and never, not for fresh; character markers start after it."""
+        state.characters_in = lambda system_id: [(1, "Pilot One", 1)]
+        state.store.update_system(state.wormhole.id, scanned_at=iso_ago(hours=26))
+        scene.refresh_all()
+        due, never, fresh = (scene.nodes[system_id] for system_id in (state.wormhole.id, HOME.id, state.k_space.id))
+        [(x, text, width)] = self._chips(monkeypatch, due)
+        assert (x, text) == (8, "SCAN 26h") and due._character_marker_start == 8 + width + 4
+        assert [chip[1] for chip in self._chips(monkeypatch, never)] == ["⌂ HOME", "NO SCAN"]
+        assert self._chips(monkeypatch, fresh) == [] and fresh._character_marker_start == 8
+
+    def test_scan_tab_compact_next_to_unconfirmed_and_home(self, monkeypatch, state, scene) -> None:
+        """With UNCONFIRMED and HOME the tab is compact and ends before HOME; without HOME it keeps its age."""
+        state.store.update_system(HOME.id, confirmed=0)
+        state.store.update_system(state.wormhole.id, confirmed=0, scanned_at=iso_ago(hours=26))
+        scene.refresh_all()
+        chips = self._chips(monkeypatch, scene.nodes[HOME.id])
+        assert [chip[1] for chip in chips] == ["⌂ HOME", "▲ UNCONFIRMED", "SCAN"]
+        home_x = chips[0][0]
+        x, _, width = chips[2]
+        assert x == 8 + chips[1][2] + 4 and x + width < home_x
+        assert [chip[1] for chip in self._chips(monkeypatch, scene.nodes[state.wormhole.id])] == [
+            "▲ UNCONFIRMED", "SCAN 26h"]
+        state.characters_in = lambda system_id: [(1, "Pilot One", 1), (2, "Pilot Two", 2)]
+        scene.refresh_all()                  # characters too: the tab gives way to their "+2" chip
+        chips = self._chips(monkeypatch, scene.nodes[HOME.id])
+        assert [chip[1] for chip in chips] == ["⌂ HOME", "▲ UNCONFIRMED", "+2"]
+        assert chips[2][0] + chips[2][2] < home_x
+
+    def test_tick_repaints_only_changed_nodes(self, monkeypatch, state, scene) -> None:
+        """The scan age tick updates a node whose state or shown age changed, and leaves the others alone."""
+        state.store.update_system(state.wormhole.id, scanned_at=iso_ago(hours=23, minutes=59, seconds=55))
+        state.store.update_system(state.k_space.id, scanned_at=iso_ago(hours=30))
+        scene.refresh_all()
+        updated = []
+        for node in scene.nodes.values():
+            monkeypatch.setattr(node, "update", lambda node=node: updated.append(node.system_id))
+        assert scene.refresh_scan_status() == 0 and updated == []     # nothing crossed a line yet
+        state.store.update_system(state.wormhole.id, scanned_at=iso_ago(hours=24))
+        state.store.update_system(state.k_space.id, scanned_at=iso_ago(hours=31))
+        state.scanAgeTick.emit()
+        assert sorted(updated) == sorted([state.wormhole.id, state.k_space.id])
+        assert scene.nodes[state.wormhole.id].scan_status.state == "due"
+        assert "SCAN 31h" == scan_tab_label(scene.nodes[state.k_space.id].scan_status)
 
     def test_geometry(self, scene) -> None:
         """The bounding rect contains the shape, and center() is the middle of the node."""

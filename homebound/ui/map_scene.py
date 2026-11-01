@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (QGraphicsItem, QGraphicsLineItem, QGraphicsObject
 from ..mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_CHIPS, LIFETIME_EXPIRED, LIFETIME_LABELS,
                            LIFETIME_REMAINING, Connection)
 from ..mapping.chain import connected_component, wormhole_adjacency
+from ..mapping.scan_status import ScanStatus, age_text  # age_text: also imported from here by dialogs and panels
 from ..mapping.tracker import hole_size
 from ..theme import painting
 from ..theme.tokens import OPACITY, PIXELS, color, font
@@ -20,34 +21,7 @@ from ..validation import require_integer, require_number, require_text, require_
 NODE_WIDTH, NODE_HEIGHT = PIXELS["size-node-w"], PIXELS["size-node-h"]
 W, H = NODE_WIDTH, NODE_HEIGHT  # short aliases kept for older importers
 GRID = NODE_HEIGHT / 3  # background grid cell: a third of a system node's height; nodes snap to it
-STALE_AFTER = timedelta(hours=24)
 MINIMUM_ZOOM, MAXIMUM_ZOOM = 0.2, 2.5
-
-
-def age_text(iso: str | None) -> str:
-    """Format the time since an ISO timestamp, e.g. "5m", "2h 10m" or "3d 4h".
-
-    Args:
-        iso: A timezone-aware ISO 8601 timestamp, or None/empty.
-
-    Returns:
-        The age, or an empty string when there is no timestamp.
-
-    Raises:
-        TypeError: If ``iso`` is neither a string nor None.
-    """
-    require_text(iso, "iso", allow_empty=True, optional=True)
-    if not iso:
-        return ""
-    elapsed = datetime.now(timezone.utc) - datetime.fromisoformat(iso)
-    minutes = int(elapsed.total_seconds() // 60)
-    if minutes < 60:
-        return f"{minutes}m"
-    hours, minutes = divmod(minutes, 60)
-    if hours < 24:
-        return f"{hours}h {minutes}m" if minutes else f"{hours}h"
-    days, hours = divmod(hours, 24)
-    return f"{days}d {hours}h" if hours else f"{days}d"
 
 
 def removed_in(connection: Connection) -> str:
@@ -68,6 +42,24 @@ def removed_in(connection: Connection) -> str:
     if minutes < 60:
         return f"{minutes} min"
     return f"{minutes // 60}h {minutes % 60}m"
+
+
+def scan_tab_label(status: ScanStatus, compact: bool = False) -> str:
+    """Return the top-edge rescan tab of a node: "SCAN 26h", "NO SCAN", or "" when the scan is fresh.
+
+    Args:
+        status: The node's rescan status.
+        compact: Drop the age / the "NO", for a node that also shows UNCONFIRMED and HOME.
+
+    Raises:
+        TypeError: If ``status`` is not a ScanStatus.
+    """
+    require_type(status, ScanStatus, "status")
+    if status.state == "fresh":
+        return ""
+    if compact:
+        return "SCAN"
+    return f"SCAN {status.short_age}" if status.state == "due" else "NO SCAN"
 
 
 def elide(text: str, text_font: QFont, width: float) -> str:
@@ -114,7 +106,7 @@ class SystemNode(QGraphicsObject):
         self.zkill = None
         self.characters: list[tuple[int, str, int]] = []
         self.unconfirmed = False
-        self.stale = False
+        self.scan_status = ScanStatus("fresh")
         self._character_marker_start = 8.0   # where the character markers start on the top edge
         self.setFlags(QGraphicsItem.GraphicsItemFlag.ItemIsMovable | QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
                       | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges)
@@ -135,10 +127,26 @@ class SystemNode(QGraphicsObject):
         self.unconfirmed = bool(self.mapped and (
             not self.mapped.confirmed
             or any(not connection.confirmed for connection in state.store.connections_of_system(self.system_id))))
-        self.stale = bool(self.mapped and self.mapped.scanned_at and
-                          datetime.now(timezone.utc) - datetime.fromisoformat(self.mapped.scanned_at) > STALE_AFTER)
+        self.scan_status = state.scan_status(self.system_id)
         self.setToolTip(self._tooltip())
         self.update()
+
+    def refresh_scan_status(self) -> bool:
+        """Recompute the rescan status on the clock tick; repaint only if the state or the shown age changed.
+
+        Returns:
+            True if the node changed.
+        """
+        status = self.state.scan_status(self.system_id)
+        old = self.scan_status
+        if status.state == old.state and (status.state != "due"
+                                          or status.short_age == old.short_age):
+            self.scan_status = status
+            return False
+        self.scan_status = status
+        self.setToolTip(self._tooltip())
+        self.update()
+        return True
 
     def _tooltip(self) -> str:
         """Return the rich-text tooltip: names, class, effect, statics, owner, characters, unconfirmed note."""
@@ -159,6 +167,11 @@ class SystemNode(QGraphicsObject):
             lines.append("Here: " + ", ".join(character[1] for character in self.characters))
         if self.unconfirmed:
             lines.append("▲ Unconfirmed: added by hand, or on a connection nobody has jumped yet")
+        if self.scan_status.state == "due":
+            lines.append(f"Last paste {self.scan_status.age_text} ago: rescan due "
+                         f"(threshold {self.state.settings.rescan_due_hours}h)")
+        elif self.scan_status.state == "never":
+            lines.append("Never scanned")
         return "<br>".join(lines)
 
     @property
@@ -192,7 +205,7 @@ class SystemNode(QGraphicsObject):
         self._paint_body(painter, body, selected)
         self._paint_tabs(painter)
 
-        if self.stale:
+        if self.scan_status.state == "due":
             painter.setOpacity(OPACITY["op-stale"])
         if level_of_detail < 0.35:
             name_font = font("node-name", max(10, int(13 / max(level_of_detail, 0.05))))
@@ -215,7 +228,7 @@ class SystemNode(QGraphicsObject):
         painter.setPen(QPen(color("line-1" if self.known_space else "line-2"), 1))
         painter.setBrush(fill)
         painter.drawRoundedRect(body.adjusted(.5, .5, -.5, -.5), radius, radius)
-        if self.stale:
+        if self.scan_status.state == "due":
             painter.setBrush(painting.stale_brush())
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawRoundedRect(body, radius, radius)
@@ -229,13 +242,22 @@ class SystemNode(QGraphicsObject):
             painter.drawRoundedRect(body.adjusted(-1, -1, 1, 1), radius + 1, radius + 1)
 
     def _paint_tabs(self, painter: QPainter) -> None:
-        """Draw the HOME and UNCONFIRMED tabs on the top edge and note where the character markers may start."""
+        """Draw the HOME, UNCONFIRMED and rescan tabs on the top edge and note where the character markers may start.
+
+        Next to both UNCONFIRMED and HOME the rescan tab is compact, so it ends before HOME; if characters are
+        here too it is left out, as there would be no room for their markers (the hatch and tooltip remain).
+        """
         self._character_marker_start = 8.0
-        if self.system_id == self.state.home_id:
+        home = self.system_id == self.state.home_id
+        if home:
             painting.draw_chip(painter, NODE_WIDTH - 46, -7, "⌂ HOME", color("accent"), height=13)
         if self.unconfirmed:
             self._character_marker_start += painting.draw_chip(
                 painter, 8, -7, "▲ UNCONFIRMED", color("warning"), height=13) + 4
+        crowded = home and self.unconfirmed
+        if (label := scan_tab_label(self.scan_status, compact=crowded)) and not (crowded and self.characters):
+            self._character_marker_start += painting.draw_chip(
+                painter, self._character_marker_start, -7, label, color("stale"), height=13) + 4
 
     def _paint_title(self, painter: QPainter, level_of_detail: float) -> None:
         """Draw line 1 (zKill, name, J-name) and, when zoomed out, the compact class badge."""
@@ -265,7 +287,7 @@ class SystemNode(QGraphicsObject):
                 self.system.system_class)
 
     def _paint_details(self, painter: QPainter) -> None:
-        """Draw line 2 (class, effect, statics, J-name) and line 3 (owner, stale age).
+        """Draw line 2 (class, effect, statics, J-name) and line 3 (owner).
 
         A system missing from the universe data (e.g. an old map on newer data) has no line 2.
         """
@@ -275,13 +297,6 @@ class SystemNode(QGraphicsObject):
         if self.mapped and self.mapped.owner_ticker:
             painting.draw_owner(painter, x, line_three, self.mapped.owner_ticker, self.mapped.owner_slot or 1,
                                 home=self.system_id == self.state.home_id)
-        if self.stale:
-            meta_font = font("node-meta")
-            painter.setFont(meta_font)
-            painter.setPen(color("ink-faint"))
-            painter.drawText(QRectF(x, line_three, NODE_WIDTH - 16, 14),
-                             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                             f"stale {age_text(self.mapped.scanned_at)}")
 
     def _paint_system_line(self, painter: QPainter, x: float, line_two: float) -> None:
         """Draw line 2 from the universe data: class badge, effect, statics and, in w-space, the J-name."""
@@ -328,7 +343,7 @@ class SystemNode(QGraphicsObject):
         painting.draw_zkill(painter, x, y, level, recent)
 
     def _paint_character_markers(self, painter: QPainter) -> None:
-        """Draw character markers on the top edge, after the UNCONFIRMED tag and clear of the HOME tab.
+        """Draw character markers on the top edge, after the UNCONFIRMED and rescan tabs and clear of the HOME tab.
 
         Whatever doesn't fit becomes a "+n" chip.
         """
@@ -589,6 +604,8 @@ class MapScene(QGraphicsScene):
         state.mapChanged.connect(self.rebuild)
         state.systemUpdated.connect(self.refresh_system)
         state.charactersChanged.connect(self.refresh_all)
+        state.settingsChanged.connect(self.refresh_scan_status)
+        state.scanAgeTick.connect(self.refresh_scan_status)
         state.selectionChanged.connect(self._select)
         self.rebuild()
 
@@ -633,6 +650,14 @@ class MapScene(QGraphicsScene):
         """Refresh every node (e.g. after characters moved)."""
         for node in self.nodes.values():
             node.refresh()
+
+    def refresh_scan_status(self) -> int:
+        """Recompute every node's rescan status (clock tick, new threshold); only changed nodes repaint.
+
+        Returns:
+            The number of nodes that changed.
+        """
+        return sum(node.refresh_scan_status() for node in self.nodes.values())
 
     def _select(self, system_id: int) -> None:
         """Select the node of a system unless it already is."""

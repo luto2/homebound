@@ -176,6 +176,20 @@ def test_unnamed_system_shows_the_suggested_label(state, panel) -> None:
     assert panel.signature_summary.text().endswith("never pasted")
 
 
+def test_summary_rescan_due(state, panel) -> None:
+    """A paste older than the threshold adds "▲ rescan due" in the warning style; the clock tick updates it."""
+    state.store.update_system(HOME.id, scanned_at=iso_ago(hours=23, minutes=59, seconds=55))
+    panel.refresh()
+    assert panel.signature_summary.text().endswith("last paste 23h 59m ago")
+    assert panel.signature_summary.property("role") == "help"
+    state.store.update_system(HOME.id, scanned_at=iso_ago(hours=26))
+    state.scanAgeTick.emit()
+    assert panel.signature_summary.text().endswith("last paste 1d 2h ago · ▲ rescan due")
+    assert panel.signature_summary.property("role") == "help-warn"
+    panel.set_system(0)
+    state.scanAgeTick.emit()             # no system: nothing to update
+
+
 def test_refresh_leaves_focused_fields_alone(state, panel) -> None:
     """Typing in a field is not overwritten by a refresh from another source."""
     panel.name.setFocus()
@@ -948,7 +962,7 @@ def test_copy_button_click(state, table, qt_application) -> None:
 
 
 def test_delegate_staleness(state, table) -> None:
-    """A paste over a day old makes rows faint; none or no system doesn't."""
+    """A paste older than the rescan threshold makes rows faint; none or no system doesn't."""
     delegate = table.signature_delegate
     assert delegate.is_stale() is False        # no system loaded
     table.load(HOME.id)
@@ -956,6 +970,9 @@ def test_delegate_staleness(state, table) -> None:
     state.store.update_system(HOME.id, scanned_at=iso_ago(hours=2))
     assert delegate.is_stale() is False
     state.store.update_system(HOME.id, scanned_at=iso_ago(hours=30))
+    assert delegate.is_stale() is True
+    state.store.update_system(HOME.id, scanned_at=iso_ago(hours=2))
+    state.settings.rescan_due_hours = 1
     assert delegate.is_stale() is True
 
 
