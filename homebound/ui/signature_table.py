@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QHeaderView, QSt
                                QStyleOptionViewItem, QTableView, QWidget)
 
 from ..mapdb.store import LIFETIME_CHIPS, Signature
-from ..mapping.naming import next_hole_index, static_slot_count, used_hole_indices
+from ..mapping.naming import next_hole_index, static_slot_count, static_slot_for_class, used_hole_indices
 from ..mapping.signature_parser import GROUP_ORDER
 from ..mapping.tracker import hole_size
 from ..theme import painting
@@ -183,20 +183,47 @@ class SignatureModel(QAbstractTableModel):
                 rows += members
         return rows
 
+    def _static_slot(self, signature: Signature) -> int | None:
+        """Return the static slot of a signature typed as one of this system's statics, else None.
+
+        The slot is the one :func:`next_hole_index` gives a static of that type.
+        """
+        universe = self.state.universe
+        system = universe.by_id(self.system_id)
+        known = universe.wormhole_type(signature.type) if signature.type else None
+        if not (known and system and signature.type in system.statics
+                and static_slot_count(universe, self.system_id)):
+            return None
+        return static_slot_for_class(universe, self.system_id, known.destinations[0] if known.destinations else None)
+
     def _provisional_indices(self) -> dict[str, int]:
-        """Number the unlinked, unreserved wormhole signatures one after another (not all the same)."""
+        """Number the unlinked, unreserved wormhole signatures (not all the same).
+
+        A signature typed as one of the system's statics takes that static's slot while no hole
+        or reserved signature holds it; the others are numbered one after another after the
+        static slots.
+        """
         provisional: dict[str, int] = {}
         if not self.system_id:
             return provisional
         used = used_hole_indices(self.state.store, self.system_id)
+        unnumbered = [signature for signature in self.signatures
+                      if is_wormhole_signature(signature) and not signature.hole_index
+                      and signature.signature_id not in self.leads]
+        remaining = []
+        for signature in unnumbered:
+            slot = self._static_slot(signature)
+            if slot is not None and slot not in used:
+                provisional[signature.signature_id] = slot
+                used.add(slot)
+            else:
+                remaining.append(signature)
         index = static_slot_count(self.state.universe, self.system_id) + 1
-        for signature in self.signatures:
-            if (is_wormhole_signature(signature) and not signature.hole_index
-                    and signature.signature_id not in self.leads):
-                while index in used:
-                    index += 1
-                provisional[signature.signature_id] = index
-                used.add(index)
+        for signature in remaining:
+            while index in used:
+                index += 1
+            provisional[signature.signature_id] = index
+            used.add(index)
         return provisional
 
     def signature_at(self, row: int) -> Signature | None:

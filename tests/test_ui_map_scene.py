@@ -170,6 +170,19 @@ class TestSystemNode:
         assert node.system is None and node.toolTip() == "1"
         assert node.known_space is False
 
+    @pytest.mark.parametrize("zoom", [1.0, 0.5, 0.2])
+    def test_unknown_system_paints(self, state, qt_application, zoom) -> None:
+        """A system missing from the universe data paints at every level of detail without raising."""
+        state.store.add_system(1)
+        state.store.update_system(1, owner_ticker="ABCD")
+        node = SystemNode(state, 1)
+        node.stale = True
+        assert node.system is None and not paint_item(node, zoom).isNull()
+
+    def test_has_no_moved_signal(self) -> None:
+        """The never-emitted ``moved`` signal is gone (positions are saved by the scene)."""
+        assert not hasattr(SystemNode, "moved")
+
     def test_tooltip_contents(self, state, scene) -> None:
         """Tooltip contents."""
         state.store.update_system(HOME.id, owner_ticker="ABCD", owner_note="friends")

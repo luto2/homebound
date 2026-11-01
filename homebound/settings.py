@@ -19,6 +19,22 @@ RENAMED_KEYS = {"log_dir": "log_directory", "overlay_pinned_char": "overlay_pinn
                 "overlay_text_px": "overlay_text_size", "overlay_pos": "overlay_positions",
                 "kspace_radius": "known_space_radius", "char_slots": "character_slots",
                 "sig_columns": "signature_column_widths"}
+# allowed ranges of the numeric settings (the settings dialog uses the same); a loaded value
+# outside its range is moved to the nearest end, so every part of the app sees the same value
+OVERLAY_OPACITY_RANGE = (0.55, 0.92)
+OVERLAY_TEXT_SIZE_RANGE = (11, 14)        # px
+KNOWN_SPACE_RADIUS_RANGE = (0, 15)        # gate jumps
+SETTING_RANGES = {"overlay_opacity": OVERLAY_OPACITY_RANGE, "overlay_text_size": OVERLAY_TEXT_SIZE_RANGE,
+                  "known_space_radius": KNOWN_SPACE_RADIUS_RANGE}
+
+
+def clamp_to_range(key: str, value: int | float) -> int | float:
+    """Return a numeric setting moved into its allowed range (unchanged for settings without one)."""
+    require_text(key, "key")
+    if key not in SETTING_RANGES:
+        return value
+    low, high = SETTING_RANGES[key]
+    return max(low, min(high, value))
 
 
 @dataclass
@@ -197,6 +213,9 @@ class Settings:
     def _apply(self, raw: dict) -> int:
         """Take the values from a decoded settings file that fit the field types.
 
+        Numbers outside their range (:data:`SETTING_RANGES`, e.g. from a hand-edited file) are
+        clamped to the nearest allowed value.
+
         Returns:
             The number of values taken.
         """
@@ -216,7 +235,7 @@ class Settings:
             else:
                 fits = isinstance(value, type(default)) and not (isinstance(value, bool) and not isinstance(default, bool))
             if fits:
-                setattr(self, key, value)
+                setattr(self, key, clamp_to_range(key, value))
                 taken += 1
         return taken
 

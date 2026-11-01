@@ -81,6 +81,25 @@ def test_old_keys_and_bad_values_on_load(data_dir) -> None:
     assert settings.active_map == "Main"
 
 
+def test_out_of_range_numbers_are_clamped_on_load(data_dir) -> None:
+    """Hand-edited text size, k-space radius and opacity outside their ranges load as the nearest allowed value."""
+    (data_dir / "settings.json").write_text(json.dumps({
+        "overlay_text_size": 40, "known_space_radius": -3, "overlay_opacity": 0.1}))
+    settings = Settings.load()
+    assert settings.overlay_text_size == settings_module.OVERLAY_TEXT_SIZE_RANGE[1]
+    assert settings.known_space_radius == settings_module.KNOWN_SPACE_RADIUS_RANGE[0]
+    assert settings.overlay_opacity == settings_module.OVERLAY_OPACITY_RANGE[0]
+
+
+def test_clamp_to_range() -> None:
+    """Values inside a range and settings without one pass unchanged; a non-text key is refused."""
+    assert settings_module.clamp_to_range("known_space_radius", 7) == 7
+    assert settings_module.clamp_to_range("known_space_radius", 99) == 15
+    assert settings_module.clamp_to_range("zkill_enabled", 99) == 99
+    with pytest.raises(TypeError):
+        settings_module.clamp_to_range(3, 1)
+
+
 def test_broken_settings_file_gives_defaults(data_dir) -> None:
     """Unreadable JSON or a JSON list means default settings."""
     for content in ("{not json", "[1, 2]"):

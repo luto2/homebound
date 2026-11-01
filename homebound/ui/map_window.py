@@ -524,7 +524,8 @@ class MapWindow(QMainWindow):
             delete_menu.menuAction().setToolTip("There's only one map.")
         for name in others:
             menus.item(delete_menu, name, lambda name=name: self.delete_map(name), danger=True)
-        menus.item(delete_menu, f"{settings.active_map} is open: switch first", enabled=False)
+        if others:   # the note only explains why the open map is missing from a list of others
+            menus.item(delete_menu, f"{settings.active_map} is open: switch first", enabled=False)
         menu.addMenu(delete_menu)
         return menu
 

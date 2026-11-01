@@ -586,6 +586,25 @@ def test_combo_show_all_expansion(state) -> None:
     assert foreign.show_all and foreign.code() == impossible
 
 
+def test_combo_keeps_unlisted_stored_code(state) -> None:
+    """A stored type code the universe data doesn't know stays selected (dimmed, after K162) instead of becoming Unknown."""
+    combo = make_combo(state, "X999")
+    codes = [combo.itemData(index) for index in range(combo.count()) if combo.itemData(index) is not None]
+    assert codes[:3] == ["", "K162", "X999"] and codes[-1] == SHOW_ALL
+    assert combo.unlisted == "X999" and combo.code() == "X999" and not combo.show_all
+    assert combo.itemData(combo.findData("X999"), wormhole_fields.DIMMED_ROLE)
+    combo._activated(combo.findData(SHOW_ALL))   # expanding keeps the stored code on offer
+    assert combo.findData("X999") != -1
+    assert make_combo(state, "H296").unlisted is None and make_combo(state, "K162").unlisted is None
+
+
+def test_fields_save_unlisted_code_untouched(state) -> None:
+    """Saving the wormhole fields without touching the type keeps an unknown stored code and says it's unknown."""
+    fields = WormholeFields(state, [HOME.id], {"type": "X999"})
+    assert fields.values()["type"] == "X999"
+    assert "not a known wormhole type" in fields.type_info_text()
+
+
 def test_combo_paints_and_type_ahead(state, qt_application) -> None:
     """The closed combo and the popup rows paint; typing jumps to a code and reports it."""
     combo = make_combo(state, "H296")
@@ -745,15 +764,15 @@ def test_wormhole_fields_lifetime_and_mass(state) -> None:
     assert fields.values()["lifetime"] == LIFETIME_STABLE and fields.values()["mass"] == "critical"
 
 
-def test_wormhole_fields_unlisted_type_has_no_info(state) -> None:
-    """A code the universe doesn't know says nothing."""
+def test_wormhole_fields_unlisted_type_info(state) -> None:
+    """The stored unknown code stays selected and says it's unknown; any other code the universe lacks says nothing."""
     fields = WormholeFields(state, [HOME.id], {"type": "ZZZZ"})
-    assert fields.type.code() == ""  # not in the dropdown: falls back to Unknown
-    fields.type.setCurrentIndex(fields.type.findData("K162"))
-    fields.type.addItem("ZZZZ", "ZZZZ")
-    fields.type.setCurrentIndex(fields.type.findData("ZZZZ"))
-    assert fields.type_info_text() == ""
+    assert fields.type.code() == "ZZZZ"  # kept, not reset to Unknown
+    assert "not a known wormhole type" in fields.type_info_text()
     fields.grab()
+    fields.type.addItem("YYYY", "YYYY")
+    fields.type.setCurrentIndex(fields.type.findData("YYYY"))
+    assert fields.type_info_text() == ""
 
 
 def test_combo_delegate_paints_rows_and_separators(state) -> None:
