@@ -141,6 +141,7 @@ def test_marker_slots_fill_up_then_share() -> None:
 def test_detect_log_directories_in_a_fake_home(tmp_path, monkeypatch) -> None:
     """A Proton prefix in a Steam library listed in libraryfolders.vdf is found."""
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(settings_module, "is_windows", lambda: False)
     steam = tmp_path / ".local/share/Steam"
     other = tmp_path / "games"
     (steam / "steamapps").mkdir(parents=True)
@@ -149,3 +150,25 @@ def test_detect_log_directories_in_a_fake_home(tmp_path, monkeypatch) -> None:
     chatlogs.mkdir(parents=True)
     assert settings_module.steam_libraries() == [steam.resolve(), other.resolve()]
     assert settings_module.detect_log_directories() == [chatlogs]
+
+
+def test_detect_log_directories_on_windows(tmp_path, monkeypatch) -> None:
+    """On Windows the Documents folder Windows reports comes first, then OneDrive's Documents/Dokumente."""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(settings_module, "is_windows", lambda: True)
+    moved = tmp_path / "D/Docs"
+    monkeypatch.setattr(settings_module, "documents_directory", lambda: moved)
+    monkeypatch.setenv("OneDrive", str(tmp_path / "OneDrive - Firma"))
+    candidates = settings_module.windows_log_candidates()
+    assert candidates[0] == moved / "EVE/logs/Chatlogs"
+    assert tmp_path / "OneDrive - Firma/Dokumente/EVE/logs/Chatlogs" in candidates
+    assert tmp_path / "OneDrive/Documents/EVE/logs/Chatlogs" in candidates
+    assert candidates[-1] == tmp_path / "Documents/EVE/logs/Chatlogs"
+    assert settings_module.detect_log_directories() == []
+    german = tmp_path / "OneDrive/Dokumente/EVE/logs/Chatlogs"
+    plain = tmp_path / "Documents/EVE/logs/Chatlogs"
+    for folder in (german, plain):
+        folder.mkdir(parents=True)
+    assert settings_module.detect_log_directories() == [german, plain]
+    monkeypatch.setattr(settings_module, "documents_directory", lambda: tmp_path / "Documents")
+    assert settings_module.detect_log_directories() == [plain, german]  # no duplicates

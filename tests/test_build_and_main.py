@@ -352,6 +352,16 @@ def test_main_normal_path(fake_app, monkeypatch, log_directory, settings_page) -
     assert window.settings_opened == settings_page
 
 
+@pytest.mark.parametrize("platform, expected", [("linux", "xcb"), ("win32", None)])
+def test_main_forces_xcb_only_on_linux(fake_app, monkeypatch, platform, expected) -> None:
+    """QT_QPA_PLATFORM=xcb is a Linux (XWayland) setting; Windows keeps Qt's default."""
+    monkeypatch.setattr(fake_app, "load", classmethod(lambda cls: FakeSettings("/logs")))
+    monkeypatch.delenv("QT_QPA_PLATFORM")
+    monkeypatch.setattr(entry_point.sys, "platform", platform)
+    assert entry_point.main() == 0
+    assert entry_point.os.environ.get("QT_QPA_PLATFORM") == expected
+
+
 def test_main_missing_universe_shows_error(fake_app, monkeypatch) -> None:
     """Without universe data, main() shows the startup error dialog, opens no window and returns 1."""
     shown = []

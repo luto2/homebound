@@ -38,7 +38,7 @@ uv run python -m homebound
 **In EVE**, turn on *Settings → Chat → Log chat to file*. Homebound only reads the Local channel logs.
 
 On first start, Settings opens on **Log folder**:
-- **Auto-detect** looks in the Steam/Proton prefixes of every Steam library (`…/steamapps/compatdata/8500/pfx/drive_c/users/steamuser/Documents/EVE/logs/Chatlogs`) plus Wine prefixes, `/mnt/EVE-logs` and `~/Documents/EVE/logs/Chatlogs`.
+- **Auto-detect** looks in the Steam/Proton prefixes of every Steam library (`…/steamapps/compatdata/8500/pfx/drive_c/users/steamuser/Documents/EVE/logs/Chatlogs`) plus Wine prefixes, `/mnt/EVE-logs` and `~/Documents/EVE/logs/Chatlogs`. On Windows it looks in `Documents\EVE\logs\Chatlogs`, wherever Windows has the Documents folder (OneDrive included), and in `OneDrive\Documents` / `OneDrive\Dokumente`.
 - **Browse** picks the folder by hand.
 - A line under the field says whether the folder is right, and how many logs and characters it found.
 
@@ -54,7 +54,7 @@ Then set your **Home system** (autocomplete over every system name) and pick a *
 | Characters (left) | Every character found in the logs: marker, online state and current system. Double-click a row (or Space) to show its system. Right-click → *Pin overlay to this character*. The row the overlay follows is highlighted. |
 | Map (centre) | Systems and connections. Drag to pan, wheel to zoom, drag a system to move it (it snaps to the grid). Legend bottom-left, zoom bottom-right. With more than one map, a `MAP Main` tag in the top-right corner says which map is open. |
 | System (right) | The selected system: custom name, owner, notes, zKill activity, and the signature table. |
-| Status bar | Log watcher, zKill and KWin focus-script health, each with ✓ / ▲ / ✕. |
+| Status bar | Log watcher, zKill and focus tracking (KWin script, X11 fallback, or Windows), each with ✓ / ▲ / ✕. |
 
 **System nodes** show the custom or scheme name, class, J-name, effect, statics, zKill activity, owner and the characters in it. Home has a `⌂ HOME` tab. A system whose last sig paste is older than the rescan threshold (24h by default, see [Settings](#12-settings)) is hatched and faded and gets a grey `SCAN 26h` tab on its top edge. A wormhole system that was never pasted gets `NO SCAN`; k-space systems don't. Hover a node to see the age and the threshold.
 
@@ -260,9 +260,9 @@ Pin a character first: right-click it in the Characters list → *Pin overlay to
 
 The overlay ignores the mouse, so clicks go through to the game. To move it, choose **Unlock overlay** in the tray menu, drag it, then lock it again. The position is saved per mode.
 
-**Follow active client** needs to know which EVE window has focus. On KDE Plasma (Wayland), install the KWin script once: **Settings → KWin focus script → Install**. Without it, Homebound falls back to polling the X11 active window, which doesn't see every focus change under Wayland.
+**Follow active client** needs to know which EVE window has focus. On KDE Plasma (Wayland), install the KWin script once: **Settings → KWin focus script → Install**. Without it, Homebound falls back to polling the X11 active window, which doesn't see every focus change under Wayland. On Windows nothing needs installing: Homebound reads the title of the foreground window, as the task bar does.
 
-The overlay is an X11 override-redirect window, so it stays above fullscreen EVE clients.
+On Linux the overlay is an X11 override-redirect window, so it stays above fullscreen EVE clients. **On Windows, run EVE in windowed or borderless (fixed window) mode.** The overlay stays above those, but Windows doesn't let any window sit above an exclusive-fullscreen game.
 
 ---
 
@@ -291,7 +291,7 @@ While the main window is hidden, toasts are also sent as desktop notifications.
 | Signatures | *Rescan due after* 1–72 h (default 24): from then on a system shows `SCAN 26h` and its sigs are drawn faint. |
 | Overlay | Mode, background opacity (55–92%), text size (11–14px), k-space radius in gate jumps. |
 | zKill | Turn zKillboard lookups on or off. |
-| KWin focus script | Shows whether the script is installed and active; Install, Reinstall, Remove. |
+| KWin focus script | Shows whether the script is installed and active; Install, Reinstall, Remove. Only shown where `kpackagetool6` exists (Plasma 6). |
 | Backups | The list of backups, *Back up now*, *Restore …*, *Open folder*, and *Also copy backups to* a second folder. |
 
 ---
@@ -318,15 +318,17 @@ While the main window is hidden, toasts are also sent as desktop notifications.
 
 ## 14. Where your data lives
 
+The data folder is `~/.local/share/homebound/` on Linux and `%APPDATA%\Homebound\` on Windows.
+
 | What | Where |
 |---|---|
-| Settings | `~/.local/share/homebound/settings.json` |
-| Main map | `~/.local/share/homebound/map.db` |
-| Other maps | `~/.local/share/homebound/maps/<name>.db` |
-| Backups | `~/.local/share/homebound/backups/` |
-| Static universe data | `data/universe.sqlite` in the project folder |
+| Settings | `<data folder>/settings.json` |
+| Main map | `<data folder>/map.db` |
+| Other maps | `<data folder>/maps/<name>.db` |
+| Backups | `<data folder>/backups/` |
+| Static universe data | `data/universe.sqlite` in the project folder (a `universe.sqlite` in the data folder takes precedence) |
 
-Set `HOMEBOUND_HOME` to use a different folder for settings and maps, for example for a test setup.
+Set `HOMEBOUND_HOME` to use a different folder for settings and maps, for example for a test setup. `HOMEBOUND_UNIVERSE` points at a different universe file.
 
 Each map is a plain SQLite file.
 
@@ -369,7 +371,9 @@ values when opened again.
 
 **Characters don't move on the map.** Check that *Log chat to file* is on in EVE and that the status bar shows the log watcher with ✓. Settings → Log folder should report the logs and characters it found.
 
-**The overlay doesn't follow the focused client.** Install the KWin script (Settings → KWin focus script) and check that the status bar shows it as active. The overlay matches the window title `EVE - <character name>` against the names in the logs.
+**The overlay doesn't follow the focused client.** On Plasma, install the KWin script (Settings → KWin focus script) and check that the status bar shows it as active. On Windows the status bar should say *Windows focus: active*. The overlay matches the window title `EVE - <character name>` against the names in the logs.
+
+**The overlay disappears behind EVE on Windows.** EVE is in exclusive fullscreen. Switch it to windowed or borderless (fixed window) mode.
 
 **A system got the wrong name.** Right-click it → *Change static / hole …* to answer the static question again, or *Rename …* to set a name by hand.
 

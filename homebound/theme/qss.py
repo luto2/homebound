@@ -6,6 +6,7 @@ from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QApplication, QWidget
 
 from ..validation import require_type
+from .fonts import load_fonts
 from .tokens import HEX_COLORS, PIXELS, color, font, qss_color
 
 QSS = """
@@ -146,12 +147,13 @@ def build_palette() -> QPalette:
 
 
 def apply_theme(application: QApplication) -> QApplication:
-    """Give the application the Fusion style, the token palette, the body font and the style sheet.
+    """Load the bundled fonts, then set the Fusion style, the token palette, the body font and the style sheet.
 
     Returns:
         The application.
     """
     require_type(application, QApplication, "application")
+    load_fonts()
     application.setStyle("Fusion")
     application.setPalette(build_palette())
     application.setFont(font("ui-body"))

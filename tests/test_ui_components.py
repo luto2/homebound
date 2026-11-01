@@ -1,17 +1,16 @@
-"""Offscreen tests of the UI building blocks: state, toasts, menus, notifications, focus, overlay, character dock."""
-import subprocess
+"""Offscreen tests of the UI building blocks: state, toasts, menus, notifications, overlay, character dock."""
 from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from typing import NoReturn
 
 import pytest
 from PySide6.QtCore import QEvent, QPoint, QPointF, QProcess, QRect, Qt
 from PySide6.QtGui import QAction, QActionGroup, QMouseEvent, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
 
-import homebound.ui.focus as focus_module
+import homebound.platform.focus_windows as focus_windows
 import homebound.ui.notify as notify_module
+import homebound.ui.overlay as overlay_module
 import homebound.ui.toast as toast_module
 from conftest import HOME, UNIVERSE, pick_system
 from homebound.logs.parser import SystemChange
@@ -568,254 +567,6 @@ def test_toast_host_mirrors_to_notifications_when_hidden(qt_application, monkeyp
     window.close()
 
 
-# ---------------------------------------------------------------- focus
-
-class FakeBus:
-    """A session bus that is not connected, so nothing is registered."""
-
-    @staticmethod
-    def isConnected() -> bool:
-        """Report no connection."""
-        return False
-
-
-class FakeBusConnection:
-    """Stands in for QDBusConnection in the focus module."""
-
-    RegisterOption = focus_module.QDBusConnection.RegisterOption
-
-    @staticmethod
-    def sessionBus() -> FakeBus:
-        """Return a bus that is not connected."""
-        return FakeBus()
-
-
-class ConnectedBus:
-    """A bus that accepts every registration and remembers it."""
-
-    def __init__(self) -> None:
-        """Start with no registrations."""
-        self.services, self.objects = [], []
-
-    def isConnected(self) -> bool:
-        """Report a connection."""
-        return True
-
-    def registerService(self, name: str) -> bool:
-        """Remember the service name and succeed."""
-        self.services.append(name)
-        return True
-
-    def registerObject(self, path: str, target: object, option: object) -> bool:
-        """Remember the object path and target and succeed."""
-        self.objects.append((path, target))
-        return True
-
-
-@pytest.fixture
-def tracker(qt_application, monkeypatch) -> focus_module.FocusTracker:
-    """A FocusTracker that never touches the real session bus."""
-    monkeypatch.setattr(focus_module, "QDBusConnection", FakeBusConnection)
-    return focus_module.FocusTracker()
-
-
-def test_eve_character_captions() -> None:
-    """Only "EVE" and "EVE - Name" captions are clients."""
-    assert focus_module.eve_character("EVE - Ijomo Ohaya") == "Ijomo Ohaya"
-    assert focus_module.eve_character("  EVE - Pilot  ") == "Pilot"
-    assert focus_module.eve_character("EVE") == ""
-    assert focus_module.eve_character("EVE Online Launcher") is None
-    assert focus_module.eve_character("Firefox") is None
-    with pytest.raises(TypeError):
-        focus_module.eve_character(None)
-
-
-def test_is_own_window() -> None:
-    """Our window class or caption keeps the previous focus state."""
-    assert focus_module.is_own_window("python3") and focus_module.is_own_window("Homebound")
-    assert focus_module.is_own_window(None, "Homebound - Map")
-    assert not focus_module.is_own_window("exefile.exe", "EVE - A") and not focus_module.is_own_window(None)
-
-
-def test_tracker_without_a_session_bus(tracker) -> None:
-    """A missing bus only disables the KWin path."""
-    assert not tracker.dbus_ok and tracker.character is None
-
-
-def test_tracker_registers_on_the_bus(qt_application, monkeypatch) -> None:
-    """With a bus the service and the adaptor object are registered."""
-    bus = ConnectedBus()
-    monkeypatch.setattr(focus_module, "QDBusConnection", SimpleNamespace(
-        sessionBus=lambda: bus, RegisterOption=focus_module.QDBusConnection.RegisterOption))
-    created = focus_module.FocusTracker()
-    assert created.dbus_ok and bus.services == [focus_module.SERVICE]
-    assert bus.objects == [(focus_module.OBJECT_PATH, created._adaptor)]
-
-
-def test_adaptor_forwards_activation(tracker) -> None:
-    """The D-Bus slot hands the window to the tracker."""
-    changes = spy(tracker.focusChanged)
-    tracker._adaptor.Activated("EVE - Pilot", "exefile", 1, 2, 300, 200)
-    assert changes == [("Pilot", QRect(1, 2, 300, 200))]
-    assert tracker._kwin_seen
-
-
-def test_activated_ignores_own_windows_and_stops_polling(tracker) -> None:
-    """The first KWin report ends X11 polling; our own windows change nothing."""
-    statuses = spy(tracker.status)
-    tracker._x11_timer.start()
-    tracker._activated("Homebound", "homebound", QRect(0, 0, 1, 1))
-    assert not tracker._x11_timer.isActive() and statuses == [("ok", "KWin focus script active")]
-    assert tracker.character is None
-    tracker._activated("Firefox", "firefox", QRect(0, 0, 5, 5))
-    assert tracker.character is None and tracker.rect == QRect(0, 0, 5, 5)
-    tracker._activated("EVE", "exefile", QRect(0, 0, 5, 5))
-    assert tracker.character == ""
-    assert len(statuses) == 1
-
-
-def test_set_detects_changes(tracker) -> None:
-    """Only a different character or rectangle emits."""
-    changes = spy(tracker.focusChanged)
-    assert tracker._set("A", QRect(0, 0, 1, 1)) is True
-    assert tracker._set("A", QRect(0, 0, 1, 1)) is False
-    assert tracker._set("A", QRect(0, 0, 2, 2)) is True
-    assert tracker._set(None, QRect(0, 0, 2, 2)) is True
-    assert len(changes) == 3
-
-
-def test_apply_x11_properties(tracker) -> None:
-    """xprop output gives the caption; our own window class is ignored."""
-    tracker._apply_x11_properties('_NET_WM_NAME(UTF8_STRING) = "EVE - Pilot"\nWM_CLASS(STRING) = "exefile.exe", "steam_app_8500"')
-    assert tracker.character == "Pilot"
-    tracker._apply_x11_properties('_NET_WM_NAME(UTF8_STRING) = "Homebound"\nWM_CLASS(STRING) = "homebound", "Homebound"')
-    assert tracker.character == "Pilot"
-    tracker._apply_x11_properties("")
-    assert tracker.character is None
-
-
-def test_poll_x11(tracker, monkeypatch) -> None:
-    """The active window id is looked up with xprop; failures change nothing."""
-    outputs = iter([" _NET_ACTIVE_WINDOW(WINDOW): window id # 0x4a00007",
-                    '_NET_WM_NAME(UTF8_STRING) = "EVE - Pilot"\nWM_CLASS(STRING) = "exefile", "x"'])
-    commands = []
-
-    def fake_run(command: list, **options: object) -> SimpleNamespace:
-        """Record the command and answer with the next scripted output."""
-        commands.append(command)
-        return SimpleNamespace(stdout=next(outputs))
-
-    monkeypatch.setattr(focus_module.subprocess, "run", fake_run)
-    tracker._poll_x11()
-    assert tracker.character == "Pilot" and commands[1][:3] == ["xprop", "-id", "0x4a00007"]
-    monkeypatch.setattr(focus_module.subprocess, "run", lambda *arguments, **options: SimpleNamespace(stdout="x: 0x0"))
-    tracker._poll_x11()
-    assert tracker.character is None
-    monkeypatch.setattr(focus_module.subprocess, "run", lambda *arguments, **options: SimpleNamespace(stdout=""))
-    tracker._set("Keep", QRect())
-    tracker._poll_x11()  # empty output: IndexError, ignored
-    assert tracker.character == "Keep"
-
-    def failing(*arguments: object, **options: object) -> NoReturn:
-        """Fail as if xprop were not installed."""
-        raise FileNotFoundError("xprop")
-
-    monkeypatch.setattr(focus_module.subprocess, "run", failing)
-    tracker._poll_x11()
-    assert tracker.character == "Keep"
-    monkeypatch.setattr(focus_module.subprocess, "run", lambda *arguments, **options: (_ for _ in ()).throw(
-        subprocess.TimeoutExpired("xprop", 1)))
-    tracker._poll_x11()
-    assert tracker.character == "Keep"
-
-
-@pytest.mark.parametrize("script, dbus_ok, xprop, polling, level, text", [
-    ("active", True, "/usr/bin/xprop", False, "ok", "KWin focus script active"),
-    ("missing", True, "/usr/bin/xprop", True, "warn", "KWin focus script not installed · using X11 fallback"),
-    ("inactive", True, None, False, "warn", "KWin script installed but not enabled · using X11 fallback"),
-    ("unavailable", True, "/usr/bin/xprop", True, "warn", "Focus: X11 fallback · using X11 fallback"),
-    ("active", False, "/usr/bin/xprop", True, "warn", "Focus: X11 fallback · using X11 fallback"),
-])
-def test_tracker_start(tracker, monkeypatch, script, dbus_ok, xprop, polling, level, text) -> None:
-    """start() trusts the KWin script when it is active, else falls back to polling."""
-    monkeypatch.setattr(focus_module, "kwin_script_status", lambda: script)
-    monkeypatch.setattr(focus_module.shutil, "which", lambda name: xprop)
-    tracker.dbus_ok = dbus_ok
-    statuses = spy(tracker.status)
-    assert tracker.start() == script
-    assert statuses == [(level, text)] and tracker._x11_timer.isActive() == polling
-    tracker._x11_timer.stop()
-
-
-class CommandRecorder:
-    """Replaces _run_command: records calls and answers from a script."""
-
-    def __init__(self, answers: dict | None = None) -> None:
-        """Answer commands containing a key of ``answers`` with its values; anything else succeeds silently."""
-        self.calls: list[tuple] = []
-        self.answers = answers or {}
-
-    def __call__(self, *command: str) -> SimpleNamespace:
-        """Record the command and return the first matching scripted result."""
-        self.calls.append(command)
-        for part, answer in self.answers.items():
-            if part in command:
-                return SimpleNamespace(**{"returncode": 0, "stdout": "", "stderr": "", **answer})
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
-
-
-def test_kwin_script_status(monkeypatch) -> None:
-    """The status comes from kpackagetool6's list and kreadconfig6's flag."""
-    monkeypatch.setattr(focus_module.shutil, "which", lambda name: None)
-    assert focus_module.kwin_script_status() == "unavailable"
-    monkeypatch.setattr(focus_module.shutil, "which", lambda name: "/usr/bin/" + name)
-    monkeypatch.setattr(focus_module, "_run_command", CommandRecorder({"--list": {"stdout": "other"}}))
-    assert focus_module.kwin_script_status() == "missing"
-    listed = {"--list": {"stdout": f"x\n{focus_module.SCRIPT_ID}\n"}}
-    monkeypatch.setattr(focus_module, "_run_command", CommandRecorder({**listed, "kreadconfig6": {"stdout": "true\n"}}))
-    assert focus_module.kwin_script_status() == "active"
-    monkeypatch.setattr(focus_module, "_run_command", CommandRecorder({**listed, "kreadconfig6": {"stdout": "false"}}))
-    assert focus_module.kwin_script_status() == "inactive"
-
-
-def test_install_enable_remove_kwin_script(monkeypatch) -> None:
-    """Install falls back to upgrade, then enables; failures report the error text."""
-    recorder = CommandRecorder({"--install": {"returncode": 1, "stderr": "exists"}})
-    monkeypatch.setattr(focus_module, "_run_command", recorder)
-    assert focus_module.install_kwin_script() == (True, "")
-    commands = [call[0] + " " + " ".join(call[1:3]) for call in recorder.calls]
-    assert any("--install" in call for call in recorder.calls) and any("--upgrade" in call for call in recorder.calls)
-    assert commands[-1].startswith("qdbus6") and any("kwriteconfig6" in command for command in commands)
-    assert any("true" in call for call in recorder.calls if call[0] == "kwriteconfig6")
-
-    failing = CommandRecorder({"--install": {"returncode": 1, "stderr": "x"}, "--upgrade": {"returncode": 2, "stderr": "boom"}})
-    monkeypatch.setattr(focus_module, "_run_command", failing)
-    assert focus_module.install_kwin_script() == (False, "boom")
-    monkeypatch.setattr(focus_module, "_run_command", CommandRecorder(
-        {"--install": {"returncode": 1}, "--upgrade": {"returncode": 2, "stdout": "from stdout"}}))
-    assert focus_module.install_kwin_script() == (False, "from stdout")
-
-    monkeypatch.setattr(focus_module, "_run_command", CommandRecorder({"reconfigure": {"returncode": 1, "stderr": " no kwin "}}))
-    assert focus_module.enable_kwin_script() == (False, "no kwin")
-
-    recorder = CommandRecorder()
-    monkeypatch.setattr(focus_module, "_run_command", recorder)
-    assert focus_module.remove_kwin_script() == (True, "")
-    assert any("false" in call for call in recorder.calls if call[0] == "kwriteconfig6")
-    assert any("--remove" in call for call in recorder.calls)
-    monkeypatch.setattr(focus_module, "_run_command", CommandRecorder({"--remove": {"returncode": 1, "stderr": "gone"}}))
-    assert focus_module.remove_kwin_script() == (False, "gone")
-
-
-def test_script_directory_and_run_command(monkeypatch) -> None:
-    """The bundled script package exists; _run_command passes the command through to subprocess."""
-    assert (focus_module._script_directory() / "metadata.json").is_file()
-    seen = []
-    monkeypatch.setattr(focus_module.subprocess, "run", lambda command, **options: seen.append((command, options)) or "done")
-    assert focus_module._run_command("echo", "hi") == "done"
-    assert seen[0][0] == ("echo", "hi") and seen[0][1]["timeout"] == focus_module.COMMAND_TIMEOUT_SECONDS
-
-
 # ---------------------------------------------------------------- overlay
 
 @pytest.fixture
@@ -888,6 +639,22 @@ def test_overlay_unlock_saves_position_and_signals(overlay_setup) -> None:
     assert overlay._restore_position() == QPoint(10, 20)
     state.settings.overlay_mode = "pinned_eve"
     assert overlay._restore_position() == QPoint(80, 120)
+
+
+@pytest.mark.parametrize("platform, bypass", [("linux", True), ("win32", False)])
+def test_overlay_flags_per_platform(overlay_setup, monkeypatch, platform, bypass) -> None:
+    """Only X11 bypasses the window manager; Windows relies on topmost (re-applied on every refresh)."""
+    overlay, _, state = overlay_setup
+    monkeypatch.setattr(overlay_module.sys, "platform", platform)
+    raised = []
+    monkeypatch.setattr(focus_windows, "keep_on_top", raised.append)
+    flags = overlay._apply_flags()
+    assert bool(flags & Qt.WindowType.X11BypassWindowManagerHint) is bypass
+    assert flags & Qt.WindowType.WindowStaysOnTopHint and flags & Qt.WindowType.WindowTransparentForInput
+    state.settings.overlay_mode = "pinned_always"
+    assert overlay.refresh() is True
+    assert raised == ([] if bypass else [int(overlay.winId())])
+    overlay.hide()
 
 
 def test_overlay_refreshes_on_state_signals(overlay_setup, monkeypatch) -> None:

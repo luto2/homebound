@@ -1,13 +1,14 @@
-"""Read-only lookups over data/universe.sqlite (built by build_static.py)."""
+"""Read-only lookups over universe.sqlite (built by build_static.py; found by :func:`static_data_path`)."""
 import sqlite3
 from collections import deque
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
+from ..platform.paths import static_data_path
 from ..validation import require_integer, require_text, require_type
 
-DEFAULT_PATH = Path(__file__).resolve().parents[2] / "data" / "universe.sqlite"
+DEFAULT_PATH = static_data_path()
 BUILD_COMMAND = "uv run python -m homebound.universe.build_static"
 SCHEMA_VERSION = "2"         # bump together with build_static.SCHEMA_VERSION
 KNOWN_SPACE_CLASSES = ("HS", "LS", "NS")

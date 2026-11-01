@@ -1,6 +1,6 @@
 # Homebound
 
-An offline wormhole mapper for EVE Online that runs only on your machine. It follows your characters through the EVE Local chat logs instead of ESI. Signatures are pasted from the probe scanner. All map data stays in `~/.local/share/homebound/`.
+An offline wormhole mapper for EVE Online that runs only on your machine. It follows your characters through the EVE Local chat logs instead of ESI. Signatures are pasted from the probe scanner. All map data stays in `~/.local/share/homebound/` (Windows: `%APPDATA%\Homebound\`).
 
 The only network access is optional zKillboard activity for systems in visible chains, which can be turned off in Settings.
 
@@ -12,9 +12,9 @@ uv run python -m homebound.universe.build_static   # one-time: CCP SDE + statics
 uv run python -m homebound
 ```
 
-In EVE, *Settings → Chat → Log chat to file* must be on. On first start, pick the `Chatlogs` folder in Settings. Auto-detect checks the Steam/Proton prefix.
+In EVE, *Settings → Chat → Log chat to file* must be on. On first start, pick the `Chatlogs` folder in Settings. Auto-detect checks the Steam/Proton prefix on Linux and the Documents folder (OneDrive included) on Windows.
 
-For the overlay to follow the focused client on Plasma Wayland, open **Settings → KWin focus script → Install**. This installs a tiny KWin script that reports the active window title over D-Bus. Without it, Homebound falls back to X11 polling.
+For the overlay to follow the focused client on Plasma Wayland, open **Settings → KWin focus script → Install**. This installs a tiny KWin script that reports the active window title over D-Bus. Without it, Homebound falls back to X11 polling. On Windows focus tracking needs no setup, but EVE must run windowed or borderless: the overlay can't sit above exclusive fullscreen.
 
 ## Static data
 - **CCP SDE**: systems, classes, security, stargates, effects (via secondary sun type).

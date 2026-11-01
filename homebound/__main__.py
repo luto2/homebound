@@ -9,8 +9,9 @@ def main() -> int:
     Returns:
         The exit code: 1 if the static universe data is missing or outdated, else Qt's exit code.
     """
-    # The overlay needs always-on-top, click-through and move(); those work reliably on KWin via XWayland.
-    os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+    if sys.platform == "linux":
+        # The overlay needs always-on-top, click-through and move(); those work reliably on KWin via XWayland.
+        os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
     from PySide6.QtWidgets import QApplication
 
     from .settings import Settings

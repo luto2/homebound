@@ -1,5 +1,6 @@
 """Tests for the settings dialog: every page and saving."""
 import json
+import sys
 from collections.abc import Callable
 from typing import NoReturn
 
@@ -40,9 +41,12 @@ def kwin(monkeypatch) -> dict[str, object]:
             return control["result"]
         return call
 
-    monkeypatch.setattr(dialog_module.focus, "kwin_script_status", lambda: control["status"])
+    if dialog_module.kwin is None:  # Windows: no KWin page
+        return control
+    monkeypatch.setattr(dialog_module.kwin, "kwin_available", lambda: True)
+    monkeypatch.setattr(dialog_module.kwin, "kwin_script_status", lambda: control["status"])
     for name in ("install_kwin_script", "enable_kwin_script", "remove_kwin_script"):
-        monkeypatch.setattr(dialog_module.focus, name, record(name))
+        monkeypatch.setattr(dialog_module.kwin, name, record(name))
     return control
 
 
@@ -351,6 +355,26 @@ def test_zkill_checkbox_reflects_setting(monkeypatch, tmp_path, kwin, qt_applica
 
 
 # ---------------------------------------------------------------- KWin
+linux_only = pytest.mark.skipif(sys.platform != "linux", reason="the KWin page exists only on Linux")
+
+
+@linux_only
+def test_kwin_page_hidden_without_kpackagetool(state, kwin, monkeypatch) -> None:
+    """Without kpackagetool6 the KWin page is left out of the navigation and holds only a note."""
+    monkeypatch.setattr(dialog_module.kwin, "kwin_available", lambda: False)
+    dialog = SettingsDialog(None, state)
+    assert dialog.kwin_shown is False and not hasattr(dialog, "kwin_banner")
+    assert dialog.nav.item(PAGES.index("KWin focus script")).isHidden()
+
+
+def test_kwin_page_hidden_on_windows(state, monkeypatch) -> None:
+    """On Windows (no KWin module) the page is hidden."""
+    monkeypatch.setattr(dialog_module, "kwin", None)
+    dialog = SettingsDialog(None, state)
+    assert dialog.kwin_shown is False and dialog.nav.item(PAGES.index("KWin focus script")).isHidden()
+
+
+@linux_only
 @pytest.mark.parametrize("status, button, remove_visible, banner", [
     ("active", "Reinstall", True, "success"),
     ("inactive", "Enable", True, "warning"),
@@ -368,6 +392,7 @@ def test_kwin_states(state, kwin, status, button, remove_visible, banner) -> Non
     assert dialog.kwin_banner.property("banner") == banner
 
 
+@linux_only
 def test_kwin_install_button(state, kwin) -> None:
     """The action button installs a missing script; refresh_kwin then reads the new status."""
     dialog = SettingsDialog(None, state)
@@ -377,6 +402,7 @@ def test_kwin_install_button(state, kwin) -> None:
     assert dialog.refresh_kwin() == "active"
 
 
+@linux_only
 def test_kwin_inactive_enables(state, kwin) -> None:
     """With an installed but inactive script, the action enables it."""
     kwin["status"] = "inactive"
@@ -385,6 +411,7 @@ def test_kwin_inactive_enables(state, kwin) -> None:
     assert kwin["calls"] == ["enable_kwin_script"]
 
 
+@linux_only
 def test_kwin_failure_message_shown(state, kwin) -> None:
     """A failed KWin action returns False and shows its error message."""
     dialog = SettingsDialog(None, state)
@@ -393,6 +420,7 @@ def test_kwin_failure_message_shown(state, kwin) -> None:
     assert "boom" in dialog.kwin_text.text()
 
 
+@linux_only
 def test_kwin_remove(state, kwin) -> None:
     """The Remove button removes the script; a failed removal returns False and shows the error."""
     kwin["status"] = "active"

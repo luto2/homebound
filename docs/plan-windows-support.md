@@ -1,6 +1,6 @@
 # Plan: Windows support
 
-Status: plan only, nothing implemented yet (2026-11-01).
+Status: implemented on branch `windows-support` (2026-11-01); not yet tried on a real Windows machine.
 
 Depends on: nothing. [Packaging](plan-packaging.md) builds on it.
 
@@ -59,3 +59,19 @@ Build order across the plans: [rescan status](plan-rescan-status.md) → [backup
 
 - Overlay: windowed/borderless EVE clients only; exclusive fullscreen isn't supported.
 - Fonts: bundled and loaded privately on Windows and Linux; nothing is installed system-wide.
+
+## Implementation notes (2026-11-01)
+
+- Status bar: the focus item stays on every platform with platform-correct text (KWin script,
+  "Focus: X11 fallback", "Focus tracking unavailable: no KWin script and no xprop", or
+  "Windows focus: active"). Only the KWin settings page is hidden without `kpackagetool6`.
+- On Windows the overlay calls `SetWindowPos(HWND_TOPMOST, …, SWP_NOACTIVATE)` on every refresh,
+  and a refresh happens on every focus change, so it is re-raised when an EVE client gets focus.
+- Fonts bundled: Noto Sans Regular/Medium/Bold/Black and Hack Regular/Bold, the same files the
+  Linux system had, so the weights Qt picks (600 → Medium/Bold, 800 → Bold/Black) match.
+  Licences: `homebound/theme/fonts/OFL-NotoSans.txt`, `LICENSE-Hack.txt` (MIT + Bitstream Vera).
+- `static_data_path()` is in place and used by `universe/db.py`; `build_static` still writes to
+  `data/` in the source tree (writing to the data folder in packaged mode is part of packaging).
+- Still to check on Windows: reading the chat logs while the client has them open, the tray
+  notification path, and whether `PySide6.QtDBus` imports there (only `focus_linux` needs it,
+  and it is never imported on Windows).
