@@ -1,5 +1,6 @@
 """Tests for the settings dialog: every page and saving."""
 import json
+from collections.abc import Callable
 
 import pytest
 from PySide6.QtCore import Qt
@@ -9,24 +10,27 @@ from PySide6.QtWidgets import QFileDialog
 import homebound.ui.settings_dialog as dialog_module
 from conftest import HOME, UNIVERSE, pick_system
 from homebound.ui.settings_dialog import PAGES, SettingsDialog
+from homebound.ui.state import AppState
 from ui_helpers import make_state
 
 LOG_NAME = "Local_20261028_165148_{}.txt"
 
 
 @pytest.fixture
-def state(monkeypatch, tmp_path, qt_application):
+def state(monkeypatch, tmp_path, qt_application) -> AppState:
     """An AppState on a temporary folder."""
     return make_state(monkeypatch, tmp_path)
 
 
 @pytest.fixture
-def kwin(monkeypatch):
+def kwin(monkeypatch) -> dict[str, object]:
     """Scripted KWin functions; ``kwin["status"]`` and ``kwin["result"]`` can be changed, ``kwin["calls"]`` records."""
     control = {"status": "missing", "result": (True, ""), "calls": []}
 
-    def record(name):
-        def call():
+    def record(name: str) -> Callable[[], tuple[bool, str]]:
+        """Return a fake KWin function that records its name and returns the scripted result."""
+        def call() -> tuple[bool, str]:
+            """Record the call and return the scripted result."""
             control["calls"].append(name)
             return control["result"]
         return call
@@ -38,13 +42,13 @@ def kwin(monkeypatch):
 
 
 @pytest.fixture
-def dialog(state, kwin):
+def dialog(state, kwin) -> SettingsDialog:
     """A settings dialog on the first page."""
     return SettingsDialog(None, state)
 
 
 def test_constructor_validation(state, kwin) -> None:
-    """Constructor validation."""
+    """A non-AppState state or a non-integer page raises TypeError; a page outside PAGES raises ValueError."""
     with pytest.raises(TypeError):
         SettingsDialog(None, object())
     with pytest.raises(TypeError):
@@ -57,18 +61,18 @@ def test_constructor_validation(state, kwin) -> None:
 
 @pytest.mark.parametrize("page", range(len(PAGES)))
 def test_opens_on_page(state, kwin, page) -> None:
-    """Opens on page."""
+    """The dialog opens on the page index it is given."""
     assert SettingsDialog(None, state, page).stack.currentIndex() == page
 
 
 def test_nav_switches_page(dialog) -> None:
-    """Nav switches page."""
+    """Selecting a row in the navigation list shows that page."""
     dialog.nav.setCurrentRow(3)
     assert dialog.stack.currentIndex() == 3
 
 
 def test_cancel_leaves_settings(dialog, state) -> None:
-    """Cancel leaves settings."""
+    """Cancel after editing a field leaves the saved home system unchanged."""
     dialog.home.setText("")
     dialog.cancel_button.click()
     assert state.settings.home_system == HOME.name
@@ -76,7 +80,7 @@ def test_cancel_leaves_settings(dialog, state) -> None:
 
 # ---------------------------------------------------------------- log folder
 def test_log_folder_missing(dialog, tmp_path) -> None:
-    """Log folder missing."""
+    """A folder that does not exist is marked invalid with a "Folder not found" hint."""
     dialog.log_directory.setText(str(tmp_path / "nope"))
     assert dialog.validate_log_directory() == "invalid"
     assert dialog.log_help.text().startswith("✕ Folder not found")
@@ -84,7 +88,7 @@ def test_log_folder_missing(dialog, tmp_path) -> None:
 
 
 def test_log_folder_empty(dialog, tmp_path) -> None:
-    """Log folder empty."""
+    """A folder without Local_*.txt logs counts as empty and shows a warning."""
     (tmp_path / "logs" / "Local_garbage.txt").write_text("x")
     dialog.log_directory.setText(str(tmp_path / "logs"))
     assert dialog.validate_log_directory() == "empty"
@@ -93,7 +97,7 @@ def test_log_folder_empty(dialog, tmp_path) -> None:
 
 
 def test_log_folder_with_logs(dialog, tmp_path) -> None:
-    """Log folder with logs."""
+    """A folder of Local logs is valid; the hint counts the logs and the distinct characters."""
     folder = tmp_path / "logs"
     for character in (111, 111, 222):
         (folder / f"Local_20261028_16{character % 100:02d}00_{character}.txt").write_text("x")
@@ -106,7 +110,7 @@ def test_log_folder_with_logs(dialog, tmp_path) -> None:
 
 
 def test_log_timer_validates_after_typing(dialog, tmp_path) -> None:
-    """Log timer validates after typing."""
+    """Typing a path starts the debounce timer; when it fires, the folder is checked and the error shows."""
     dialog.log_directory.setText(str(tmp_path / "nope"))
     assert dialog.log_timer.isActive()
     dialog.log_timer.timeout.emit()
@@ -114,14 +118,14 @@ def test_log_timer_validates_after_typing(dialog, tmp_path) -> None:
 
 
 def test_browse_sets_folder(dialog, monkeypatch, tmp_path) -> None:
-    """Browse sets folder."""
+    """Picking a folder in the file dialog puts it into the log folder field and returns it."""
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *arguments: str(tmp_path))
     assert dialog.browse_log_directory() == str(tmp_path)
     assert dialog.log_directory.text() == str(tmp_path)
 
 
 def test_browse_cancelled_keeps_folder(dialog, monkeypatch) -> None:
-    """Browse cancelled keeps folder."""
+    """Cancelling the file dialog returns "" and keeps the folder that was in the field."""
     before = dialog.log_directory.text()
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *arguments: "")
     assert dialog.browse_log_directory() == ""
@@ -129,7 +133,7 @@ def test_browse_cancelled_keeps_folder(dialog, monkeypatch) -> None:
 
 
 def test_browse_starts_in_home_when_field_empty(dialog, monkeypatch) -> None:
-    """Browse starts in home when field empty."""
+    """With an empty field the file dialog still gets a start folder (the user's home)."""
     seen = []
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *arguments: seen.append(arguments) or "")
     dialog.log_directory.setText("")
@@ -138,14 +142,14 @@ def test_browse_starts_in_home_when_field_empty(dialog, monkeypatch) -> None:
 
 
 def test_autodetect_found(dialog, monkeypatch, tmp_path) -> None:
-    """Autodetect found."""
+    """Autodetect fills in the first Chatlogs folder it finds and returns True."""
     monkeypatch.setattr(dialog_module, "detect_log_directories", lambda: [tmp_path])
     assert dialog.autodetect_log_directory() is True
     assert dialog.log_directory.text() == str(tmp_path)
 
 
 def test_autodetect_nothing_found(dialog, monkeypatch) -> None:
-    """Autodetect nothing found."""
+    """Autodetect without a Chatlogs folder returns False and shows an error hint."""
     monkeypatch.setattr(dialog_module, "detect_log_directories", lambda: [])
     assert dialog.autodetect_log_directory() is False
     assert dialog.log_help.text().startswith("✕ No Chatlogs folder")
@@ -153,7 +157,7 @@ def test_autodetect_nothing_found(dialog, monkeypatch) -> None:
 
 
 def test_buttons_trigger_browse_and_autodetect(dialog, monkeypatch, tmp_path) -> None:
-    """Buttons trigger browse and autodetect."""
+    """The Browse and Autodetect buttons run their actions."""
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *arguments: str(tmp_path))
     dialog.browse_button.click()
     assert dialog.log_directory.text() == str(tmp_path)
@@ -164,7 +168,7 @@ def test_buttons_trigger_browse_and_autodetect(dialog, monkeypatch, tmp_path) ->
 
 # ---------------------------------------------------------------- home system
 def test_home_known(dialog) -> None:
-    """Home known."""
+    """A known home system is accepted; the hint shows its name and class."""
     dialog.home.setText(HOME.name)
     assert dialog.validate_home() is True
     text = dialog.home_help.text()
@@ -173,7 +177,7 @@ def test_home_known(dialog) -> None:
 
 
 def test_home_unknown(dialog) -> None:
-    """Home unknown."""
+    """A name the universe doesn't know is rejected with "Unknown system"."""
     dialog.home.setText("Nowhereville")
     assert dialog.validate_home() is False
     assert dialog.home_help.text() == "✕ Unknown system"
@@ -181,7 +185,7 @@ def test_home_unknown(dialog) -> None:
 
 
 def test_home_empty(dialog) -> None:
-    """Home empty."""
+    """An empty home field is not valid and shows the neutral "No home set" hint."""
     dialog.home.setText("")
     assert dialog.validate_home() is False
     assert dialog.home_help.text().startswith("No home set")
@@ -189,15 +193,15 @@ def test_home_empty(dialog) -> None:
 
 
 def test_home_system_without_statics(dialog) -> None:
-    """Home system without statics."""
-    system = next(s for s in UNIVERSE.all_systems() if not UNIVERSE.static_types(s.id))
+    """A home system without statics says "no statics" at the end of its hint."""
+    system = next(candidate for candidate in UNIVERSE.all_systems() if not UNIVERSE.static_types(candidate.id))
     dialog.home.setText(system.name)
     dialog.validate_home()
     assert dialog.home_help.text().endswith("no statics")
 
 
 def test_home_completer(dialog) -> None:
-    """Home completer."""
+    """The home field completes system names case-insensitively from a lowercase prefix."""
     completer = dialog.home.completer()
     assert completer.caseSensitivity() == Qt.CaseSensitivity.CaseInsensitive
     completer.setCompletionPrefix(HOME.name[:6].lower())
@@ -207,7 +211,7 @@ def test_home_completer(dialog) -> None:
 
 # ---------------------------------------------------------------- naming scheme
 def test_scheme_cards_and_previews(dialog) -> None:
-    """Scheme cards and previews."""
+    """There is one card per naming scheme with its "Home → …" preview, and numeric is checked by default."""
     from homebound.mapping.naming import SCHEMES
     assert set(dialog.scheme_cards) == set(SCHEMES)
     for key, card in dialog.scheme_cards.items():
@@ -217,7 +221,7 @@ def test_scheme_cards_and_previews(dialog) -> None:
 
 
 def test_scheme_preview_validation() -> None:
-    """Scheme preview validation."""
+    """scheme_preview raises TypeError for a non-string key and ValueError for a blank one."""
     with pytest.raises(TypeError):
         SettingsDialog.scheme_preview(3)
     with pytest.raises(ValueError):
@@ -225,13 +229,13 @@ def test_scheme_preview_validation() -> None:
 
 
 def test_scheme_preview_differs_between_schemes() -> None:
-    """Scheme preview differs between schemes."""
+    """Every naming scheme has its own preview text."""
     previews = {SettingsDialog.scheme_preview(key) for key in dialog_module.SCHEMES}
     assert len(previews) == len(dialog_module.SCHEMES)
 
 
 def test_card_click_selects_and_marks(dialog) -> None:
-    """Card click selects and marks."""
+    """Clicking a scheme card checks its radio and moves the selected mark away from numeric."""
     key = next(key for key in dialog.scheme_cards if key != "numeric")
     card = dialog.scheme_cards[key]
     QTest.mouseClick(card, Qt.MouseButton.LeftButton)
@@ -241,14 +245,14 @@ def test_card_click_selects_and_marks(dialog) -> None:
 
 
 def test_saved_unknown_scheme_falls_back_to_numeric(monkeypatch, tmp_path, kwin, qt_application) -> None:
-    """Saved unknown scheme falls back to numeric."""
+    """A saved scheme that no longer exists opens with the numeric card checked."""
     state = make_state(monkeypatch, tmp_path, naming_scheme="gone")
     assert SettingsDialog(None, state).scheme_cards["numeric"].radio.isChecked()
 
 
 # ---------------------------------------------------------------- overlay
 def test_overlay_defaults(dialog) -> None:
-    """Overlay defaults."""
+    """The overlay page starts in follow mode, with no pinned character and the saved opacity as a percentage."""
     assert dialog.mode_cards["follow"].radio.isChecked()
     assert dialog.pinned.currentData() is None
     assert dialog.opacity.value() == round(dialog.state.settings.overlay_opacity * 100)
@@ -256,19 +260,19 @@ def test_overlay_defaults(dialog) -> None:
 
 
 def test_opacity_label_follows_slider(dialog) -> None:
-    """Opacity label follows slider."""
+    """Moving the opacity slider updates the percentage label."""
     dialog.opacity.setValue(70)
     assert dialog.opacity_label.text() == "70%"
 
 
 def test_opacity_roundtrip_has_no_float_error(monkeypatch, tmp_path, kwin, qt_application) -> None:
-    """Opacity roundtrip has no float error."""
+    """A saved opacity of 0.57 shows as 57 on the slider, not 56."""
     state = make_state(monkeypatch, tmp_path, overlay_opacity=0.57)
     assert SettingsDialog(None, state).opacity.value() == 57
 
 
 def test_pinned_character_from_rows(monkeypatch, tmp_path, kwin, qt_application) -> None:
-    """Pinned character from rows."""
+    """The pinned-character list has one entry per character (the ID when the name is blank) and selects the saved one."""
     state = make_state(monkeypatch, tmp_path)
     monkeypatch.setattr(state, "character_rows", lambda: [(7, "Alice", None, True, 0), (8, "", None, False, 0)])
     state.settings.overlay_pinned_character = 8
@@ -279,7 +283,7 @@ def test_pinned_character_from_rows(monkeypatch, tmp_path, kwin, qt_application)
 
 
 def test_overlay_ranges(dialog) -> None:
-    """Overlay ranges."""
+    """The text size, radius and opacity controls use the ranges defined in the module."""
     assert (dialog.text_size.minimum(), dialog.text_size.maximum()) == dialog_module.TEXT_SIZE_RANGE
     assert (dialog.radius.minimum(), dialog.radius.maximum()) == dialog_module.RADIUS_RANGE
     assert (dialog.opacity.minimum(), dialog.opacity.maximum()) == dialog_module.OPACITY_RANGE
@@ -287,7 +291,7 @@ def test_overlay_ranges(dialog) -> None:
 
 # ---------------------------------------------------------------- zKill
 def test_zkill_checkbox_reflects_setting(monkeypatch, tmp_path, kwin, qt_application) -> None:
-    """Zkill checkbox reflects setting."""
+    """The zKill checkbox starts checked only when zKill is enabled in the settings."""
     state = make_state(monkeypatch, tmp_path)
     assert not SettingsDialog(None, state).zkill.isChecked()
     state.settings.zkill_enabled = True
@@ -302,7 +306,7 @@ def test_zkill_checkbox_reflects_setting(monkeypatch, tmp_path, kwin, qt_applica
     ("unavailable", "Install", False, "warning"),
 ])
 def test_kwin_states(state, kwin, status, button, remove_visible, banner) -> None:
-    """Kwin states."""
+    """Each KWin script status sets the action button text, the Remove button and the banner style."""
     kwin["status"] = status
     dialog = SettingsDialog(None, state, 5)
     dialog.show()
@@ -313,7 +317,7 @@ def test_kwin_states(state, kwin, status, button, remove_visible, banner) -> Non
 
 
 def test_kwin_install_button(state, kwin) -> None:
-    """Kwin install button."""
+    """The action button installs a missing script; refresh_kwin then reads the new status."""
     dialog = SettingsDialog(None, state)
     dialog.kwin_button.click()
     assert kwin["calls"] == ["install_kwin_script"]
@@ -322,7 +326,7 @@ def test_kwin_install_button(state, kwin) -> None:
 
 
 def test_kwin_inactive_enables(state, kwin) -> None:
-    """Kwin inactive enables."""
+    """With an installed but inactive script, the action enables it."""
     kwin["status"] = "inactive"
     dialog = SettingsDialog(None, state)
     assert dialog.run_kwin_action() is True
@@ -330,7 +334,7 @@ def test_kwin_inactive_enables(state, kwin) -> None:
 
 
 def test_kwin_failure_message_shown(state, kwin) -> None:
-    """Kwin failure message shown."""
+    """A failed KWin action returns False and shows its error message."""
     dialog = SettingsDialog(None, state)
     kwin["result"] = (False, "boom")
     assert dialog.run_kwin_action() is False
@@ -338,7 +342,7 @@ def test_kwin_failure_message_shown(state, kwin) -> None:
 
 
 def test_kwin_remove(state, kwin) -> None:
-    """Kwin remove."""
+    """The Remove button removes the script; a failed removal returns False and shows the error."""
     kwin["status"] = "active"
     dialog = SettingsDialog(None, state)
     dialog.kwin_remove_button.click()
@@ -350,7 +354,7 @@ def test_kwin_remove(state, kwin) -> None:
 
 # ---------------------------------------------------------------- saving
 def test_save_writes_settings(dialog, state, tmp_path) -> None:
-    """Save writes settings."""
+    """Save stores every edited field (trimmed folder, proper home name), emits settingsChanged and writes the file."""
     other = pick_system("C3")
     folder = tmp_path / "other"
     folder.mkdir()
@@ -384,21 +388,21 @@ def test_save_writes_settings(dialog, state, tmp_path) -> None:
 
 
 def test_save_clears_home_when_field_empty(dialog, state) -> None:
-    """Save clears home when field empty."""
+    """Saving with an empty home field clears the home system."""
     dialog.home.setText("")
     dialog.save()
     assert state.settings.home_system == ""
 
 
 def test_save_keeps_home_when_text_unknown(dialog, state) -> None:
-    """Save keeps home when text unknown."""
+    """Saving with an unknown home name keeps the previous home system."""
     dialog.home.setText("Nowhereville")
     dialog.save()
     assert state.settings.home_system == HOME.name
 
 
 def test_save_does_not_share_state_with_dialog(dialog, state) -> None:
-    """Save does not share state with dialog."""
+    """After saving, the dialog's edited copy and its map list are separate objects from the live settings."""
     dialog.save()
     assert dialog.edited is not state.settings
     assert dialog.edited.maps is not state.settings.maps

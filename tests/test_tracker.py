@@ -34,14 +34,14 @@ def test_gate_jump_creates_no_connection(simulation) -> None:
     events = simulation.jump("Perimeter")
     assert simulation.store.connections() == []
     assert not simulation.store.has_system(UNIVERSE.by_name("Perimeter").id)
-    assert [type(e) for e in events] == [Moved]
+    assert [type(event) for event in events] == [Moved]
 
 
 def test_known_space_teleport_is_an_unknown_jump(simulation) -> None:
     """K-space to k-space without a gate is reported for the UI to ask."""
     simulation.jump("Jita", first=True)
     events = simulation.jump("Amarr")
-    unknown = next(e for e in events if isinstance(e, UnknownJump))
+    unknown = next(event for event in events if isinstance(event, UnknownJump))
     assert (unknown.from_id, unknown.to_id) == (UNIVERSE.by_name("Jita").id, UNIVERSE.by_name("Amarr").id)
 
 
@@ -53,7 +53,7 @@ def test_unknown_system_name_only_moves(simulation) -> None:
 
 def test_same_system_again_is_not_a_jump(simulation) -> None:
     """Seeing the same system twice adds nothing."""
-    assert [type(e) for e in simulation.jump(HOME.name)] == [Moved]
+    assert [type(event) for event in simulation.jump(HOME.name)] == [Moved]
 
 
 def test_wormhole_side_check() -> None:
@@ -76,7 +76,7 @@ def test_numeric_chain_and_bookmarks(simulation) -> None:
     simulation.jump(HOME.name)
     c3 = pick_system("C3")
     events = simulation.jump(c3.name)  # C3 can't be home's C5 static: no question at all
-    assert not any(isinstance(e, NamingRequest) for e in events)
+    assert not any(isinstance(event, NamingRequest) for event in events)
     assert simulation.namer.display(c3.id) == "2"
 
     simulation.jump(HOME.name)
@@ -127,10 +127,10 @@ def test_chain_depth_position_counts_systems_at_the_same_depth() -> None:
     children = []
     for system_class in ("C1", "C2"):
         simulation.jump(c5.name)
-        child = pick_system(system_class, exclude={c.id for c in children})
+        child = pick_system(system_class, exclude={sibling.id for sibling in children})
         simulation.jump(child.name)
         children.append(child)
-    assert [simulation.namer.display(c.id) for c in children] == ["A2a", "A2b"]
+    assert [simulation.namer.display(sibling.id) for sibling in children] == ["A2a", "A2b"]
 
 
 def test_known_space_display_has_the_real_name(simulation) -> None:
@@ -169,9 +169,9 @@ def test_auto_naming_when_the_guess_is_certain() -> None:
     simulation.store.update_signature(HOME.id, "AAA-111", type="H296")
     c5 = pick_system("C5", exclude={HOME.id})
     events = simulation.jump(c5.name)
-    auto = next(e for e in events if isinstance(e, AutoNamed))
+    auto = next(event for event in events if isinstance(event, AutoNamed))
     assert auto.child_id == c5.id and auto.name == "1"
-    assert not any(isinstance(e, NamingRequest) for e in events)
+    assert not any(isinstance(event, NamingRequest) for event in events)
     assert simulation.tracker.undo_auto_naming(auto)
     assert simulation.store.system(c5.id).parent_id is None
     with pytest.raises(TypeError):
@@ -323,7 +323,7 @@ def test_single_possible_signature_is_linked_without_asking(simulation) -> None:
     simulation.store.update_signature(HOME.id, "BBB-222", type="M001")
     c4 = pick_system("C4")
     events = simulation.jump(c4.name)
-    assert not any(isinstance(e, NamingRequest) for e in events)
+    assert not any(isinstance(event, NamingRequest) for event in events)
     assert simulation.store.connection(HOME.id, c4.id).signature_on(HOME.id) == "BBB-222"
 
 
@@ -335,7 +335,7 @@ def test_hand_drawn_connection_is_unconfirmed_until_jumped(simulation) -> None:
     assert not connection.confirmed and not simulation.store.system(c5.id).confirmed
     assert simulation.store.system(HOME.id).confirmed
     events = simulation.jump(c5.name)
-    assert any(isinstance(e, MapChanged) for e in events)
+    assert any(isinstance(event, MapChanged) for event in events)
     assert simulation.store.connection(HOME.id, c5.id).confirmed and simulation.store.system(c5.id).confirmed
 
 

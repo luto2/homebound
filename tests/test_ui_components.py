@@ -1,11 +1,13 @@
 """Offscreen tests of the UI building blocks: state, toasts, menus, notifications, focus, overlay, character dock."""
 import subprocess
+from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from typing import NoReturn
 
 import pytest
 from PySide6.QtCore import QEvent, QPoint, QPointF, QProcess, QRect, Qt
-from PySide6.QtGui import QActionGroup, QMouseEvent, QPixmap
+from PySide6.QtGui import QAction, QActionGroup, QMouseEvent, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
 
 import homebound.ui.focus as focus_module
@@ -41,7 +43,7 @@ def spy(signal) -> list:
 
 
 @pytest.fixture
-def state(qt_application, monkeypatch, tmp_path):
+def state(qt_application, monkeypatch, tmp_path) -> Iterator[AppState]:
     """An AppState on a temporary map; stopped afterwards."""
     app_state = make_state(monkeypatch, tmp_path)
     yield app_state
@@ -356,16 +358,19 @@ def test_notify_paths(qt_application, monkeypatch) -> None:
 
         nullDevice = staticmethod(QProcess.nullDevice)
 
-        def setProgram(self, program):
+        def setProgram(self, program: str) -> None:
+            """Remember the program."""
             self.program = program
 
-        def setStandardOutputFile(self, path):
-            pass
+        def setStandardOutputFile(self, path: str) -> None:
+            """Ignore the output redirection."""
 
-        def setArguments(self, arguments):
+        def setArguments(self, arguments: list) -> None:
+            """Remember the arguments."""
             self.arguments = arguments
 
-        def startDetached(self):
+        def startDetached(self) -> None:
+            """Record the arguments instead of starting a process."""
             started.append(self.arguments)
 
     monkeypatch.setattr(notify_module, "QProcess", FakeProcess)
@@ -389,7 +394,7 @@ def test_notify_paths(qt_application, monkeypatch) -> None:
 # ---------------------------------------------------------------- toast
 
 @pytest.fixture
-def anchor(qt_application):
+def anchor(qt_application) -> Iterator[QWidget]:
     """A shown parent widget for toasts."""
     widget = QWidget()
     widget.resize(900, 600)
@@ -467,8 +472,8 @@ def test_toast_host_layout_and_limit(anchor) -> None:
     toasts = [host.show("info", f"T{index}", timeout_ms=60000) for index in range(MAX_TOASTS + 2)]
     assert len(host.toasts) == MAX_TOASTS and host.toasts == toasts[-MAX_TOASTS:]
     assert host.layout() == MAX_TOASTS
-    ys = [toast.y() for toast in host.toasts]
-    assert ys == sorted(ys) and all(toast.x() + toast.width() <= anchor.width() for toast in host.toasts)
+    tops = [toast.y() for toast in host.toasts]
+    assert tops == sorted(tops) and all(toast.x() + toast.width() <= anchor.width() for toast in host.toasts)
     for toast in list(host.toasts):
         toast.dismiss()
     assert host.toasts == []
@@ -536,6 +541,7 @@ class FakeBus:
 
     @staticmethod
     def isConnected() -> bool:
+        """Report no connection."""
         return False
 
 
@@ -546,6 +552,7 @@ class FakeBusConnection:
 
     @staticmethod
     def sessionBus() -> FakeBus:
+        """Return a bus that is not connected."""
         return FakeBus()
 
 
@@ -553,22 +560,26 @@ class ConnectedBus:
     """A bus that accepts every registration and remembers it."""
 
     def __init__(self) -> None:
+        """Start with no registrations."""
         self.services, self.objects = [], []
 
     def isConnected(self) -> bool:
+        """Report a connection."""
         return True
 
     def registerService(self, name: str) -> bool:
+        """Remember the service name and succeed."""
         self.services.append(name)
         return True
 
     def registerObject(self, path: str, target: object, option: object) -> bool:
+        """Remember the object path and target and succeed."""
         self.objects.append((path, target))
         return True
 
 
 @pytest.fixture
-def tracker(qt_application, monkeypatch):
+def tracker(qt_application, monkeypatch) -> focus_module.FocusTracker:
     """A FocusTracker that never touches the real session bus."""
     monkeypatch.setattr(focus_module, "QDBusConnection", FakeBusConnection)
     return focus_module.FocusTracker()
@@ -655,28 +666,30 @@ def test_poll_x11(tracker, monkeypatch) -> None:
                     '_NET_WM_NAME(UTF8_STRING) = "EVE - Pilot"\nWM_CLASS(STRING) = "exefile", "x"'])
     commands = []
 
-    def fake_run(command, **options):
+    def fake_run(command: list, **options: object) -> SimpleNamespace:
+        """Record the command and answer with the next scripted output."""
         commands.append(command)
         return SimpleNamespace(stdout=next(outputs))
 
     monkeypatch.setattr(focus_module.subprocess, "run", fake_run)
     tracker._poll_x11()
     assert tracker.character == "Pilot" and commands[1][:3] == ["xprop", "-id", "0x4a00007"]
-    monkeypatch.setattr(focus_module.subprocess, "run", lambda *a, **k: SimpleNamespace(stdout="x: 0x0"))
+    monkeypatch.setattr(focus_module.subprocess, "run", lambda *arguments, **options: SimpleNamespace(stdout="x: 0x0"))
     tracker._poll_x11()
     assert tracker.character is None
-    monkeypatch.setattr(focus_module.subprocess, "run", lambda *a, **k: SimpleNamespace(stdout=""))
+    monkeypatch.setattr(focus_module.subprocess, "run", lambda *arguments, **options: SimpleNamespace(stdout=""))
     tracker._set("Keep", QRect())
     tracker._poll_x11()  # empty output: IndexError, ignored
     assert tracker.character == "Keep"
 
-    def failing(*a, **k):
+    def failing(*arguments: object, **options: object) -> NoReturn:
+        """Fail as if xprop were not installed."""
         raise FileNotFoundError("xprop")
 
     monkeypatch.setattr(focus_module.subprocess, "run", failing)
     tracker._poll_x11()
     assert tracker.character == "Keep"
-    monkeypatch.setattr(focus_module.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(
+    monkeypatch.setattr(focus_module.subprocess, "run", lambda *arguments, **options: (_ for _ in ()).throw(
         subprocess.TimeoutExpired("xprop", 1)))
     tracker._poll_x11()
     assert tracker.character == "Keep"
@@ -704,10 +717,12 @@ class CommandRecorder:
     """Replaces _run_command: records calls and answers from a script."""
 
     def __init__(self, answers: dict | None = None) -> None:
+        """Answer commands containing a key of ``answers`` with its values; anything else succeeds silently."""
         self.calls: list[tuple] = []
         self.answers = answers or {}
 
     def __call__(self, *command: str) -> SimpleNamespace:
+        """Record the command and return the first matching scripted result."""
         self.calls.append(command)
         for part, answer in self.answers.items():
             if part in command:
@@ -770,7 +785,7 @@ def test_script_directory_and_run_command(monkeypatch) -> None:
 # ---------------------------------------------------------------- overlay
 
 @pytest.fixture
-def overlay_setup(state):
+def overlay_setup(state) -> Iterator[tuple[Overlay, FakeFocus, AppState]]:
     """An overlay on the temporary state with a fake focus tracker."""
     focus = FakeFocus()
     overlay = Overlay(state, focus)
@@ -927,7 +942,8 @@ def test_overlay_paints_a_system_with_an_effect_and_no_name_room(overlay_setup) 
     overlay, _, state = overlay_setup
     settings = state.settings
     settings.overlay_mode, settings.overlay_pinned_character = "pinned_always", 5
-    effect_system = next(s for s in UNIVERSE.all_systems() if s.effect and s.system_class == "C5" and s.id != HOME.id)
+    effect_system = next(system for system in UNIVERSE.all_systems()
+                         if system.effect and system.system_class == "C5" and system.id != HOME.id)
     state.tracker.add_wormhole(HOME.id, effect_system.id)
     put_character(state, 5, "Pilot", effect_system.id)
     overlay.refresh()
@@ -962,7 +978,8 @@ def test_overlay_drag(overlay_setup) -> None:
     overlay, _, state = overlay_setup
     state.settings.overlay_mode = "follow"
 
-    def mouse(kind, point, button=Qt.MouseButton.LeftButton):
+    def mouse(kind: QEvent.Type, point: QPoint, button: Qt.MouseButton = Qt.MouseButton.LeftButton) -> QMouseEvent:
+        """Build a mouse event at a global position."""
         return QMouseEvent(kind, QPointF(1, 1), QPointF(point), button, button, Qt.KeyboardModifier.NoModifier)
 
     overlay.move(100, 100)
@@ -997,7 +1014,7 @@ def test_overlay_mode_labels_cover_the_modes() -> None:
 # ---------------------------------------------------------------- character dock
 
 @pytest.fixture
-def dock_setup(state):
+def dock_setup(state) -> Iterator[tuple[CharacterDock, AppState]]:
     """A shown character dock on the temporary state."""
     dock = CharacterDock(state)
     dock.resize(300, 300)
@@ -1073,7 +1090,8 @@ def test_dock_context_menu(dock_setup, modal, monkeypatch) -> None:
     class AnsweringMenu(QMenu):
         """QMenu.exec can't be patched on the class (PySide ignores it), so the menu answers itself."""
 
-        def exec(self, *arguments):
+        def exec(self, *arguments: object) -> QAction | None:
+            """Let the modal responder pick the action."""
             return modal.answer_menu(self, *arguments)
 
     monkeypatch.setattr(menus, "QMenu", AnsweringMenu)
@@ -1087,7 +1105,8 @@ def test_dock_context_menu(dock_setup, modal, monkeypatch) -> None:
     dock._context_menu(QPoint(5, 5000))  # empty area: no menu
     assert modal.menus == []
 
-    def pick(text):
+    def pick(text: str) -> Callable[[QMenu], QAction]:
+        """Return a menu handler that picks the action starting with ``text``."""
         return lambda menu: next(action for action in menu.actions() if action.text().startswith(text))
 
     modal.menu_handler = pick("Pin overlay")
