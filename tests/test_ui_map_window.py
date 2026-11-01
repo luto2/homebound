@@ -1,7 +1,10 @@
 """Tests for the main window: toolbar, maps, naming queue, context menus, shortcuts, tray and legend."""
+from collections.abc import Callable, Iterator
+from typing import NoReturn
+
 import pytest
 from PySide6.QtCore import QPoint, QPointF, Qt
-from PySide6.QtGui import QCloseEvent, QMouseEvent
+from PySide6.QtGui import QAction, QCloseEvent, QMouseEvent
 from PySide6.QtWidgets import QApplication, QLineEdit, QMenu, QPlainTextEdit, QSystemTrayIcon
 
 from conftest import HOME, SCAN, pick_system
@@ -12,11 +15,12 @@ from homebound.ui import map_window as map_window_module
 from homebound.ui.dialogs import ConnectionDialog, NamingDialog
 from homebound.ui.map_window import Legend, MapArea, MapWindow, Scrim, app_mark
 from homebound.ui.toast import Glyph
+from homebound.universe.db import System
 from ui_helpers import FakeFocus, make_state
 
 
 @pytest.fixture
-def window(qt_application, monkeypatch, tmp_path, modal):
+def window(qt_application, monkeypatch, tmp_path, modal) -> Iterator[MapWindow]:
     """The main window on a temporary map, shown offscreen, with the settings dialog stubbed out."""
     opened = []
     monkeypatch.setattr(map_window_module, "SettingsDialog",
@@ -32,14 +36,14 @@ def window(qt_application, monkeypatch, tmp_path, modal):
     state.stop()
 
 
-def add_child(window, system_class="C5", exclude=()):
+def add_child(window, system_class="C5", exclude=()) -> System:
     """Connect a new system of a class to home by wormhole and return it."""
     child = pick_system(system_class, exclude={HOME.id, *exclude})
     window.state.dispatch(window.state.tracker.add_wormhole(HOME.id, child.id))
     return child
 
 
-def find_action(menu: QMenu, text: str):
+def find_action(menu: QMenu, text: str) -> QAction:
     """Return the action of a menu whose label starts with ``text``."""
     for action in menu.actions():
         if action.text().replace("&", "").startswith(text):
@@ -57,7 +61,7 @@ def toast_text(toast) -> str:
     return toast.title.text()
 
 
-def pick(text: str):
+def pick(text: str) -> Callable[[QMenu], QAction]:
     """A modal menu handler that picks the action starting with ``text``."""
     return lambda menu: find_action(menu, text)
 
@@ -156,7 +160,7 @@ def test_home_button_and_settings_button_open_settings(window) -> None:
 def test_scheme_combo_applies_scheme(window) -> None:
     """Choosing a scheme in the toolbar stores it and renames systems."""
     combo = window.scheme_combo
-    index = next(i for i in range(combo.count()) if combo.itemData(i) != window.state.settings.naming_scheme)
+    index = next(row for row in range(combo.count()) if combo.itemData(row) != window.state.settings.naming_scheme)
     combo.setCurrentIndex(index)
     window._scheme_changed(index)
     assert window.state.settings.naming_scheme == combo.itemData(index)
@@ -201,7 +205,8 @@ def test_new_map_cancel_and_error(window, modal, monkeypatch) -> None:
     assert window.new_map() is False
     modal.handler = lambda dialog: (dialog.field.setText("Broken"), 1)[1]
 
-    def refuse(name):
+    def refuse(name: str) -> NoReturn:
+        """Refuse every new map name."""
         raise ValueError("no way")
     monkeypatch.setattr(window.state.settings, "add_map", refuse)
     assert window.new_map() is False
@@ -412,12 +417,12 @@ def test_paste_shortcut_routes_by_focus(window, monkeypatch) -> None:
 
 
 # ---------------------------------------------------------------- naming queue
-def naming_request(window, system_class="C5"):
+def naming_request(window, system_class="C5") -> NamingRequest:
     """Return a NamingRequest for a fresh child of home."""
     simulation_child = pick_system(system_class, exclude={HOME.id})
     events = window.state.tracker.add_wormhole(HOME.id, simulation_child.id)
     window.state.dispatch(events)
-    return next((e for e in events if isinstance(e, NamingRequest)), None) or NamingRequest(
+    return next((event for event in events if isinstance(event, NamingRequest)), None) or NamingRequest(
         HOME.id, simulation_child.id, window.state.store.connection(HOME.id, simulation_child.id).id,
         __import__("homebound.mapping.naming", fromlist=["guess_static"]).guess_static(
             window.state.store, window.state.universe, HOME.id, simulation_child.id, strict=False))
@@ -489,7 +494,7 @@ def test_auto_named_toast_and_undo(window) -> None:
     child = add_child(window)
     event = AutoNamed(child.id, "H296", {"custom_name": None})
     calls = []
-    window.state.tracker.undo_auto_naming = lambda e: calls.append(e)
+    window.state.tracker.undo_auto_naming = lambda auto_named: calls.append(auto_named)
     window.state.autoNamed.emit(event)
     toast = window.toasts.toasts[-1]
     assert toast_kind(toast) == "success" and toast_text(toast).startswith("Named ")
@@ -500,30 +505,30 @@ def test_auto_named_toast_and_undo(window) -> None:
 
 def test_unknown_jump_toast_and_add(window) -> None:
     """An unknown jump asks; the Add button connects the two systems."""
-    a = pick_system("C5", exclude={HOME.id})
-    b = pick_system("C3", exclude={HOME.id, a.id})
-    window.state.store.add_system(a.id)
-    window.state.store.add_system(b.id)
-    event = UnknownJump(1, "Pilot", a.id, b.id)
+    source = pick_system("C5", exclude={HOME.id})
+    destination = pick_system("C3", exclude={HOME.id, source.id})
+    window.state.store.add_system(source.id)
+    window.state.store.add_system(destination.id)
+    event = UnknownJump(1, "Pilot", source.id, destination.id)
     window.state.unknownJump.emit(event)
     toast = window.toasts.toasts[-1]
     assert toast_kind(toast) == "warning" and toast_text(toast).startswith("Unknown jump")
     from PySide6.QtWidgets import QPushButton
     next(button for button in toast.findChildren(QPushButton) if button.text() == "Add").click()
-    assert window.state.store.connection(a.id, b.id)
+    assert window.state.store.connection(source.id, destination.id)
 
 
 def test_unknown_jump_default_add(window) -> None:
     """With the 'add' default a toast offers the add action when it times out."""
     window.state.settings.unknown_jump_default = "add"
-    a = pick_system("C5", exclude={HOME.id})
-    b = pick_system("C3", exclude={HOME.id, a.id})
-    window.state.unknownJump.emit(UnknownJump(1, "Pilot", a.id, b.id))
+    source = pick_system("C5", exclude={HOME.id})
+    destination = pick_system("C3", exclude={HOME.id, source.id})
+    window.state.unknownJump.emit(UnknownJump(1, "Pilot", source.id, destination.id))
     toast = window.toasts.toasts[-1]
     assert toast_kind(toast) == "warning" and toast_text(toast).startswith("Unknown jump")
     assert callable(toast.default)
     toast.default()                      # the timeout answer is "add"
-    assert window.state.store.connection(a.id, b.id)
+    assert window.state.store.connection(source.id, destination.id)
 
 
 # ---------------------------------------------------------------- node menu and actions
@@ -687,7 +692,7 @@ def test_offer_undo_validates(window) -> None:
 
 
 # ---------------------------------------------------------------- edges
-def edge_id(window, child):
+def edge_id(window, child) -> int:
     """Return the ID of the connection between home and a child."""
     return window.state.store.connection(HOME.id, child.id).id
 

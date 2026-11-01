@@ -39,10 +39,10 @@ def test_is_fresh() -> None:
 
 
 @pytest.fixture
-def fetcher(tmp_path):
+def fetcher(tmp_path) -> zkill.ZkillFetcher:
     """A fetcher on a temporary map file that records its callbacks (the thread isn't started)."""
     updates, statuses = [], []
-    fetcher = zkill.ZkillFetcher(str(tmp_path / "map.db"), updates.append, lambda *s: statuses.append(s))
+    fetcher = zkill.ZkillFetcher(str(tmp_path / "map.db"), updates.append, lambda *status: statuses.append(status))
     fetcher.updates, fetcher.statuses = updates, statuses
     return fetcher
 
@@ -74,7 +74,7 @@ def test_forced_request_upgrades_a_queued_system(fetcher, monkeypatch) -> None:
 
 
 def test_fetcher_needs_callables(tmp_path) -> None:
-    """The callbacks must be callable."""
+    """A fetcher whose update callback is None raises TypeError."""
     with pytest.raises(TypeError):
         zkill.ZkillFetcher(str(tmp_path / "map.db"), None)
 
@@ -105,7 +105,7 @@ def test_worker_thread_fetches_skips_fresh_and_follows_map_switches(fetcher, tmp
     other = str(tmp_path / "other.db")
     fetched = []
 
-    def fake_fetch(self, client, store, system_id):
+    def fake_fetch(self, client, store, system_id) -> bool:
         """Record the fetch and switch maps after the first one."""
         fetched.append((store.path, system_id))
         self.database_path = other

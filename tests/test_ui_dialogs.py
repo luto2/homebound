@@ -1,4 +1,5 @@
 """Offscreen tests of the dialogs and the shared wormhole fields."""
+from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -19,13 +20,14 @@ from homebound.ui.dialogs import (AddSystemDialog, BaseDialog, ChoiceRow, Confir
 from homebound.ui.wormhole_fields import (SHOW_ALL, Segment, SegmentButton, Segmented, TypeRow, WormholeFields,
                                           WormholeTypeCombo, draw_edge_icon, kilotons_text, lifetime_help_text,
                                           lifetime_segments, mass_segments, paint_type_row, size_segments)
+from homebound.ui.state import AppState
 from ui_helpers import make_state
 
 NOW = datetime(2026, 10, 30, 12, tzinfo=timezone.utc)
 
 
 @pytest.fixture
-def state(qt_application, monkeypatch, tmp_path):
+def state(qt_application, monkeypatch, tmp_path) -> Iterator[AppState]:
     """An app state on a temporary map with home on it."""
     state = make_state(monkeypatch, tmp_path)
     yield state
@@ -41,7 +43,7 @@ def request_for(state, target_class: str = "C5") -> NamingRequest:
     """Home -> first character, then jump into a system of a class and return the naming question."""
     jump(state, HOME.name, 0)
     target = pick_system(target_class, exclude={HOME.id})
-    return next(e for e in jump(state, target.name) if isinstance(e, NamingRequest))
+    return next(event for event in jump(state, target.name) if isinstance(event, NamingRequest))
 
 
 def add_sig(state, signature_id: str = "AAA-111", **values) -> Signature:
@@ -115,7 +117,7 @@ def test_base_dialog_layout(qt_application) -> None:
 
 
 def test_base_dialog_cancel_rejects(qt_application) -> None:
-    """The cancel button rejects."""
+    """Clicking the footer's cancel button rejects the dialog."""
     dialog = BaseDialog(None, "T")
     dialog.add_buttons()
     dialog.findChildren(QPushButton)[0].click()
@@ -149,7 +151,7 @@ def test_naming_dialog_without_static_slot_disables_the_yes_answer(state, monkey
 
 
 def test_naming_dialog_answer_accepts(state) -> None:
-    """Y and N keys pick the answer and accept."""
+    """answer(False) picks "not the static" and accepts the dialog."""
     dialog = NamingDialog(None, state, request_for(state, "C5"))
     dialog.answer(False)
     assert not dialog.is_static() and dialog.result() == 1
@@ -160,7 +162,7 @@ def test_naming_dialog_hides_static_question_when_not_applicable(state) -> None:
     jump(state, HOME.name, 0)
     add_sig(state, "AAA-111")
     add_sig(state, "BBB-222")
-    request = next(e for e in jump(state, pick_system("C4").name) if isinstance(e, NamingRequest))
+    request = next(event for event in jump(state, pick_system("C4").name) if isinstance(event, NamingRequest))
     assert not request.guess.applies
     dialog = NamingDialog(None, state, request)
     dialog.show()
@@ -196,11 +198,11 @@ def test_naming_dialog_signature_candidates(state) -> None:
     add_sig(state, "EEE-555")
     add_sig(state, "FFF-666", type="O128")
     c4 = pick_system("C4")
-    request = next(e for e in jump(state, c4.name) if isinstance(e, NamingRequest))
+    request = next(event for event in jump(state, c4.name) if isinstance(event, NamingRequest))
     dialog = NamingDialog(None, state, request)
     rows = dialog.signature_rows
     assert "" in rows and rows[""].radio.isChecked() and dialog.signature_id() is None
-    ids = [i for i in rows if i]
+    ids = [signature_id for signature_id in rows if signature_id]
     assert ids == request.signature_candidates
     rows[ids[0]].radio.setChecked(True)
     assert dialog.signature_id() == ids[0]
@@ -313,6 +315,7 @@ def test_signature_dialog_with_connection_and_delete(state) -> None:
 def make_prompt(text: str = "", **options) -> PromptDialog:
     """A prompt that accepts "ok", rejects "bad" with a message and gives a hint otherwise."""
     def validate(value: str) -> tuple[bool, str]:
+        """Accept "ok" with a check, "plain" without; reject "bad" with a message and anything else silently."""
         if value == "ok":
             return True, "✓ fine"
         if value == "plain":
@@ -367,7 +370,7 @@ def test_prompt_accepts_only_valid(qt_application) -> None:
 
 
 def test_prompt_debounce_validates(qt_application) -> None:
-    """Typing validates after the delay."""
+    """Typing starts the debounce timer; when it fires, the text is validated."""
     dialog = make_prompt("")
     dialog.field.setText("ok")
     assert dialog._debounce.isActive()
@@ -503,7 +506,7 @@ def test_startup_error_copy_command(qt_application, tmp_path) -> None:
     dialog.copy_button.click()
     assert dialog.windowTitle() == "Homebound"
     dialog.show()
-    quit_button = next(b for b in dialog.findChildren(QPushButton) if b.text() == "Quit")
+    quit_button = next(button for button in dialog.findChildren(QPushButton) if button.text() == "Quit")
     quit_button.click()
     assert dialog.result() == 0
     with pytest.raises(ValueError):
@@ -554,12 +557,12 @@ def make_combo(state, current=None, system_ids=None) -> WormholeTypeCombo:
 def test_combo_sections(state) -> None:
     """Unknown/K162, statics, spawning types, then Show all; selected current."""
     combo = make_combo(state, "H296")
-    codes = [combo.itemData(i) for i in range(combo.count()) if combo.itemData(i) is not None]
+    codes = [combo.itemData(row) for row in range(combo.count()) if combo.itemData(row) is not None]
     assert codes[:3] == ["", "K162", "H296"] and codes[-1] == SHOW_ALL
     assert combo.code() == "H296" and combo.statics == ["H296"]
     assert combo.rows["H296"].static
-    separators = [i for i in range(combo.count())
-                  if combo.itemData(i, Qt.ItemDataRole.AccessibleDescriptionRole) == "separator"]
+    separators = [row for row in range(combo.count())
+                  if combo.itemData(row, Qt.ItemDataRole.AccessibleDescriptionRole) == "separator"]
     assert len(separators) == 3
     assert make_combo(state, None).code() == ""
     with pytest.raises(TypeError):
@@ -576,8 +579,8 @@ def test_combo_show_all_expansion(state) -> None:
     assert combo.show_all and emitted == ["popup"]
     assert combo.findData(SHOW_ALL) == -1
     assert combo.count() > len(combo.possible) + 3
-    dimmed = [i for i in range(combo.count()) if combo.itemData(i, wormhole_fields.DIMMED_ROLE)]
-    assert dimmed and all(combo.itemData(i) not in combo.possible for i in dimmed)
+    dimmed = [row for row in range(combo.count()) if combo.itemData(row, wormhole_fields.DIMMED_ROLE)]
+    assert dimmed and all(combo.itemData(row) not in combo.possible for row in dimmed)
     combo._activated(combo.findData("K162"))
     assert emitted[-1] == "K162"
     impossible = next(name for name in UNIVERSE.wormhole_type_names()
@@ -629,8 +632,8 @@ def test_combo_delegate_sizes(state) -> None:
     """Separators are thin and rows are the row height."""
     combo = make_combo(state, "")
     delegate = combo.itemDelegate()
-    separator = next(i for i in range(combo.count())
-                     if combo.itemData(i, Qt.ItemDataRole.AccessibleDescriptionRole) == "separator")
+    separator = next(row for row in range(combo.count())
+                     if combo.itemData(row, Qt.ItemDataRole.AccessibleDescriptionRole) == "separator")
     model = combo.model()
     assert delegate.sizeHint(None, model.index(separator, 0)).height() == 9
     assert delegate.sizeHint(None, model.index(0, 0)).height() == wormhole_fields.ROW_HEIGHT
@@ -693,10 +696,11 @@ def test_segment_button_paints_every_variant(qt_application) -> None:
 
 def test_segment_factories(qt_application) -> None:
     """Size, lifetime and mass segments carry the expected keys."""
-    assert [s.key for s in size_segments()] == ["", "S", "M", "L", "XL"]
+    assert [segment.key for segment in size_segments()] == ["", "S", "M", "L", "XL"]
     assert size_segments()[1].code_token == "edge-frig" and size_segments()[2].code_token == "ink"
-    assert [s.key for s in lifetime_segments()] == [LIFETIME_STABLE, LIFETIME_4H, LIFETIME_1H, LIFETIME_EXPIRED]
-    assert [s.key for s in mass_segments()] == ["fresh", "reduced", "critical", "unknown"]
+    assert [segment.key for segment in lifetime_segments()] == [LIFETIME_STABLE, LIFETIME_4H, LIFETIME_1H,
+                                                                LIFETIME_EXPIRED]
+    assert [segment.key for segment in mass_segments()] == ["fresh", "reduced", "critical", "unknown"]
     assert wormhole_fields.caption_label("abc").text() == "ABC"
 
 
@@ -797,7 +801,7 @@ def test_naming_shortcut_answers(state) -> None:
     """The Y and N shortcuts answer the static question."""
     from PySide6.QtGui import QShortcut
     dialog = NamingDialog(None, state, request_for(state, "C5"))
-    yes = [s for s in dialog.findChildren(QShortcut) if s.key().toString() == "Y"][0]
+    yes = [shortcut for shortcut in dialog.findChildren(QShortcut) if shortcut.key().toString() == "Y"][0]
     yes.activated.emit()
     assert dialog.is_static() and dialog.result() == 1
 

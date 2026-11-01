@@ -2,6 +2,8 @@
 import re
 
 import pytest
+from collections.abc import Iterator
+
 from PySide6.QtCore import QRectF
 from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QLabel
@@ -18,7 +20,7 @@ from homebound.theme.tokens import HEX_COLORS, OPACITY, PIXELS, TYPE, color, fon
 
 
 @pytest.fixture
-def canvas(qt_application):
+def canvas(qt_application) -> Iterator[tuple[QPainter, QPixmap]]:
     """A painter on a 200x100 pixmap; yields (painter, pixmap) and ends the painter."""
     pixmap = QPixmap(200, 100)
     pixmap.fill(QColor("black"))
@@ -36,27 +38,27 @@ def painted(pixmap: QPixmap) -> bool:
 # ---------------------------------------------------------------- tokens
 
 def test_alpha_is_last_in_tokens() -> None:
+    """An 8-digit hex token is read in CSS order (#rrggbbaa) for both QColor values and style sheets."""
     # accent-dim is '#7cc4ff29' (CSS order): alpha 0x29, colour 7c c4 ff
-    """Alpha is last in tokens."""
     assert hex_to_rgba(HEX_COLORS["accent-dim"]) == (0x7C, 0xC4, 0xFF, 0x29)
     assert qss_color("accent-dim") == "rgba(124,196,255,41)"
     assert qss_color("bg-0") == "#0a0d10"
 
 
 def test_hex_to_rgba_without_alpha_is_opaque() -> None:
-    """Hex to rgba without alpha is opaque."""
+    """A 6-digit hex colour gets full alpha (255)."""
     assert hex_to_rgba("#102030") == (0x10, 0x20, 0x30, 255)
 
 
 @pytest.mark.parametrize("text", ["#12345", "#1234567", "", "#"])
 def test_hex_to_rgba_rejects_wrong_length(text) -> None:
-    """Hex to rgba rejects wrong length."""
+    """Hex text that is not 6 or 8 digits after the # raises ValueError."""
     with pytest.raises(ValueError):
         hex_to_rgba(text)
 
 
 def test_hex_to_rgba_rejects_non_hex_and_non_text() -> None:
-    """Hex to rgba rejects non hex and non text."""
+    """Non-hex digits raise ValueError; a non-string raises TypeError."""
     with pytest.raises(ValueError):
         hex_to_rgba("#gggggg")
     with pytest.raises(TypeError):
@@ -64,7 +66,7 @@ def test_hex_to_rgba_rejects_non_hex_and_non_text() -> None:
 
 
 def test_color_and_unknown_token(qt_application) -> None:
-    """Color and unknown token."""
+    """color() turns a token into a QColor, alpha included; unknown tokens raise KeyError in color() and qss_color()."""
     assert color("bg-0") == QColor("#0a0d10")
     assert color("accent-dim").alpha() == 0x29
     with pytest.raises(KeyError):
@@ -74,7 +76,7 @@ def test_color_and_unknown_token(qt_application) -> None:
 
 
 def test_font_uses_token_and_pixel_override(qt_application) -> None:
-    """Font uses token and pixel override."""
+    """font() takes size and weight from the type token; an explicit pixel size overrides the size."""
     spec = TYPE["ui-body"]
     assert font("ui-body").pixelSize() == spec["px"]
     assert font("ui-body", 20).pixelSize() == 20
@@ -82,7 +84,7 @@ def test_font_uses_token_and_pixel_override(qt_application) -> None:
 
 
 def test_font_mono_hint_and_letter_spacing(qt_application) -> None:
-    """Font mono hint and letter spacing."""
+    """Mono styles hint Monospace; letter spacing is spacing_em times the pixel size, and 0 when unset."""
     mono = next(name for name, spec in TYPE.items() if spec["family"] == "mono")
     assert font(mono).styleHint() == QFont.StyleHint.Monospace
     spaced = next((name for name, spec in TYPE.items() if spec["spacing_em"]), None)
@@ -93,7 +95,7 @@ def test_font_mono_hint_and_letter_spacing(qt_application) -> None:
 
 
 def test_font_validation(qt_application) -> None:
-    """Font validation."""
+    """A zero size raises ValueError, a text size TypeError and an unknown style KeyError."""
     with pytest.raises(ValueError):
         font("ui-body", 0)
     with pytest.raises(TypeError):
@@ -103,7 +105,7 @@ def test_font_validation(qt_application) -> None:
 
 
 def test_type_and_sizes() -> None:
-    """Type and sizes."""
+    """Overlay text is at least 11 px, node and overlay widths match the spec, and opacities lie in (0, 1]."""
     assert TYPE["overlay-row"]["px"] >= 11 and TYPE["overlay-mono"]["px"] >= 11
     assert PIXELS["size-node-w"] == 168 and PIXELS["size-overlay-w"] == 320
     assert 0 < OPACITY[next(iter(OPACITY))] <= 1
@@ -112,13 +114,13 @@ def test_type_and_sizes() -> None:
 # ---------------------------------------------------------------- qss
 
 def test_qss_fully_resolved() -> None:
-    """Qss fully resolved."""
+    """The built style sheet has no {placeholder} left unreplaced."""
     qss = build_qss()
     assert not re.search(r"\{[A-Za-z0-9_.-]+\}", qss)
 
 
 def test_qss_icon_paths_exist() -> None:
-    """Qss icon paths exist."""
+    """Every url(...) in the style sheet points to an existing file."""
     paths = re.findall(r"url\(([^)]+)\)", build_qss())
     assert paths
     from pathlib import Path
@@ -126,7 +128,7 @@ def test_qss_icon_paths_exist() -> None:
 
 
 def test_build_palette_uses_tokens(qt_application) -> None:
-    """Build palette uses tokens."""
+    """The palette maps window, highlight and disabled text to the bg-1, accent and ink-disabled tokens."""
     from PySide6.QtGui import QPalette
     palette = build_palette()
     assert palette.color(QPalette.ColorRole.Window) == color("bg-1")
@@ -135,7 +137,7 @@ def test_build_palette_uses_tokens(qt_application) -> None:
 
 
 def test_apply_theme(qt_application) -> None:
-    """Apply theme."""
+    """apply_theme sets the style sheet and body font and returns the app; a non-application raises TypeError."""
     assert apply_theme(qt_application) is qt_application
     assert qt_application.styleSheet() == build_qss()
     assert qt_application.font().pixelSize() == TYPE["ui-body"]["px"]
@@ -145,7 +147,7 @@ def test_apply_theme(qt_application) -> None:
 
 
 def test_repolish(qt_application) -> None:
-    """Repolish."""
+    """repolish returns the widget it was given; a non-widget raises TypeError."""
     label = QLabel("x")
     assert repolish(label) is label
     with pytest.raises(TypeError):
@@ -155,21 +157,21 @@ def test_repolish(qt_application) -> None:
 # ---------------------------------------------------------------- sites and effects
 
 def test_site_icons_load_and_tint(qt_application) -> None:
-    """Site icons load and tint."""
+    """Every site group icon has lit pixels in its token colour; None and unknown groups fall back to the unknown icon."""
     for group, token in SITE_TOKENS.items():
-        img = site_pixmap(group, 16, 1.0).toImage()
-        lit = [img.pixelColor(x, y) for x in range(16) for y in range(16) if img.pixelColor(x, y).alpha() > 128]
+        image = site_pixmap(group, 16, 1.0).toImage()
+        lit = [image.pixelColor(x, y) for x in range(16) for y in range(16) if image.pixelColor(x, y).alpha() > 128]
         assert lit, group
         tint = color(token)
         # premultiplied alpha rounds by a step or two when read back
-        assert all(abs(p.red() - tint.red()) <= 2 and abs(p.green() - tint.green()) <= 2
-                   and abs(p.blue() - tint.blue()) <= 2 for p in lit), group
+        assert all(abs(pixel.red() - tint.red()) <= 2 and abs(pixel.green() - tint.green()) <= 2
+                   and abs(pixel.blue() - tint.blue()) <= 2 for pixel in lit), group
     assert site_pixmap(None).toImage() == site_pixmap("unknown").toImage()
     assert site_pixmap("no-such-group").toImage() == site_pixmap("unknown").toImage()
 
 
 def test_site_pixmap_scaling_and_validation(qt_application) -> None:
-    """Site pixmap scaling and validation."""
+    """Site pixmaps scale to the size times the device pixel ratio and keep the ratio; size 0 raises ValueError."""
     assert site_pixmap("gas", 24, 1.0).width() == 24       # smooth scaling path
     assert site_pixmap("gas", 16, 2.0).width() == 32
     assert site_pixmap("gas", 16, 2.0).devicePixelRatio() == 2.0
@@ -179,18 +181,18 @@ def test_site_pixmap_scaling_and_validation(qt_application) -> None:
 
 @pytest.mark.parametrize("effect", EFFECTS)
 def test_effect_pixmap_is_tinted(qt_application, effect) -> None:
-    """Effect pixmap is tinted."""
+    """Each effect icon is drawn at the requested size with its lit pixels in the effect's colour."""
     pixmap = effect_pixmap(effect, 14, 1.0)
     assert pixmap.width() == 14
     tint = color(f"effect-{effect}")
     image = pixmap.toImage()
     lit = [image.pixelColor(x, y) for x in range(14) for y in range(14) if image.pixelColor(x, y).alpha() > 200]
     assert lit
-    assert all(abs(p.red() - tint.red()) <= 3 for p in lit)
+    assert all(abs(pixel.red() - tint.red()) <= 3 for pixel in lit)
 
 
 def test_effect_pixmap_validation(qt_application) -> None:
-    """Effect pixmap validation."""
+    """An unknown effect or a zero size raises ValueError."""
     with pytest.raises(ValueError):
         effect_pixmap("supernova")
     with pytest.raises(ValueError):
@@ -198,7 +200,7 @@ def test_effect_pixmap_validation(qt_application) -> None:
 
 
 def test_draw_effect_and_site(canvas) -> None:
-    """Draw effect and site."""
+    """No effect draws nothing and takes no width; an effect or site icon draws and returns its size (16 by default)."""
     painter, pixmap = canvas
     assert draw_effect(painter, 0, 0, None) == 0.0
     assert draw_effect(painter, 0, 0, "") == 0.0
@@ -215,7 +217,7 @@ def test_draw_effect_and_site(canvas) -> None:
 
 @pytest.mark.parametrize("label", sorted(CLASSES))
 def test_draw_class_badge_every_class(canvas, label) -> None:
-    """Draw class badge every class."""
+    """Every class badge paints and returns the width class_badge_width predicts, at least 26 px."""
     painter, pixmap = canvas
     width = draw_class_badge(painter, 5, 5, label, 0.7 if label in ("HS", "LS", "NS") else None)
     assert width == class_badge_width(label, 0.7 if label in ("HS", "LS", "NS") else None) >= 26
@@ -225,13 +227,13 @@ def test_draw_class_badge_every_class(canvas, label) -> None:
 
 
 def test_k_space_badge_is_wider_with_security(qt_application) -> None:
-    """K space badge is wider with security."""
+    """A security value widens a k-space badge but not a w-space one, which shows no security."""
     assert class_badge_width("HS", 0.9) > class_badge_width("HS")
     assert class_badge_width("C5", 0.9) == class_badge_width("C5")  # w-space shows no security
 
 
 def test_unknown_class_badge_draws_nothing(canvas) -> None:
-    """Unknown class badge draws nothing."""
+    """An unknown class label paints nothing and returns width 0."""
     painter, pixmap = canvas
     assert draw_class_badge(painter, 0, 0, "XX") == 0.0
     painter.end()
@@ -240,13 +242,13 @@ def test_unknown_class_badge_draws_nothing(canvas) -> None:
 
 
 def test_class_badge_validation(qt_application) -> None:
-    """Class badge validation."""
+    """A non-string class label raises TypeError."""
     with pytest.raises(TypeError):
         class_badge_width(5)
 
 
 def test_draw_static(canvas) -> None:
-    """Draw static."""
+    """Known and unknown static classes both paint with a positive width; a non-string class raises TypeError."""
     painter, pixmap = canvas
     known = draw_static(painter, 0, 0, "C5")
     unknown = draw_static(painter, 50, 0, "??")
@@ -262,7 +264,7 @@ def test_draw_static(canvas) -> None:
 
 @pytest.mark.parametrize("slot", range(1, 8))
 def test_character_markers(canvas, slot) -> None:
-    """Character markers."""
+    """Each marker slot paints and returns its size: 14 by default, or the size given."""
     painter, pixmap = canvas
     assert draw_character_marker(painter, 10, 10, slot) == 14
     assert draw_character_marker(painter, 40, 10, slot, 28) == 28
@@ -272,13 +274,13 @@ def test_character_markers(canvas, slot) -> None:
 
 
 def test_character_marker_shapes_wrap_after_six(qt_application) -> None:
-    """Character marker shapes wrap after six."""
+    """Slot 7 reuses the shape of slot 1; slots 2 to 5 are polygons."""
     assert painting._character_marker_path(7) == painting._character_marker_path(1)
     assert set(MARKER_POLYGONS) == {2, 3, 4, 5}
 
 
 def test_character_marker_validation(canvas) -> None:
-    """Character marker validation."""
+    """Slot 0 or size 0 raises ValueError; a text slot raises TypeError."""
     painter, _ = canvas
     with pytest.raises(ValueError):
         draw_character_marker(painter, 0, 0, 0)
@@ -293,12 +295,12 @@ def test_character_marker_validation(canvas) -> None:
     (0, 20, "high"), (3, 0, "high"), (3, None, "high"),
 ])
 def test_zkill_level_thresholds(kills_1h, kills_24h, level) -> None:
-    """Zkill level thresholds."""
+    """Kills in the last hour and day map to the none/low/med/high levels at the documented thresholds."""
     assert zkill_level(kills_1h, kills_24h) == level
 
 
 def test_zkill_level_validation() -> None:
-    """Zkill level validation."""
+    """Negative counts raise ValueError; text counts raise TypeError."""
     with pytest.raises(ValueError):
         zkill_level(-1, 0)
     with pytest.raises(TypeError):
@@ -306,7 +308,7 @@ def test_zkill_level_validation() -> None:
 
 
 def test_draw_zkill_and_recent(canvas) -> None:
-    """Draw zkill and recent."""
+    """The zKill pip is 13.5 px wide for any level, 16 px more with the recent-kill mark; the mark alone is 13 px."""
     painter, pixmap = canvas
     plain = draw_zkill(painter, 0, 0, "med")
     with_recent = draw_zkill(painter, 40, 0, "high", recent=True)
@@ -320,7 +322,7 @@ def test_draw_zkill_and_recent(canvas) -> None:
 
 @pytest.mark.parametrize("home", [True, False])
 def test_draw_owner(canvas, home) -> None:
-    """Draw owner."""
+    """Owner tags paint (home or not) at the width owner_width predicts, which grows with the text."""
     painter, pixmap = canvas
     width = draw_owner(painter, 5, 5, "ABC", 12, home=home)   # slot 12 wraps the ten owner colours
     assert width == owner_width("ABC")
@@ -331,7 +333,7 @@ def test_draw_owner(canvas, home) -> None:
 
 
 def test_owner_validation(canvas) -> None:
-    """Owner validation."""
+    """A non-string owner raises TypeError; slot 0 raises ValueError."""
     painter, _ = canvas
     with pytest.raises(TypeError):
         owner_width(1)
@@ -340,7 +342,7 @@ def test_owner_validation(canvas) -> None:
 
 
 def test_draw_chip(canvas) -> None:
-    """Draw chip."""
+    """Chips paint and widen with their text; a non-string text or a non-QColor fill raises TypeError."""
     painter, pixmap = canvas
     plain = draw_chip(painter, 5, 5, "R", color("edge-reduced"))
     inked = draw_chip(painter, 40, 5, "CRIT", color("edge-critical"), ink=QColor("white"))
@@ -357,7 +359,7 @@ def test_draw_chip(canvas) -> None:
 # ---------------------------------------------------------------- edges, text, grids
 
 def test_edge_pens(qt_application) -> None:
-    """Edge pens."""
+    """edge_pens has one pen per connection state with the spec's dash patterns, widths and selection alpha."""
     pens = edge_pens()
     assert set(pens) == {"fresh", "reduced", "critical", "unknown", "frigate_only", "lifetime_4h",
                          "lifetime_1h", "selected"}
@@ -372,7 +374,7 @@ def test_edge_pens(qt_application) -> None:
 
 
 def test_halo_text(canvas) -> None:
-    """Halo text."""
+    """Halo text paints and returns the font's text advance; a non-string text raises TypeError."""
     painter, pixmap = canvas
     text_font = font("ui-body")
     path = halo_path(10, 40, "Hello", text_font)
@@ -387,14 +389,14 @@ def test_halo_text(canvas) -> None:
 
 
 def test_stale_brush(qt_application) -> None:
-    """Stale brush."""
+    """The stale brush is a QBrush in the line-1 colour."""
     brush = stale_brush()
     assert isinstance(brush, QBrush)
     assert brush.color() == color("line-1")
 
 
 def test_draw_dot_grid(canvas) -> None:
-    """Draw dot grid."""
+    """The dot grid returns its dot count, snapped to the step (24 px by default); a step below 1 raises ValueError."""
     painter, pixmap = canvas
     rect = QRectF(0, 0, 100, 50)
     assert draw_dot_grid(painter, rect, 10) == 50
@@ -406,7 +408,7 @@ def test_draw_dot_grid(canvas) -> None:
 
 
 def test_draw_line_grid_counts(canvas) -> None:
-    """Draw line grid counts."""
+    """The line grid counts all lines with minor=True, only every third (major) one without; bad steps raise ValueError."""
     painter, _ = canvas
     rect = QRectF(0, 0, 60, 30)
     # columns 0..6 and rows 0..3 at step 10: every third line is major
@@ -419,7 +421,7 @@ def test_draw_line_grid_counts(canvas) -> None:
 
 
 def test_opacity_token() -> None:
-    """Opacity token."""
+    """opacity() returns the token's value; an unknown token raises KeyError."""
     name = next(iter(OPACITY))
     assert opacity(name) == OPACITY[name]
     with pytest.raises(KeyError):

@@ -50,11 +50,11 @@ def test_wormhole_types() -> None:
     h296 = UNIVERSE.wormhole_type(" h296 ")
     assert h296.destinations == ("C5",) and h296.size == "XL"
     assert UNIVERSE.wormhole_type("XXXX") is None and "K162" in UNIVERSE.wormhole_type_names()
-    types = [t.name for t in UNIVERSE.wormhole_types_in(HOME.id)]
+    types = [wormhole_type.name for wormhole_type in UNIVERSE.wormhole_types_in(HOME.id)]
     assert types[0] == "H296" and "K162" not in types
     assert "C008" in types and "B274" not in types
-    jita = [t.name for t in UNIVERSE.wormhole_types_in(UNIVERSE.by_name("Jita").id)]
-    assert jita and all("HS" in UNIVERSE.wormhole_type(n).spawns_in for n in jita)
+    jita = [wormhole_type.name for wormhole_type in UNIVERSE.wormhole_types_in(UNIVERSE.by_name("Jita").id)]
+    assert jita and all("HS" in UNIVERSE.wormhole_type(name).spawns_in for name in jita)
     assert UNIVERSE.wormhole_types_in(1) == [] and UNIVERSE.static_types(1) == []
     assert UNIVERSE.static_destination_classes(HOME.id) == ["C5"]
     with pytest.raises(ValueError):
@@ -63,7 +63,7 @@ def test_wormhole_types() -> None:
 
 def test_size_for_jump_mass() -> None:
     """Max jump mass maps to S/M/L/XL at CCP's limits."""
-    assert [size_for_jump_mass(m) for m in (None, 0, 5e6, 62e6, 375e6, 2e9)] == [None, None, "S", "M", "L", "XL"]
+    assert [size_for_jump_mass(mass) for mass in (None, 0, 5e6, 62e6, 375e6, 2e9)] == [None, None, "S", "M", "L", "XL"]
     with pytest.raises(TypeError):
         size_for_jump_mass("big")
     with pytest.raises(ValueError):
@@ -99,7 +99,7 @@ def test_whtype_wander_reads_wandering_types_only() -> None:
 
 def test_known_space_label_rounds_like_the_client() -> None:
     """0.45 shows as 0.5 (high-sec); 0.04 shows as 0.0 (null-sec)."""
-    assert [build_static.known_space_label(s) for s in (1.0, 0.45, 0.44, 0.05, 0.04, -0.5)] == [
+    assert [build_static.known_space_label(security) for security in (1.0, 0.45, 0.44, 0.05, 0.04, -0.5)] == [
         "HS", "HS", "LS", "LS", "NS", "NS"]
     with pytest.raises(ValueError):
         build_static.known_space_label(2.0)
@@ -117,7 +117,7 @@ def test_json_lines_skips_blank_lines(tmp_path) -> None:
     with zipfile.ZipFile(buffer, "w") as archive:
         archive.writestr("x.jsonl", '{"a": 1}\n\n{"a": 2}\n')
     with zipfile.ZipFile(buffer) as archive:
-        assert [r["a"] for r in build_static.json_lines(archive, "x.jsonl")] == [1, 2]
+        assert [record["a"] for record in build_static.json_lines(archive, "x.jsonl")] == [1, 2]
 
 
 def test_fetch_uses_the_cache(tmp_path) -> None:
