@@ -73,7 +73,7 @@ WHTYPE_SCRIPT = ("{wormhole:'H296', respawn:['Wandering'], spawn_in:['Class 5','
 
 
 @pytest.fixture
-def fake_sources(tmp_path, monkeypatch):
+def fake_sources(tmp_path, monkeypatch) -> dict:
     """Redirect the build into tmp_path and serve fake source files instead of downloading."""
     monkeypatch.setattr(build_static, "CACHE", tmp_path / "cache")
     monkeypatch.setattr(build_static, "OUTPUT", tmp_path / "universe.sqlite")
@@ -81,6 +81,7 @@ def fake_sources(tmp_path, monkeypatch):
     state = {"sde_build": True, "calls": []}
 
     def fake_fetch(url: str, destination: Path, refresh: bool) -> Path:
+        """Record the call and write the fake file for the source URL."""
         state["calls"].append((url, refresh))
         if url == build_static.SDE_URL:
             make_sde(destination, state["sde_build"])
@@ -102,19 +103,22 @@ def fake_sources(tmp_path, monkeypatch):
 
 
 def test_build_end_to_end(fake_sources) -> None:
-    """Build end to end."""
+    """A build from the fake sources writes the systems with classes, effects, gates and statics (the
+    Wanderer/anoik dispute settled by zKill), the wormhole types and the meta rows, and pins the
+    zKill resolution."""
     output = build_static.build()
     assert output == fake_sources["tmp"] / "universe.sqlite"
     universe = Universe(output)
     assert sorted(universe.all_names()) == ["J100001", "J100002", "Jita", "Nullish", "Perimeter"]
-    j1, j2 = universe.by_name("J100001"), universe.by_name("J100002")
-    assert (j1.system_class, j1.effect, j1.wormhole_space, j1.region) == ("C5", "pulsar", True, "A-R00001")
-    assert j2.system_class == "C6" and j2.effect is None            # the system's own class wins
-    assert [universe.by_name(n).system_class for n in ("Jita", "Perimeter", "Nullish")] == ["HS", "LS", "NS"]
+    first_system, second_system = universe.by_name("J100001"), universe.by_name("J100002")
+    assert (first_system.system_class, first_system.effect, first_system.wormhole_space,
+            first_system.region) == ("C5", "pulsar", True, "A-R00001")
+    assert second_system.system_class == "C6" and second_system.effect is None            # the system's own class wins
+    assert [universe.by_name(name).system_class for name in ("Jita", "Perimeter", "Nullish")] == ["HS", "LS", "NS"]
     assert not universe.by_name("Jita").wormhole_space
     assert universe.by_name("Abyssal") is None
     assert universe.gate_adjacent(30000142, 30000144) and len(universe.gate_neighbours(30000142)) == 1
-    assert j1.statics == ("H296",) and j2.statics == ("N110",)     # dispute settled by zKill
+    assert first_system.statics == ("H296",) and second_system.statics == ("N110",)     # dispute settled by zKill
     h296 = universe.wormhole_type("H296")
     assert h296.destinations == ("C5",) and h296.spawns_in == ("C5", "C6") and h296.wanders_into == ("C5", "HS")
     assert h296.total_mass == 3000000000 and h296.is_static
@@ -130,7 +134,8 @@ def test_build_end_to_end(fake_sources) -> None:
 
 
 def test_build_without_sde_build_number_and_second_build_replaces(fake_sources) -> None:
-    """Build without sde build number and second build replaces."""
+    """An SDE without a build number stores "None"; a second build with refresh replaces the output
+    and downloads every source again."""
     fake_sources["sde_build"] = False
     build_static.build()
     build_static.build(refresh=True)          # an existing output is replaced
@@ -140,13 +145,13 @@ def test_build_without_sde_build_number_and_second_build_replaces(fake_sources) 
 
 
 def test_build_validation(fake_sources) -> None:
-    """Build validation."""
+    """A refresh flag that is not a bool raises TypeError."""
     with pytest.raises(TypeError):
         build_static.build("yes")
 
 
 def test_build_uses_pinned_resolution(fake_sources, monkeypatch) -> None:
-    """Build uses pinned resolution."""
+    """Statics pinned by an earlier build are used as they are, without asking zKill again."""
     (fake_sources["tmp"]).mkdir(exist_ok=True)
     (fake_sources["tmp"] / "resolved.json").write_text(json.dumps({"J100002": {"statics": ["B274"]}}))
     monkeypatch.setattr(build_static, "zkill_statics", lambda system_id: pytest.fail("asked zKill again"))
@@ -155,7 +160,8 @@ def test_build_uses_pinned_resolution(fake_sources, monkeypatch) -> None:
 
 
 def test_resolve_statics_union_when_zkill_has_nothing(fake_sources, monkeypatch) -> None:
-    """Resolve statics union when zkill has nothing."""
+    """When the sources disagree and zKill has no answer, the statics are the sorted union, pinned with
+    source "union"; systems without a name are dropped and a list of names raises TypeError."""
     monkeypatch.setattr(build_static, "zkill_statics", lambda system_id: None)
     result = build_static.resolve_statics({1: "J1", 2: "J2"}, {1: ["A"], 2: ["B"], 3: ["C"]}, {1: ["Z"], 2: ["B"]})
     assert result == {1: ["A", "Z"], 2: ["B"]}
@@ -165,12 +171,12 @@ def test_resolve_statics_union_when_zkill_has_nothing(fake_sources, monkeypatch)
 
 
 def test_resolve_statics_single_source(fake_sources) -> None:
-    """Resolve statics single source."""
+    """A system that only one source knows takes that source's statics."""
     assert build_static.resolve_statics({1: "J1", 2: "J2"}, {1: ["A"]}, {2: ["B"]}) == {1: ["A"], 2: ["B"]}
 
 
 def test_main_passes_refresh(monkeypatch) -> None:
-    """Main passes refresh."""
+    """The build command passes --refresh on to build() and exits with 0 either way."""
     calls = []
     monkeypatch.setattr(build_static, "build", lambda refresh=False: calls.append(refresh))
     assert build_static.main(["--refresh"]) == 0
@@ -179,7 +185,7 @@ def test_main_passes_refresh(monkeypatch) -> None:
 
 
 def test_main_never_touches_real_outputs() -> None:
-    """Main never touches real outputs."""
+    """After the tests that redirect the build, its output and resolution paths are the real ones again."""
     assert build_static.OUTPUT == REAL_OUTPUT and build_static.RESOLVED == REAL_RESOLVED
 
 
@@ -195,10 +201,12 @@ class FakeResponse(io.BytesIO):
 
 
 def test_fetch_downloads_and_caches(tmp_path, monkeypatch) -> None:
-    """Fetch downloads and caches."""
+    """fetch downloads with the Homebound User-Agent, reuses the cached file, downloads again on refresh
+    and rejects an empty URL or a target that is not a Path."""
     requested = []
 
-    def fake_urlopen(request, timeout):
+    def fake_urlopen(request, timeout) -> FakeResponse:
+        """Record the URL, User-Agent and timeout and answer with a fixed payload."""
         requested.append((request.full_url, request.get_header("User-agent"), timeout))
         return FakeResponse(b"payload")
 
@@ -218,7 +226,8 @@ def test_fetch_downloads_and_caches(tmp_path, monkeypatch) -> None:
 
 
 def test_zkill_statics_parses_page(monkeypatch) -> None:
-    """Zkill statics parses page."""
+    """zkill_statics reads the sorted static codes from the system page, gives None for a page without
+    them and rejects system ID 0."""
     page = (b"<html><body><div>Statics: <b>(N110)</b> &amp; (H296)</div> Alltime kills</body></html>")
     seen = []
     monkeypatch.setattr(build_static.urllib.request, "urlopen",
@@ -233,10 +242,11 @@ def test_zkill_statics_parses_page(monkeypatch) -> None:
 
 
 def test_small_helpers() -> None:
-    """Small helpers."""
+    """whole_number truncates numbers and numeric strings and gives None otherwise; known_space_label
+    rounds security to HS/LS/NS and rejects values out of range; an empty whtype script gives nothing."""
     assert build_static.whole_number("12.7") == 12 and build_static.whole_number(5) == 5
     assert build_static.whole_number("n/a") is None and build_static.whole_number(None) is None
-    assert [build_static.known_space_label(s) for s in (0.95, 0.45, 0.44, 0.1, 0.0, -0.3)] == \
+    assert [build_static.known_space_label(security) for security in (0.95, 0.45, 0.44, 0.1, 0.0, -0.3)] == \
         ["HS", "HS", "LS", "LS", "NS", "NS"]
     with pytest.raises(ValueError):
         build_static.known_space_label(2)
@@ -312,7 +322,7 @@ class FakeSettings:
 
 
 @pytest.fixture
-def fake_app(qt_application, monkeypatch):
+def fake_app(qt_application, monkeypatch) -> type:
     """Replace everything main() would start for real; QApplication.exec returns 0."""
     from PySide6.QtWidgets import QApplication
 
@@ -331,7 +341,8 @@ def fake_app(qt_application, monkeypatch):
 
 @pytest.mark.parametrize(("log_directory", "settings_page"), [("/logs", None), ("", 0)])
 def test_main_normal_path(fake_app, monkeypatch, log_directory, settings_page) -> None:
-    """Main normal path."""
+    """main() starts the focus tracker and the state, shows the window, stops the state on exit and
+    opens the settings at page 0 only when no log folder is set."""
     monkeypatch.setattr(fake_app, "load", classmethod(lambda cls: FakeSettings(log_directory)))
     assert entry_point.main() == 0
     window = FakeWindow.instances[0]
@@ -341,10 +352,11 @@ def test_main_normal_path(fake_app, monkeypatch, log_directory, settings_page) -
 
 
 def test_main_missing_universe_shows_error(fake_app, monkeypatch) -> None:
-    """Main missing universe shows error."""
+    """Without universe data, main() shows the startup error dialog, opens no window and returns 1."""
     shown = []
 
     def broken_universe() -> None:
+        """Fail like a missing universe file."""
         raise UniverseDataError("missing")
 
     monkeypatch.setattr("homebound.universe.db.Universe", broken_universe)
@@ -357,5 +369,5 @@ def test_main_missing_universe_shows_error(fake_app, monkeypatch) -> None:
 
 
 def test_module_exposes_main() -> None:
-    """Module exposes main."""
+    """Importing homebound.__main__ gives a callable main()."""
     assert callable(entry_point.main) and "homebound.__main__" in sys.modules

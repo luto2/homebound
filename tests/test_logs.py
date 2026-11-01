@@ -63,7 +63,7 @@ def test_parse_text_header_and_first() -> None:
         + line("2026.10.28 16:55:00", "hello", sender="Pilot") \
         + line("2026.10.28 16:58:00", "Channel changed to Local : J100551")
     changes = parse_log_text(text, 42)
-    assert [(c.system, c.first, c.character_name) for c in changes] == [
+    assert [(change.system, change.first, change.character_name) for change in changes] == [
         ("J161940", True, "Ijomo Ohaya"), ("J100551", False, "Ijomo Ohaya")]
     assert parse_header(HEADER)[1] == datetime(2026, 10, 28, 16, 51, 48, tzinfo=timezone.utc)
     assert parse_log_text(line("2026.10.28 16:51:53", "Channel changed to Local : Jita"), 7)[0].character_name == "7"
@@ -84,7 +84,7 @@ def test_parse_log_file(tmp_path) -> None:
     """A whole file is parsed; non-log files give nothing."""
     path = tmp_path / "Local_20261028_165148_7.txt"
     write_log(path, HEADER + line("2026.10.28 16:51:53", "Channel changed to Local : Jita"))
-    assert [c.system for c in parse_log_file(path)] == ["Jita"]
+    assert [change.system for change in parse_log_file(path)] == ["Jita"]
     assert parse_log_file(tmp_path / "notes.txt") == []
 
 
@@ -95,13 +95,13 @@ def test_scanner_tail(tmp_path) -> None:
               + line("2026.10.28 16:52:53", "Channel changed to Local : Perimeter"))
     scanner = LogScanner(tmp_path)
     result = scanner.poll(now=datetime(2026, 10, 28, 17, tzinfo=timezone.utc))
-    assert [(c.system, c.first) for c in result.changes] == [("Perimeter", True)]
+    assert [(change.system, change.first) for change in result.changes] == [("Perimeter", True)]
     assert scanner.characters[7].name == "Ijomo Ohaya" and result.characters_changed
     with open(path, "ab") as log:
         log.write(line("2026.10.28 17:00:00", "Channel changed to Local : J161940").encode("utf-16-le"))
         log.write(line("2026.10.28 17:00:01", "Channel changed to Local : J161940").encode("utf-16-le"))
     result = scanner.poll()
-    assert [(c.system, c.first) for c in result.changes] == [("J161940", False)]
+    assert [(change.system, change.first) for change in result.changes] == [("J161940", False)]
     assert scanner.poll().changes == []
     with pytest.raises(TypeError):
         scanner.poll(now="now")
@@ -119,7 +119,7 @@ def test_scanner_partial_write(tmp_path) -> None:
     assert scanner.poll().changes == []
     with open(path, "ab") as log:
         log.write(data[15:])
-    assert [c.system for c in scanner.poll().changes] == ["J161940"]
+    assert [change.system for change in scanner.poll().changes] == ["J161940"]
 
 
 def test_new_session_file(tmp_path) -> None:
@@ -130,7 +130,7 @@ def test_new_session_file(tmp_path) -> None:
     scanner.poll()
     write_log(tmp_path / "Local_20261029_100000_7.txt",
               HEADER + line("2026.10.29 10:00:01", "Channel changed to Local : Amarr"))
-    assert [(c.system, c.first) for c in scanner.poll().changes] == [("Amarr", True)]
+    assert [(change.system, change.first) for change in scanner.poll().changes] == [("Amarr", True)]
 
 
 def test_rewritten_shorter_file_is_read_from_the_top(tmp_path) -> None:
@@ -172,7 +172,7 @@ def test_watcher_emits_signals(tmp_path, qt_application) -> None:
     watcher.charactersChanged.connect(lambda: updates.append(True))
     assert watcher.poll() is None and statuses == ["err"]
     watcher.set_log_directory(str(tmp_path))
-    assert [c.system for c in changes] == ["Jita"] and updates and statuses[-1] == "ok"
+    assert [change.system for change in changes] == ["Jita"] and updates and statuses[-1] == "ok"
     assert 7 in watcher.characters
     watcher.start()
     assert watcher.timer.isActive()
@@ -183,7 +183,7 @@ def test_watcher_emits_signals(tmp_path, qt_application) -> None:
 
 def test_replay_prints_jumps_and_the_tree(tmp_path, capsys) -> None:
     """Replay answers questions with the guess and prints the tree."""
-    c5 = next(s for s in UNIVERSE.all_systems() if s.system_class == "C5" and s.id != HOME.id)
+    c5 = next(system for system in UNIVERSE.all_systems() if system.system_class == "C5" and system.id != HOME.id)
     log = tmp_path / "Local_20261028_165148_7.txt"
     write_log(log, HEADER + line("2026.10.28 16:51:53", f"Channel changed to Local : {HOME.name}")
               + line("2026.10.28 16:52:53", f"Channel changed to Local : {c5.name}")

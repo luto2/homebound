@@ -36,13 +36,13 @@ def test_systems_add_update_remove(store) -> None:
     child = store.add_system(JITA, parent_id=HOME.id, hole_index=2, x=10.0)
     assert (child.parent_id, child.hole_index, child.x) == (HOME.id, 2, 10.0)
     assert store.add_system(JITA, x=99.0).x == 10.0          # existing system stays as it is
-    assert [s.id for s in store.children(HOME.id)] == [JITA]
+    assert [system.id for system in store.children(HOME.id)] == [JITA]
     assert store.update_system(JITA, custom_name="Trade") and store.system(JITA).custom_name == "Trade"
     assert store.update_system(JITA) is False
     assert store.remove_system(HOME.id) and store.system(JITA).parent_id is None
     assert store.remove_system(HOME.id) is False
     assert store.system(HOME.id) is None and not store.has_system(HOME.id)
-    assert [s.id for s in store.systems()] == [JITA]
+    assert [system.id for system in store.systems()] == [JITA]
 
 
 def test_system_validation(store) -> None:
@@ -127,7 +127,7 @@ def test_signatures_upsert_update_delete(store) -> None:
     assert store.update_signature(HOME.id, "ABC-123", lifetime=0)
     assert store.signature(HOME.id, "ABC-123").lifetime_set_at is None
     store.upsert_signature(Signature(HOME.id, "DEF-456"))
-    assert [s.signature_id for s in store.signatures(HOME.id)] == ["ABC-123", "DEF-456"]
+    assert [signature.signature_id for signature in store.signatures(HOME.id)] == ["ABC-123", "DEF-456"]
     assert store.delete_signatures(HOME.id, ["ABC-123", "NOP-000"]) == 1
     assert store.signature(HOME.id, "ABC-123") is None
 

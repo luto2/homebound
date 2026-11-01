@@ -20,13 +20,13 @@ def test_known_space_radius(simulation) -> None:
     simulation.jump(jita.name)  # home -> Jita by WH; Jita is the entrance
     distances = UNIVERSE.gate_distances(jita.id, 6)
     for jumps in range(0, 7):
-        system_id = next(k for k, v in sorted(distances.items()) if v == jumps)
+        system_id = next(candidate for candidate, distance in sorted(distances.items()) if distance == jumps)
         chain = resolve_chain(simulation.store, UNIVERSE, system_id, HOME.id, radius=5)
         if jumps <= 5:
             assert chain is not None and HOME.id in chain.members, jumps
             if jumps:
                 assert chain.entrance_id == jita.id and chain.jumps == jumps
-                assert any(r.virtual and r.current and r.jumps_from == jumps for r in chain.rows)
+                assert any(row.virtual and row.current and row.jumps_from == jumps for row in chain.rows)
         else:
             assert chain is None
 
@@ -39,15 +39,15 @@ def test_tree_rows_have_box_drawing_prefixes(simulation) -> None:
     c3 = pick_system("C3")
     simulation.jump(c3.name)
     chain = resolve_chain(simulation.store, UNIVERSE, c3.id, HOME.id)
-    assert [r.system_id for r in chain.rows] == [HOME.id, c5.id, c3.id]
-    assert [r.prefix for r in chain.rows] == ["", "├ ", "└ "]
+    assert [row.system_id for row in chain.rows] == [HOME.id, c5.id, c3.id]
+    assert [row.prefix for row in chain.rows] == ["", "├ ", "└ "]
     assert chain.rows[2].current
 
 
 def test_deep_rows_fold_and_root_without_home() -> None:
     """Rows past max_depth get a … prefix; without home the topmost parent is the root."""
     simulation = MapSimulation()
-    systems = [pick_system(c) for c in ("C1", "C2", "C3")]
+    systems = [pick_system(system_class) for system_class in ("C1", "C2", "C3")]
     previous = HOME.id
     for system in systems:
         simulation.tracker.add_wormhole(previous, system.id)

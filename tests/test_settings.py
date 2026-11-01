@@ -97,7 +97,7 @@ def test_detected_log_folder_is_used(data_dir, monkeypatch) -> None:
 def test_marker_slots_fill_up_then_share() -> None:
     """Characters get the first free slot; past six they share slots in turn."""
     settings = Settings()
-    assert [settings.slot_for(i) for i in range(1, 7)] == [1, 2, 3, 4, 5, 6]
+    assert [settings.slot_for(character_id) for character_id in range(1, 7)] == [1, 2, 3, 4, 5, 6]
     assert settings.slot_for(3) == 3
     assert settings.slot_for(7) == 1 and settings.slot_for(8) == 2
     with pytest.raises(TypeError):
