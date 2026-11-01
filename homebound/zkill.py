@@ -89,6 +89,7 @@ class ZkillFetcher:
         self.on_update, self.on_status = on_update, on_status
         self.queue: queue.Queue[tuple[int, bool] | None] = queue.Queue()
         self.pending: set[int] = set()
+        self.forced: set[int] = set()      # queued systems that are to be fetched even if fresh
         self._pending_lock = threading.Lock()
         self.enabled = True
         self._stopping = False
@@ -104,14 +105,17 @@ class ZkillFetcher:
         self.queue.put(_STOP)
 
     def request(self, system_ids: Iterable[int], force: bool = False) -> int:
-        """Queue systems for a fetch; systems already queued are skipped.
+        """Queue systems for a fetch; systems already queued are not queued twice.
+
+        A forced request for a system that is already queued without force upgrades the queued
+        entry, so it is fetched even if the cache is fresh.
 
         Args:
             system_ids: The systems.
             force: Fetch even if the cache is fresh.
 
         Returns:
-            The number of systems queued.
+            The number of systems queued or upgraded to forced.
         """
         system_ids = list(system_ids)
         for system_id in system_ids:
@@ -122,8 +126,13 @@ class ZkillFetcher:
         for system_id in system_ids:
             with self._pending_lock:
                 if system_id in self.pending:
+                    if force and system_id not in self.forced:
+                        self.forced.add(system_id)
+                        queued += 1
                     continue
                 self.pending.add(system_id)
+                if force:
+                    self.forced.add(system_id)
             self.queue.put((system_id, force))
             queued += 1
         return queued
@@ -145,6 +154,8 @@ class ZkillFetcher:
             system_id, force = item
             with self._pending_lock:
                 self.pending.discard(system_id)
+                force = force or system_id in self.forced
+                self.forced.discard(system_id)
             if self.database_path != path:  # the user switched maps
                 store.close()
                 path = self.database_path

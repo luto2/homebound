@@ -133,6 +133,26 @@ def test_new_session_file(tmp_path) -> None:
     assert [(c.system, c.first) for c in scanner.poll().changes] == [("Amarr", True)]
 
 
+def test_rewritten_shorter_file_is_read_from_the_top(tmp_path) -> None:
+    """A log rewritten under the same name with less data is read again: header and last location, no jumps."""
+    path = tmp_path / "Local_20261028_165148_7.txt"
+    write_log(path, HEADER + line("2026.10.28 16:51:53", "Channel changed to Local : Jita")
+              + line("2026.10.28 16:52:53", "Channel changed to Local : Perimeter")
+              + line("2026.10.28 16:53:53", "Channel changed to Local : Amarr"))
+    scanner = LogScanner(tmp_path)
+    scanner.poll()
+    write_log(path, HEADER.replace("Ijomo Ohaya", "Other Pilot")
+              + line("2026.10.28 18:00:00", "Channel changed to Local : J161940")
+              + line("2026.10.28 18:01:00", "Channel changed to Local : J100551"))
+    assert path.stat().st_size < scanner.characters[7].offset
+    changes = scanner.poll().changes
+    assert [(change.system, change.first, change.character_name) for change in changes] == [
+        ("J100551", True, "Other Pilot")]
+    with open(path, "ab") as log:
+        log.write(line("2026.10.28 18:02:00", "Channel changed to Local : Jita").encode("utf-16-le"))
+    assert [(change.system, change.first) for change in scanner.poll().changes] == [("Jita", False)]
+
+
 def test_scanner_without_a_folder(tmp_path) -> None:
     """A missing folder is not valid and finds nothing."""
     scanner = LogScanner(tmp_path / "missing")
