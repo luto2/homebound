@@ -8,7 +8,9 @@ from PySide6.QtGui import QAction, QCloseEvent, QMouseEvent
 from PySide6.QtWidgets import QApplication, QLineEdit, QMenu, QPlainTextEdit, QSystemTrayIcon
 
 from conftest import HOME, SCAN, pick_system
+from homebound.backup import list_backups
 from homebound.logs.parser import SystemChange
+from homebound.mapdb.store import Store
 from homebound.mapping import signature_parser
 from homebound.mapping.tracker import AutoNamed, NamingRequest, UnknownJump
 from homebound.ui import map_window as map_window_module
@@ -261,17 +263,31 @@ def test_delete_map(window, modal) -> None:
     """Deleting another map asks first, removes its files and shows a toast."""
     settings = window.state.settings
     path = settings.add_map("Doomed")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("x")
+    Store(path).close()
     wal = path.with_name(path.name + "-wal")
-    wal.write_text("x")
+    wal.write_text("")
     assert window.delete_map("Doomed") is False  # cancelled
-    assert "Doomed" in settings.maps
+    assert "Doomed" in settings.maps and list_backups() == []
     modal.handler = lambda dialog: 1
     assert window.delete_map("Doomed") is True
     assert "Doomed" not in settings.maps and not path.exists() and not wal.exists()
+    [kept] = list_backups()
+    assert kept.reason == "delete" and "Doomed" in kept.maps
     with pytest.raises(TypeError):
         window.delete_map(None)
+
+
+def test_delete_map_blocked_by_failed_backup(window, modal) -> None:
+    """A map whose backup fails is kept, and the toast says why."""
+    settings = window.state.settings
+    path = settings.add_map("Broken")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("not a database")
+    modal.handler = lambda dialog: 1
+    assert window.delete_map("Broken") is False
+    assert "Broken" in settings.maps and path.exists()
+    assert "not a map file" in window.state.last_backup_error
+    assert list_backups() == []
 
 
 def test_delete_map_refused(window, modal) -> None:
@@ -370,6 +386,17 @@ def test_status_bar_updates(window) -> None:
     assert "✕" in window.status_labels["kwin"].text()
     assert window._status("logs", "other", "plain") is True
     assert window._status("nope", "ok", "x") is False
+
+
+def test_backup_status_shows_label_and_warns(window) -> None:
+    """The backup label is hidden until a backup reports; a warning also shows a toast."""
+    label = window.status_labels["backup"]
+    assert label.isHidden() and window.backup_separator.isHidden()
+    window._status("backup", "ok", "Backed up 12:00")
+    assert not label.isHidden() and not window.backup_separator.isHidden()
+    assert not window.toasts.toasts
+    window.state.status.emit("backup", "warn", "Backup failed: disk full")
+    assert "disk full" in label.text() and len(window.toasts.toasts) == 1
 
 
 # ---------------------------------------------------------------- find / fit

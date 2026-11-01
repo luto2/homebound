@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QPushButton, QRadioButton, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QVBoxLayout, QWidget,
 )
 
+from ..backup import BackupInfo, day_month
 from ..mapdb.store import Connection, Signature, map_stats
 from ..mapping.tracker import NamingRequest
 from ..theme import painting
@@ -706,12 +707,13 @@ class ConfirmDeleteMapDialog(BaseDialog):
         """Build the question for the map ``name`` stored at ``path``, with what would be lost."""
         require_text(name, "name")
         require_type(path, Path, "path")
-        super().__init__(parent, f"Delete the map “{name}”?", "This deletes its file and can't be undone.")
+        super().__init__(parent, f"Delete the map “{name}”?", "This deletes its file.")
         self.body.addWidget(self._loss_summary(map_stats(path)))
         relative = path.name if path.parent.name != "maps" else f"maps/{path.name}"
         details = QLabel(f"{'Home ' + home if home else 'No home'} · file "
                          f"<span style=\"font-family: monospace\">{relative}</span>"
-                         " (+ -wal, -shm). Characters and settings are kept.")
+                         " (+ -wal, -shm). Characters and settings are kept. "
+                         "A backup is kept in Settings → Backups.")
         details.setProperty("role", "help")
         details.setWordWrap(True)
         self.body.addWidget(details)
@@ -850,3 +852,62 @@ class StartupErrorDialog(BaseDialog):
         self.copy_button.setIcon(glyph_icon("✓", "success"))
         QTimer.singleShot(2000, lambda: self.copy_button.setIcon(copy_icon()))
         return self.command
+
+
+class RestoreBackupDialog(BaseDialog):
+    """Restore … from Settings → Backups: pick maps, then "as new map" or "replace" (neither preselected)."""
+
+    def __init__(self, parent: QWidget | None, info: BackupInfo, active_map: str) -> None:
+        """Build the choices for one backup.
+
+        Args:
+            parent: The settings dialog.
+            info: The backup.
+            active_map: The open map, named in the replace option.
+        """
+        require_type(info, BackupInfo, "info")
+        when = info.created_at.astimezone()
+        super().__init__(parent, f"Restore the backup of {day_month(when)} {when:%Y, %H:%M}",
+                         f"Reason: {info.reason} · {len(info.maps)} map{'s' * (len(info.maps) != 1)}")
+        self.caption("Maps")
+        self.map_boxes: dict[str, QCheckBox] = {}
+        for name, entry in info.maps.items():
+            home = entry.get("home_system") or "no home"
+            box = QCheckBox(f"{name}  ·  {home}")
+            box.setChecked(True)
+            box.toggled.connect(self._sync)
+            self.map_boxes[name] = box
+            self.body.addWidget(box)
+        self.caption("How")
+        self.mode_group = QButtonGroup(self)
+        self.as_new = QRadioButton("Restore as new map (nothing is overwritten)")
+        self.replace = QRadioButton("Replace the map (the current state is backed up first)")
+        for button in (self.as_new, self.replace):
+            self.mode_group.addButton(button)
+            button.toggled.connect(self._sync)
+            self.body.addWidget(button)
+        note = QLabel(f"Replacing “{active_map}” closes and reopens it." if active_map in info.maps else "")
+        note.setProperty("role", "help")
+        note.setVisible(bool(note.text()))
+        self.body.addWidget(note)
+        self.with_settings = QCheckBox("Also restore settings (the list of maps stays)")
+        self.with_settings.toggled.connect(self._sync)
+        self.body.addWidget(self.with_settings)
+        self.restore_button = self.add_buttons(primary_text="Restore")
+        self._sync()
+        self.adjustSize()
+
+    def selected_maps(self) -> list[str]:
+        """Return the ticked map names."""
+        return [name for name, box in self.map_boxes.items() if box.isChecked()]
+
+    def _sync(self) -> bool:
+        """Enable Restore once there is something to do: maps with a way picked, or the settings alone.
+
+        Returns:
+            Whether Restore is enabled.
+        """
+        maps = bool(self.selected_maps())
+        ready = (maps and self.mode_group.checkedButton() is not None) or (not maps and self.with_settings.isChecked())
+        self.restore_button.setEnabled(ready)
+        return ready

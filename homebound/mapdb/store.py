@@ -2,6 +2,7 @@
 import sqlite3
 from dataclasses import dataclass, fields
 from datetime import datetime, timedelta, timezone
+from collections.abc import Callable
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -214,16 +215,56 @@ def _check_system_id(system_id: Any, name: str = "system_id") -> int:
     return require_integer(system_id, name, minimum=1)
 
 
+def _table_columns(database: sqlite3.Connection, table: str) -> set[str]:
+    """Return the column names a table has now (empty if the table doesn't exist)."""
+    return {row[1] for row in database.execute(f"PRAGMA table_info({table})")}
+
+
+def needs_migration(path: Path | str) -> bool:
+    """Return whether opening a map file would change its schema, without changing anything.
+
+    A missing, empty or unreadable file gives False (there is nothing to keep, or opening it fails anyway).
+
+    Raises:
+        TypeError: If ``path`` is not a string or path.
+    """
+    require_type(path, (str, Path), "path")
+    if str(path) == ":memory:" or not Path(path).is_file() or Path(path).stat().st_size == 0:
+        return False
+    database = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        tables = {row[0] for row in database.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if any(old in tables and new not in tables for old, new in TABLE_RENAMES):
+            return True
+        for table, old, new in COLUMN_RENAMES:
+            have = _table_columns(database, table)
+            if old in have and new not in have:
+                return True
+        for table, column, _ in COLUMN_ADDITIONS:
+            have = _table_columns(database, table)
+            if have and column not in have:
+                return True
+        old_keys = [old for old, _ in KEY_RENAMES]
+        return "key" in _table_columns(database, "key_value") and database.execute(
+            f"SELECT count(*) FROM key_value WHERE key IN ({','.join('?' * len(old_keys))})", old_keys).fetchone()[0] > 0
+    except sqlite3.Error:
+        return False
+    finally:
+        database.close()
+
+
 class Store:
     """One map file: open it, migrate it to the current schema, and read and write its rows."""
 
     SNAPSHOT_KEYS = {"systems": ("id",), "connections": ("id",), "signatures": ("system_id", "signature_id")}
 
-    def __init__(self, path: Path | str) -> None:
+    def __init__(self, path: Path | str, before_migration: Callable[[Path], object] | None = None) -> None:
         """Open (and create if needed) the map file.
 
         Args:
             path: The SQLite file, or ``":memory:"`` for a throwaway map.
+            before_migration: Called with the path before an older file's schema is changed, e.g. to
+                back it up. If it raises, the file isn't opened.
 
         Raises:
             TypeError: If ``path`` is not a string or path.
@@ -232,6 +273,8 @@ class Store:
         self.path = str(path)
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+        if before_migration and needs_migration(self.path):
+            before_migration(Path(self.path))
         self.database = sqlite3.connect(self.path)
         self.database.row_factory = sqlite3.Row
         self._migrate()
@@ -239,7 +282,7 @@ class Store:
 
     def _columns(self, table: str) -> set[str]:
         """Return the column names a table has now (empty if the table doesn't exist)."""
-        return {row[1] for row in self.database.execute(f"PRAGMA table_info({table})")}
+        return _table_columns(self.database, table)
 
     def _migrate(self) -> int:
         """Bring an older map file up to the current schema.

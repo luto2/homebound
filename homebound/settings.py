@@ -13,6 +13,7 @@ SETTINGS_FILE = DATA_DIR / "settings.json"
 OVERLAY_MODES = ("off", "follow", "pinned_eve", "pinned_always")
 SCHEMES = ("numeric", "a2a", "letter_numeric")
 DEFAULT_MAP = "Main"
+MAP_NAME_LIMIT = 32                       # characters
 MARKER_SLOTS = 6
 # settings.json keys from before abbreviations were spelled out -> current field names
 RENAMED_KEYS = {"log_dir": "log_directory", "overlay_pinned_char": "overlay_pinned_character",
@@ -57,6 +58,7 @@ class Settings:
     unknown_jump_default: str = "ignore"  # "add" | "ignore"
     character_slots: dict = field(default_factory=dict)          # character id (str) -> marker slot 1..6
     signature_column_widths: dict = field(default_factory=dict)  # sig table column (str) -> width px
+    backup_copy_directory: str = ""       # also copy each backup here (e.g. a synced folder); empty = off
     # Separate maps, each its own SQLite file with its own home and naming scheme.
     # home_system / naming_scheme above always hold the active map's values.
     maps: dict = field(default_factory=dict)            # name -> {"file", "home_system", "naming_scheme"}

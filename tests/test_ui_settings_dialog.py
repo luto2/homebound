@@ -1,15 +1,19 @@
 """Tests for the settings dialog: every page and saving."""
 import json
 from collections.abc import Callable
+from typing import NoReturn
 
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QFileDialog
 
+import homebound.backup as backup_module
 import homebound.settings as settings_module
 import homebound.ui.settings_dialog as dialog_module
 from conftest import HOME, UNIVERSE, pick_system
+from homebound.mapdb.store import Store
+from homebound.ui.dialogs import RestoreBackupDialog
 from homebound.ui.settings_dialog import PAGES, SettingsDialog
 from homebound.ui.state import AppState
 from ui_helpers import make_state
@@ -457,3 +461,91 @@ def test_save_does_not_share_state_with_dialog(dialog, state) -> None:
     dialog.save()
     assert dialog.edited is not state.settings
     assert dialog.edited.maps is not state.settings.maps
+
+
+# ---------------------------------------------------------------- backups
+def test_backups_page_lists_and_backs_up(dialog, state, tmp_path) -> None:
+    """Back up now adds a row; Restore … is enabled only with a backup selected."""
+    assert dialog.refresh_backups() == 0 and not dialog.restore_button.isEnabled()
+    assert dialog.restore_selected_backup() is False
+    Store(state.settings.map_path()).close()
+    assert dialog.backup_now() is True
+    assert dialog.backup_list.topLevelItemCount() == 1 and dialog.restore_button.isEnabled()
+    assert dialog.backup_list.topLevelItem(0).text(1) == "by hand"
+    state.settings.map_path().write_text("broken")
+    assert dialog.backup_now() is False and "not a map file" in dialog.backup_help.text()
+
+
+def test_backups_page_restores_as_new_map(dialog, state, modal) -> None:
+    """Restore … with "as new map" adds the map, and Save afterwards keeps it."""
+    dialog.backup_now()
+
+    def answer(restore: RestoreBackupDialog) -> int:
+        """Pick "as new map" and accept."""
+        assert not restore.restore_button.isEnabled()   # nothing preselected
+        restore.as_new.setChecked(True)
+        assert restore.restore_button.isEnabled()
+        return 1
+
+    modal.handler = answer
+    assert dialog.restore_selected_backup() is True
+    new_name = next(name for name in state.settings.maps if name != "Main")
+    assert new_name in dialog.backup_help.text()
+    dialog.save()
+    assert new_name in state.settings.maps
+
+
+def test_backups_page_replace_open_map_updates_home(dialog, state, modal) -> None:
+    """Replacing the open map brings its home back, and Save afterwards keeps it."""
+    dialog.backup_now()
+    state.settings.home_system = ""
+    dialog.home.setText("")
+    modal.handler = lambda restore: (restore.replace.setChecked(True), 1)[1]
+    assert dialog.restore_selected_backup() is True
+    assert dialog.home.text() == HOME.name
+    dialog.save()
+    assert state.settings.home_system == HOME.name
+
+
+def test_backups_page_restore_cancel_and_failure(dialog, state, modal, monkeypatch) -> None:
+    """Cancelling restores nothing; a failing restore says so and keeps the dialog open."""
+    dialog.backup_now()
+    assert dialog.restore_selected_backup() is False
+
+    def failing(*arguments: object) -> NoReturn:
+        """Fail like a damaged backup."""
+        raise backup_module.BackupError("damaged")
+
+    monkeypatch.setattr(state, "restore_backup", failing)
+    modal.handler = lambda restore: (restore.replace.setChecked(True), 1)[1]
+    assert dialog.restore_selected_backup() is False and "damaged" in dialog.backup_help.text()
+
+
+def test_backups_page_restoring_settings_closes(dialog, state, modal) -> None:
+    """Restoring settings closes the dialog, since its fields are stale."""
+    dialog.backup_now()
+    modal.handler = lambda restore: ([box.setChecked(False) for box in restore.map_boxes.values()],
+                                     restore.with_settings.setChecked(True), 1)[2]
+    assert dialog.restore_selected_backup() is True
+    assert dialog.result() == 0
+
+
+def test_backups_page_copy_folder(dialog, state, tmp_path, monkeypatch) -> None:
+    """The extra folder field says whether the folder exists, and Save stores it."""
+    assert dialog.validate_backup_copy() == "off"
+    dialog.backup_copy.setText(str(tmp_path / "missing"))
+    assert dialog.validate_backup_copy() == "missing"
+    dialog.backup_copy.setText(str(tmp_path))
+    assert dialog.validate_backup_copy() == "valid"
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *arguments: str(tmp_path / "logs"))
+    assert dialog.browse_backup_copy() == str(tmp_path / "logs")
+    dialog.save()
+    assert state.settings.backup_copy_directory == str(tmp_path / "logs")
+
+
+def test_backups_page_open_folder(dialog, monkeypatch) -> None:
+    """Open folder creates the backups folder and asks the desktop to show it."""
+    opened = []
+    monkeypatch.setattr(dialog_module.QDesktopServices, "openUrl", lambda url: opened.append(url) or True)
+    assert dialog.open_backup_folder() is True
+    assert backup_module.backups_directory().is_dir() and opened[0].toLocalFile().endswith("backups")

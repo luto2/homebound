@@ -2,13 +2,15 @@
 import copy
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QMouseEvent
+from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices, QMouseEvent
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QComboBox, QCompleter, QDialog, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
-    QListWidget, QPushButton, QRadioButton, QSlider, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
+    QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QCompleter, QDialog, QFileDialog, QFrame, QHBoxLayout,
+    QHeaderView, QLabel, QLineEdit, QListWidget, QPushButton, QRadioButton, QSlider, QSpinBox, QStackedWidget,
+    QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
+from .. import backup
 from ..logs.parser import LogFile
 from ..mapping.naming import SCHEMES, scheme_for_key
 from ..settings import (KNOWN_SPACE_RADIUS_RANGE, OVERLAY_OPACITY_RANGE, OVERLAY_TEXT_SIZE_RANGE,
@@ -17,9 +19,13 @@ from ..theme.qss import repolish
 from ..theme.tokens import PIXELS, color
 from ..validation import require_integer, require_text, require_type
 from . import focus
+from .dialogs import RestoreBackupDialog
 from .state import AppState
 
-PAGES = ["Log folder", "Home system", "Naming scheme", "Signatures", "Overlay", "zKill", "KWin focus script"]
+PAGES = ["Log folder", "Home system", "Naming scheme", "Signatures", "Overlay", "zKill", "KWin focus script",
+         "Backups"]
+BACKUP_REASONS = {"auto": "daily", "manual": "by hand", "migration": "before update", "delete": "before delete",
+                  "restore": "before restore"}
 OVERLAY_MODES = [
     ("off", "Off", "No overlay."),
     ("follow", "Follow active client", "Shows the chain of the character whose EVE window is focused. Hidden when no EVE client is focused."),
@@ -136,7 +142,8 @@ class SettingsDialog(QDialog):
         self.nav.setFixedWidth(190)
         self.stack = QStackedWidget()
         builders = (self._build_log_page, self._build_home_page, self._build_naming_page,
-                    self._build_signatures_page, self._build_overlay_page, self._build_zkill_page, self._build_kwin_page)
+                    self._build_signatures_page, self._build_overlay_page, self._build_zkill_page, self._build_kwin_page,
+                    self._build_backups_page)
         for build in builders:
             widget = QWidget()
             layout = QVBoxLayout(widget)
@@ -459,6 +466,178 @@ class SettingsDialog(QDialog):
         self.refresh_kwin("" if succeeded else message)
         return succeeded
 
+    # ------------------------------------------------------------ backups
+    def _build_backups_page(self, layout: QVBoxLayout) -> None:
+        """Build the backups page: the list, Back up now, Restore …, Open folder and the extra copy folder."""
+        layout.addWidget(caption("Backups"))
+        self.backup_list = QTreeWidget()
+        self.backup_list.setHeaderLabels(["Date", "Reason", "Maps", "Size"])
+        self.backup_list.setRootIsDecorated(False)
+        self.backup_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.backup_list.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.backup_list.currentItemChanged.connect(lambda *_: self._sync_backup_buttons())
+        self.backup_list.itemDoubleClicked.connect(lambda *_: self.restore_selected_backup())
+        layout.addWidget(self.backup_list, 1)
+        buttons = QHBoxLayout()
+        self.backup_now_button = QPushButton("Back up now")
+        self.backup_now_button.clicked.connect(self.backup_now)
+        self.restore_button = QPushButton("Restore …")
+        self.restore_button.clicked.connect(self.restore_selected_backup)
+        self.open_backups_button = QPushButton("Open folder")
+        self.open_backups_button.setProperty("variant", "ghost")
+        self.open_backups_button.clicked.connect(self.open_backup_folder)
+        for button in (self.backup_now_button, self.restore_button, self.open_backups_button):
+            buttons.addWidget(button)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
+        self.backup_help = help_label()
+        layout.addWidget(self.backup_help)
+        layout.addWidget(help_label("A backup is made once a day at start, before a map is updated to a new format, "
+                                    "deleted or replaced by a restore, and when you click Back up now. The newest 7 "
+                                    "daily and 10 safety backups are kept; backups made by hand stay until you "
+                                    "delete them in the folder."))
+        layout.addWidget(caption("Also copy backups to"))
+        copy_row = QHBoxLayout()
+        self.backup_copy = QLineEdit(self.edited.backup_copy_directory)
+        self.backup_copy.setProperty("mono", "true")
+        self.backup_copy.setPlaceholderText("Off, e.g. a Nextcloud or Syncthing folder")
+        self.backup_copy.textChanged.connect(self.validate_backup_copy)
+        self.backup_copy_browse = QPushButton("Browse")
+        self.backup_copy_browse.clicked.connect(self.browse_backup_copy)
+        copy_row.addWidget(self.backup_copy, 1)
+        copy_row.addWidget(self.backup_copy_browse)
+        layout.addLayout(copy_row)
+        self.backup_copy_help = help_label()
+        layout.addWidget(self.backup_copy_help)
+        self.validate_backup_copy()
+        self.refresh_backups()
+
+    def refresh_backups(self) -> int:
+        """Fill the backup list, newest first.
+
+        Returns:
+            The number of backups listed.
+        """
+        self.backup_list.clear()
+        self.backups = backup.list_backups()
+        for info in self.backups:
+            item = QTreeWidgetItem([f"{info.created_at.astimezone():%Y-%m-%d %H:%M}",
+                                    BACKUP_REASONS.get(info.reason, info.reason), ", ".join(info.maps) or "–",
+                                    f"{max(1, round(info.size / 1024))} KB"])
+            item.setData(0, Qt.ItemDataRole.UserRole, str(info.path))
+            self.backup_list.addTopLevelItem(item)
+        for column in (0, 1, 3):
+            self.backup_list.resizeColumnToContents(column)
+        if self.backups:
+            self.backup_list.setCurrentItem(self.backup_list.topLevelItem(0))
+        self._sync_backup_buttons()
+        return len(self.backups)
+
+    def _sync_backup_buttons(self) -> bool:
+        """Enable Restore … only with a backup selected.
+
+        Returns:
+            Whether a backup is selected.
+        """
+        selected = self.selected_backup() is not None
+        self.restore_button.setEnabled(selected)
+        return selected
+
+    def selected_backup(self) -> backup.BackupInfo | None:
+        """Return the backup selected in the list, or None."""
+        row = self.backup_list.indexOfTopLevelItem(self.backup_list.currentItem()) if self.backup_list.currentItem() else -1
+        return self.backups[row] if 0 <= row < len(self.backups) else None
+
+    def backup_now(self) -> bool:
+        """Make a ``manual`` backup and list it.
+
+        Returns:
+            Whether the backup was made.
+        """
+        path = self.state.backup("manual", report_failure=False)
+        if path is None:
+            set_help(self.backup_help, f"✕ {self.state.last_backup_error}", "help-err")
+            return False
+        self.refresh_backups()
+        set_help(self.backup_help, f"✓ Backed up to {path.name}", "help-ok")
+        return True
+
+    def restore_selected_backup(self) -> bool:
+        """Ask what to restore from the selected backup and do it.
+
+        Restoring settings closes this dialog, since its fields would show the old values.
+
+        Returns:
+            Whether anything was restored.
+        """
+        info = self.selected_backup()
+        if info is None:
+            return False
+        dialog = RestoreBackupDialog(self, info, self.state.settings.active_map)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return False
+        names, replace, with_settings = dialog.selected_maps(), dialog.replace.isChecked(), dialog.with_settings.isChecked()
+        try:
+            restored = self.state.restore_backup(info.path, names, replace, with_settings)
+        except backup.BackupError as error:
+            set_help(self.backup_help, f"✕ Nothing restored: {error}", "help-err")
+            self.refresh_backups()
+            return False
+        live = self.state.settings
+        self.edited.maps = copy.deepcopy(live.maps)
+        if replace and live.active_map in names:   # its home and scheme came back too
+            self.edited.home_system, self.edited.naming_scheme = live.home_system, live.naming_scheme
+            self.home.setText(live.home_system)
+            self.scheme_cards.get(live.naming_scheme, self.scheme_cards["numeric"]).radio.setChecked(True)
+        if with_settings:
+            self.reject()   # every page shows stale values now
+            return True
+        targets = ", ".join(f"“{target}”" for target in restored.values())
+        set_help(self.backup_help, f"✓ Restored {targets}" if targets else "✓ Restored", "help-ok")
+        self.refresh_backups()
+        return True
+
+    def open_backup_folder(self) -> bool:
+        """Open the backups folder in the file manager (created if missing).
+
+        Returns:
+            Whether the file manager was asked to open it.
+        """
+        folder = backup.backups_directory()
+        folder.mkdir(parents=True, exist_ok=True)
+        return QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+    def browse_backup_copy(self) -> str:
+        """Ask for the extra backup folder and put it in the field.
+
+        Returns:
+            The chosen folder, or an empty string if the dialog was cancelled.
+        """
+        chosen = QFileDialog.getExistingDirectory(self, "Also copy backups to",
+                                                  self.backup_copy.text() or str(Path.home()))
+        if chosen:
+            self.backup_copy.setText(chosen)
+        return chosen
+
+    def validate_backup_copy(self) -> str:
+        """Check the extra backup folder and show the result.
+
+        Returns:
+            ``"off"`` (empty), ``"valid"`` (an existing folder) or ``"missing"`` (allowed, e.g. a drive
+            that isn't mounted now; the copy fails until it is).
+        """
+        text = self.backup_copy.text().strip()
+        if not text:
+            set_help(self.backup_copy_help, "Off. Backups stay on this PC only.", "help")
+            return "off"
+        if Path(text).expanduser().is_dir():
+            set_help(self.backup_copy_help, "✓ Each new backup is copied here too, and old copies are pruned "
+                     "the same way.", "help-ok")
+            return "valid"
+        set_help(self.backup_copy_help, "▲ Folder not found. Backups are still made, but not copied until it exists.",
+                 "help-warn")
+        return "missing"
+
     # ------------------------------------------------------------ save
     def save(self) -> bool:
         """Write the edited settings to the application state, apply them and close.
@@ -495,6 +674,7 @@ class SettingsDialog(QDialog):
         edited.known_space_radius = self.radius.value()
         edited.rescan_due_hours = self.rescan_due.value()
         edited.zkill_enabled = self.zkill.isChecked()
+        edited.backup_copy_directory = self.backup_copy.text().strip()
         self.state.settings.__dict__.update(copy.deepcopy(edited.__dict__))
         self.state.apply_settings()
         self.accept()

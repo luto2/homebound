@@ -36,7 +36,7 @@ def main() -> int:
     from .ui.state import AppState
 
     settings = Settings.load()
-    state = AppState(universe, settings)
+    state = AppState(universe, settings, auto_backup=True)
     focus = FocusTracker()
     window = MapWindow(state, focus)
     state.start()

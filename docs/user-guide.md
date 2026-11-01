@@ -232,7 +232,7 @@ The **▦** button in the toolbar opens the map menu.
 - It lists every map with its home system, number of systems and last activity. Pick one to switch to it.
 - **New map …** creates an empty map and then opens Settings so you can set its home.
 - **Rename …** renames the open map.
-- **Delete map ▸** lists the other maps. The open map can't be deleted; switch away first. Deleting asks for confirmation, shows what will be lost, and has *Cancel* as the default, so Enter or Esc keeps the map.
+- **Delete map ▸** lists the other maps. The open map can't be deleted; switch away first. Deleting asks for confirmation, shows what will be lost, and has *Cancel* as the default, so Enter or Esc keeps the map. A backup is made first (see [§14](#14-where-your-data-lives)); if it fails, the map isn't deleted.
 
 Each map is its own file with its own systems, sigs, home system and naming scheme. Jumps are tracked on the open map only. Character locations carry over when you switch.
 
@@ -292,6 +292,7 @@ While the main window is hidden, toasts are also sent as desktop notifications.
 | Overlay | Mode, background opacity (55–92%), text size (11–14px), k-space radius in gate jumps. |
 | zKill | Turn zKillboard lookups on or off. |
 | KWin focus script | Shows whether the script is installed and active; Install, Reinstall, Remove. |
+| Backups | The list of backups, *Back up now*, *Restore …*, *Open folder*, and *Also copy backups to* a second folder. |
 
 ---
 
@@ -322,11 +323,43 @@ While the main window is hidden, toasts are also sent as desktop notifications.
 | Settings | `~/.local/share/homebound/settings.json` |
 | Main map | `~/.local/share/homebound/map.db` |
 | Other maps | `~/.local/share/homebound/maps/<name>.db` |
+| Backups | `~/.local/share/homebound/backups/` |
 | Static universe data | `data/universe.sqlite` in the project folder |
 
 Set `HOMEBOUND_HOME` to use a different folder for settings and maps, for example for a test setup.
 
-Each map is a plain SQLite file. Back one up by copying it while Homebound is closed.
+Each map is a plain SQLite file.
+
+### Backups
+
+A backup is one zip, such as `2026-11-01_1612_auto.zip`, with the settings, every map and a
+`manifest.json`. Maps are copied safely while they are open. The universe data isn't included;
+it can be built again.
+
+| Made | Kept |
+|---|---|
+| once a day, at start | the newest 7 |
+| before a map is updated to a new file format, deleted, or replaced by a restore | the newest 10 of these together |
+| when you click *Back up now* | until you delete them in the folder |
+
+If a backup fails at start, Homebound starts anyway and says why in a toast and the status bar.
+
+**Also copy backups to** (Settings → Backups, off by default) puts a copy of each new backup in a
+second folder, for example one that Nextcloud or Syncthing syncs. Old copies there are pruned the
+same way. If the folder is missing, for example a drive that isn't mounted, the backup is still
+made and the status bar says it wasn't copied.
+
+**Restore …** asks which maps to restore from the selected backup and how. Neither way is
+preselected:
+- *Restore as new map* adds it next to the others as, for example, `Main (31 Oct)`. Nothing is
+  overwritten.
+- *Replace the map* backs up the current state first, then puts the backup's copy in place,
+  together with that map's home system and naming scheme. The open map is closed and opened again;
+  characters stay where they are.
+
+*Also restore settings* (off by default) takes the overlay, naming, zKill and other choices from
+the backup. The list of maps stays as it is. Settings closes afterwards so it shows the restored
+values when opened again.
 
 **Network**: the only requests go to zKillboard, for systems in visible chains. They are rate-limited to one per second and cached for 10 minutes. Turn them off in Settings → zKill.
 

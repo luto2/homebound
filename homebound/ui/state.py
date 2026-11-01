@@ -1,8 +1,10 @@
 """Shared application state: store, universe, naming, tracker, watcher, zKill -> Qt signals."""
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
+from .. import backup
 from ..logs.parser import SystemChange
 from ..logs.watcher import LogWatcher
 from ..mapdb.store import Store, utc_now_iso
@@ -12,7 +14,7 @@ from ..mapping.scan_status import ScanStatus, scan_status
 from ..mapping.tracker import AutoNamed, MapChanged, Moved, NamingRequest, Tracker, UnknownJump
 from ..settings import Settings
 from ..universe.db import Universe
-from ..validation import require_integer, require_type
+from ..validation import require_choice, require_integer, require_type
 from ..zkill import ZkillFetcher
 
 EXPIRY_INTERVAL_MS = 5 * 60 * 1000
@@ -32,27 +34,34 @@ class AppState(QObject):
     autoNamed = Signal(object)            # AutoNamed
     selectionChanged = Signal(int)        # system id (0 = none)
     settingsChanged = Signal()
-    status = Signal(str, str, str)        # source (logs|zkill|kwin), level, text
+    status = Signal(str, str, str)        # source (logs|zkill|kwin|backup), level, text
     followedChanged = Signal(object)      # character id or None (overlay target)
     scanAgeTick = Signal()                # once a minute: scan ages moved on, rescan states may change
     _zkillUpdated = Signal(int)
     _zkillStatus = Signal(str, str)
 
-    def __init__(self, universe: Universe, settings: Settings, database_path: str | None = None) -> None:
+    def __init__(self, universe: Universe, settings: Settings, database_path: str | None = None,
+                 auto_backup: bool = False) -> None:
         """Open the active map and set up the log watcher and the zKill fetcher (not started yet).
 
         Args:
             universe: Static data.
             settings: The user settings.
             database_path: The map file, or None for the active map's file.
+            auto_backup: Make the daily ``auto`` backup first if it is due (the app start does).
         """
         super().__init__()
         require_type(universe, Universe, "universe")
         require_type(settings, Settings, "settings")
         self.universe = universe
         self.settings = settings
+        self._backup_messages: list[tuple[str, str]] = []   # (level, text) until start() can emit them
+        self._constructed = False         # nobody can listen to the signals before __init__ returns
+        self.last_backup_error = ""
+        if auto_backup and backup.has_map_files(settings) and backup.auto_backup_due():
+            self.backup("auto")
         self.database_path = str(database_path or settings.map_path())
-        self.store = Store(self.database_path)
+        self.store = self._open_store()
         self.namer = Namer(self.store, universe, settings.naming_scheme, self.home_id)
         self.tracker = Tracker(self.store, universe, self.namer, settings.auto_name_when_certain)
         self.selected: int = 0
@@ -68,6 +77,7 @@ class AppState(QObject):
         self._expiry_timer: QTimer | None = None
         self._scan_age_timer: QTimer | None = None
         self._ensure_home()
+        self._constructed = True
 
     def _ensure_home(self) -> bool:
         """Put the home system on the map if it is set and missing.
@@ -80,8 +90,18 @@ class AppState(QObject):
             return True
         return False
 
+    def _open_store(self) -> Store:
+        """Open the active map file, backing it up first if its schema is about to be migrated."""
+        return Store(self.database_path, before_migration=lambda path: self.backup("migration"))
+
     def start(self) -> None:
-        """Start the log watcher, the zKill thread, the expiry timer and the scan age tick."""
+        """Start the log watcher, the zKill thread, the expiry timer and the scan age tick.
+
+        A backup problem from opening is reported now, when the window is listening.
+        """
+        for level, text in self._backup_messages:
+            self.status.emit("backup", level, text)
+        self._backup_messages = []
         self.watcher.start()
         self.zkill.start()
         self.expire()
@@ -127,17 +147,7 @@ class AppState(QObject):
         settings.switch_map(name)
         settings.save()
         self.store.close()
-        self.database_path = str(settings.map_path())
-        self.store = Store(self.database_path)
-        for row in characters:
-            if not all(isinstance(row[column], str) and row[column].strip() for column in ("name", "seen_at")):
-                continue  # legacy row without a name or time: set_character would refuse it
-            self.store.set_character(row["id"], row["name"], row["system_id"], row["seen_at"])
-        self.namer.store = self.tracker.store = self.store
-        self.namer.scheme_key = settings.naming_scheme
-        self.namer.home_id = self.home_id
-        self.zkill.database_path = self.database_path
-        self._ensure_home()
+        self._reopen_store(characters)
         self.selected = 0
         self.selectionChanged.emit(0)
         self.mapSwitched.emit(name)
@@ -145,6 +155,101 @@ class AppState(QObject):
         self.mapChanged.emit()
         self.charactersChanged.emit()
         return True
+
+    def _reopen_store(self, characters: list) -> Store:
+        """Open the active map's file again (after a switch or restore) and carry the characters over."""
+        self.database_path = str(self.settings.map_path())
+        self.store = self._open_store()
+        for row in characters:
+            if not all(isinstance(row[column], str) and row[column].strip() for column in ("name", "seen_at")):
+                continue  # legacy row without a name or time: set_character would refuse it
+            self.store.set_character(row["id"], row["name"], row["system_id"], row["seen_at"])
+        self.namer.store = self.tracker.store = self.store
+        self.namer.scheme_key = self.settings.naming_scheme
+        self.namer.home_id = self.home_id
+        self.zkill.database_path = self.database_path
+        self._ensure_home()
+        return self.store
+
+    # ------------------------------------------------------------ backups
+    def _report_backup(self, level: str, text: str) -> None:
+        """Show a backup status, or keep it for start() if the views aren't listening yet."""
+        if self._constructed:
+            self.status.emit("backup", level, text)
+        else:
+            self._backup_messages.append((level, text))
+
+    def backup(self, reason: str, report_failure: bool = True) -> Path | None:
+        """Make a backup and copy it to the extra folder, reporting the result on the status line.
+
+        A failure never raises: it is reported as a warning (kept in ``last_backup_error``) and None
+        is returned, so the caller decides whether to go on.
+
+        Args:
+            reason: One of :data:`homebound.backup.REASONS`.
+            report_failure: False if the caller tells the user about a failure itself.
+
+        Returns:
+            The new backup, or None if it failed.
+        """
+        require_choice(reason, backup.REASONS, "reason")
+        try:
+            path = backup.create_backup(reason, self.settings)
+        except backup.BackupError as error:
+            self.last_backup_error = str(error)
+            if report_failure:
+                self._report_backup("warn", f"Backup failed: {error}")
+            return None
+        self.last_backup_error = ""
+        try:
+            backup.copy_to_folder(path, self.settings.backup_copy_directory)
+        except backup.BackupError as error:
+            self._report_backup("warn", f"Backed up, but not copied: {error}")
+            return path
+        self._report_backup("ok", f"Backed up {datetime.now():%H:%M}")
+        return path
+
+    def restore_backup(self, path: Path, names: list[str], replace: bool, restore_settings: bool = False) -> dict[str, str]:
+        """Restore maps (and optionally the settings) from a backup.
+
+        Replacing the open map closes it, writes the backup's copy into its file and opens it again,
+        with the characters carried over. Anything replaced is backed up first (reason ``restore``).
+
+        Args:
+            path: The backup zip.
+            names: The maps to restore, by their name in the backup.
+            replace: True to replace the maps of the same name, False to restore as new maps.
+            restore_settings: Also take the settings from the backup (the map list is kept).
+
+        Returns:
+            Backup map name -> name of the map it went into.
+
+        Raises:
+            homebound.backup.BackupError: If the safety backup or the restore fails.
+        """
+        require_type(path, Path, "path")
+        require_type(names, list, "names")
+        settings = self.settings
+        if restore_settings and not (replace and names):
+            backup.create_backup("restore", settings)   # restore_maps makes it when replacing
+        reopen = replace and settings.active_map in names
+        characters = list(self.store.characters()) if reopen else []
+        if reopen:
+            self.store.close()
+        try:
+            restored = backup.restore_maps(path, names, replace, settings) if names else {}
+            if restore_settings:
+                backup.restore_settings(path, settings)
+        finally:
+            if reopen:
+                self._reopen_store(characters)
+        self.apply_settings()
+        if reopen:
+            self.selected = 0
+            self.selectionChanged.emit(0)
+            self.mapSwitched.emit(settings.active_map)
+            self.charactersChanged.emit()
+        return restored
 
     # ------------------------------------------------------------ scan status
     def scan_status(self, system_id: int) -> ScanStatus:

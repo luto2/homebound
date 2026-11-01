@@ -290,9 +290,10 @@ class FakeWindow:
 class FakeState:
     """Stands in for AppState."""
 
-    def __init__(self, universe, settings) -> None:
+    def __init__(self, universe, settings, auto_backup: bool = False) -> None:
         """Remember the arguments."""
         self.universe, self.settings, self.started, self.stopped = universe, settings, False, False
+        self.auto_backup = auto_backup
 
     def start(self) -> None:
         """Record the call."""

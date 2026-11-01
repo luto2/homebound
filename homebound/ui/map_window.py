@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 from ..mapdb.store import map_stats
 from ..mapping.naming import SCHEMES, guess_static
 from ..mapping.tracker import NamingRequest
+from ..settings import MAP_NAME_LIMIT
 from ..theme import painting
 from ..theme.qss import build_qss
 from ..theme.tokens import OPACITY, PIXELS, color, font
@@ -29,9 +30,8 @@ from .system_panel import SystemPanel
 from .toast import ToastHost
 
 MODES = [("off", "Off"), ("follow", "Follow"), ("pinned_eve", "Pinned"), ("pinned_always", "Always")]
-STATUS_SOURCES = ("logs", "zkill", "kwin")
+STATUS_SOURCES = ("logs", "zkill", "kwin", "backup")
 STATUS_LEVELS = {"ok": ("✓", "success"), "warn": ("▲", "warning"), "err": ("✕", "danger")}
-MAP_NAME_LIMIT = 32
 PIN_FIRST_HINT = "Pin a character first (right-click it in the Characters list)"
 
 
@@ -378,7 +378,7 @@ class MapWindow(QMainWindow):
         return toolbar.iconSize()
 
     def _build_statusbar(self) -> dict[str, QLabel]:
-        """Add one status label per source (logs, zKill, KWin) to the status bar.
+        """Add one status label per source (logs, zKill, KWin, backup) to the status bar.
 
         Returns:
             The labels by source.
@@ -386,20 +386,25 @@ class MapWindow(QMainWindow):
         status_bar = self.statusBar()
         self.status_labels: dict[str, QLabel] = {}
         for key in STATUS_SOURCES:
-            label = QLabel("…")
-            self.status_labels[key] = label
-            status_bar.addWidget(label)
-            if key != "kwin":
+            if key != STATUS_SOURCES[0]:
                 separator = QLabel("·")
                 separator.setProperty("role", "help")
                 status_bar.addWidget(separator)
+                if key == "backup":
+                    self.backup_separator = separator
+            label = QLabel("…")
+            self.status_labels[key] = label
+            status_bar.addWidget(label)
+        # the backup label only shows once there is something to say
+        self.backup_separator.hide()
+        self.status_labels["backup"].hide()
         return self.status_labels
 
     def _status(self, source: str, level: str, text: str) -> bool:
         """Show a status line for one source; unknown sources are ignored.
 
         Args:
-            source: ``logs``, ``zkill`` or ``kwin``.
+            source: ``logs``, ``zkill``, ``kwin`` or ``backup`` (a backup warning also shows a toast).
             level: ``ok``, ``warn`` or ``err``; anything else shows no glyph.
             text: The message.
 
@@ -411,6 +416,11 @@ class MapWindow(QMainWindow):
             return False
         glyph, token = STATUS_LEVELS.get(level, ("", "ink-muted"))
         label.setText(f"<span style='color:{color(token).name()}'>{glyph}</span> {text}")
+        if source == "backup":
+            label.show()
+            self.backup_separator.show()
+            if level != "ok":
+                self.toasts.show("warn", text)
         return True
 
     def _build_tray_menu(self) -> QMenu:
@@ -616,7 +626,9 @@ class MapWindow(QMainWindow):
         return True
 
     def delete_map(self, name: str) -> bool:
-        """Delete a map and its database files after the user confirms.
+        """Delete a map and its database files after the user confirms and a ``delete`` backup is made.
+
+        If the backup fails, the map is kept.
 
         Args:
             name: The map to delete (not the open one).
@@ -634,11 +646,13 @@ class MapWindow(QMainWindow):
         dialog = ConfirmDeleteMapDialog(self, name, settings.map_path(name), info.get("home_system", ""))
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return False
-        try:
-            path = settings.remove_map(name)
-        except ValueError as error:
-            self.toasts.show("err", str(error))
+        if name not in settings.maps or name == settings.active_map:
+            self.toasts.show("err", "Switch to another map before deleting this one")
             return False
+        if self.state.backup("delete", report_failure=False) is None:
+            self.toasts.show("err", f"Map “{name}” not deleted: {self.state.last_backup_error}")
+            return False
+        path = settings.remove_map(name)
         settings.save()
         for suffix in ("", "-wal", "-shm"):
             database_file = path.with_name(path.name + suffix)
