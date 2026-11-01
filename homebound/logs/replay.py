@@ -10,7 +10,7 @@ from pathlib import Path
 
 from ..mapdb.store import Store
 from ..mapping.naming import SCHEMES, Namer
-from ..mapping.tracker import AutoNamed, NamingRequest, Tracker, UnknownJump
+from ..mapping.tracker import NamingRequest, Tracker, UnknownJump
 from ..universe.db import Universe
 from .parser import parse_log_file
 
@@ -71,8 +71,6 @@ def main(arguments: list[str] | None = None, universe: Universe | None = None) -
                 if not options.quiet:
                     print(f"{prefix} new {universe.by_id(event.child_id).name} -> {namer.display(event.child_id)} "
                           f"(static={event.guess.guess}; {event.guess.reason})")
-            elif isinstance(event, AutoNamed) and not options.quiet:
-                print(f"{prefix} auto {event.name}")
             elif isinstance(event, UnknownJump) and not options.quiet:
                 print(f"{prefix} unknown jump {universe.by_id(event.from_id).name} -> {universe.by_id(event.to_id).name}")
 
