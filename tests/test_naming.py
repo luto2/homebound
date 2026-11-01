@@ -10,17 +10,17 @@ from homebound.mapping.naming import (SCHEMES, ChainDepthPositionScheme, Namer, 
 
 def test_hole_digits() -> None:
     """Indices below 10 are digits, then letters."""
-    assert [hole_digit(i) for i in (0, 1, 9, 10, 11)] == ["0", "1", "9", "a", "b"]
+    assert [hole_digit(index) for index in (0, 1, 9, 10, 11)] == ["0", "1", "9", "a", "b"]
     with pytest.raises(ValueError):
         hole_digit(-1)
 
 
 def test_chain_letters_follow_eve_uni() -> None:
     """A/B for statics, then Z, Y, W …, never letters that are hard to tell apart."""
-    assert [chain_letter(h, 1) for h in range(1, 6)] == ["A", "Z", "Y", "W", "U"]
-    assert [chain_letter(h, 2) for h in range(1, 5)] == ["A", "B", "Z", "Y"]
+    assert [chain_letter(hole, 1) for hole in range(1, 6)] == ["A", "Z", "Y", "W", "U"]
+    assert [chain_letter(hole, 2) for hole in range(1, 5)] == ["A", "B", "Z", "Y"]
     assert chain_letter(1, 0) == "Z" and chain_letter(0, 1) == "?"
-    assert not {chain_letter(h, 2) for h in range(1, 16)} & set("CFGHJLNPTVX")
+    assert not {chain_letter(hole, 2) for hole in range(1, 16)} & set("CFGHJLNPTVX")
     assert chain_letter(14, 1) == "D" and chain_letter(15, 1) == "ZZ"
     with pytest.raises(TypeError):
         chain_letter("1")
@@ -28,7 +28,7 @@ def test_chain_letters_follow_eve_uni() -> None:
 
 def test_letters_for_number() -> None:
     """1 → A, 26 → Z, 27 → AA, small letters on request."""
-    assert [letters_for_number(n) for n in (0, 1, 26, 27, 52)] == ["", "A", "Z", "AA", "AZ"]
+    assert [letters_for_number(number) for number in (0, 1, 26, 27, 52)] == ["", "A", "Z", "AA", "AZ"]
     assert letters_for_number(2, upper=False) == "b"
 
 

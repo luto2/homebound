@@ -30,10 +30,10 @@ def test_parse_skips_other_lines_and_reads_codes() -> None:
     """Only lines with a sig ID count; WH codes come from the name; the last duplicate wins."""
     text = "junk line\n" + SCAN + "ABC-123\tCosmic Signature\tWormhole\tWormhole K162\t100%\t1 AU\n"
     parsed = parse_scanner_text(text)
-    assert [p.signature_id for p in parsed] == ["ABC-123", "DEF-456", "GHI-789", "XYZ-000"]
+    assert [signature.signature_id for signature in parsed] == ["ABC-123", "DEF-456", "GHI-789", "XYZ-000"]
     assert parsed[0].wormhole_code == "K162"
     assert parsed[1].group is None and parsed[3].kind == "anom"
-    assert [p.signature_id for p in parse_scanner_text(SCAN, include_anomalies=False)] == [
+    assert [signature.signature_id for signature in parse_scanner_text(SCAN, include_anomalies=False)] == [
         "ABC-123", "DEF-456", "GHI-789"]
     assert parse_scanner_text("ABC-123") == [ParsedSignature("ABC-123", None, None, None, None, "sig")]
     with pytest.raises(TypeError):
@@ -48,7 +48,7 @@ def test_merge_never_downgrades_and_flags_missing(store) -> None:
         "DEF-456\tCosmic Signature\tData Site\tUnsecured Frontier Server\t100%\t1 AU\n"
         "GHI-789\tCosmic Signature\t\t\t5%\t2 AU\n"))
     assert result.missing == ["ABC-123"] and sorted(result.updated) == ["DEF-456", "GHI-789"]
-    signatures = {s.signature_id: s for s in store.signatures(HOME.id)}
+    signatures = {signature.signature_id: signature for signature in store.signatures(HOME.id)}
     assert signatures["DEF-456"].group == "data"
     assert signatures["GHI-789"].group == "gas" and signatures["GHI-789"].name == "Barren Perimeter Reservoir"
     assert signatures["ABC-123"].state == "missing"
