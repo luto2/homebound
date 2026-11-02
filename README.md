@@ -2,7 +2,7 @@
 
 An offline wormhole mapper for EVE Online that runs only on your machine. It follows your characters through the EVE Local chat logs instead of ESI. Signatures are pasted from the probe scanner. All map data stays in `~/.local/share/homebound/` (Windows: `%APPDATA%\Homebound\`).
 
-Network access: once, on first start, Homebound downloads the EVE static data export and the community wormhole data (about 100 MB) and builds its universe data from them. After that the only network access is optional zKillboard activity for systems in visible chains, which can be turned off in Settings.
+Network access: once, on first start, Homebound downloads the EVE static data export and the community wormhole data (about 100 MB) and builds its universe data from them. After that the only network access is optional: zKillboard activity for systems in visible chains, and EVE-Scout's public Thera and Turnur connections for routes. Both can be turned off in Settings.
 
 ## Install
 
@@ -47,7 +47,7 @@ The full manual is in [docs/user-guide.md](docs/user-guide.md). In short:
 - **Naming**: pick a scheme in Settings: numeric path `1 → 12 → 123`, `A1a / A2b`, or letter-led `A → A2 → A23`.
   - Chain letters follow EVE University's scheme: A (and B for a 2nd static) for the statics, then Z, Y, W, U, S, R, Q, O, M, K, I, E, D. C, F, G, H, J, L, N, P, T, V and X are never used.
   - The static is always hole 1. When it matters, Homebound asks "was this the static?" with its best guess preselected.
-  - K-space systems show the scheme label plus the real name: `2 (Jita)`.
+  - K-space systems show the scheme label plus the real name: `2 Jita`.
 - **Bookmarks**: each WH sig has a copy button.
   - The hole with number *n* in system *S* is `S-n`, so the static is `S-1`.
   - The hole leading back home is `S-0`.

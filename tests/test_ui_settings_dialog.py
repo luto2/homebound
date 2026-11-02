@@ -596,3 +596,22 @@ def test_backups_page_open_folder(dialog, monkeypatch) -> None:
     monkeypatch.setattr(dialog_module.QDesktopServices, "openUrl", lambda url: opened.append(url) or True)
     assert dialog.open_backup_folder() is True
     assert backup_module.backups_directory().is_dir() and opened[0].toLocalFile().endswith("backups")
+
+
+def test_routes_page_saves_and_resets(dialog, state) -> None:
+    """The Routes page shows the route settings, saves the edited ones and resets the destinations to the hubs."""
+    assert dialog.eve_scout.isChecked() and dialog.route_preference.currentData() == "shortest"
+    assert dialog.route_destinations_label.text() == "Jita, Amarr, Dodixie, Rens, Hek"
+    dialog.edited.route_destinations = ["J161940"]
+    assert dialog.reset_route_destinations() == ["Jita", "Amarr", "Dodixie", "Rens", "Hek"]
+    dialog.eve_scout.setChecked(False)
+    dialog.route_preference.setCurrentIndex(dialog.route_preference.findData("less_secure"))
+    dialog.route_ship_size.setCurrentIndex(dialog.route_ship_size.findData("XL"))
+    dialog.route_eol.setChecked(False)
+    dialog.route_critical.setChecked(True)
+    state.settings.route_destinations = ["Perimeter"]
+    assert dialog.save() is True
+    settings = state.settings
+    assert (settings.eve_scout_enabled, settings.route_preference, settings.route_ship_size, settings.route_use_eol,
+            settings.route_use_mass_critical) == (False, "less_secure", "XL", False, True)
+    assert settings.route_destinations[0] == "Jita" and not state.eve_scout.enabled

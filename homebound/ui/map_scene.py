@@ -62,6 +62,12 @@ def scan_tab_label(status: ScanStatus, compact: bool = False) -> str:
     return f"SCAN {status.short_age}" if status.state == "due" else "NO SCAN"
 
 
+def hub_text(universe, system_id: int) -> str:
+    """Return the closest-trade-hub tag of a high-/low-sec system, e.g. "Jita·3", or "" for other space."""
+    nearest = universe.nearest_hub(system_id)
+    return f"{nearest[0]}·{nearest[1]}" if nearest else ""
+
+
 def elide(text: str, text_font: QFont, width: float) -> str:
     """Shorten text with an ellipsis so it fits a width in the given font.
 
@@ -153,8 +159,10 @@ class SystemNode(QGraphicsObject):
         system = self.system
         if not system:
             return str(self.system_id)
-        lines = [f"<b>{self.state.namer.display(self.system_id)}</b> · {system.name}",
+        lines = [f"<b>{self.state.namer.label(self.system_id)}</b> · {system.name}",
                  f"{system.system_class} · {system.region}"]
+        if nearest := self.state.universe.nearest_hub(self.system_id):
+            lines.append(f"Closest hub: {nearest[0]}, {nearest[1]} jump{'s' if nearest[1] != 1 else ''}")
         if system.effect:
             lines.append(painting.EFFECT_NAMES[system.effect])
         if system.statics:
@@ -224,7 +232,11 @@ class SystemNode(QGraphicsObject):
     def _paint_body(self, painter: QPainter, body: QRectF, selected: bool) -> None:
         """Draw the rounded body with its stale hatching, unconfirmed outline and selection ring."""
         radius = PIXELS["radius-3"]
-        fill = color("bg-4") if self.hover else color("bg-1" if self.known_space else "bg-2")
+        empire = self.system.empire if self.system else None
+        if empire:
+            fill = color(f"empire-{empire}-hover" if self.hover else f"empire-{empire}")
+        else:
+            fill = color("bg-4") if self.hover else color("bg-1" if self.known_space else "bg-2")
         painter.setPen(QPen(color("line-1" if self.known_space else "line-2"), 1))
         painter.setBrush(fill)
         painter.drawRoundedRect(body.adjusted(.5, .5, -.5, -.5), radius, radius)
@@ -269,18 +281,32 @@ class SystemNode(QGraphicsObject):
             self._draw_zkill(painter, right + 4, 7)
         painter.setFont(name_font)
         metrics = QFontMetricsF(name_font)
-        subtitle = (f" ({self.system.name})" if self.known_space and self.name != self.system.name
+        subtitle = (self.system.name if self.known_space and self.name != self.system.name
                     and not (self.mapped and self.mapped.custom_name) else "")
         painter.setPen(color("ink"))
+        if level_of_detail < 0.6 and self.system:   # the compact class badge takes the right end
+            right -= painting.class_badge_width(self.system.system_class) + 4
+        hub = hub_text(self.state.universe, self.system_id)
+        if hub:   # the closest trade hub sits at the right end of the line and the name gives way to it
+            hub_font = font("mono-small")
+            hub_width = min(QFontMetricsF(hub_font).horizontalAdvance(hub), (right - x) / 2)
+            painter.setFont(hub_font)
+            painter.setPen(color("ink-muted"))
+            painter.drawText(QRectF(right - hub_width, 5, hub_width, metrics.height()),
+                             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                             elide(hub, hub_font, hub_width))
+            right -= hub_width + 6
+            painter.setFont(name_font)
+            painter.setPen(color("ink"))
         shown_name = elide(self.name, name_font, right - x)
         painter.drawText(QPointF(x, 5 + metrics.ascent()), shown_name)
         if subtitle:
-            subtitle_x = x + metrics.horizontalAdvance(shown_name) + 2
+            subtitle_x = x + metrics.horizontalAdvance(shown_name) + 5
             subtitle_font = font("ui-small", 11)
             painter.setFont(subtitle_font)
             painter.setPen(color("ink-muted"))
             painter.drawText(QPointF(subtitle_x, 5 + metrics.ascent()),
-                             elide(subtitle.strip(), subtitle_font, right - subtitle_x))
+                             elide(subtitle, subtitle_font, right - subtitle_x))
         if level_of_detail < 0.6 and self.system:
             painting.draw_class_badge(
                 painter, NODE_WIDTH - 8 - painting.class_badge_width(self.system.system_class), 9,

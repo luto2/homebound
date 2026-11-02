@@ -1,4 +1,4 @@
-"""zKillboard activity for systems in visible chains (the only network call Homebound makes).
+"""zKillboard activity for systems in visible chains (one of two network calls, with EVE-Scout).
 
 One request per system: /api/kills/solarSystemID/<id>/pastSeconds/86400/ returns killmails
 with killmail_time, which gives kills 1h / 24h, pod kills 1h and last kill age.

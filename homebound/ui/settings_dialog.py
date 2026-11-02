@@ -12,13 +12,14 @@ from PySide6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
-from .. import app_version, backup
+from .. import app_version, backup, routing
 from ..logs.parser import LogFile
 from ..mapping.naming import SCHEMES, scheme_for_key
 from ..settings import (KNOWN_SPACE_RADIUS_RANGE, OVERLAY_OPACITY_RANGE, OVERLAY_TEXT_SIZE_RANGE,
-                        RESCAN_DUE_HOURS_RANGE, detect_log_directories)
+                        RESCAN_DUE_HOURS_RANGE, TRADE_HUBS, detect_log_directories)
 from ..theme.qss import repolish
 from ..theme.tokens import PIXELS, color
+from ..universe.db import SIZE_NAMES, SIZES
 from ..validation import require_integer, require_text, require_type
 from .dialogs import RestoreBackupDialog
 from .state import AppState
@@ -26,8 +27,8 @@ from .state import AppState
 # the KWin script functions; Linux only, since they come with the D-Bus backend
 kwin = None if sys.platform == "win32" else importlib.import_module("homebound.platform.focus_linux")
 
-PAGES = ["Log folder", "Home system", "Naming scheme", "Signatures", "Overlay", "zKill", "KWin focus script",
-         "Backups"]
+PAGES = ["Log folder", "Home system", "Naming scheme", "Signatures", "Overlay", "zKill", "Routes",
+         "KWin focus script", "Backups"]
 BACKUP_REASONS = {"auto": "daily", "manual": "by hand", "migration": "before update", "delete": "before delete",
                   "restore": "before restore"}
 OVERLAY_MODES = [
@@ -147,7 +148,8 @@ class SettingsDialog(QDialog):
         self.nav.setFixedWidth(190)
         self.stack = QStackedWidget()
         builders = (self._build_log_page, self._build_home_page, self._build_naming_page,
-                    self._build_signatures_page, self._build_overlay_page, self._build_zkill_page, self._build_kwin_page,
+                    self._build_signatures_page, self._build_overlay_page, self._build_zkill_page, self._build_routes_page,
+                    self._build_kwin_page,
                     self._build_backups_page)
         for build in builders:
             widget = QWidget()
@@ -412,7 +414,60 @@ class SettingsDialog(QDialog):
         layout.addWidget(self.zkill)
         layout.addWidget(help_label("Homebound asks zkillboard.com for the last 24h of kills in each system of a visible chain, "
                                     "at most one request per second, cached for 10 minutes. Only system IDs are sent. "
-                                    "This is the only network access Homebound makes."))
+                                    "Apart from EVE-Scout (Routes page), this is the only network access Homebound makes."))
+
+    # ------------------------------------------------------------ routes
+    def _build_routes_page(self, layout: QVBoxLayout) -> None:
+        """Build the routes page: EVE-Scout, preference, hole filters, ship size and the destination reset."""
+        edited = self.edited
+        layout.addWidget(caption("EVE-Scout"))
+        self.eve_scout = QCheckBox("Route through EVE-Scout's Thera and Turnur connections")
+        self.eve_scout.setChecked(edited.eve_scout_enabled)
+        layout.addWidget(self.eve_scout)
+        layout.addWidget(help_label("Homebound asks api.eve-scout.com for its public list of Thera and Turnur "
+                                    "wormholes every 5 minutes. Nothing about you or your map is sent."))
+        layout.addWidget(caption("Routes"))
+        self.route_preference = QComboBox()
+        for preference in routing.PREFERENCES:
+            self.route_preference.addItem(routing.PREFERENCE_LABELS[preference], preference)
+        self.route_preference.setCurrentIndex(self.route_preference.findData(edited.route_preference))
+        self.route_ship_size = QComboBox()
+        for size in SIZES:
+            self.route_ship_size.addItem(SIZE_NAMES[size], size)
+        self.route_ship_size.setCurrentIndex(self.route_ship_size.findData(edited.route_ship_size))
+        for label, widget in (("Prefer", self.route_preference), ("Ship size", self.route_ship_size)):
+            row = QHBoxLayout()
+            text = QLabel(label)
+            text.setFixedWidth(90)
+            row.addWidget(text)
+            row.addWidget(widget)
+            row.addStretch(1)
+            layout.addLayout(row)
+        self.route_eol = QCheckBox("Use holes at end of life (< 4h, < 1h)")
+        self.route_eol.setChecked(edited.route_use_eol)
+        self.route_critical = QCheckBox("Use mass-critical holes")
+        self.route_critical.setChecked(edited.route_use_mass_critical)
+        layout.addWidget(self.route_eol)
+        layout.addWidget(self.route_critical)
+        layout.addWidget(help_label("Routes use stargates, the wormholes on the open map and EVE-Scout's connections. "
+                                    "Holes smaller than the ship size are skipped; expired holes never count."))
+        layout.addWidget(caption("Destinations"))
+        self.route_destinations_label = help_label(", ".join(edited.route_destinations) or "None")
+        layout.addWidget(self.route_destinations_label)
+        reset = QPushButton("Reset to the trade hubs")
+        reset.setProperty("variant", "ghost")
+        reset.clicked.connect(self.reset_route_destinations)
+        layout.addWidget(reset, 0, Qt.AlignmentFlag.AlignLeft)
+
+    def reset_route_destinations(self) -> list[str]:
+        """Put the five trade hubs back as the destinations (saved with the dialog).
+
+        Returns:
+            The new destinations.
+        """
+        self.edited.route_destinations = list(TRADE_HUBS)
+        self.route_destinations_label.setText(", ".join(TRADE_HUBS))
+        return self.edited.route_destinations
 
     # ------------------------------------------------------------ KWin
     def _build_kwin_page(self, layout: QVBoxLayout) -> None:
@@ -691,6 +746,11 @@ class SettingsDialog(QDialog):
         edited.known_space_radius = self.radius.value()
         edited.rescan_due_hours = self.rescan_due.value()
         edited.zkill_enabled = self.zkill.isChecked()
+        edited.eve_scout_enabled = self.eve_scout.isChecked()
+        edited.route_preference = self.route_preference.currentData()
+        edited.route_ship_size = self.route_ship_size.currentData()
+        edited.route_use_eol = self.route_eol.isChecked()
+        edited.route_use_mass_critical = self.route_critical.isChecked()
         edited.backup_copy_directory = self.backup_copy.text().strip()
         self.state.settings.__dict__.update(copy.deepcopy(edited.__dict__))
         self.state.apply_settings()

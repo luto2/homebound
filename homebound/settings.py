@@ -13,6 +13,11 @@ SETTINGS_FILE = DATA_DIR / "settings.json"
 
 OVERLAY_MODES = ("off", "follow", "pinned_eve", "pinned_always")
 SCHEMES = ("numeric", "a2a", "letter_numeric")
+ROUTE_PREFERENCES = ("shortest", "safer", "less_secure")   # same as routing.PREFERENCES
+SHIP_SIZES = ("S", "M", "L", "XL")
+TRADE_HUBS = ["Jita", "Amarr", "Dodixie", "Rens", "Hek"]   # default route destinations
+# route settings that must be one of a few values; anything else keeps the default
+SETTING_CHOICES = {"route_preference": ROUTE_PREFERENCES, "route_ship_size": SHIP_SIZES}
 DEFAULT_MAP = "Main"
 MAP_NAME_LIMIT = 32                       # characters
 MARKER_SLOTS = 6
@@ -61,6 +66,12 @@ class Settings:
     character_slots: dict = field(default_factory=dict)          # character id (str) -> marker slot 1..6
     signature_column_widths: dict = field(default_factory=dict)  # sig table column (str) -> width px
     backup_copy_directory: str = ""       # also copy each backup here (e.g. a synced folder); empty = off
+    route_destinations: list = field(default_factory=lambda: list(TRADE_HUBS))   # system names, all maps
+    route_preference: str = "shortest"    # "shortest" | "safer" | "less_secure"
+    eve_scout_enabled: bool = True        # route through EVE-Scout's Thera and Turnur connections
+    route_use_eol: bool = True            # route through holes at < 4h / < 1h
+    route_use_mass_critical: bool = False
+    route_ship_size: str = "M"            # skip holes smaller than this (S/M/L/XL)
     # Separate maps, each its own SQLite file with its own home and naming scheme.
     # home_system / naming_scheme above always hold the active map's values.
     maps: dict = field(default_factory=dict)            # name -> {"file", "home_system", "naming_scheme"}
@@ -240,6 +251,10 @@ class Settings:
                 fits = isinstance(value, (int, float)) and not isinstance(value, bool)
             else:
                 fits = isinstance(value, type(default)) and not (isinstance(value, bool) and not isinstance(default, bool))
+            if key in SETTING_CHOICES:
+                fits = fits and value in SETTING_CHOICES[key]
+            elif key == "route_destinations":
+                fits = fits and all(isinstance(name, str) and name.strip() for name in value)
             if fits:
                 setattr(self, key, clamp_to_range(key, value))
                 taken += 1

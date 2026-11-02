@@ -78,7 +78,7 @@ body { padding: 0; }
 var LM = window.Homebound;
 var N = {
  home: {x:40,y:430,name:'Home',j:'J161940',cls:'C2',statics:['C3','HS'],owner:['HOME',6,true],chars:[2],state:'is-home',zk:'none'},
- jita: {x:40,y:640,name:'8',sub:'(Jita)',j:'Sirseshin',cls:'HS',sec:'0.6',zk:'low'},
+ jita: {x:40,y:640,name:'8',sub:'Jita',j:'Sirseshin',cls:'HS',sec:'0.6',zk:'low'},
  a:    {x:260,y:280,name:'A',j:'J105443',cls:'C3',fx:'pulsar',statics:['NS'],zk:'low'},
  b:    {x:260,y:600,name:'B',j:'J005299',cls:'C4',fx:'cataclysmic',statics:['C1','C3'],owner:['SNGL',5],zk:'none'},
  ns:   {x:480,y:130,name:'9-4RP2',j:'Deklein',cls:'NS',sec:'-0.3',zk:'high'},
@@ -103,7 +103,7 @@ document.getElementById('edges').innerHTML = svg; document.getElementById('label
 document.getElementById('nodes').innerHTML = Object.keys(N).map(function(k){return LM.node(N[k])}).join('');
 document.getElementById('legend').innerHTML = [['fresh',{mass:'fresh'}],['reduced',{mass:'reduced'}],['critical',{mass:'critical'}],['◷ <4h',{mass:'fresh',eol:1}],['expired',{mass:'fresh',eol:3}],['frigate',{mass:'fresh',frig:true}],['unknown',{mass:'unknown'}]]
  .map(function(l){return '<svg width="44" height="12">' + LM.edgeSvg(4,6,40,6,l[1]).replace(/l5 5-5 5-5-5z/,'l4 4-4 4-4-4z') + '</svg><span>' + l[0] + '</span>'}).join('');
-var C = [[1,'Ryn Vass','A2a','C5','J120617',1,1],[2,'Kade Morrow','Home','C2','J161940',1,0],[4,'Ostrava','C','C6','J222911',1,0],[3,'Ilse Tarn','8 (Jita)','HS','Sirseshin',0,0]];
+var C = [[1,'Ryn Vass','A2a','C5','J120617',1,1],[2,'Kade Morrow','Home','C2','J161940',1,0],[4,'Ostrava','C','C6','J222911',1,0],[3,'Ilse Tarn','8 Jita','HS','Sirseshin',0,0]];
 document.getElementById('chars').innerHTML = C.map(function(c){return '<div class="ch' + (c[6]?' active':'') + (c[5]?'':' offline') + '">' + LM.chr(c[0]) + '<span class="n">' + c[1] + '</span><span class="st ' + (c[5]?'on">● online':'off">○ offline 2h') + '</span><span class="loc">' + LM.cls(c[3], c[3]=='HS'?'0.6':null) + '<b style="color:inherit">' + c[2] + '</b><span class="lm-mono">' + c[4] + '</span></span></div>'}).join('') +
  '<div class="lm-help" style="padding:8px 12px">Highlighted row = overlay is following this character.</div>';
 document.getElementById('hdrb').innerHTML = LM.cls('C5') + LM.fx('redgiant') + LM.statik('C5');

@@ -147,7 +147,7 @@ def test_known_space_display_has_the_real_name(simulation) -> None:
     """K-space shows the scheme label and the real name."""
     jita = UNIVERSE.by_name("Jita")
     simulation.jump(jita.name)
-    assert simulation.namer.display(jita.id) == "2 (Jita)"
+    assert simulation.namer.display(jita.id) == "2 Jita"
 
 
 def test_custom_name_wins(simulation) -> None:

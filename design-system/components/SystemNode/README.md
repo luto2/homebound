@@ -3,7 +3,7 @@
 A draggable `QGraphicsItem` for one system, 168×62 at 100% zoom (`size-node-w`, `size-node-h`).
 
 **Content layout**
-1. Custom name in `node-name` (14px/700), e.g. `A2a`, `123`, `8 (Jita)` — the k-space suffix is `ink-muted`. zKill meter right-aligned. Character markers sit on the top edge.
+1. Custom name in `node-name` (14px/700), e.g. `A2a`, `123`, `8 Jita` — the k-space real name follows without brackets in `ink-muted`; high-/low-sec nodes end the line with the closest hub, `Jita·4`. zKill meter right-aligned. Character markers sit on the top edge.
 2. Class badge · effect icon · real J-name (`mono-small`, `ink-muted`) · statics right-aligned.
 3. Owner tag (only when one is set) and the stale tag.
 

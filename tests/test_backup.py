@@ -266,6 +266,7 @@ def test_failing_start_up_backup_doesnt_block(monkeypatch, tmp_path, qt_applicat
     state.status.connect(lambda *message: messages.append(message))
     monkeypatch.setattr(state.watcher, "start", lambda: None)
     monkeypatch.setattr(state.zkill, "start", lambda: None)
+    monkeypatch.setattr(state.eve_scout, "start", lambda: None)
     state.start()
     state.stop()
     assert messages[0][:2] == ("backup", "warn") and state._backup_messages == []
