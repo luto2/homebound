@@ -125,7 +125,7 @@ def test_broken_settings_file_gives_defaults(data_dir) -> None:
 def test_detected_log_folder_is_used(data_dir, monkeypatch) -> None:
     """Without a saved folder, the first detected one is used."""
     monkeypatch.setattr(settings_module, "detect_log_directories", lambda: [Path("/found/Chatlogs")])
-    assert Settings.load().log_directory == "/found/Chatlogs"
+    assert Settings.load().log_directory == str(Path("/found/Chatlogs"))
 
 
 def test_marker_slots_fill_up_then_share() -> None:
