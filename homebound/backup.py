@@ -13,10 +13,9 @@ import tempfile
 import zipfile
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
-from importlib import metadata
 from pathlib import Path
 
-from . import settings as settings_module
+from . import app_version, settings as settings_module
 from .settings import MAP_NAME_LIMIT, Settings
 from .validation import require_choice, require_type
 
@@ -53,14 +52,6 @@ class BackupInfo:
 def backups_directory() -> Path:
     """Return the folder the backups go in (``DATA_DIR/backups``)."""
     return settings_module.DATA_DIR / "backups"
-
-
-def app_version() -> str:
-    """Return the installed Homebound version, or ``"unknown"``."""
-    try:
-        return metadata.version("homebound")
-    except metadata.PackageNotFoundError:
-        return "unknown"
 
 
 def _copy_database(source: Path, target: Path) -> Path:

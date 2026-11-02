@@ -1,7 +1,7 @@
 """The shared argument checks."""
 import pytest
 
-from homebound.validation import require_choice, require_integer, require_number, require_text, require_type
+from homebound.validation import is_int, is_number, require_choice, require_integer, require_number, require_text, require_type
 
 
 def test_require_type() -> None:
@@ -47,3 +47,9 @@ def test_require_choice() -> None:
     assert require_choice("a", ("a", "b"), "c") == "a"
     with pytest.raises(ValueError, match=r"\['a', 'b'\]"):
         require_choice("z", ("a", "b"), "c")
+
+
+def test_is_int_and_is_number() -> None:
+    """Bools are neither ints nor numbers; floats are numbers but not ints."""
+    assert is_int(3) and not is_int(True) and not is_int(1.0) and not is_int("1") and not is_int(None)
+    assert is_number(3) and is_number(0.5) and not is_number(False) and not is_number("1") and not is_number(None)

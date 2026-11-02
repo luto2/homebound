@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 from .platform.paths import data_directory, documents_directory, is_windows
-from .validation import require_choice, require_integer, require_text, require_type
+from .validation import is_int, is_number, require_choice, require_integer, require_text, require_type
 
 DATA_DIR = data_directory()
 SETTINGS_FILE = DATA_DIR / "settings.json"
@@ -244,11 +244,11 @@ class Settings:
                 continue
             default = defaults[key]
             if key == "overlay_pinned_character":
-                fits = value is None or (isinstance(value, int) and not isinstance(value, bool))
+                fits = value is None or is_int(value)
             elif isinstance(default, bool):
                 fits = isinstance(value, bool)
             elif isinstance(default, float):
-                fits = isinstance(value, (int, float)) and not isinstance(value, bool)
+                fits = is_number(value)
             else:
                 fits = isinstance(value, type(default)) and not (isinstance(value, bool) and not isinstance(default, bool))
             if key in SETTING_CHOICES:
