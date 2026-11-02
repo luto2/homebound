@@ -18,6 +18,8 @@ from .validation import require_integer, require_text, require_type
 
 API_URL = "https://zkillboard.com/api/kills/solarSystemID/{}/pastSeconds/86400/"
 CACHE_LIFETIME = timedelta(minutes=10)
+RECENT_KILL_WINDOW = timedelta(minutes=10)   # a kill this young counts as "just now"
+ZKILL_STALE_AFTER = timedelta(minutes=30)    # cached stats this old are shown as stale
 REQUEST_INTERVAL = 1.2        # seconds between requests
 RATE_LIMIT_PAUSE = 10         # seconds to wait after HTTP 429
 POD_TYPE_IDS = {670, 33328}   # capsule, Genolution 'Auroral' 197-variant capsule
@@ -59,10 +61,23 @@ def summarize(system_id: int, kills: list[dict], now: datetime | None = None) ->
 def is_fresh(stats: ZkillStats | None, now: datetime | None = None) -> bool:
     """Return whether cached stats are younger than CACHE_LIFETIME (None is never fresh)."""
     require_type(stats, (ZkillStats, type(None)), "stats")
+    return bool(stats) and age(stats, now) < CACHE_LIFETIME
+
+
+def age(stats: ZkillStats | None, now: datetime | None = None) -> timedelta | None:
+    """Return the time since the stats were fetched (None without stats)."""
+    require_type(stats, (ZkillStats, type(None)), "stats")
     if not stats:
+        return None
+    return (now or datetime.now(timezone.utc)) - datetime.fromisoformat(stats.fetched_at)
+
+
+def had_recent_kill(stats: ZkillStats | None, now: datetime | None = None) -> bool:
+    """Return whether the last kill was within RECENT_KILL_WINDOW."""
+    require_type(stats, (ZkillStats, type(None)), "stats")
+    if not stats or not stats.last_kill_at:
         return False
-    now = now or datetime.now(timezone.utc)
-    return now - datetime.fromisoformat(stats.fetched_at) < CACHE_LIFETIME
+    return (now or datetime.now(timezone.utc)) - datetime.fromisoformat(stats.last_kill_at) < RECENT_KILL_WINDOW
 
 
 class ZkillFetcher(BackgroundFetcher):

@@ -138,3 +138,13 @@ def test_worker_thread_fetches_skips_fresh_and_follows_map_switches(fetcher, tmp
 def fetcher_path(tmp_path) -> str:
     """The map file the fetcher fixture starts on."""
     return str(tmp_path / "map.db")
+
+
+def test_age_and_had_recent_kill() -> None:
+    """Age is time since fetch; a recent kill is one within the window."""
+    now = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+    stats = ZkillStats(1, 0, 0, 0, (now - timedelta(minutes=3)).isoformat(), (now - timedelta(minutes=5)).isoformat())
+    assert zkill.age(None, now) is None and zkill.age(stats, now) == timedelta(minutes=5)
+    assert zkill.had_recent_kill(stats, now)
+    assert not zkill.had_recent_kill(stats, now + timedelta(minutes=8))
+    assert not zkill.had_recent_kill(None, now)

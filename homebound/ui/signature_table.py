@@ -36,7 +36,6 @@ GROUP_WORDS = {"wormhole": "WH", "combat": "Combat", "data": "Data", "relic": "R
                "ore": "Ore", "ice": "Ice", "unknown": "?", None: "—"}
 GROUP_TITLES = {"wormhole": "Wormholes", "combat": "Combat", "data": "Data", "relic": "Relic", "gas": "Gas",
                 "ore": "Ore", "ice": "Ice", "unknown": "Unscanned"}
-MASS_CHIPS = {"reduced": "R", "critical": "CRIT"}
 ANOMALY_PREFIX = "Anomalies · "
 COPIED_FEEDBACK_MS = 1500
 WIDTH_SAVE_DELAY_MS = 600
@@ -314,9 +313,9 @@ class SignatureModel(QAbstractTableModel):
         elif signature.frigate_only:
             details.append("F")
         if signature.lifetime in LIFETIME_CHIPS:
-            details.append(LIFETIME_CHIPS[signature.lifetime])
-        if signature.mass in MASS_CHIPS:
-            details.append(MASS_CHIPS[signature.mass])
+            details.append(LIFETIME_CHIPS[signature.lifetime][0])
+        if signature.mass in ("reduced", "critical"):   # "?" for unknown mass is left out here
+            details.append(painting.EDGE_CHIPS[signature.mass][0])
         return details
 
     def lead_class(self, signature: Signature) -> str | None:

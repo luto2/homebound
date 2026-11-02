@@ -22,6 +22,7 @@ from homebound.ui.wormhole_fields import (SHOW_ALL, Segment, SegmentButton, Segm
                                           WormholeTypeCombo, draw_edge_icon, kilotons_text, lifetime_help_text,
                                           lifetime_segments, mass_segments, paint_type_row, size_segments)
 from homebound.ui.state import AppState
+from homebound.ui.widgets import caption
 from ui_helpers import make_state
 
 NOW = datetime(2026, 10, 30, 12, tzinfo=timezone.utc)
@@ -773,7 +774,7 @@ def test_segment_factories(qt_application) -> None:
     assert [segment.key for segment in lifetime_segments()] == [LIFETIME_STABLE, LIFETIME_4H, LIFETIME_1H,
                                                                 LIFETIME_EXPIRED]
     assert [segment.key for segment in mass_segments()] == ["fresh", "reduced", "critical", "unknown"]
-    assert wormhole_fields.caption_label("abc").text() == "ABC"
+    assert caption("abc").text() == "ABC"
 
 
 def test_lifetime_help_text() -> None:

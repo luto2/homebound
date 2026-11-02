@@ -1,6 +1,6 @@
 """Map canvas: system nodes, connection edges, the scene that holds them and the zoomable view."""
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from PySide6.QtCore import QLineF, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPainterPathStroker, QPen,
@@ -17,6 +17,7 @@ from ..theme import painting
 from ..theme.tokens import OPACITY, PIXELS, color, font
 from ..universe.db import SIZE_NAMES, Universe
 from ..validation import require_integer, require_number, require_text, require_type
+from ..zkill import had_recent_kill
 
 NODE_WIDTH, NODE_HEIGHT = PIXELS["size-node-w"], PIXELS["size-node-h"]
 W, H = NODE_WIDTH, NODE_HEIGHT  # short aliases kept for older importers
@@ -354,9 +355,7 @@ class SystemNode(QGraphicsObject):
         """Return the zKill activity level ("none" without stats) and whether a kill happened in the last 10 minutes."""
         if not self.zkill:
             return "none", False
-        recent = bool(self.zkill.last_kill_at and datetime.now(timezone.utc)
-                      - datetime.fromisoformat(self.zkill.last_kill_at) < timedelta(minutes=10))
-        return painting.zkill_level(self.zkill.kills_1h, self.zkill.kills_24h), recent
+        return painting.zkill_level(self.zkill.kills_1h, self.zkill.kills_24h), had_recent_kill(self.zkill)
 
     def _zkill_width(self) -> float:
         """Return the width reserved for the zKill badge."""
@@ -519,8 +518,8 @@ class ConnectionEdge(QGraphicsItem):
         if connection.frigate_only:
             chips.append(("F", color("edge-frig")))
         if connection.lifetime in LIFETIME_CHIPS:
-            chips.append((LIFETIME_CHIPS[connection.lifetime],
-                          color("danger") if connection.lifetime == LIFETIME_EXPIRED else color("edge-eol")))
+            text, token = LIFETIME_CHIPS[connection.lifetime]
+            chips.append((text, color(token)))
         if not connection.confirmed:
             chips.append(("▲ UNCONF", color("warning")))
         return chips
