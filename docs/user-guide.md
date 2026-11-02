@@ -171,7 +171,7 @@ The summary above the table says when you last pasted, for example "last paste 2
 - Rows are grouped: Wormholes, Combat, Data, Relic, Gas, Ore, Ice and Unscanned, then *Anomalies · Combat*, *Anomalies · Ore* and so on.
 - Click a group header to collapse it. Homebound remembers this per map. A group with new or missing rows always opens, so you never miss a change.
 - The header shows the count, plus `· 1 −` / `· 1 +` when rows are missing or new.
-- Click a column header (Sig, Type, Name, Scan, Age) to sort the rows inside every group; click it again to reverse. Homebound remembers the order per map.
+- Click a column header (Sig, Type, Name, Seen, Age) to sort the rows inside every group; click it again to reverse. Homebound remembers the order per map.
 - Drag the rules between the column headers to resize them. The widths are remembered.
 - Select rows and click *Delete selected* to remove them.
 - For a wormhole sig, the Name column shows where it leads (`→ A2`) or what you entered in the editor (`→ C3 · M · ◷ <1h · R`).

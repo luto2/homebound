@@ -67,6 +67,21 @@ def test_missing_is_only_checked_per_kind(store) -> None:
     assert store.signature(HOME.id, "ABC-123").state == ""
 
 
+OLD = "2000-01-01T00:00:00+00:00"
+
+
+def test_merge_sets_seen_at_on_every_paste(store) -> None:
+    """Every sig in a paste is seen now, even with unchanged values; a missing one keeps its last sighting."""
+    merge_signatures(store, HOME.id, parse_scanner_text(SCAN, include_anomalies=False))
+    for signature in store.signatures(HOME.id):
+        store.update_signature(HOME.id, signature.signature_id, seen_at=OLD)
+    merge_signatures(store, HOME.id, parse_scanner_text(
+        "ABC-123\tCosmic Signature\tWormhole\tUnstable Wormhole\t100%\t4 AU\n"
+        "DEF-456\tCosmic Signature\t\t\t12,5%\t10 AU\n"))
+    seen = {signature.signature_id: signature.seen_at != OLD for signature in store.signatures(HOME.id)}
+    assert seen == {"ABC-123": True, "DEF-456": True, "GHI-789": False}
+
+
 def test_merge_validation(store) -> None:
     """Merge needs a store, a system ID and parsed rows."""
     with pytest.raises(TypeError):

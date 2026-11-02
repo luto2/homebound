@@ -378,6 +378,7 @@ class SystemPanel(QWidget):
         self.toast.emit("ok", f"{what} · {len(result.added)} new · {len(result.updated)} updated · "
                               f"{len(result.missing)} missing")
         self.state.systemUpdated.emit(self.system_id)
+        self.table.flash([row.signature_id for row in parsed])   # added, updated and confirmed
         return result
 
     def linked_connection(self, signature_id: str) -> Connection | None:

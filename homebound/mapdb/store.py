@@ -118,6 +118,7 @@ class Signature:
     state: str = ""
     created_at: str = ""
     updated_at: str = ""
+    seen_at: str = ""            # last paste that contained it
     kind: str = "sig"
     destination: str | None = None
     mass: str | None = None
@@ -175,6 +176,7 @@ COLUMN_ADDITIONS = [
     ("signatures", "lifetime_set_at", "TEXT"),
     ("signatures", "frigate_only", "INTEGER DEFAULT 0"),
     ("signatures", "size", "TEXT"),
+    ("signatures", "seen_at", "TEXT"),
     ("connections", "size", "TEXT"),
     ("connections", "confirmed", "INTEGER DEFAULT 1"),
     ("systems", "confirmed", "INTEGER DEFAULT 1"),
@@ -623,7 +625,8 @@ class Store:
         self._check_wormhole_values({"lifetime": signature.lifetime, "mass": signature.mass})
         now = utc_now_iso()
         values = {column: getattr(signature, column) for column in SIGNATURE_COLUMNS} | {
-            "created_at": signature.created_at or now, "updated_at": now}
+            "created_at": signature.created_at or now, "updated_at": now,
+        "seen_at": signature.seen_at or signature.created_at or now}
         keep = ("system_id", "signature_id", "created_at")
         self.database.execute(f"""
             INSERT INTO signatures ({','.join(map(_quoted, SIGNATURE_COLUMNS))})
