@@ -318,7 +318,10 @@ class SystemPanel(QWidget):
             self.name.setText(mapped.custom_name or "")
             self.name.setPlaceholderText(state.namer.label(self.system_id) if not mapped.custom_name else "Custom name")
         self.system_name_label.setText(system.name)
-        self.location_label.setText(f"{state.namer.display(self.system_id)} · {system.region} · {system.constellation}")
+        nearest = state.universe.nearest_hub(self.system_id)
+        hub = f" · {nearest[1]} j to {nearest[0]}" if nearest and nearest[1] else (" · trade hub" if nearest else "")
+        self.location_label.setText(f"{state.namer.display(self.system_id)} · {system.region} · {system.constellation}"
+                                    + hub)
         self.badges.set_system(self.system_id)
         if not self.owner.hasFocus():
             self.owner.setText(mapped.owner_ticker or "")

@@ -26,12 +26,13 @@ from .character_dock import CharacterDock
 from .dialogs import AddSystemDialog, ConfirmDeleteMapDialog, ConnectionDialog, NamingDialog, PromptDialog
 from .map_scene import ConnectionEdge, MapScene, MapView, age_text
 from .overlay import Overlay
+from .route_dock import RouteDock
 from .settings_dialog import SettingsDialog
 from .system_panel import SystemPanel
 from .toast import ToastHost
 
 MODES = [("off", "Off"), ("follow", "Follow"), ("pinned_eve", "Pinned"), ("pinned_always", "Always")]
-STATUS_SOURCES = ("logs", "zkill", "kwin", "backup")
+STATUS_SOURCES = ("logs", "zkill", "scout", "kwin", "backup")
 STATUS_LEVELS = {"ok": ("✓", "success"), "warn": ("▲", "warning"), "err": ("✕", "danger")}
 PIN_FIRST_HINT = "Pin a character first (right-click it in the Characters list)"
 
@@ -255,11 +256,19 @@ class MapWindow(QMainWindow):
 
         self.character_dock = CharacterDock(state)
         self.character_dock.pinRequested.connect(self.pin_character)
-        dock = QDockWidget("Characters", self)
-        dock.setObjectName("chars")
-        dock.setWidget(self.character_dock)
+        character_dock = QDockWidget("Characters", self)
+        character_dock.setObjectName("chars")
+        character_dock.setWidget(self.character_dock)
+        character_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, character_dock)
+        self.route_dock = RouteDock(state)
+        self.route_dock.toast.connect(lambda kind, text: self.toasts.show(kind, text))
+        dock = QDockWidget("Routes", self)
+        dock.setObjectName("routes")
+        dock.setWidget(self.route_dock)
         dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
+        self.splitDockWidget(character_dock, dock, Qt.Orientation.Vertical)   # characters above, routes below
         self.panel = SystemPanel(state)
         self.panel.toast.connect(lambda kind, text: self.toasts.show(kind, text))
         self.panel.undoable.connect(self.offer_undo)
@@ -380,7 +389,7 @@ class MapWindow(QMainWindow):
         return toolbar.iconSize()
 
     def _build_statusbar(self) -> dict[str, QLabel]:
-        """Add one status label per source (logs, zKill, KWin, backup) to the status bar.
+        """Add one status label per source (logs, zKill, EVE-Scout, KWin, backup) to the status bar.
 
         Returns:
             The labels by source.
@@ -406,7 +415,7 @@ class MapWindow(QMainWindow):
         """Show a status line for one source; unknown sources are ignored.
 
         Args:
-            source: ``logs``, ``zkill``, ``kwin`` or ``backup`` (a backup warning also shows a toast).
+            source: ``logs``, ``zkill``, ``scout``, ``kwin`` or ``backup`` (a backup warning also shows a toast).
             level: ``ok``, ``warn`` or ``err``; anything else shows no glyph.
             text: The message.
 
@@ -681,6 +690,11 @@ class MapWindow(QMainWindow):
             if button.property("mode").startswith("pinned"):
                 button.setEnabled(pinned)
                 button.setToolTip("" if pinned else PIN_FIRST_HINT)
+        scout = self.status_labels["scout"]
+        if not settings.eve_scout_enabled:
+            self._status("scout", "", "EVE-Scout off")
+        elif "off" in scout.text() or scout.text() == "…":
+            self._status("scout", "", "EVE-Scout …")
         self._sync_tray()
 
     def _scheme_changed(self, _index: int) -> None:
@@ -921,6 +935,7 @@ class MapWindow(QMainWindow):
         menu.addSeparator()
         menus.item(menu, "Mark as scanned now", lambda: state.mark_scanned(system_id))
         menus.item(menu, "Request zKill now", lambda: state.zkill.request([system_id], force=True))
+        menus.item(menu, "Add as route destination", lambda: self.route_dock.add_system(system_id))
         menu.addSeparator()
         menus.item(menu, "Remove from map", lambda: self._remove(system_id), "Del", danger=True,
                    enabled=not is_home, why="Home can't be removed. Set another home first.")
@@ -964,7 +979,7 @@ class MapWindow(QMainWindow):
         automatic = state.namer.scheme_label(system_id)
         dialog = PromptDialog(
             self, "Rename system",
-            f"<b>{state.namer.display(system_id)}</b> · {universe_system.name} · {universe_system.system_class}",
+            f"<b>{state.namer.label(system_id)}</b> · {universe_system.name} · {universe_system.system_class}",
             "Custom name", mapped.custom_name or "", validate=lambda text: (True, ""),
             primary=lambda text: "Rename" if text else "Use scheme name", placeholder=automatic,
             end_text="scheme name", hint=f"Leave empty to use the scheme name ({automatic}).")

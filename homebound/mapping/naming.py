@@ -320,13 +320,21 @@ class Namer:
         return label if root == self.home_id or self.home_id is None else "~" + label
 
     def display(self, system_id: int) -> str:
-        """Return the custom name or scheme label, with the real name for k-space: '13 (Jita)'."""
+        """Return the custom name or scheme label, with the real name for k-space: '13 Jita'."""
         label = self.label(system_id)
         system = self.universe.by_id(system_id)
         mapped = self.store.system(system_id) or MapSystem(system_id)
         if system and system.known_space and label != system.name and not mapped.custom_name:
-            return f"{label} ({system.name})"
+            return f"{label} {system.name}"
         return label
+
+    def with_real_name(self, system_id: int) -> str:
+        """Return :meth:`display` followed by the real name when it doesn't show it already: 'Home J161940', '13 Jita'."""
+        display = self.display(system_id)
+        system = self.universe.by_id(system_id)
+        if not system or display == system.name or display.endswith(f" {system.name}"):
+            return display
+        return f"{display} {system.name}"
 
     def preview(self, parent_id: int, hole_index: int, level_index: int | None = None) -> str:
         """Return the name a new child of ``parent_id`` would get behind this hole.

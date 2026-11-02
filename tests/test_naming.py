@@ -144,7 +144,7 @@ def test_namer_labels_for_roots_and_foreign_chains() -> None:
     assert namer.display(HOME.id) == "Home" and namer.display(jita) == "Jita"
     amarr = UNIVERSE.by_name("Amarr").id
     store.add_system(amarr, parent_id=jita, hole_index=2)
-    assert namer.display(amarr) == "~2 (Amarr)"
+    assert namer.display(amarr) == "~2 Amarr"
     assert namer.preview(jita, 3) == "~3"
     assert namer.scheme_label(99999999) == "99999999"
     store.update_system(amarr, custom_name="Market")
@@ -173,3 +173,18 @@ def test_guess_static_reasons() -> None:
     assert "already mapped" in guess_static(store, UNIVERSE, HOME.id, c5.id).reason
     with pytest.raises(TypeError):
         guess_static(store, UNIVERSE, HOME.id, c5.id, signature_type=296)
+
+
+def test_with_real_name_adds_it_once() -> None:
+    """K-space display names already end in the real name; w-space and home get it appended; plain names stay."""
+    store = Store(":memory:")
+    namer = Namer(store, UNIVERSE, "numeric", HOME.id)
+    store.add_system(HOME.id)
+    jita = UNIVERSE.by_name("Jita").id
+    store.add_system(jita, parent_id=HOME.id, hole_index=2)
+    assert namer.with_real_name(HOME.id) == f"Home {HOME.name}"
+    assert namer.with_real_name(jita) == "2 Jita" == namer.display(jita)
+    root = UNIVERSE.by_name("Amarr").id
+    store.add_system(root)
+    assert namer.with_real_name(root) == "Amarr"
+    assert namer.with_real_name(1) == namer.display(1)

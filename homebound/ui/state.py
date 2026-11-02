@@ -1,10 +1,11 @@
-"""Shared application state: store, universe, naming, tracker, watcher, zKill -> Qt signals."""
+"""Shared application state: store, universe, naming, tracker, watcher, zKill, EVE-Scout -> Qt signals."""
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from .. import backup
+from .. import backup, routing
+from ..eve_scout import EveScoutFetcher
 from ..logs.parser import SystemChange
 from ..logs.watcher import LogWatcher
 from ..mapdb.store import Store, utc_now_iso
@@ -35,11 +36,13 @@ class AppState(QObject):
     autoNamed = Signal(object)            # AutoNamed
     selectionChanged = Signal(int)        # system id (0 = none)
     settingsChanged = Signal()
-    status = Signal(str, str, str)        # source (logs|zkill|kwin|backup), level, text
+    status = Signal(str, str, str)        # source (logs|zkill|scout|kwin|backup), level, text
     followedChanged = Signal(object)      # character id or None (overlay target)
     scanAgeTick = Signal()                # once a minute: scan ages moved on, rescan states may change
+    scoutUpdated = Signal()               # EVE-Scout's Thera/Turnur connections changed
     _zkillUpdated = Signal(int)
     _zkillStatus = Signal(str, str)
+    _scoutStatus = Signal(str, str)
 
     def __init__(self, universe: Universe, settings: Settings, database_path: str | None = None,
                  auto_backup: bool = False) -> None:
@@ -75,6 +78,9 @@ class AppState(QObject):
         self._zkillStatus.connect(lambda level, text: self.status.emit("zkill", level, text))
         self.zkill = ZkillFetcher(self.database_path, self._zkillUpdated.emit, self._zkillStatus.emit)
         self.zkill.enabled = settings.zkill_enabled
+        self._scoutStatus.connect(lambda level, text: self.status.emit("scout", level, text))
+        self.eve_scout = EveScoutFetcher(self.scoutUpdated.emit, self._scoutStatus.emit)
+        self.eve_scout.enabled = settings.eve_scout_enabled
         self._expiry_timer: QTimer | None = None
         self._scan_age_timer: QTimer | None = None
         self._ensure_home()
@@ -96,7 +102,7 @@ class AppState(QObject):
         return Store(self.database_path, before_migration=lambda path: self.backup("migration"))
 
     def start(self) -> None:
-        """Start the log watcher, the zKill thread, the expiry timer and the scan age tick.
+        """Start the log watcher, the zKill and EVE-Scout threads, the expiry timer and the scan age tick.
 
         A backup problem from opening is reported now, when the window is listening.
         """
@@ -105,6 +111,7 @@ class AppState(QObject):
         self._backup_messages = []
         self.watcher.start()
         self.zkill.start()
+        self.eve_scout.start()
         self.expire()
         self._expiry_timer = QTimer(self, interval=EXPIRY_INTERVAL_MS, timeout=self.expire)
         self._expiry_timer.start()
@@ -125,6 +132,7 @@ class AppState(QObject):
     def stop(self) -> None:
         """Stop the background work."""
         self.zkill.stop()
+        self.eve_scout.stop()
         self.watcher.timer.stop()
         if self._expiry_timer:
             self._expiry_timer.stop()
@@ -298,11 +306,48 @@ class AppState(QObject):
         self.namer.home_id = self.home_id
         self.tracker.auto_when_certain = settings.auto_name_when_certain
         self.zkill.enabled = settings.zkill_enabled
+        self.eve_scout.enabled = settings.eve_scout_enabled
         self._ensure_home()
         if str(self.watcher.scanner.log_directory) != settings.log_directory:
             self.watcher.set_log_directory(settings.log_directory)
         self.settingsChanged.emit()
         self.mapChanged.emit()
+
+    def save_route_settings(self) -> None:
+        """Save the settings after a route option changed and tell the views, without a map rebuild."""
+        self.settings.save()
+        self.eve_scout.enabled = self.settings.eve_scout_enabled
+        self.settingsChanged.emit()
+
+    # ------------------------------------------------------------ routes
+    def route_origin(self) -> int | None:
+        """Return where routes start: the selected system, else the system of the followed character."""
+        if self.selected:
+            return self.selected
+        return self.character_location(self.followed) if self.followed is not None else None
+
+    def route_options(self) -> routing.RouteOptions:
+        """Return the route options from the settings."""
+        settings = self.settings
+        return routing.RouteOptions(settings.route_preference, settings.eve_scout_enabled, settings.route_use_eol,
+                                    settings.route_use_mass_critical, settings.route_ship_size)
+
+    def route_destination_ids(self) -> list[int]:
+        """Return the route destinations from the settings that are known systems, in order, without repeats."""
+        found = []
+        for name in self.settings.route_destinations:
+            system = self.universe.by_name(name)
+            if system and system.id not in found:
+                found.append(system.id)
+        return found
+
+    def routes(self, origin: int | None = None) -> list[routing.Route | None]:
+        """Return a route to every destination from ``origin`` (default :meth:`route_origin`); empty without one."""
+        origin = origin if origin is not None else self.route_origin()
+        if not origin:
+            return []
+        return routing.routes(self.universe, origin, self.route_destination_ids(), self.store.connections(),
+                              self.eve_scout.links(), self.route_options())
 
     # ------------------------------------------------------------ log events
     def on_system_change(self, change: SystemChange) -> None:

@@ -50,6 +50,40 @@ def test_gates() -> None:
         UNIVERSE.gate_distances(jita, -1)
 
 
+def test_empire_of_high_and_low_sec() -> None:
+    """HS/LS systems take their region's empire (Jita is CONCORD, Derelik is Ammatar); null and w-space have none."""
+    assert UNIVERSE.by_name("Jita").empire == "caldari" and UNIVERSE.by_name("Tama").empire == "caldari"
+    assert UNIVERSE.by_name("Amarr").empire == "amarr" and UNIVERSE.by_name("Dodixie").empire == "gallente"
+    assert UNIVERSE.by_name("Rens").empire == "minmatar" and UNIVERSE.by_name("Rancer").empire == "gallente"
+    derelik = next(system for system in UNIVERSE.all_systems()
+                   if system.region == "Derelik" and system.system_class == "HS")
+    assert derelik.empire == "amarr"
+    assert UNIVERSE.by_name("1DQ1-A").empire is None and HOME.empire is None
+
+
+def test_nearest_hub() -> None:
+    """The closest trade hub by gates, for HS/LS only; a hub is 0 jumps from itself."""
+    jita, perimeter = UNIVERSE.by_name("Jita"), UNIVERSE.by_name("Perimeter")
+    assert UNIVERSE.nearest_hub(jita.id) == ("Jita", 0) and UNIVERSE.nearest_hub(perimeter.id) == ("Jita", 1)
+    assert UNIVERSE.nearest_hub(UNIVERSE.by_name("Rancer").id) == ("Hek", 3)
+    assert UNIVERSE.nearest_hub(UNIVERSE.by_name("1DQ1-A").id) is None
+    assert UNIVERSE.nearest_hub(HOME.id) is None and UNIVERSE.nearest_hub(1) is None
+    with pytest.raises(TypeError):
+        UNIVERSE.nearest_hub("Jita")
+    assert perimeter.id in UNIVERSE.gate_graph()[jita.id]
+
+
+def test_nearest_hub_tie_goes_to_the_hub_listed_first(monkeypatch) -> None:
+    """With two hubs at the same distance, the one first in TRADE_HUBS wins; unknown hub names are skipped."""
+    jita, perimeter = UNIVERSE.by_name("Jita").id, UNIVERSE.by_name("Perimeter").id
+    distances = {"Jita": {jita: 0, perimeter: 1}, "Amarr": {perimeter: 1}}
+    monkeypatch.setattr(db, "TRADE_HUBS", ("Jita", "Amarr", "Nowhere"))   # an unknown hub is skipped
+    universe = object.__new__(Universe)
+    universe._by_id, universe._by_name = UNIVERSE._by_id, UNIVERSE._by_name
+    universe.gate_distances = lambda start, max_jumps: distances[universe.by_id(start).name]
+    assert universe._hub_distances()[perimeter] == ("Jita", 1)
+
+
 def test_wormhole_types() -> None:
     """Types are looked up by code; a system offers its statics first and never K162."""
     h296 = UNIVERSE.wormhole_type(" h296 ")

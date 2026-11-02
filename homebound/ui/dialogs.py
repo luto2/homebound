@@ -238,10 +238,10 @@ class NamingDialog(BaseDialog):
             pending: How many more questions wait behind this one.
         """
         require_type(request, NamingRequest, "request")
-        child, parent_system = state.universe.by_id(request.child_id), state.universe.by_id(request.parent_id)
+        child = state.universe.by_id(request.child_id)
         who = f"{request.character_name} jumped " if request.character_name else ""
         super().__init__(parent, f"New system · {child.name} ({child.system_class})",
-                         f"{who}{state.namer.display(request.parent_id)} ({parent_system.name}) → {child.name}")
+                         f"{who}{state.namer.with_real_name(request.parent_id)} → {child.name}")
         self.state, self.request = state, request
         if_static, if_not = state.tracker.preview_names(request)
         self.names = {True: if_static, False: if_not}
@@ -395,7 +395,7 @@ class SignatureDialog(BaseDialog):
         require_type(signature, Signature, "signature")
         require_type(connection, (Connection, type(None)), "connection")
         self.state, self.signature, self.connection = state, signature, connection
-        subtitle = f"{state.namer.display(signature.system_id)} ({state.universe.by_id(signature.system_id).name})"
+        subtitle = state.namer.with_real_name(signature.system_id)
         if connection:
             subtitle += f" · leads to {state.namer.display(connection.other_end(signature.system_id))}"
         super().__init__(parent, f"Signature · {signature.signature_id}", subtitle)

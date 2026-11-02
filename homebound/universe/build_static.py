@@ -34,7 +34,7 @@ OUTPUT = DATA / UNIVERSE_FILE
 RESOLVED = DATA / RESOLVED_FILE
 SHIPPED_RESOLVED = bundled_data_directory() / RESOLVED_FILE   # the same file as RESOLVED in a checkout
 HEADERS = {"User-Agent": "homebound/0.1 (personal offline mapper; build script)"}
-SCHEMA_VERSION = "2"         # bump together with db.SCHEMA_VERSION
+SCHEMA_VERSION = "3"         # bump together with db.SCHEMA_VERSION
 
 SDE_URL = "https://developers.eveonline.com/static-data/eve-online-static-data-latest-jsonl.zip"
 WANDERER_URL = "https://raw.githubusercontent.com/wanderer-industries/wanderer/main/priv/repo/data/"
@@ -59,7 +59,8 @@ DESTINATION_LABEL = {"c1": "C1", "c2": "C2", "c3": "C3", "c4": "C4", "c5": "C5",
 
 SCHEMA = """
     CREATE TABLE systems (id INTEGER PRIMARY KEY, name TEXT UNIQUE, system_class TEXT, wormhole_class_id INTEGER,
-                          security REAL, region TEXT, constellation TEXT, effect TEXT, wormhole_space INTEGER);
+                          security REAL, region TEXT, constellation TEXT, effect TEXT, wormhole_space INTEGER,
+                          faction_id INTEGER);  -- SDE faction of the region, else constellation, else system
     CREATE TABLE gates (system_a INTEGER, system_b INTEGER, PRIMARY KEY (system_a, system_b));
     CREATE TABLE statics (system_id INTEGER, wormhole_type TEXT, PRIMARY KEY (system_id, wormhole_type));
     CREATE TABLE wormhole_types (name TEXT PRIMARY KEY, destinations TEXT, lifetime_hours REAL, total_mass INTEGER,
@@ -296,9 +297,11 @@ def build(refresh: bool = False, progress: Progress | None = None, keep_cache: b
             continue
         security = float(record.get("securityStatus", 0.0))
         label = WORMHOLE_CLASS_LABEL.get(wormhole_class) or known_space_label(security)
+        # region first: the empire whose space it is (Jita itself is a CONCORD system in Caldari space)
+        faction = region.get("factionID") or constellation.get("factionID") or record.get("factionID")
         rows.append((system_id, record["name"]["en"], label, wormhole_class, security, region["name"]["en"],
                      constellation["name"]["en"], effects.get(system_id),
-                     1 if label not in ("HS", "LS", "NS", "PV") else 0))
+                     1 if label not in ("HS", "LS", "NS", "PV") else 0, faction))
 
     gates = set()
     for record in json_lines(archive, "mapStargates.jsonl"):
@@ -328,7 +331,7 @@ def build(refresh: bool = False, progress: Progress | None = None, keep_cache: b
         partial.unlink()
     database = sqlite3.connect(partial)
     database.executescript(SCHEMA)
-    database.executemany("INSERT INTO systems VALUES (?,?,?,?,?,?,?,?,?)", rows)
+    database.executemany("INSERT INTO systems VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
     database.executemany("INSERT INTO gates VALUES (?,?)", sorted(gates))
     database.executemany("INSERT INTO statics VALUES (?,?)",
                          [(system_id, code) for system_id, codes in statics.items() for code in codes])

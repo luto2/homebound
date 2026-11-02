@@ -13,6 +13,7 @@ import homebound.ui.notify as notify_module
 import homebound.ui.overlay as overlay_module
 import homebound.ui.toast as toast_module
 from conftest import HOME, UNIVERSE, pick_system
+from homebound.theme import painting
 from homebound.logs.parser import SystemChange
 from homebound.logs.watcher import CharacterState
 from homebound.mapdb.store import ZkillStats, utc_now_iso
@@ -135,13 +136,15 @@ def test_start_and_stop(state, monkeypatch) -> None:
     started = []
     monkeypatch.setattr(state.zkill, "start", lambda: started.append("zkill"))
     monkeypatch.setattr(state.zkill, "stop", lambda: started.append("stop"))
+    monkeypatch.setattr(state.eve_scout, "start", lambda: started.append("scout"))
+    monkeypatch.setattr(state.eve_scout, "stop", lambda: started.append("scout stop"))
     status = spy(state.status)
     state.start()
-    assert started == ["zkill"] and state._expiry_timer.isActive()
+    assert started == ["zkill", "scout"] and state._expiry_timer.isActive()
     assert state._scan_age_timer.isActive() and state._scan_age_timer.interval() == SCAN_AGE_INTERVAL_MS
     assert state.watcher.timer.isActive() and status[0][0] == "logs"
     state.stop()
-    assert started == ["zkill", "stop"] and not state._expiry_timer.isActive() and not state.watcher.timer.isActive()
+    assert started == ["zkill", "scout", "stop", "scout stop"] and not state._expiry_timer.isActive() and not state.watcher.timer.isActive()
     assert not state._scan_age_timer.isActive()
 
 
@@ -776,6 +779,29 @@ def test_overlay_paints_virtual_kspace_row(overlay_setup) -> None:
     # a row for a system the universe doesn't know is skipped
     overlay.chain.rows[0].system_id = 1
     overlay.grab()
+
+
+def test_overlay_kspace_rows_show_name_without_brackets_and_closest_hub(overlay_setup, monkeypatch) -> None:
+    """A mapped k-space row shows its real name plainly and the closest hub; the name gives way when there's no room."""
+    overlay, _, state = overlay_setup
+    settings = state.settings
+    settings.overlay_mode, settings.overlay_pinned_character = "pinned_always", 5
+    jita, perimeter = UNIVERSE.by_name("Jita"), UNIVERSE.by_name("Perimeter")
+    state.tracker.add_wormhole(HOME.id, perimeter.id)
+    put_character(state, 5, "Pilot", jita.id)       # one gate out: a virtual row with its hub too
+    overlay.refresh()
+    texts: list[str] = []
+    original = painting.draw_halo_text
+    monkeypatch.setattr(painting, "draw_halo_text",
+                        lambda painter, x, baseline, text, *rest: texts.append(text) or original(painter, x, baseline,
+                                                                                                  text, *rest))
+    overlay.grab()
+    assert "Perimeter" in texts and "Jita·1" in texts and "Jita·0" in texts
+    assert not any(text.startswith("(") for text in texts)
+    texts.clear()
+    state.store.update_system(perimeter.id, owner_ticker="W" * 40)
+    overlay.grab()
+    assert "Perimeter" not in texts
 
 
 def test_overlay_drag(overlay_setup) -> None:

@@ -172,3 +172,23 @@ def test_detect_log_directories_on_windows(tmp_path, monkeypatch) -> None:
     assert settings_module.detect_log_directories() == [german, plain]
     monkeypatch.setattr(settings_module, "documents_directory", lambda: tmp_path / "Documents")
     assert settings_module.detect_log_directories() == [plain, german]  # no duplicates
+
+
+def test_route_settings_defaults_and_bad_values(data_dir) -> None:
+    """Routes default to the trade hubs with EVE-Scout on; unknown choices or names keep the defaults."""
+    settings = Settings()
+    assert settings.route_destinations == ["Jita", "Amarr", "Dodixie", "Rens", "Hek"]
+    assert settings.eve_scout_enabled and settings.route_preference == "shortest" and settings.route_ship_size == "M"
+    settings.route_destinations.append("J161940")
+    assert Settings().route_destinations[-1] == "Hek"   # each Settings has its own list
+    (data_dir / "settings.json").write_text(json.dumps({
+        "route_preference": "fastest", "route_ship_size": "XXL", "route_destinations": ["Jita", 5]}))
+    loaded = Settings.load()
+    assert (loaded.route_preference, loaded.route_ship_size) == ("shortest", "M")
+    assert loaded.route_destinations[0] == "Jita" and len(loaded.route_destinations) == 5
+    (data_dir / "settings.json").write_text(json.dumps({
+        "route_preference": "safer", "route_ship_size": "S", "route_destinations": ["J161940"],
+        "eve_scout_enabled": False}))
+    loaded = Settings.load()
+    assert (loaded.route_preference, loaded.route_ship_size, loaded.route_destinations, loaded.eve_scout_enabled) \
+        == ("safer", "S", ["J161940"], False)

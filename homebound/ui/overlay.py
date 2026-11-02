@@ -15,6 +15,7 @@ from ..theme import painting
 from ..theme.tokens import OPACITY, PIXELS, color, font
 from ..validation import require_type
 from .focus import FocusTracker
+from .map_scene import hub_text
 from .state import AppState
 
 MODE_LABELS = {"follow": "follow", "pinned_eve": "pinned", "pinned_always": "pinned · always"}
@@ -301,8 +302,8 @@ class Overlay(QWidget):
             x += painting.draw_halo_text(painter, x, baseline, f"{row.jumps_from}j", fonts.mono, color("accent")) + 4
             painting.draw_halo_text(painter, x, baseline, f"from {entrance}", fonts.mono, ink)
         elif system.known_space:
-            if label != system.name:
-                painting.draw_halo_text(painter, x, baseline, f"({system.name})", fonts.mono, muted)
+            if label != system.name and QFontMetricsF(fonts.mono).horizontalAdvance(system.name) <= right - x:
+                painting.draw_halo_text(painter, x, baseline, system.name, fonts.mono, muted)
         else:
             available = right - x - (19 if system.effect else 0)
             if QFontMetricsF(fonts.mono).horizontalAdvance(system.name) <= available:
@@ -312,7 +313,7 @@ class Overlay(QWidget):
 
     def _paint_row_right(self, painter: QPainter, row: ChainRow, y: float, row_height: float, baseline: float,
                          badge_y: float, fonts: OverlayFonts, ink: QColor, muted: QColor) -> float:
-        """Draw owner and zKill numbers from the right edge.
+        """Draw owner, zKill numbers and, in high-/low-sec, the closest trade hub from the right edge.
 
         Returns:
             The x where the free space on the left ends.
@@ -336,6 +337,10 @@ class Overlay(QWidget):
                     < RECENT_KILL_WINDOW):
                 painting.draw_recent_kill(painter, right - 7, y + row_height / 2)
                 right -= 18
+        if hub := hub_text(state.universe, row.system_id):
+            text_width = QFontMetricsF(fonts.mono).horizontalAdvance(hub)
+            painting.draw_halo_text(painter, right - text_width, baseline, hub, fonts.mono, muted)
+            right -= text_width + 6
         return right
 
     # ------------------------------------------------------------ drag when unlocked

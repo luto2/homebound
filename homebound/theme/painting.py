@@ -47,6 +47,20 @@ def class_color(system_class: str | None) -> QColor | None:
     return color(entry[0]) if entry else None
 
 
+def security_color(system_class: str, security: float) -> QColor:
+    """Return the colour of a system on a route strip: the client's security scale in k-space, else its class colour.
+
+    Args:
+        system_class: The system's class (HS, LS, NS, C1 …).
+        security: Its true security status; shown rounded to one decimal, negatives as 0.0.
+    """
+    require_number(security, "security", -1.0, 1.0)
+    if system_class not in KNOWN_SPACE_CLASSES:
+        return class_color(system_class) or color("ink-faint")
+    shown = max(0, round(security * 10)) if security > 0 else 0
+    return color(f"sec-{shown:02d}")
+
+
 def class_badge_width(system_class: str, security: float | None = None) -> float:
     """Return the width of a class badge, with room for the security status of k-space.
 

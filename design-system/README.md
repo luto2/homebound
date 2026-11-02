@@ -16,7 +16,7 @@ Everything here is buildable with Qt Widgets, QSS and `QGraphicsView`/`QPainter`
 - **Casing**: sentence case for buttons and titles ("Paste sigs", "Delete missing"); UPPERCASE only for `ui-label` captions, `overlay-header` and chips (CRIT, EOL, HOME).
 - **Game terms stay as players say them**: sig, static, K162, EOL, crit, frig hole, J-name, k-space, chain, roll. Don't spell out "End of Life" in tight spaces; do in tooltips.
 - **Numbers**: mono, tabular. Ages as `1h 12m`, `34m`, `1d 2h`; jumps as `3j`; kills as `1h/24h` → `3/41`; mass as `<50%`, `<10%`.
-- **Names**: custom name first, real name second (`A2a` then `J120617`; `8 (Jita)` then `Sirseshin`).
+- **Names**: custom name first, real name second (`A2a` then `J120617`; `8 Jita` then `Sirseshin`).
 - **Errors say what was expected**: "Folder not found. Expected …/logs/Chatlogs containing Local_*.txt".
 - No emoji. Glyphs used: ✓ ✕ ▲ ! ? ◷ ⌂ ▶ ⧉ → ● ○.
 
@@ -28,6 +28,8 @@ Dark only for now (`dark` theme); a light theme is optional and low priority.
 - **Accent** (`accent`, ice blue) means *you are here / you chose this*: selection, focus, primary action, current overlay row. Nothing else.
 - **Status**: `success` teal ✓, `warning` amber ▲, `danger` vermillion ✕/!. Success is teal so it sits off the red–green axis and stays distinct from danger for deuteranopes; each always carries its glyph. `*-dim` variants are 15% fills behind `ink`. Stale data uses `stale` hatching plus a label: a `SCAN 26h` tab on map nodes, "stale 14m" elsewhere.
 - **Space classes** (13): `class-c1` … `class-c6` run cool to hot (sky → blue → teal → olive → orange → red) so difficulty reads as temperature; Thera violet, C13 silver with a notch, Drifter pink, Pochven bronze with a cut corner. **W-space badges are filled, k-space (`class-hs/ls/ns`) are outlined** and carry the security number. Labels are always printed.
+- **Empire space** (`empire-amarr/caldari/gallente/minmatar`, each with `-hover`): dark tints used as the node body of high- and low-sec systems, so ink stays ≥ 12:1. Null-sec and w-space keep `bg-1`/`bg-2`. The closest trade hub (`Jita·4`) sits at the right end of the name line in `mono-small`, `ink-muted`.
+- **Security scale** (`sec-10` … `sec-00`): the client's colours for 1.0 … 0.0, used for the squares of the Routes dock strip.
 - **Effects** (7): each has its own glyph *and* an `effect-*` ink; the glyph is what identifies it.
 - **Connections**: `edge-fresh` neutral, `edge-reduced` amber, `edge-critical` vermillion, `edge-eol` violet casing, `edge-frig` teal, `edge-unknown` grey. Width and dash do the primary work (see ConnectionEdge).
 - **zKill**: bar count (0–3) is the signal; `zk-low/med/high` back it up; `zk-recent` yellow diamond means a kill in the last 10 minutes.

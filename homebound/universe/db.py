@@ -11,8 +11,13 @@ from ..platform.paths import source_tree, static_data_candidates, static_data_pa
 from ..validation import require_integer, require_text, require_type
 
 DEFAULT_PATH = static_data_path()
-SCHEMA_VERSION = "2"         # bump together with build_static.SCHEMA_VERSION
+SCHEMA_VERSION = "3"         # bump together with build_static.SCHEMA_VERSION
 KNOWN_SPACE_CLASSES = ("HS", "LS", "NS")
+EMPIRE_CLASSES = ("HS", "LS")
+# SDE faction -> empire whose colour its space gets (Ammatar and Khanid space count as Amarr)
+EMPIRE_FACTIONS = {500001: "caldari", 500002: "minmatar", 500003: "amarr", 500004: "gallente",
+                   500007: "amarr", 500008: "amarr"}
+TRADE_HUBS = ("Jita", "Amarr", "Dodixie", "Rens", "Hek")
 
 # max mass per jump (kg) -> size class; the sizes the game uses are 5, 62, 375 and ≥ 1000 kt
 SIZES = ["S", "M", "L", "XL"]
@@ -53,11 +58,17 @@ class System:
     effect: str | None           # pulsar, blackhole, ... (theme effect keys) or None
     wormhole_space: bool
     statics: tuple[str, ...] = field(default=())
+    faction_id: int | None = None   # SDE faction of the region, else of the constellation or system
 
     @property
     def known_space(self) -> bool:
         """Whether the system is high-, low- or null-sec."""
         return self.system_class in KNOWN_SPACE_CLASSES
+
+    @property
+    def empire(self) -> str | None:
+        """The empire whose space a high- or low-sec system is in (amarr, caldari, gallente, minmatar), or None."""
+        return EMPIRE_FACTIONS.get(self.faction_id) if self.system_class in EMPIRE_CLASSES else None
 
 
 @dataclass(frozen=True)
@@ -140,9 +151,9 @@ class Universe:
         self._by_id: dict[int, System] = {}
         self._by_name: dict[str, System] = {}
         for row in self.database.execute(
-                "SELECT id, name, system_class, security, region, constellation, effect, wormhole_space "
+                "SELECT id, name, system_class, security, region, constellation, effect, wormhole_space, faction_id "
                 "FROM systems"):
-            system = System(*row[:7], bool(row[7]), tuple(sorted(statics.get(row[0], ()))))
+            system = System(*row[:7], bool(row[7]), tuple(sorted(statics.get(row[0], ()))), row[8])
             self._by_id[system.id] = system
             self._by_name[system.name.lower()] = system
         self._gates: dict[int, set[int]] = {}
@@ -157,6 +168,7 @@ class Universe:
             self._types[name] = WormholeType(name, _split(destinations), lifetime_hours, total_mass, max_jump_mass,
                                              bool(is_static), _split(spawns_in),
                                              None if wanders_into is None else _split(wanders_into))
+        self._nearest_hub: dict[int, tuple[str, int]] | None = None
 
     def close(self) -> None:
         """Close the universe file."""
@@ -242,6 +254,40 @@ class Universe:
                     distances[neighbour] = distances[current] + 1
                     queue.append(neighbour)
         return distances
+
+    def gate_graph(self) -> dict[int, set[int]]:
+        """Return ``{system: systems one stargate jump away}`` for every system with a gate (do not modify)."""
+        return self._gates
+
+    # ---- trade hubs
+    def nearest_hub(self, system_id: int) -> tuple[str, int] | None:
+        """Return the closest trade hub of a high- or low-sec system by stargate jumps.
+
+        The distances from every hub are worked out on the first call; on a tie the hub listed first
+        in :data:`TRADE_HUBS` wins.
+
+        Returns:
+            ``(hub name, jumps)``, or None for null-sec, w-space, Pochven and systems no hub reaches by gate.
+        """
+        require_integer(system_id, "system_id")
+        system = self._by_id.get(system_id)
+        if not system or system.system_class not in EMPIRE_CLASSES:
+            return None
+        if self._nearest_hub is None:
+            self._nearest_hub = self._hub_distances()
+        return self._nearest_hub.get(system_id)
+
+    def _hub_distances(self) -> dict[int, tuple[str, int]]:
+        """Return ``{system: (closest hub, jumps)}`` from one breadth-first search per hub."""
+        found: dict[int, tuple[str, int]] = {}
+        for name in reversed(TRADE_HUBS):   # an earlier hub overwrites a later one at the same distance
+            hub = self.by_name(name)
+            if not hub:
+                continue
+            for system_id, jumps in self.gate_distances(hub.id, len(self._by_id)).items():
+                if system_id not in found or jumps <= found[system_id][1]:
+                    found[system_id] = (hub.name, jumps)
+        return found
 
     # ---- wormhole types
     def wormhole_type(self, name: str) -> WormholeType | None:
