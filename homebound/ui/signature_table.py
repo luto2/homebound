@@ -4,11 +4,12 @@ Rows are grouped: signatures by group (wormholes first), then anomalies by group
 Each group has a header row that collapses it; collapsed groups are remembered per map.
 """
 import json
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from PySide6.QtCore import (QAbstractItemModel, QAbstractTableModel, QEvent, QModelIndex, QPersistentModelIndex,
-                            QPointF, QRect, QRectF, Qt, QTimer, Signal)
+from PySide6.QtCore import (QAbstractItemModel, QAbstractTableModel, QEvent, QModelIndex, QObject,
+                            QPersistentModelIndex, QPointF, QRect, QRectF, Qt, QTimer, Signal)
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPen, QResizeEvent
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QHeaderView, QStyle, QStyledItemDelegate,
                                QStyleOptionViewItem, QTableView, QWidget)
@@ -24,14 +25,14 @@ from ..validation import require_integer, require_type
 from ..mapping.scan_status import age_text
 from .state import AppState
 
-COLUMNS = ["", "Sig", "Group", "Type", "Name", "Scan", "Age", ""]
-(COLUMN_FLAG, COLUMN_SIGNATURE, COLUMN_GROUP, COLUMN_TYPE, COLUMN_NAME, COLUMN_SCAN, COLUMN_AGE,
+COLUMNS = ["", "Sig", "Group", "Type", "Name", "Seen", "Age", ""]
+(COLUMN_FLAG, COLUMN_SIGNATURE, COLUMN_GROUP, COLUMN_TYPE, COLUMN_NAME, COLUMN_SEEN, COLUMN_AGE,
  COLUMN_ACTION) = range(8)
 # starting widths; Name gets the rest
-DEFAULT_WIDTHS = {COLUMN_FLAG: 16, COLUMN_SIGNATURE: 76, COLUMN_GROUP: 60, COLUMN_TYPE: 44, COLUMN_SCAN: 40,
+DEFAULT_WIDTHS = {COLUMN_FLAG: 16, COLUMN_SIGNATURE: 76, COLUMN_GROUP: 60, COLUMN_TYPE: 44, COLUMN_SEEN: 56,
                   COLUMN_AGE: 60, COLUMN_ACTION: 84}
-MIN_WIDTHS = {COLUMN_AGE: 56}   # "12h 32m" must fit
-SORTABLE = (COLUMN_SIGNATURE, COLUMN_TYPE, COLUMN_NAME, COLUMN_SCAN, COLUMN_AGE)
+MIN_WIDTHS = {COLUMN_SEEN: 56, COLUMN_AGE: 56}   # "12h 32m" must fit
+SORTABLE = (COLUMN_SIGNATURE, COLUMN_TYPE, COLUMN_NAME, COLUMN_SEEN, COLUMN_AGE)
 GROUP_WORDS = {"wormhole": "WH", "combat": "Combat", "data": "Data", "relic": "Relic", "gas": "Gas",
                "ore": "Ore", "ice": "Ice", "unknown": "?", None: "—"}
 GROUP_TITLES = {"wormhole": "Wormholes", "combat": "Combat", "data": "Data", "relic": "Relic", "gas": "Gas",
@@ -39,6 +40,10 @@ GROUP_TITLES = {"wormhole": "Wormholes", "combat": "Combat", "data": "Data", "re
 ANOMALY_PREFIX = "Anomalies · "
 COPIED_FEEDBACK_MS = 1500
 WIDTH_SAVE_DELAY_MS = 600
+FLASH_IN_SECONDS = 0.12    # pasted rows light up quickly ...
+FLASH_OUT_SECONDS = 1.8    # ... and fade out slowly
+FLASH_PEAK_ALPHA = 90      # of the success colour, out of 255
+FLASH_FRAME_MS = 16
 
 
 @dataclass
@@ -63,6 +68,11 @@ def group_sort_key(key: str) -> tuple[bool, int]:
     require_type(key, str, "key")
     kind, group = key.split(":", 1)
     return kind != "sig", GROUP_ORDER.index(group) if group in GROUP_ORDER else len(GROUP_ORDER)
+
+
+def _seen_at(signature: Signature) -> str:
+    """Return when a paste last contained a signature (maps from before ``seen_at`` fall back to its creation)."""
+    return signature.seen_at or signature.created_at
 
 
 def is_wormhole_signature(signature: Signature) -> bool:
@@ -112,8 +122,8 @@ class SignatureModel(QAbstractTableModel):
             return lambda signature: (not signature.type, signature.type or "", signature.signature_id)
         if column == COLUMN_NAME:
             return lambda signature: (not name_text(signature), name_text(signature), signature.signature_id)
-        if column == COLUMN_SCAN:
-            return lambda signature: (signature.scan_percent is None, signature.scan_percent or 0, signature.signature_id)
+        if column == COLUMN_SEEN:
+            return lambda signature: (_seen_at(signature) or "", signature.signature_id)
         if column == COLUMN_AGE:
             return lambda signature: (signature.created_at or "", signature.signature_id)
         return lambda signature: (signature.signature_id,)
@@ -243,7 +253,7 @@ class SignatureModel(QAbstractTableModel):
             return None
         if role == Qt.ItemDataRole.DisplayRole:
             return COLUMNS[section].upper()
-        if role == Qt.ItemDataRole.TextAlignmentRole and section in (COLUMN_SCAN, COLUMN_AGE):
+        if role == Qt.ItemDataRole.TextAlignmentRole and section in (COLUMN_SEEN, COLUMN_AGE):
             return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if role == Qt.ItemDataRole.ToolTipRole and section in SORTABLE:
             return "Click to sort inside each group, again to reverse · drag the edge to resize"
@@ -289,8 +299,8 @@ class SignatureModel(QAbstractTableModel):
             if is_wormhole_signature(signature):
                 return " · ".join(self.wormhole_details(signature)) or (signature.name or "")
             return signature.name or ""
-        if column == COLUMN_SCAN:
-            return "" if signature.scan_percent is None else f"{signature.scan_percent:.0f}%"
+        if column == COLUMN_SEEN:
+            return age_text(_seen_at(signature))
         if column == COLUMN_AGE:
             return age_text(signature.created_at)
         return None
@@ -371,6 +381,52 @@ class SignatureModel(QAbstractTableModel):
         return index
 
 
+class RowFlash(QObject):
+    """The green flash of the rows a paste added, updated or confirmed: quick fade in, slow fade out."""
+
+    changed = Signal()  # a frame: repaint
+
+    def __init__(self, parent: QObject | None = None, clock: Callable[[], float] = time.monotonic) -> None:
+        """Create an idle flash; ``clock`` returns seconds (tests pass their own)."""
+        super().__init__(parent)
+        self.clock = clock
+        self.started: dict[str, float] = {}  # signature ID -> start time
+        self.timer = QTimer(self, interval=FLASH_FRAME_MS, timeout=self._tick)
+
+    def start(self, signature_ids: list[str]) -> None:
+        """Flash these signatures from now on (a running flash restarts)."""
+        require_type(signature_ids, list, "signature_ids")
+        now = self.clock()
+        self.started.update({signature_id: now for signature_id in signature_ids})
+        if self.started:
+            self.timer.start()
+
+    def clear(self) -> None:
+        """Stop every flash."""
+        self.started.clear()
+        self.timer.stop()
+        self.changed.emit()
+
+    def level(self, signature_id: str) -> float:
+        """Return how strongly a signature flashes now, 0 to 1."""
+        start = self.started.get(signature_id)
+        if start is None:
+            return 0.0
+        elapsed = self.clock() - start
+        if elapsed < FLASH_IN_SECONDS:
+            return max(0.0, elapsed / FLASH_IN_SECONDS)
+        remaining = 1 - (elapsed - FLASH_IN_SECONDS) / FLASH_OUT_SECONDS
+        return max(0.0, remaining) ** 2   # eases out: fades fast at first, then lingers
+
+    def _tick(self) -> None:
+        """Drop finished flashes, stop when none are left, and ask for a repaint."""
+        end = self.clock() - FLASH_IN_SECONDS - FLASH_OUT_SECONDS
+        self.started = {signature_id: start for signature_id, start in self.started.items() if start > end}
+        if not self.started:
+            self.timer.stop()
+        self.changed.emit()
+
+
 class SignatureDelegate(QStyledItemDelegate):
     """Paints rows, headers and the copy-bookmark button."""
 
@@ -381,6 +437,7 @@ class SignatureDelegate(QStyledItemDelegate):
         """Create the delegate for ``model``."""
         super().__init__(parent)
         self.model = model
+        self.flash = RowFlash(self)
 
     @staticmethod
     def button_rect(cell: QRect | QRectF, label: str) -> QRectF:
@@ -405,6 +462,10 @@ class SignatureDelegate(QStyledItemDelegate):
             painter.fillRect(rect, color("accent-dim"))
         elif option.state & QStyle.StateFlag.State_MouseOver:
             painter.fillRect(rect, color("bg-4"))
+        if level := self.flash.level(row.signature_id):
+            flash = color("success")
+            flash.setAlpha(round(FLASH_PEAK_ALPHA * level))
+            painter.fillRect(rect, flash)
         if selected and index.column() == 0:
             painter.fillRect(QRectF(rect.left(), rect.top(), 2, rect.height()), color("accent"))
         painter.setPen(QPen(color("line-1"), 1))
@@ -417,7 +478,7 @@ class SignatureDelegate(QStyledItemDelegate):
         faint = signature.state != "missing" and self.is_stale()
         ink = color("ink-faint") if faint else color("ink")
         muted = color("ink-faint") if faint else color("ink-muted")
-        padding = PIXELS["sp-4"] if column in (COLUMN_SCAN, COLUMN_AGE, COLUMN_TYPE) else PIXELS["sp-8"]
+        padding = PIXELS["sp-4"] if column in (COLUMN_SEEN, COLUMN_AGE, COLUMN_TYPE) else PIXELS["sp-8"]
         text_rect = rect.adjusted(padding, 0, -padding, 0)
         if column == COLUMN_FLAG:
             flag = {"missing": ("−", "warning"), "new": ("+", "success")}.get(signature.state)
@@ -439,7 +500,7 @@ class SignatureDelegate(QStyledItemDelegate):
             painter.setFont(font("ui-small"))
             painter.setPen(ink)
             painter.drawText(text_rect.adjusted(20, 0, 0, 0), Qt.AlignmentFlag.AlignVCenter, text)
-        elif column in (COLUMN_TYPE, COLUMN_SCAN, COLUMN_AGE):
+        elif column in (COLUMN_TYPE, COLUMN_SEEN, COLUMN_AGE):
             painter.setFont(font("mono-data"))
             painter.setPen(ink if column == COLUMN_TYPE else muted)
             horizontal = Qt.AlignmentFlag.AlignLeft if column == COLUMN_TYPE else Qt.AlignmentFlag.AlignRight
@@ -574,6 +635,7 @@ class SignatureTable(QTableView):
         self.doubleClicked.connect(self._double_clicked)
         self.signature_model.modelReset.connect(self._update_spans)
         self.setItemDelegate(self.signature_delegate)
+        self.signature_delegate.flash.changed.connect(self._repaint)
         self.setMouseTracking(True)
         self.setShowGrid(False)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -592,7 +654,7 @@ class SignatureTable(QTableView):
         """Column rules, sorting and widths.
 
         Every column can be resized by dragging its right edge. Name takes up whatever the others
-        give or take, so the table always fits the panel; dragging Name's own edge trades with Scan.
+        give or take, so the table always fits the panel; dragging Name's own edge trades with Seen.
         """
         header = self.horizontalHeader()
         header.setHighlightSections(False)
@@ -619,7 +681,17 @@ class SignatureTable(QTableView):
         Returns:
             The number of rows.
         """
+        if system_id != self.signature_model.system_id:
+            self.signature_delegate.flash.clear()
         return self.signature_model.load(system_id)
+
+    def _repaint(self) -> None:
+        """Repaint the rows (a flash frame)."""
+        self.viewport().update()
+
+    def flash(self, signature_ids: list[str]) -> None:
+        """Flash the rows of these signatures green (after a paste)."""
+        self.signature_delegate.flash.start(signature_ids)
 
     def sort_clicked(self, column: int) -> tuple[int, bool]:
         """Sort by a column, or reverse when it is already the sort column.
@@ -643,7 +715,7 @@ class SignatureTable(QTableView):
         return [column for column in range(len(COLUMNS)) if not self.isColumnHidden(column)]
 
     def _fit(self, absorb: int = COLUMN_NAME) -> int:
-        """Give the leftover width to ``absorb`` (Name, or Scan when Name itself was dragged).
+        """Give the leftover width to ``absorb`` (Name, or Seen when Name itself was dragged).
 
         Returns:
             The new width of ``absorb``.
@@ -661,8 +733,8 @@ class SignatureTable(QTableView):
         if self._fitting:
             return
         if column == COLUMN_NAME:
-            self._fit(COLUMN_SCAN)
-            if self.horizontalHeader().sectionSize(COLUMN_SCAN) <= 16:  # Scan can't give more: cap Name
+            self._fit(COLUMN_SEEN)
+            if self.horizontalHeader().sectionSize(COLUMN_SEEN) <= 16:  # Seen can't give more: cap Name
                 self._fit(COLUMN_NAME)
         else:
             self._fit(COLUMN_NAME)

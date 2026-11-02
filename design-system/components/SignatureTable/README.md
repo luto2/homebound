@@ -1,6 +1,6 @@
 # SignatureTable
 
-The signature and anomaly list for the selected system, **grouped** with one header row per group: sig ID, type, name, scan %, age, plus a copy-bookmark action on each wormhole row.
+The signature and anomaly list for the selected system, **grouped** with one header row per group: sig ID, type, name, last seen, age, plus a copy-bookmark action on each wormhole row.
 
 **Groups and order:** signatures first (Wormholes, Combat, Data, Relic, Gas, Ore, Ice, Unscanned), then anomalies (`Anomalies · Combat`, `Anomalies · Ore`, …). Empty groups aren't shown.
 
@@ -8,7 +8,7 @@ The signature and anomaly list for the selected system, **grouped** with one hea
 - Click toggles the group; the state is remembered per map. **A group with new or missing rows always stays open**, even if it was collapsed, so a change is never hidden.
 - Header rows can't be selected and don't open the editor.
 
-**Columns:** flag · Sig (`mono-sig`, 13px bold, the most-read value) · Type (WH code, mono) · Name / leads to (gets the old Group column's width) · Scan % (bar + number, right-aligned mono) · Age (mono, right) · action. The Group column is hidden; the headers say it.
+**Columns:** flag · Sig (`mono-sig`, 13px bold, the most-read value) · Type (WH code, mono) · Name / leads to (gets the old Group column's width) · Seen (time since the last paste that contained the sig; mono, right) · Age (mono, right) · action. The Group column is hidden; the headers say it.
 
 **Name for wormholes:** a linked sig shows `→ <target>`. An unlinked one shows what was entered in the SigEditor: `→ C3 · M · ◷ <1h · R` (size only for a K162, `F` for frigate holes).
 
@@ -16,6 +16,7 @@ The signature and anomaly list for the selected system, **grouped** with one hea
 - default; hover `bg-4`; selected `accent-dim` + 2px `accent` inner left edge.
 - **Missing from last paste**: `warning-dim` fill, struck through in `warning`, flag "−". A banner above the table counts them and offers **Keep** and **✕ Delete n** (danger). A paste only flags missing entries of the kinds it contains: a sigs-only paste leaves anomalies alone (the banner says so), and the other way round.
 - **New in last paste**: flag "+" in `success`, for one paste cycle.
+- **Just pasted**: every row in the paste (new, updated or unchanged) flashes a `success` fill that rises to ~35% in 0.12 s and eases out over 1.8 s. Missing rows don't flash.
 - **Stale** (system not re-scanned for 24h+): text drops to `ink-faint`.
 
 **Section title meta:** `9 sigs · 4 anoms · last paste 2m ago`.

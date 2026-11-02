@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS signatures (
     size       TEXT,               -- WH: S/M/L/XL by hand for K162 / unknown type
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    seen_at    TEXT,               -- last paste that contained it (shown as "Seen")
     PRIMARY KEY (system_id, signature_id)
 );
 

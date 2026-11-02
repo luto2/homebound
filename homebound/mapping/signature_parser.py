@@ -134,6 +134,7 @@ def merge_signatures(store: Store, system_id: int, parsed: list[ParsedSignature]
         require_type(row, ParsedSignature, "parsed item")
     existing = {signature.signature_id: signature for signature in store.signatures(system_id)}
     kinds = {row.kind for row in parsed}
+    now = utc_now_iso()
     seen = set()
     added, updated = [], []
     for row in parsed:
@@ -151,10 +152,10 @@ def merge_signatures(store: Store, system_id: int, parsed: list[ParsedSignature]
         if (group, name, code, percent) != (old.group, old.name, old.type, old.scan_percent):
             updated.append(row.signature_id)
         store.upsert_signature(replace(old, group=group, type=code, name=name, scan_percent=percent, state="",
-                                       kind=row.kind))
+                                       kind=row.kind, seen_at=now))
     missing = [signature_id for signature_id, signature in existing.items()
                if signature_id not in seen and (signature.kind or "sig") in kinds]
     for signature_id in missing:
         store.update_signature(system_id, signature_id, state="missing")
-    store.update_system(system_id, scanned_at=utc_now_iso())
+    store.update_system(system_id, scanned_at=now)
     return MergeResult(added, updated, missing)

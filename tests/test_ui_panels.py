@@ -13,8 +13,9 @@ from homebound.mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, S
 from homebound.mapping import signature_parser
 from homebound.ui import signature_table as table_module
 from homebound.ui.signature_table import (
-    COLUMN_ACTION, COLUMN_AGE, COLUMN_FLAG, COLUMN_GROUP, COLUMN_NAME, COLUMN_SCAN, COLUMN_SIGNATURE, COLUMN_TYPE,
-    SORTABLE, GroupHeader, SignatureModel, SignatureTable, group_key, group_sort_key,
+    COLUMN_ACTION, COLUMN_AGE, COLUMN_FLAG, COLUMN_GROUP, COLUMN_NAME, COLUMN_SEEN, COLUMN_SIGNATURE, COLUMN_TYPE,
+    FLASH_IN_SECONDS, FLASH_OUT_SECONDS, SORTABLE, GroupHeader, RowFlash, SignatureModel, SignatureTable, group_key,
+    group_sort_key,
     is_wormhole_signature)
 from homebound.ui.system_panel import (BadgeStrip, ElideLabel, OwnerSwatch, SystemPanel, missing_banner_html, plural)
 from homebound.ui.state import AppState
@@ -35,15 +36,16 @@ def state(qt_application, monkeypatch, tmp_path) -> Iterator[AppState]:
 
 
 @pytest.fixture
-def panel(state, qt_application) -> SystemPanel:
-    """A system panel, shown, with home selected."""
+def panel(state, qt_application) -> Iterator[SystemPanel]:
+    """A system panel, shown, with home selected; its paste flash is stopped afterwards."""
     system_panel = SystemPanel(state)
     system_panel.resize(420, 700)
     system_panel.show()
     state.select(HOME.id)
     qt_application.processEvents()
     system_panel.name.clearFocus()
-    return system_panel
+    yield system_panel
+    system_panel.table.signature_delegate.flash.clear()   # its timer must not fire once the map is closed
 
 
 def add_signature(state, signature_id="AAA-111", system_id=HOME.id, /, **values) -> Signature:
@@ -316,6 +318,57 @@ def test_paste_merges_the_clipboard(state, panel, qt_application) -> None:
     assert panel.delete_missing_button.text() == "✕ Delete 1"
 
 
+def test_paste_flashes_the_pasted_rows(state, panel, qt_application) -> None:
+    """Every row in a paste flashes (new, updated or unchanged); a row gone missing doesn't."""
+    QApplication.clipboard().setText(SCAN)
+    panel.paste()
+    flash = panel.table.signature_delegate.flash
+    assert set(flash.started) == {"ABC-123", "DEF-456", "GHI-789", "XYZ-000"} and flash.timer.isActive()
+    flash.clear()
+    QApplication.clipboard().setText("\n".join(SCAN.splitlines()[:2]) + "\n")   # same values, two rows
+    panel.paste()
+    assert set(flash.started) == {"ABC-123", "DEF-456"}
+
+
+def test_flash_fades_in_fast_and_out_slowly(qt_application) -> None:
+    """The level climbs to 1 in FLASH_IN_SECONDS, eases back to 0, and the timer stops after."""
+    now = [100.0]
+    flash = RowFlash(clock=lambda: now[0])
+    frames = collect(flash.changed)
+    assert flash.level("ABC-123") == 0.0
+    flash.start(["ABC-123"])
+    assert flash.level("ABC-123") == 0.0 and flash.timer.isActive()
+    now[0] += FLASH_IN_SECONDS / 2
+    assert flash.level("ABC-123") == pytest.approx(0.5)
+    now[0] += FLASH_IN_SECONDS / 2
+    assert flash.level("ABC-123") == pytest.approx(1.0)
+    now[0] += FLASH_OUT_SECONDS / 2
+    assert flash.level("ABC-123") == pytest.approx(0.25)   # eased: below linear halfway
+    flash._tick()
+    assert flash.timer.isActive() and frames
+    now[0] += FLASH_OUT_SECONDS / 2 + 0.01
+    assert flash.level("ABC-123") == 0.0
+    flash._tick()
+    assert not flash.started and not flash.timer.isActive()
+    flash.start([])
+    assert not flash.timer.isActive()
+    with pytest.raises(TypeError):
+        flash.start("ABC-123")
+
+
+def test_flash_is_painted_and_cleared_on_another_system(state, table, qt_application) -> None:
+    """A flashing row repaints with the flash; switching systems stops it."""
+    add_signature(state, "AAA-111", group="gas")
+    table.load(HOME.id)
+    table.flash(["AAA-111"])
+    table.signature_delegate.flash.started["AAA-111"] -= FLASH_IN_SECONDS   # at its peak
+    table.grab()   # paints through the delegate
+    table.load(HOME.id)
+    assert table.signature_delegate.flash.started   # same system: keeps flashing
+    table.load(0)
+    assert not table.signature_delegate.flash.started and not table.signature_delegate.flash.timer.isActive()
+
+
 def test_paste_button_pastes(state, panel, qt_application) -> None:
     """The paste button runs the same action."""
     QApplication.clipboard().setText(SCAN)
@@ -488,10 +541,11 @@ def model(state) -> SignatureModel:
 def mixed_signatures(state) -> None:
     """Wormholes, gas, an unscanned one and two anomalies."""
     add_signature(state, "CCC-333", group="wormhole", type="H296", name="Unstable Wormhole", scan_percent=100.0,
-                  created_at=iso_ago(hours=3))
+                  created_at=iso_ago(hours=3), seen_at=iso_ago(minutes=10))
     add_signature(state, "AAA-111", group="wormhole", name="Unstable Wormhole", scan_percent=100.0,
-                  created_at=iso_ago(hours=1))
-    add_signature(state, "BBB-222", group="gas", name="Barren", scan_percent=50.0, created_at=iso_ago(hours=2))
+                  created_at=iso_ago(hours=1), seen_at=iso_ago(minutes=30))
+    add_signature(state, "BBB-222", group="gas", name="Barren", scan_percent=50.0, created_at=iso_ago(hours=2),
+                  seen_at=iso_ago(minutes=20))
     add_signature(state, "DDD-444", created_at=iso_ago(hours=5))
     add_signature(state, "EEE-555", kind="anom", group="combat", name="Hideaway", scan_percent=100.0)
     add_signature(state, "FFF-666", kind="anom", group="strange", name="Odd")
@@ -576,11 +630,11 @@ def test_sort_state_and_set_sort(state, model) -> None:
         assert model.sort_state() == (COLUMN_SIGNATURE, False)
 
 
-EXPECTED_ORDER = {   # order of the wormhole group's IDs ascending: CCC (H296, 3h), AAA (1h)
+EXPECTED_ORDER = {   # order of the wormhole group's IDs ascending: CCC (H296, 3h, seen 10m), AAA (1h, 30m)
     COLUMN_SIGNATURE: ["AAA-111", "CCC-333"],
     COLUMN_TYPE: ["CCC-333", "AAA-111"],      # empty types last
     COLUMN_NAME: ["AAA-111", "CCC-333"],      # "→ C5" for CCC, details for AAA (none -> falls back to name)
-    COLUMN_SCAN: ["AAA-111", "CCC-333"],
+    COLUMN_SEEN: ["AAA-111", "CCC-333"],    # seen_at text order
     COLUMN_AGE: ["CCC-333", "AAA-111"],       # created_at text order
 }
 
@@ -596,13 +650,15 @@ def test_every_sortable_column(state, model, column, descending) -> None:
     assert wormholes == (expected[::-1] if descending else expected)
 
 
-def test_sort_by_scan_puts_unscanned_last(state, model) -> None:
-    """Rows without a scan percentage come last when ascending."""
-    add_signature(state, "AAA-111", group="gas", scan_percent=None)
-    add_signature(state, "BBB-222", group="gas", scan_percent=80.0)
-    add_signature(state, "CCC-333", group="gas", scan_percent=20.0)
-    model.set_sort(COLUMN_SCAN, False)
-    assert [row.signature_id for row in model.rows[1:]] == ["CCC-333", "BBB-222", "AAA-111"]
+def test_seen_falls_back_to_creation(state, model) -> None:
+    """A row without a seen time (map from before the column) shows and sorts by its creation time."""
+    add_signature(state, "AAA-111", group="gas", seen_at=iso_ago(minutes=40))
+    add_signature(state, "BBB-222", group="gas", created_at=iso_ago(hours=2))
+    state.store.database.execute("UPDATE signatures SET seen_at=NULL WHERE signature_id='BBB-222'")
+    model.set_sort(COLUMN_SEEN, False)
+    assert [row.signature_id for row in model.rows[1:]] == ["BBB-222", "AAA-111"]
+    assert model.data(model.index(1, COLUMN_SEEN)) == "2h"
+    assert model.data(model.index(2, COLUMN_SEEN)) == "40m"
 
 
 def test_header_data(model) -> None:
@@ -640,7 +696,7 @@ def test_cell_data_and_flags(state, model) -> None:
     assert cell("BBB-222", COLUMN_GROUP) == "Gas" and cell("DDD-444", COLUMN_GROUP) == "—"
     assert cell("BBB-222", COLUMN_NAME) == "Barren"
     assert cell("CCC-333", COLUMN_TYPE) == "H296" and cell("BBB-222", COLUMN_TYPE) == ""
-    assert cell("BBB-222", COLUMN_SCAN) == "50%" and cell("DDD-444", COLUMN_SCAN) == ""
+    assert cell("BBB-222", COLUMN_SEEN) == "20m" and cell("DDD-444", COLUMN_SEEN) == "5h"
     assert cell("BBB-222", COLUMN_AGE) == "2h" and cell("BBB-222", COLUMN_FLAG) is None
     assert cell("BBB-222", COLUMN_ACTION) is None
     assert cell("BBB-222", COLUMN_NAME, Qt.ItemDataRole.ForegroundRole) is None
@@ -777,13 +833,14 @@ def test_bookmark_for_linked_child_and_home(state, panel) -> None:
 
 # ---------------------------------------------------------------- table widget
 @pytest.fixture
-def table(state, qt_application) -> SignatureTable:
-    """A signature table, shown, on home."""
+def table(state, qt_application) -> Iterator[SignatureTable]:
+    """A signature table, shown, on home; its flash is stopped afterwards."""
     signature_table = SignatureTable(state)
     signature_table.resize(420, 400)
     signature_table.show()
     qt_application.processEvents()
-    return signature_table
+    yield signature_table
+    signature_table.signature_delegate.flash.clear()
 
 
 def row_of(table, signature_id) -> int:
@@ -822,8 +879,8 @@ def test_sort_clicked(state, table) -> None:
     assert table.sort_clicked(COLUMN_FLAG) == (COLUMN_TYPE, True)
     assert table.sort_clicked(COLUMN_NAME) == (COLUMN_NAME, False)
     assert table.signature_model.sort_state() == (COLUMN_NAME, False)
-    table.horizontalHeader().sectionClicked.emit(COLUMN_SCAN)
-    assert table.signature_model.sort_state() == (COLUMN_SCAN, False)
+    table.horizontalHeader().sectionClicked.emit(COLUMN_SEEN)
+    assert table.signature_model.sort_state() == (COLUMN_SEEN, False)
 
 
 def test_header_row_spans_and_load_count(state, table) -> None:
@@ -887,7 +944,7 @@ def test_column_fitting_and_stored_widths(state, table, qt_application) -> None:
         return sum(header.sectionSize(column) for column in visible)
 
     assert total() == table.viewport().width()
-    header.resizeSection(COLUMN_SIGNATURE, 110)
+    header.resizeSection(COLUMN_SIGNATURE, 90)
     assert total() == table.viewport().width() and table._save_widths_timer.isActive()
     header.resizeSection(COLUMN_NAME, header.sectionSize(COLUMN_NAME) - 30)
     assert total() == table.viewport().width()
@@ -895,18 +952,18 @@ def test_column_fitting_and_stored_widths(state, table, qt_application) -> None:
     qt_application.processEvents()
     assert total() == table.viewport().width()
     saved = table.store_widths()
-    assert saved[str(COLUMN_SIGNATURE)] == 110
+    assert saved[str(COLUMN_SIGNATURE)] == 90
     assert set(saved) == {str(column) for column in table_module.DEFAULT_WIDTHS}
     assert state.settings.signature_column_widths == saved
 
 
-def test_dragging_name_wider_than_scan_can_give_caps_name(state, table, qt_application) -> None:
-    """When Scan is used up, Name is capped instead."""
+def test_dragging_name_wider_than_seen_can_give_caps_name(state, table, qt_application) -> None:
+    """When Seen is used up, Name is capped instead."""
     header = table.horizontalHeader()
     header.resizeSection(COLUMN_NAME, 2000)
     visible = [column for column in range(8) if not table.isColumnHidden(column)]
     assert sum(header.sectionSize(column) for column in visible) == table.viewport().width()
-    assert header.sectionSize(COLUMN_SCAN) >= 16
+    assert header.sectionSize(COLUMN_SEEN) >= 16
 
 
 # ---------------------------------------------------------------- delegate events
