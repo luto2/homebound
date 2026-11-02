@@ -353,6 +353,12 @@ class Namer:
             return display
         return f"{display} {system.name}"
 
+    def names(self, system_id: int) -> set[str]:
+        """Return the names a system answers to: its display name, label and real name (empty ones left out)."""
+        system = self.universe.by_id(system_id)
+        return {name for name in (self.display(system_id), self.label(system_id), system.name if system else "")
+                if name}
+
     def preview(self, parent_id: int, hole_index: int, level_index: int | None = None) -> str:
         """Return the name a new child of ``parent_id`` would get behind this hole.
 

@@ -30,11 +30,44 @@ class ScanStatus:
         """The age in its largest unit for a tab: "45m", "26h", or "5d" from 100 hours on; "" without a paste."""
         if self.age is None:
             return ""
-        minutes = int(self.age.total_seconds() // 60)
-        if minutes < 60:
-            return f"{minutes}m"
-        hours = minutes // 60
+        return format_duration(self.age, "short")
+
+
+def format_duration(delta: timedelta, style: str = "long") -> str:
+    """Format a duration, rounded down to whole minutes (negative counts as zero).
+
+    Styles:
+        ``"long"``: "5m", "2h 10m" (just "2h" on the hour), "3d 4h" (just "3d" on the day).
+        ``"short"``: the largest unit only, for a tab: "45m", "26h", and days from 100 hours on ("5d").
+        ``"min"``: "7 min" below an hour, else "2h 10m".
+
+    Args:
+        delta: The duration.
+        style: ``"long"``, ``"short"`` or ``"min"``.
+
+    Returns:
+        The text.
+
+    Raises:
+        TypeError: If ``delta`` is not a timedelta or ``style`` is not text.
+        ValueError: If ``style`` is unknown.
+    """
+    require_type(delta, timedelta, "delta")
+    require_type(style, str, "style")
+    if style not in ("long", "short", "min"):
+        raise ValueError(f"unknown duration style {style!r}")
+    minutes = max(0, int(delta.total_seconds() // 60))
+    if style == "min":
+        return f"{minutes} min" if minutes < 60 else f"{minutes // 60}h {minutes % 60}m"
+    if minutes < 60:
+        return f"{minutes}m"
+    hours, minutes = divmod(minutes, 60)
+    if style == "short":
         return f"{hours}h" if hours < 100 else f"{hours // 24}d"
+    if hours < 24:
+        return f"{hours}h {minutes}m" if minutes else f"{hours}h"
+    days, hours = divmod(hours, 24)
+    return f"{days}d {hours}h" if hours else f"{days}d"
 
 
 def age_text(iso: str | None, now: datetime | None = None) -> str:
@@ -57,14 +90,7 @@ def age_text(iso: str | None, now: datetime | None = None) -> str:
     if not iso:
         return ""
     elapsed = (now or datetime.now(timezone.utc)) - datetime.fromisoformat(iso)
-    minutes = max(0, int(elapsed.total_seconds() // 60))
-    if minutes < 60:
-        return f"{minutes}m"
-    hours, minutes = divmod(minutes, 60)
-    if hours < 24:
-        return f"{hours}h {minutes}m" if minutes else f"{hours}h"
-    days, hours = divmod(hours, 24)
-    return f"{days}d {hours}h" if hours else f"{days}d"
+    return format_duration(elapsed)
 
 
 def scan_status(scanned_at: str | None, now: datetime, due_after: timedelta, *, wormhole: bool) -> ScanStatus:

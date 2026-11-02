@@ -10,8 +10,8 @@ from conftest import HOME, UNIVERSE, pick_system
 from homebound.mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, LIFETIME_REMAINING, Connection,
                                    ZkillStats)
 from homebound.ui import map_scene
-from homebound.mapping.scan_status import ScanStatus
-from homebound.ui.map_scene import (GRID, ConnectionEdge, MapScene, MapView, SystemNode, age_text, elide, removed_in,
+from homebound.mapping.scan_status import ScanStatus, age_text
+from homebound.ui.map_scene import (GRID, ConnectionEdge, MapScene, MapView, SystemNode, elide, removed_in,
                                     scan_tab_label)
 from homebound.ui.state import AppState
 from ui_helpers import make_state

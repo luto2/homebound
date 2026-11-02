@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QGraphicsItem, QGraphicsLineItem, QGraphicsObject
 from ..mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_CHIPS, LIFETIME_EXPIRED, LIFETIME_LABELS,
                            LIFETIME_REMAINING, Connection)
 from ..mapping.chain import connected_component, wormhole_adjacency
-from ..mapping.scan_status import ScanStatus, age_text  # age_text: also imported from here by dialogs and panels
+from ..mapping.scan_status import ScanStatus, age_text, format_duration
 from ..mapping.tracker import expires_at, hole_size
 from ..theme import painting
 from ..theme.tokens import OPACITY, PIXELS, color, font
@@ -39,10 +39,7 @@ def removed_in(connection: Connection, universe: Universe) -> str:
     if not connection.lifetime_set_at or connection.lifetime not in LIFETIME_REMAINING:
         return "?"
     remaining = expires_at(connection, universe) - datetime.now(timezone.utc)
-    minutes = max(0, int(remaining.total_seconds() // 60))
-    if minutes < 60:
-        return f"{minutes} min"
-    return f"{minutes // 60}h {minutes % 60}m"
+    return format_duration(remaining, "min")
 
 
 def scan_tab_label(status: ScanStatus, compact: bool = False) -> str:
@@ -418,8 +415,6 @@ class SystemNode(QGraphicsObject):
 class ConnectionEdge(QGraphicsItem):
     """A curved wormhole connection between two nodes with a label plate (type and state chips)."""
 
-    PENS = None
-
     def __init__(self, state, connection: Connection, node_a: SystemNode, node_b: SystemNode) -> None:
         """Create the edge and attach it to both nodes.
 
@@ -436,8 +431,6 @@ class ConnectionEdge(QGraphicsItem):
         require_type(connection, Connection, "connection")
         require_type(node_a, SystemNode, "node_a")
         require_type(node_b, SystemNode, "node_b")
-        if ConnectionEdge.PENS is None:
-            ConnectionEdge.PENS = painting.edge_pens()
         self.state, self.connection, self.node_a, self.node_b = state, connection, node_a, node_b
         node_a.edges.append(self)
         node_b.edges.append(self)
@@ -539,25 +532,14 @@ class ConnectionEdge(QGraphicsItem):
         level_of_detail = option.levelOfDetailFromTransform(painter.worldTransform())
         connection = self.connection
         path = self.path
-        pens = ConnectionEdge.PENS
         if self.isSelected():
-            painter.strokePath(path, pens["selected"])
+            painter.strokePath(path, painting.edge_pens()["selected"])
         if not connection.confirmed:
             casing = QPen(color("warning"), 7, Qt.PenStyle.DashLine, Qt.PenCapStyle.FlatCap)
             casing.setDashPattern([3, 2])
             painter.strokePath(path, casing)
-        if connection.lifetime in (LIFETIME_4H, LIFETIME_1H):
-            painter.strokePath(path, pens["lifetime_1h" if connection.lifetime == LIFETIME_1H else "lifetime_4h"])
-        pen = QPen(pens["frigate_only" if connection.frigate_only else connection.mass])
-        if self.hover:
-            pen.setWidthF(pen.widthF() + 1)
-        if connection.lifetime == LIFETIME_EXPIRED:   # fading out
-            painter.save()
-            painter.setOpacity(0.4)
-            painter.strokePath(path, pen)
-            painter.restore()
-        else:
-            painter.strokePath(path, pen)
+        painting.stroke_edge(painter, path, "frigate_only" if connection.frigate_only else connection.mass,
+                             connection.lifetime, self.hover)
         if connection.frigate_only:
             middle = path.pointAtPercent(0.5) + QPointF(0, 14)
             diamond = QPolygonF([middle + QPointF(0, -5), middle + QPointF(5, 0),

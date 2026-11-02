@@ -20,7 +20,7 @@ from ..theme.qss import repolish
 from ..theme.tokens import PIXELS, color, font
 from ..universe.db import System
 from ..validation import require_choice, require_text, require_type
-from .map_scene import age_text
+from ..mapping.scan_status import age_text
 from .menus import copy_icon, glyph_icon
 from .state import AppState
 from .widgets import RadioCard, caption

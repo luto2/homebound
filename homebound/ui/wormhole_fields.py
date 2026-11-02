@@ -7,7 +7,7 @@ and mass. "Leads to" and "Size" are only asked for a K162: any other type says b
 from datetime import datetime
 
 from PySide6.QtCore import QModelIndex, QPointF, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QFont, QFontMetricsF, QKeyEvent, QPainter, QPaintEvent, QPen
+from PySide6.QtGui import QFont, QFontMetricsF, QKeyEvent, QPainter, QPainterPath, QPaintEvent, QPen
 from PySide6.QtWidgets import (
     QAbstractButton, QButtonGroup, QComboBox, QGridLayout, QLabel, QStyle, QStyledItemDelegate,
     QStyleOptionComboBox, QStyleOptionViewItem, QStylePainter, QVBoxLayout, QWidget,
@@ -275,9 +275,6 @@ class DestinationCombo(QComboBox):
         paint_destination_row(painter, field.adjusted(-PIXELS["sp-4"], 0, 0, 0), self.currentData() or "")
 
 
-_EDGE_PENS = None
-
-
 def draw_edge_icon(painter: QPainter, x: float, y: float, width: float, mass: str = "fresh",
                    lifetime: int = LIFETIME_STABLE) -> float:
     """Draw the map's own edge pen as a short sample line, so the editor shows what the map will draw.
@@ -285,21 +282,13 @@ def draw_edge_icon(painter: QPainter, x: float, y: float, width: float, mass: st
     Returns:
         The width used.
     """
-    global _EDGE_PENS
-    if _EDGE_PENS is None:
-        _EDGE_PENS = painting.edge_pens()
-    if mass not in _EDGE_PENS:
+    if mass not in painting.edge_pens():
         raise ValueError(f"unknown mass state {mass!r}")
     painter.save()
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    start, end = QPointF(x + 3, y), QPointF(x + width - 3, y)
-    if lifetime in (LIFETIME_4H, LIFETIME_1H):
-        painter.setPen(_EDGE_PENS["lifetime_1h" if lifetime == LIFETIME_1H else "lifetime_4h"])
-        painter.drawLine(start, end)
-    painter.setPen(QPen(_EDGE_PENS[mass]))
-    if lifetime == LIFETIME_EXPIRED:
-        painter.setOpacity(0.4)
-    painter.drawLine(start, end)
+    line = QPainterPath(QPointF(x + 3, y))
+    line.lineTo(x + width - 3, y)
+    painting.stroke_edge(painter, line, mass, lifetime)
     painter.restore()
     return width
 

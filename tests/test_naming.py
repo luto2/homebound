@@ -204,3 +204,15 @@ def test_signature_destination_and_static_signature_ignore_case() -> None:
     assert not is_static_signature(UNIVERSE, HOME.id, Signature(HOME.id, "A"))
     with pytest.raises(TypeError):
         signature_destination(UNIVERSE, "A")
+
+
+def test_names_collects_display_label_and_real_name() -> None:
+    """names has every non-empty way a system is called; a k-space system adds its real name, an unknown ID none."""
+    store = Store(":memory:")
+    namer = Namer(store, UNIVERSE, "numeric", HOME.id)
+    store.add_system(HOME.id)
+    jita = UNIVERSE.by_name("Jita").id
+    store.add_system(jita, parent_id=HOME.id, hole_index=2)
+    assert namer.names(HOME.id) == {"Home", HOME.name}
+    assert namer.names(jita) == {"2 Jita", "2", "Jita"}
+    assert namer.names(1) == {namer.display(1), namer.label(1)} - {""}

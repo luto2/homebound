@@ -4,10 +4,12 @@ import re
 import pytest
 from collections.abc import Iterator
 
-from PySide6.QtCore import QRectF
-from PySide6.QtGui import QBrush, QColor, QFont, QFontDatabase, QFontMetricsF, QPainter, QPixmap
+from PySide6.QtCore import QPointF, QRectF
+from PySide6.QtGui import (QBrush, QColor, QFont, QFontDatabase, QFontMetricsF, QImage, QPainter, QPainterPath,
+                           QPixmap)
 from PySide6.QtWidgets import QApplication, QLabel
 
+from homebound.mapdb.store import LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, LIFETIME_STABLE
 from homebound.theme import painting
 from homebound.theme.painting import (
     CLASSES, EFFECTS, SITE_TOKENS, MARKER_POLYGONS, class_badge_width, draw_character_marker, draw_chip,
@@ -383,6 +385,62 @@ def test_edge_pens(qt_application) -> None:
     assert pens["lifetime_1h"].dashPattern() == pytest.approx([0.01, 5 / eol])
     assert pens["selected"].color().alphaF() == pytest.approx(.35, abs=.01)
     assert pens["fresh"].widthF() == PIXELS["edge-w-fresh"]
+
+
+@pytest.mark.parametrize("lifetime", [LIFETIME_STABLE, LIFETIME_4H, LIFETIME_1H, LIFETIME_EXPIRED])
+def test_stroke_edge_paints_each_lifetime(qt_application, lifetime) -> None:
+    """stroke_edge draws on every lifetime; an expired hole is fainter than a stable one; a wider stroke covers more."""
+    def render(life: int, mass: str = "fresh", wider: bool = False) -> QImage:
+        image = QImage(60, 20, QImage.Format.Format_ARGB32)
+        image.fill(QColor("black"))
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        path = QPainterPath(QPointF(5, 10))
+        path.lineTo(55, 10)
+        painting.stroke_edge(painter, path, mass, life, wider)
+        painter.end()
+        return image
+
+    drawn = lambda img: [(x, y) for x in range(60) for y in range(20) if img.pixelColor(x, y) != QColor("black")]
+    assert drawn(render(lifetime))
+    assert render(LIFETIME_EXPIRED).pixelColor(30, 10).lightness() < render(LIFETIME_STABLE).pixelColor(30, 10).lightness()
+    assert render(lifetime, "frigate_only", True).pixelColor(30, 10) != QColor("black")
+    covered = lambda img: sum(img.pixelColor(x, y).lightnessF() for x in range(60) for y in range(20))
+    assert covered(render(LIFETIME_STABLE, wider=True)) > covered(render(LIFETIME_STABLE))
+
+
+def test_stroke_edge_rejects_bad_arguments(canvas) -> None:
+    """stroke_edge raises TypeError for a wrong type and ValueError for an unknown pen."""
+    painter, _ = canvas
+    with pytest.raises(ValueError):
+        painting.stroke_edge(painter, QPainterPath(), "nope", LIFETIME_STABLE)
+    with pytest.raises(TypeError):
+        painting.stroke_edge(painter, "path", "fresh", LIFETIME_STABLE)
+
+
+def test_edge_pens_are_cached(qt_application) -> None:
+    """edge_pens returns the same dict until the cache is cleared."""
+    assert edge_pens() is edge_pens()
+    first = edge_pens()
+    edge_pens.cache_clear()
+    assert edge_pens() is not first
+
+
+def test_row_background(qt_application) -> None:
+    """row_background tints a selected row, lightens a hovered one, leaves a plain one, and draws the bottom line."""
+    def pixel(selected: bool, hover: bool, y: int) -> QColor:
+        image = QImage(40, 24, QImage.Format.Format_ARGB32)
+        image.fill(QColor("black"))
+        painter = QPainter(image)
+        painting.row_background(painter, QRectF(0, 0, 40, 19), selected, hover)
+        painter.end()
+        return image.pixelColor(20, y)
+
+    assert pixel(True, False, 5) not in (QColor("black"), color("bg-4"))   # accent-dim blended onto black
+    assert pixel(True, True, 5) == pixel(True, False, 5)
+    assert pixel(False, True, 5) == color("bg-4")
+    assert pixel(False, False, 5) == QColor("black")
+    assert any(pixel(False, False, row) != QColor("black") for row in (18, 19, 20))   # the bottom line
 
 
 def test_halo_text(canvas) -> None:

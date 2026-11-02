@@ -21,7 +21,7 @@ from ..mapping.tracker import hole_size
 from ..theme import painting
 from ..theme.tokens import PIXELS, color, font
 from ..validation import require_integer, require_type
-from .map_scene import age_text
+from ..mapping.scan_status import age_text
 from .state import AppState
 
 COLUMNS = ["", "Sig", "Group", "Type", "Name", "Scan", "Age", ""]

@@ -81,12 +81,8 @@ class RouteDelegate(QStyledItemDelegate):
         rect = QRectF(option.rect)
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        if option.state & QStyle.StateFlag.State_Selected:
-            painter.fillRect(rect, color("accent-dim"))
-        elif option.state & QStyle.StateFlag.State_MouseOver:
-            painter.fillRect(rect, color("bg-4"))
-        painter.setPen(color("line-1"))
-        painter.drawLine(rect.bottomLeft(), rect.bottomRight())
+        painting.row_background(painter, rect, bool(option.state & QStyle.StateFlag.State_Selected),
+                                bool(option.state & QStyle.StateFlag.State_MouseOver))
         x, y = rect.left() + PIXELS["sp-8"], rect.top() + 5
         x += painting.draw_class_badge(painter, x, y, system.system_class,
                                        system.security if system.known_space else None) + 6
@@ -235,7 +231,7 @@ class RouteDock(QWidget):
         if system:
             return system.name
         for mapped in state.store.systems():
-            if text.lower() in (state.namer.display(mapped.id).lower(), state.namer.label(mapped.id).lower()):
+            if text.lower() in {name.lower() for name in state.namer.names(mapped.id)}:
                 found = state.universe.by_id(mapped.id)
                 return found.name if found else None
         return None

@@ -14,7 +14,7 @@ from ..theme.qss import repolish
 from ..theme.tokens import PIXELS, color, font
 from ..validation import require_integer, require_type
 from ..zkill import ZKILL_STALE_AFTER, age
-from .map_scene import age_text
+from ..mapping.scan_status import age_text
 from .signature_table import SignatureTable
 from .state import AppState
 
