@@ -122,7 +122,8 @@ class TestHelpers:
     def test_removed_in_overdue_is_zero(self) -> None:
         """An expired hole past its removal time shows "0 min", never a negative time."""
         connection = make_connection(lifetime=LIFETIME_EXPIRED,
-                                     lifetime_set_at=iso_ago(minutes=LIFETIME_REMAINING[LIFETIME_EXPIRED].seconds))
+                                     lifetime_set_at=iso_ago(
+                                         minutes=LIFETIME_REMAINING[LIFETIME_EXPIRED].total_seconds() / 60 + 1))
         assert removed_in(connection, UNIVERSE) == "0 min"
 
     def test_removed_in_unknown(self) -> None:
@@ -388,10 +389,13 @@ class TestSystemNode:
         assert not paint_item(home, 1.0).isNull()
 
     def test_character_markers_without_characters(self, scene) -> None:
-        """A node with no characters still paints."""
+        """A node with no characters still paints, and paints differently once a character is in it."""
         node = scene.nodes[HOME.id]
         node.characters = []
-        assert paint_item(node, 1.0) is not None
+        image = paint_item(node, 1.0)
+        assert any(image.pixel(x, y) != 0 for x in range(image.width()) for y in range(image.height()))
+        node.characters = [(1, "Pilot", 1)]
+        assert paint_item(node, 1.0) != image
 
     def test_hover_events(self, scene) -> None:
         """Hover enter sets the hover flag; hover leave clears it."""
@@ -507,8 +511,8 @@ class TestConnectionEdge:
         assert [text for text, _ in self.edge_for(scene, state, mass="unknown")._chips()] == ["?"]
         edge = self.edge_for(scene, state, mass="fresh", frigate_only=1, lifetime=LIFETIME_1H, confirmed=0)
         assert [text for text, _ in edge._chips()] == ["F", "◷ <1h", "▲ UNCONF"]
-        assert [text for text, _ in self.edge_for(scene, state, lifetime=LIFETIME_EXPIRED)._chips()][-2:] == ["F", "✕ EXP"] \
-            or "✕ EXP" in [text for text, _ in self.edge_for(scene, state, lifetime=LIFETIME_EXPIRED)._chips()]
+        expired = self.edge_for(scene, state, mass="fresh", frigate_only=0, lifetime=LIFETIME_EXPIRED, confirmed=1)
+        assert [text for text, _ in expired._chips()] == ["✕ EXP"]
 
     def test_plate_grows_with_chips(self, state, scene) -> None:
         """More chips make the label plate wider, and the bounding rect still contains it."""
@@ -532,7 +536,7 @@ class TestConnectionEdge:
         assert vertical.line.y2() > vertical.line.y1()
         # swapped order: the node lower down is the first one
         scene.nodes[state.wormhole.id].setPos(0, -300)
-        assert vertical.line.y2() > vertical.line.y1() or vertical.line.y2() < vertical.line.y1()
+        assert vertical.line.y2() > vertical.line.y1()
         scene.nodes[state.k_space.id].setPos(-600, 0)
         assert horizontal.line.x2() > horizontal.line.x1()
 
@@ -596,7 +600,9 @@ class TestMapScene:
         """Refreshing a system whose connection was deleted doesn't fail; the edge keeps its last data."""
         connection = state.store.connection(HOME.id, state.k_space.id)
         state.store.remove_connection(connection.id)
-        scene.refresh_system(HOME.id)   # edge keeps its last connection
+        scene.refresh_system(HOME.id)
+        assert scene.edges[connection.id].connection.id == connection.id
+        assert scene.edges[connection.id].connection.wormhole_type == "H296"
 
     def test_refresh_all_on_characters_changed(self, state, scene) -> None:
         """charactersChanged refreshes every node, so character markers move to the right system."""

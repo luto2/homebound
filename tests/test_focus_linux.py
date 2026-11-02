@@ -111,11 +111,13 @@ def test_activated_ignores_own_windows_and_stops_polling(tracker, backend) -> No
     """The first KWin report ends X11 polling; our own windows change nothing."""
     statuses = spy(tracker.status)
     backend._x11_timer.start()
-    backend._activated("Homebound", "homebound", QRect(0, 0, 1, 1))
+    backend._activated("EVE - Pilot", "exefile", QRect(0, 0, 5, 5))
     assert not backend._x11_timer.isActive() and statuses == [("ok", "KWin focus script active")]
-    assert tracker.character is None
-    backend._activated("Firefox", "firefox", QRect(0, 0, 5, 5))
-    assert tracker.character is None and tracker.rect == QRect(0, 0, 5, 5)
+    assert tracker.character == "Pilot" and tracker.rect == QRect(0, 0, 5, 5)
+    backend._activated("Homebound", "homebound", QRect(0, 0, 1, 1))
+    assert tracker.character == "Pilot" and tracker.rect == QRect(0, 0, 5, 5)
+    backend._activated("Firefox", "firefox", QRect(0, 0, 7, 7))
+    assert tracker.character is None and tracker.rect == QRect(0, 0, 7, 7)
     backend._activated("EVE", "exefile", QRect(0, 0, 5, 5))
     assert tracker.character == ""
     assert len(statuses) == 1

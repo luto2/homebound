@@ -111,7 +111,7 @@ def test_type_and_sizes() -> None:
     """Overlay text is at least 11 px, node and overlay widths match the spec, and opacities lie in (0, 1]."""
     assert TYPE["overlay-row"]["px"] >= 11 and TYPE["overlay-mono"]["px"] >= 11
     assert PIXELS["size-node-w"] == 168 and PIXELS["size-overlay-w"] == 320
-    assert 0 < OPACITY[next(iter(OPACITY))] <= 1
+    assert OPACITY and all(0 < value <= 1 for value in OPACITY.values())
 
 
 # ---------------------------------------------------------------- qss

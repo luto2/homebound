@@ -5,12 +5,12 @@ import pytest
 
 from conftest import HOME, SCAN, UNIVERSE, MapSimulation, pick_system
 from homebound.logs.parser import SystemChange
-from homebound.ui.map_scene import removed_in
 from homebound.mapdb.store import LIFETIME_1H, LIFETIME_4H, LIFETIME_REMAINING, Store
 from homebound.mapping import signature_parser
 from homebound.mapping.naming import Namer
 from homebound.mapping.tracker import (AutoNamed, MapChanged, Moved, NamingRequest, Tracker, UnknownJump,
                                        expires_at, hole_size, is_wormhole_side)
+from homebound.ui.map_scene import removed_in
 
 
 def paste(simulation: MapSimulation, text: str = SCAN) -> None:
@@ -279,10 +279,21 @@ def test_expire_clears_the_parent_of_systems_that_stay(simulation) -> None:
     """A pinned child whose connection expired stays, without a parent."""
     c5 = pick_system("C5", exclude={HOME.id})
     simulation.tracker.apply_naming(simulation.naming_request(simulation.jump(c5.name)), is_static=True)
+    simulation.jump(HOME.name)
     simulation.store.update_system(c5.id, pinned=1)
     connection = simulation.store.connection(HOME.id, c5.id)
     assert simulation.tracker.expire(datetime.fromisoformat(connection.created_at) + timedelta(days=3)) == 1
-    assert simulation.store.system(c5.id).parent_id is None
+    assert simulation.store.has_system(c5.id) and simulation.store.system(c5.id).parent_id is None
+
+
+def test_expire_removes_an_unpinned_system_nobody_is_in(simulation) -> None:
+    """Without the pin the same expired child goes, so the pin is what keeps it."""
+    c5 = pick_system("C5", exclude={HOME.id})
+    simulation.tracker.apply_naming(simulation.naming_request(simulation.jump(c5.name)), is_static=True)
+    simulation.jump(HOME.name)
+    connection = simulation.store.connection(HOME.id, c5.id)
+    assert simulation.tracker.expire(datetime.fromisoformat(connection.created_at) + timedelta(days=3)) == 1
+    assert not simulation.store.has_system(c5.id)
 
 
 def test_expire_keeps_systems_no_expired_connection_touched(simulation) -> None:

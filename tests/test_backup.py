@@ -419,9 +419,6 @@ def test_failed_safety_backup_blocks_replace(monkeypatch, tmp_path, qt_applicati
 
 
 # ---------------------------------------------------------------- damaged input
-
-
-
 def test_unreadable_and_damaged_maps(settings, tmp_path) -> None:
     """A map path that is a folder, a file with a damaged body or a failed integrity check stops the backup."""
     path = settings.map_path()

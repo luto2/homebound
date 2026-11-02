@@ -1,5 +1,5 @@
 """The shared HTTP helpers."""
-from datetime import timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -24,7 +24,9 @@ def test_parse_utc() -> None:
     """Z and offsets parse, naive times are UTC, anything else is None."""
     assert http.parse_utc("2026-11-02T12:00:00Z").utcoffset().total_seconds() == 0
     assert http.parse_utc("2026-11-02T12:00:00").tzinfo is timezone.utc
-    assert http.parse_utc("2026-11-02T14:00:00+02:00").hour == 14
+    offset_time = http.parse_utc("2026-11-02T14:00:00+02:00")
+    assert offset_time.utcoffset() == timedelta(hours=2)
+    assert offset_time == datetime(2026, 11, 2, 12, tzinfo=timezone.utc)
     assert http.parse_utc("garbage") is None and http.parse_utc(None) is None and http.parse_utc(5) is None
 
 
