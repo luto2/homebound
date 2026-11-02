@@ -2,6 +2,7 @@
 import json
 import os
 import sqlite3
+import sys
 import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -21,6 +22,8 @@ from ui_helpers import isolated_settings, make_state
 
 OTHER = pick_system("C3")
 IS_ROOT = getattr(os, "geteuid", lambda: 1)() == 0   # root can write anywhere; Windows has no geteuid
+# chmod can't make a folder read-only for root, nor on Windows (which ignores the bit on folders)
+CANNOT_LOCK_FOLDERS = IS_ROOT or sys.platform == "win32"
 
 
 @pytest.fixture
@@ -124,7 +127,7 @@ def test_damaged_map_fails_the_backup(settings) -> None:
     assert list(backups_directory().iterdir()) == []
 
 
-@pytest.mark.skipif(IS_ROOT, reason="root can write anywhere")
+@pytest.mark.skipif(CANNOT_LOCK_FOLDERS, reason="chmod can't make a folder read-only here")
 def test_read_only_folder_fails_the_backup(settings) -> None:
     """A backups folder that can't be written gives a BackupError that names it."""
     folder = backups_directory()
@@ -451,7 +454,7 @@ def test_needs_migration_on_damaged_file(tmp_path) -> None:
     assert not needs_migration(path)
 
 
-@pytest.mark.skipif(IS_ROOT, reason="root can write anywhere")
+@pytest.mark.skipif(CANNOT_LOCK_FOLDERS, reason="chmod can't make a folder read-only here")
 def test_copy_to_read_only_folder(settings, tmp_path) -> None:
     """A copy into a folder that can't be written is a BackupError."""
     path = create_backup("manual", settings)
@@ -488,7 +491,7 @@ def test_restore_with_missing_or_unwritable_file(settings, monkeypatch) -> None:
         archive.writestr("manifest.json", json.dumps({"maps": {"Main": {"file": "map.db"}}}))
     with pytest.raises(BackupError, match="no file map.db"):
         restore_maps(broken, ["Main"], False, settings)
-    if not IS_ROOT:
+    if not CANNOT_LOCK_FOLDERS:
         folder = settings_module.DATA_DIR / "maps"
         folder.mkdir()
         folder.chmod(0o500)

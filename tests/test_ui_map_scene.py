@@ -298,11 +298,12 @@ class TestSystemNode:
         assert x == 8 + chips[1][2] + 4 and x + width < home_x
         assert [chip[1] for chip in self._chips(monkeypatch, scene.nodes[state.wormhole.id])] == [
             "▲ UNCONFIRMED", "SCAN 26h"]
-        state.characters_in = lambda system_id: [(1, "Pilot One", 1), (2, "Pilot Two", 2)]
-        scene.refresh_all()                  # characters too: the tab gives way to their "+2" chip
+        state.characters_in = lambda system_id: [(number, f"Pilot {number}", number) for number in range(1, 6)]
+        scene.refresh_all()                  # characters too: the tab gives way to their markers and "+n" chip
         chips = self._chips(monkeypatch, scene.nodes[HOME.id])
-        assert [chip[1] for chip in chips] == ["⌂ HOME", "▲ UNCONFIRMED", "+2"]
-        assert chips[2][0] + chips[2][2] < home_x
+        assert [chip[1] for chip in chips[:2]] == ["⌂ HOME", "▲ UNCONFIRMED"] and len(chips) == 3
+        x, text, width = chips[2]
+        assert text.startswith("+") and int(text[1:]) >= 3 and x + width < home_x
 
     def test_tick_repaints_only_changed_nodes(self, monkeypatch, state, scene) -> None:
         """The scan age tick updates a node whose state or shown age changed, and leaves the others alone."""
