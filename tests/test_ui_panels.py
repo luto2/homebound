@@ -120,11 +120,16 @@ def test_elide_label_elides_to_its_width(qt_application) -> None:
     """A long text is drawn elided; a short one is not changed."""
     label = ElideLabel("x" * 200)
     label.resize(80, 20)
-    image = label.grab().toImage()
-    assert not image.isNull()
+    elided = label.fontMetrics().elidedText(label.text(), Qt.TextElideMode.ElideRight, label.contentsRect().width())
+    assert elided.endswith("…") and len(elided) < 200
+    pre_elided = ElideLabel(elided)
+    pre_elided.resize(80, 20)
     assert label.text() == "x" * 200
+    assert label.grab().toImage() == pre_elided.grab().toImage()
     label.setText("short")
-    label.grab()
+    short = ElideLabel("short")
+    short.resize(80, 20)
+    assert label.grab().toImage() == short.grab().toImage()
 
 
 def test_owner_swatch_has_ten_slots(qt_application) -> None:
@@ -925,8 +930,7 @@ def test_header_press_toggles_the_group(state, table, qt_application) -> None:
     assert delegate.editorEvent(mouse(QEvent.Type.MouseButtonPress, QPoint(5, 5), Qt.MouseButton.RightButton),
                                 model, option, index)
     assert pressed == [("sig:wormhole",)]
-    # the table's own connection toggles after the event loop turns
-    table.signature_model.toggle("sig:wormhole")
+    qt_application.processEvents()
     assert model.collapsed() == {"sig:wormhole"}
 
 
@@ -1013,23 +1017,32 @@ def test_painting_all_row_kinds(state, table, qt_application) -> None:
 
 
 def test_paint_delegate_directly_with_hover(state, table, qt_application) -> None:
-    """Hover state paints a lighter fill for headers and rows."""
+    """A header row and a signature row paint a different ground when hovered or selected than when plain."""
     from PySide6.QtGui import QImage, QPainter
     from PySide6.QtWidgets import QStyle
     mixed_signatures(state)
     table.load(HOME.id)
-    image = QImage(400, 40, QImage.Format.Format_ARGB32)
-    for row in (0, 1):
+    assert isinstance(table.signature_model.index(0, 0).data(Qt.ItemDataRole.UserRole), GroupHeader)
+    assert not isinstance(table.signature_model.index(1, 0).data(Qt.ItemDataRole.UserRole), GroupHeader)
+
+    def ground(row: int, flags) -> int:
+        """Paint the row's cells into a fresh image and return a pixel clear of any text."""
+        image = QImage(400, 24, QImage.Format.Format_ARGB32)
+        image.fill(0xFF000000)
         painter = QPainter(image)
         option = QStyleOptionViewItem()
         option.rect = QRect(0, 0, 400, 24)
-        option.state |= QStyle.StateFlag.State_MouseOver
-        for column in range(8):
-            table.signature_delegate.paint(painter, option, table.signature_model.index(row, column))
-        option.state |= QStyle.StateFlag.State_Selected
+        option.state |= flags
         for column in range(8):
             table.signature_delegate.paint(painter, option, table.signature_model.index(row, column))
         painter.end()
+        return image.pixel(200, 3)
+
+    for row in (0, 1):
+        plain = ground(row, QStyle.StateFlag.State_None)
+        assert ground(row, QStyle.StateFlag.State_MouseOver) != plain
+    assert ground(1, QStyle.StateFlag.State_Selected) != ground(1, QStyle.StateFlag.State_None)
+    assert ground(1, QStyle.StateFlag.State_Selected) != ground(1, QStyle.StateFlag.State_MouseOver)
 
 
 def test_table_header_view_paints(table) -> None:

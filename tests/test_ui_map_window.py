@@ -14,6 +14,7 @@ from homebound.logs.parser import SystemChange
 from homebound.mapdb.store import Store
 from homebound.mapping import signature_parser
 from homebound.mapping.tracker import AutoNamed, NamingRequest, UnknownJump
+from homebound.theme.tokens import PIXELS
 from homebound.ui import map_window as map_window_module
 from homebound.ui.dialogs import ConnectionDialog, NamingDialog
 from homebound.ui.map_window import Legend, MapArea, MapWindow, Scrim, app_mark
@@ -133,8 +134,10 @@ def test_legend_toggles_and_paints(window, qt_application) -> None:
     assert expanded.height() > collapsed.height()
     legend.mousePressEvent(event)
     assert not legend.open
-    assert isinstance(legend.reposition().width(), float)
-    assert isinstance(Legend.ITEMS, list)
+    geometry = legend.reposition()
+    assert geometry.left() == PIXELS["sp-16"] and geometry.bottom() < window.area.height()
+    assert geometry.width() == 84
+    assert all(key in legend.pens and label for key, label in Legend.ITEMS)
 
 
 # ---------------------------------------------------------------- toolbar, settings sync
@@ -247,6 +250,8 @@ def test_rename_map_error(window, modal, monkeypatch) -> None:
     modal.handler = lambda dialog: (dialog.field.setText("Other"), 1)[1]
     monkeypatch.setattr(window.state.settings, "rename_map", lambda old, new: (_ for _ in ()).throw(ValueError("bad")))
     assert window.rename_map() is False
+    toast = window.toasts.toasts[-1]
+    assert toast_kind(toast) == "danger" and toast_text(toast) == "bad"
 
 
 def test_switch_map_and_validation(window) -> None:
@@ -296,7 +301,11 @@ def test_delete_map_blocked_by_failed_backup(window, modal) -> None:
 def test_delete_map_refused(window, modal) -> None:
     """The open map can't be deleted: the settings refuse and a toast says so."""
     modal.handler = lambda dialog: 1
-    assert window.delete_map(window.state.settings.active_map) is False
+    active = window.state.settings.active_map
+    assert window.delete_map(active) is False
+    toast = window.toasts.toasts[-1]
+    assert toast_kind(toast) == "danger" and "Switch to another map" in toast_text(toast)
+    assert active in window.state.settings.maps
 
 
 def test_map_menu_actions_through_menu(window, modal) -> None:

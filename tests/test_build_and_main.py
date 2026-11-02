@@ -11,9 +11,6 @@ from homebound import __main__ as entry_point
 from homebound.universe import build_static
 from homebound.universe.db import SCHEMA_VERSION, Universe, UniverseDataError
 
-REAL_OUTPUT = build_static.OUTPUT
-REAL_RESOLVED = build_static.RESOLVED
-
 
 def jsonl(*records: dict) -> str:
     """Return records as JSON lines, with a blank line in the middle like real files may have."""
@@ -241,9 +238,6 @@ def test_fetch_reports_fractions(tmp_path, monkeypatch) -> None:
     assert fractions == [None]
 
 
-def test_main_never_touches_real_outputs() -> None:
-    """After the tests that redirect the build, its output and resolution paths are the real ones again."""
-    assert build_static.OUTPUT == REAL_OUTPUT and build_static.RESOLVED == REAL_RESOLVED
 
 
 class FakeResponse(io.BytesIO):

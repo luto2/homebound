@@ -873,10 +873,15 @@ def test_combo_delegate_paints_rows_and_separators(state) -> None:
 def test_naming_shortcut_answers(state) -> None:
     """The Y and N shortcuts answer the static question."""
     from PySide6.QtGui import QShortcut
-    dialog = NamingDialog(None, state, request_for(state, "C5"))
+    request = request_for(state, "C5")
+    dialog = NamingDialog(None, state, request)
     yes = [shortcut for shortcut in dialog.findChildren(QShortcut) if shortcut.key().toString() == "Y"][0]
     yes.activated.emit()
     assert dialog.is_static() and dialog.result() == 1
+    dialog = NamingDialog(None, state, request)
+    no = [shortcut for shortcut in dialog.findChildren(QShortcut) if shortcut.key().toString() == "N"][0]
+    no.activated.emit()
+    assert not dialog.is_static() and dialog.result() == 1
 
 
 def test_completer_delegate_paints_selected_and_reasons(state) -> None:

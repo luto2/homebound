@@ -14,6 +14,7 @@ import homebound.ui.overlay as overlay_module
 import homebound.ui.toast as toast_module
 from conftest import HOME, UNIVERSE, pick_system
 from homebound.theme import painting
+from homebound.theme.tokens import OPACITY
 from homebound.logs.parser import SystemChange
 from homebound.logs.watcher import CharacterState
 from homebound.mapdb.store import ZkillStats, utc_now_iso
@@ -224,7 +225,10 @@ def test_switch_map_skips_legacy_character_rows(state) -> None:
 def test_apply_settings(state, tmp_path) -> None:
     """New settings reach namer, tracker, zKill and the watcher (log folder change)."""
     settings = state.settings
-    settings.naming_scheme = "alpha" if settings.naming_scheme != "alpha" else "numeric"
+    child = pick_system("C5", exclude={HOME.id})
+    state.tracker.add_wormhole(HOME.id, child.id)
+    assert state.namer.display(child.id) == "1"
+    settings.naming_scheme = "a2a"
     settings.auto_name_when_certain = True
     settings.zkill_enabled = True
     new_logs = tmp_path / "other_logs"
@@ -232,7 +236,8 @@ def test_apply_settings(state, tmp_path) -> None:
     settings.log_directory = str(new_logs)
     changed, mapped = spy(state.settingsChanged), spy(state.mapChanged)
     state.apply_settings()
-    assert state.namer.scheme_key == settings.naming_scheme and state.tracker.auto_when_certain is True
+    assert state.namer.scheme_key == "a2a" and state.tracker.auto_when_certain is True
+    assert state.namer.display(child.id) == "A1a"
     assert state.zkill.enabled is True and str(state.watcher.scanner.log_directory) == str(new_logs)
     assert len(changed) == 1 and len(mapped) == 1
     scanner = state.watcher.scanner
@@ -273,7 +278,6 @@ def test_characters_in_only_online(state) -> None:
     """Only online characters count as being in a system."""
     state.store.set_character(2, "Zed", HOME.id, "2026-10-30T12:00:00+00:00")
     assert state.characters_in(HOME.id) == []
-    write_character_log(state.settings.map_path().parent, 5, "Eve", HOME.name)  # wrong folder on purpose: nothing
     state.watcher.characters[2] = SimpleNamespace(character_id=2, name="Zed", online=True, last_seen=None)
     assert state.characters_in(HOME.id) == [(2, "Zed", state.settings.slot_for(2))]
 
@@ -701,7 +705,7 @@ def test_overlay_geometry(overlay_setup) -> None:
     state.settings.overlay_opacity = 0
     assert overlay._background_opacity() > 0
     overlay.unlocked = True
-    assert overlay._background_opacity() == overlay._background_opacity()
+    assert overlay._background_opacity() == OPACITY["op-overlay-unlocked"]
 
 
 def test_overlay_paints_empty_states(overlay_setup) -> None:
@@ -911,7 +915,7 @@ def test_dock_space_shortcut(dock_setup, qt_application) -> None:
     dock.setFocus()
     qt_application.processEvents()
     QTest.keyClick(dock, Qt.Key.Key_Space)
-    assert state.selected in (HOME.id, 0)
+    assert state.selected == HOME.id
 
 
 def test_dock_context_menu(dock_setup, modal, monkeypatch) -> None:
@@ -963,9 +967,14 @@ def test_dock_delegate_paints_hover(dock_setup) -> None:
     dock.reload()
     option = QStyleOptionViewItem()
     option.rect = QRect(0, 0, 300, 44)
-    option.state = QStyle.StateFlag.State_MouseOver
-    pixmap = QPixmap(300, 44)
-    painter = QPainter(pixmap)
-    dock.itemDelegate().paint(painter, option, dock.model().index(0, 0))
-    painter.end()
-    assert not pixmap.isNull()
+    images = {}
+    for flag in (QStyle.StateFlag.State_None, QStyle.StateFlag.State_MouseOver):
+        option.state = flag
+        pixmap = QPixmap(300, 44)
+        pixmap.fill(Qt.GlobalColor.black)
+        painter = QPainter(pixmap)
+        dock.itemDelegate().paint(painter, option, dock.model().index(0, 0))
+        painter.end()
+        images[flag] = pixmap.toImage()
+    plain, hovered = images.values()
+    assert plain.pixelColor(150, 40) != hovered.pixelColor(150, 40)

@@ -215,4 +215,4 @@ def test_names_collects_display_label_and_real_name() -> None:
     store.add_system(jita, parent_id=HOME.id, hole_index=2)
     assert namer.names(HOME.id) == {"Home", HOME.name}
     assert namer.names(jita) == {"2 Jita", "2", "Jita"}
-    assert namer.names(1) == {namer.display(1), namer.label(1)} - {""}
+    assert namer.names(1) == {"1"}
