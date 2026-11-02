@@ -10,23 +10,14 @@ from datetime import datetime, timezone
 
 import httpx
 
+from .http import BackgroundFetcher, make_client, parse_utc
 from .routing import ScoutLink
-from .validation import require_type
-from .zkill import USER_AGENT
+from .validation import is_int, is_number, require_type
 
 API_URL = "https://api.eve-scout.com/v2/public/signatures"
 REFRESH_INTERVAL = 5 * 60     # seconds between fetches
 HUBS = ("thera", "turnur")      # out_system_name, lower case
 SHIP_SIZES = {"small": "S", "medium": "M", "large": "L", "xlarge": "XL", "capital": "XL"}
-
-
-def _expiry(text: object) -> datetime | None:
-    """Return an ISO time from the API as an aware datetime, or None if it isn't one."""
-    try:
-        moment = datetime.fromisoformat(str(text).replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 
 def parse_signatures(data: object, now: datetime | None = None) -> list[ScoutLink]:
@@ -47,10 +38,9 @@ def parse_signatures(data: object, now: datetime | None = None) -> list[ScoutLin
             continue
         hub = str(entry.get("out_system_name", "")).lower()
         hub_id, system_id = entry.get("out_system_id"), entry.get("in_system_id")
-        if hub not in HUBS or not all(isinstance(value, int) and not isinstance(value, bool) and value > 0
-                              for value in (hub_id, system_id)):
+        if hub not in HUBS or not all(is_int(value) and value > 0 for value in (hub_id, system_id)):
             continue
-        expires = _expiry(entry.get("expires_at"))
+        expires = parse_utc(entry.get("expires_at"))
         if expires is not None and expires <= now:
             continue
         remaining = entry.get("remaining_hours")
@@ -59,12 +49,11 @@ def parse_signatures(data: object, now: datetime | None = None) -> list[ScoutLin
                                wormhole_type if isinstance(wormhole_type, str) and wormhole_type else None,
                                SHIP_SIZES.get(str(entry.get("max_ship_size", "")).lower()),
                                expires.isoformat() if expires else None,
-                               float(remaining) if isinstance(remaining, (int, float))
-                               and not isinstance(remaining, bool) else None))
+                               float(remaining) if is_number(remaining) else None))
     return links
 
 
-class EveScoutFetcher:
+class EveScoutFetcher(BackgroundFetcher):
     """Fetches EVE-Scout's connections every few minutes on a background thread.
 
     ``on_update()`` is called from the worker thread after new links were stored, so marshal it to Qt
@@ -78,15 +67,11 @@ class EveScoutFetcher:
             on_update: Called after the links changed.
             on_status: Called with ``(level, text)`` after each request.
         """
-        if not callable(on_update) or (on_status is not None and not callable(on_status)):
-            raise TypeError("on_update and on_status must be callable")
-        self.on_update, self.on_status = on_update, on_status
+        super().__init__("eve-scout", on_update, on_status)
         self._links: list[ScoutLink] = []
         self._lock = threading.Lock()
         self._wake = threading.Event()
         self._enabled = True
-        self._stopping = False
-        self.thread = threading.Thread(target=self._run, name="eve-scout", daemon=True)
 
     @property
     def enabled(self) -> bool:
@@ -115,10 +100,6 @@ class EveScoutFetcher:
             return [link for link in self._links
                     if not link.expires_at or datetime.fromisoformat(link.expires_at) > now]
 
-    def start(self) -> None:
-        """Start the worker thread."""
-        self.thread.start()
-
     def stop(self) -> None:
         """Ask the worker thread to finish."""
         self._stopping = True
@@ -128,14 +109,9 @@ class EveScoutFetcher:
         """Fetch now instead of waiting for the next interval."""
         self._wake.set()
 
-    def _status(self, level: str, text: str) -> None:
-        """Report a status if a status callback was given."""
-        if self.on_status:
-            self.on_status(level, text)
-
     def _run(self) -> None:
         """Worker loop: fetch, then sleep until the interval ends or something wakes the thread."""
-        client = httpx.Client(headers={"User-Agent": USER_AGENT, "Accept-Encoding": "gzip"}, timeout=30)
+        client = make_client()
         while not self._stopping:
             if self._enabled:
                 self.fetch(client)

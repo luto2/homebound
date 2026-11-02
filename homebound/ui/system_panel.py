@@ -1,5 +1,4 @@
 """Right dock: selected system details + signatures (spec: MapWindow right dock, SignatureTable)."""
-from datetime import datetime, timedelta, timezone
 
 from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QFontMetricsF, QIcon, QPainter, QPaintEvent, QPixmap
@@ -14,12 +13,12 @@ from ..theme import painting
 from ..theme.qss import repolish
 from ..theme.tokens import PIXELS, color, font
 from ..validation import require_integer, require_type
-from .map_scene import age_text
+from ..zkill import ZKILL_STALE_AFTER, age
+from ..mapping.scan_status import age_text
 from .signature_table import SignatureTable
 from .state import AppState
 
 OWNER_SLOTS = 10
-ZKILL_STALE_AFTER = timedelta(minutes=30)
 NOTES_SAVE_DELAY_MS = 600
 
 
@@ -299,7 +298,7 @@ class SystemPanel(QWidget):
             return "off"
         if not stats:
             return "loading …"
-        stale = datetime.now(timezone.utc) - datetime.fromisoformat(stats.fetched_at) > ZKILL_STALE_AFTER
+        stale = age(stats) > ZKILL_STALE_AFTER
         last = f"last kill {age_text(stats.last_kill_at)} ago" if stats.last_kill_at else "no kills 24h"
         return (f"{stats.kills_1h}/{stats.kills_24h} kills · {stats.pod_kills_1h} pods 1h · {last}"
                 + (f" · stale {age_text(stats.fetched_at)}" if stale else ""))

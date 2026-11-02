@@ -24,7 +24,8 @@ from ..validation import require_choice, require_integer, require_text, require_
 from . import menus
 from .character_dock import CharacterDock
 from .dialogs import AddSystemDialog, ConfirmDeleteMapDialog, ConnectionDialog, NamingDialog, PromptDialog
-from .map_scene import ConnectionEdge, MapScene, MapView, age_text
+from ..mapping.scan_status import age_text
+from .map_scene import ConnectionEdge, MapScene, MapView
 from .overlay import Overlay
 from .route_dock import RouteDock
 from .settings_dialog import SettingsDialog
@@ -779,12 +780,9 @@ class MapWindow(QMainWindow):
         names: list[str] = []
         self.find_map = {}
         for mapped in state.store.systems():
-            universe_system = state.universe.by_id(mapped.id)
-            for name in {state.namer.display(mapped.id), state.namer.label(mapped.id),
-                         universe_system.name if universe_system else ""}:
-                if name:
-                    names.append(name)
-                    self.find_map[name.lower()] = mapped.id
+            for name in state.namer.names(mapped.id):
+                names.append(name)
+                self.find_map[name.lower()] = mapped.id
         completer = QCompleter(sorted(set(names)), self.find_field)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         completer.setFilterMode(Qt.MatchFlag.MatchContains)

@@ -13,6 +13,16 @@ from typing import Any, TypeVar
 Value = TypeVar("Value")
 
 
+def is_int(value: object) -> bool:
+    """Return whether a value is an int (``bool`` doesn't count)."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def is_number(value: object) -> bool:
+    """Return whether a value is an int or float (``bool`` doesn't count)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def require_type(value: Value, expected: type | tuple[type, ...], name: str) -> Value:
     """Check that a value is an instance of the expected type or types.
 

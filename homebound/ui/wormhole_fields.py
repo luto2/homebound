@@ -7,19 +7,21 @@ and mass. "Leads to" and "Size" are only asked for a K162: any other type says b
 from datetime import datetime
 
 from PySide6.QtCore import QModelIndex, QPointF, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QFont, QFontMetricsF, QKeyEvent, QPainter, QPaintEvent, QPen
+from PySide6.QtGui import QFont, QFontMetricsF, QKeyEvent, QPainter, QPainterPath, QPaintEvent, QPen
 from PySide6.QtWidgets import (
     QAbstractButton, QButtonGroup, QComboBox, QGridLayout, QLabel, QStyle, QStyledItemDelegate,
     QStyleOptionComboBox, QStyleOptionViewItem, QStylePainter, QVBoxLayout, QWidget,
 )
 
-from ..mapdb.store import LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, LIFETIME_REMAINING, LIFETIME_STABLE
+from ..mapdb.store import LIFETIME_1H, LIFETIME_4H, LIFETIME_CHIPS, LIFETIME_EXPIRED, LIFETIME_REMAINING, LIFETIME_STABLE
 from ..mapping.tracker import hole_size
 from ..theme import painting
+from ..theme.painting import EDGE_CHIPS
 from ..theme.tokens import PIXELS, color, font
 from ..universe.db import SIZE_NAMES, SIZES, Universe
 from ..validation import require_type
 from .state import AppState
+from .widgets import caption
 
 DESTINATION_CLASSES = ["C1", "C2", "C3", "C4", "C5", "C6", "HS", "LS", "NS", "TH", "C13", "PV", "DR"]
 SHOW_ALL = "__all__"
@@ -273,9 +275,6 @@ class DestinationCombo(QComboBox):
         paint_destination_row(painter, field.adjusted(-PIXELS["sp-4"], 0, 0, 0), self.currentData() or "")
 
 
-_EDGE_PENS = None
-
-
 def draw_edge_icon(painter: QPainter, x: float, y: float, width: float, mass: str = "fresh",
                    lifetime: int = LIFETIME_STABLE) -> float:
     """Draw the map's own edge pen as a short sample line, so the editor shows what the map will draw.
@@ -283,21 +282,13 @@ def draw_edge_icon(painter: QPainter, x: float, y: float, width: float, mass: st
     Returns:
         The width used.
     """
-    global _EDGE_PENS
-    if _EDGE_PENS is None:
-        _EDGE_PENS = painting.edge_pens()
-    if mass not in _EDGE_PENS:
+    if mass not in painting.edge_pens():
         raise ValueError(f"unknown mass state {mass!r}")
     painter.save()
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    start, end = QPointF(x + 3, y), QPointF(x + width - 3, y)
-    if lifetime in (LIFETIME_4H, LIFETIME_1H):
-        painter.setPen(_EDGE_PENS["lifetime_1h" if lifetime == LIFETIME_1H else "lifetime_4h"])
-        painter.drawLine(start, end)
-    painter.setPen(QPen(_EDGE_PENS[mass]))
-    if lifetime == LIFETIME_EXPIRED:
-        painter.setOpacity(0.4)
-    painter.drawLine(start, end)
+    line = QPainterPath(QPointF(x + 3, y))
+    line.lineTo(x + width - 3, y)
+    painting.stroke_edge(painter, line, mass, lifetime)
     painter.restore()
     return width
 
@@ -440,27 +431,20 @@ def size_segments() -> list[Segment]:
 def lifetime_segments() -> list[Segment]:
     """Return the Lifetime segments: Stable · < 4h · < 1h · Expired."""
     return [Segment(LIFETIME_STABLE, "Stable", edge=("fresh", LIFETIME_STABLE), tooltip="More than 4h left"),
-            Segment(LIFETIME_4H, chip=("◷ <4h", "edge-eol"), edge=("fresh", LIFETIME_4H),
+            Segment(LIFETIME_4H, chip=LIFETIME_CHIPS[LIFETIME_4H], edge=("fresh", LIFETIME_4H),
                     tooltip="End of life: less than 4h left"),
-            Segment(LIFETIME_1H, chip=("◷ <1h", "edge-eol"), edge=("fresh", LIFETIME_1H), tooltip="Less than 1h left"),
-            Segment(LIFETIME_EXPIRED, chip=("✕ EXP", "danger"), edge=("fresh", LIFETIME_EXPIRED),
+            Segment(LIFETIME_1H, chip=LIFETIME_CHIPS[LIFETIME_1H], edge=("fresh", LIFETIME_1H), tooltip="Less than 1h left"),
+            Segment(LIFETIME_EXPIRED, chip=LIFETIME_CHIPS[LIFETIME_EXPIRED], edge=("fresh", LIFETIME_EXPIRED),
                     tooltip="Expired: about to disappear")]
 
 
 def mass_segments() -> list[Segment]:
     """Return the Mass segments: Fresh · Reduced · Critical · Unknown."""
     return [Segment("fresh", "Fresh", edge=("fresh", 0), tooltip="> 50% mass left"),
-            Segment("reduced", "Reduced", chip=("R", "edge-reduced"), edge=("reduced", 0), tooltip="< 50% mass left"),
-            Segment("critical", "Critical", chip=("CRIT", "edge-critical"), edge=("critical", 0),
+            Segment("reduced", "Reduced", chip=EDGE_CHIPS["reduced"], edge=("reduced", 0), tooltip="< 50% mass left"),
+            Segment("critical", "Critical", chip=EDGE_CHIPS["critical"], edge=("critical", 0),
                     tooltip="< 10% mass left"),
-            Segment("unknown", "Unknown", chip=("?", "edge-unknown"), edge=("unknown", 0), tooltip="Mass not checked")]
-
-
-def caption_label(text: str) -> QLabel:
-    """Return a field caption in upper case."""
-    label = QLabel(text.upper())
-    label.setProperty("role", "caption")
-    return label
+            Segment("unknown", "Unknown", chip=EDGE_CHIPS["unknown"], edge=("unknown", 0), tooltip="Mass not checked")]
 
 
 def lifetime_help_text(lifetime: int, initial_lifetime: int, lifetime_set_at: str | None) -> str:
@@ -511,7 +495,7 @@ class WormholeFields(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(PIXELS["sp-8"])
-        layout.addWidget(caption_label("Wormhole type"))
+        layout.addWidget(caption("Wormhole type"))
         self.type = WormholeTypeCombo(state, system_ids, current.get("type"))
         layout.addWidget(self.type)
         self.info = QLabel()
@@ -528,7 +512,7 @@ class WormholeFields(QWidget):
         self.size.set_value(current.get("size") or "")
         box.addWidget(self.size)
 
-        layout.addWidget(caption_label("Lifetime"))
+        layout.addWidget(caption("Lifetime"))
         self.lifetime = Segmented(lifetime_segments())
         self.initial_lifetime = int(current.get("lifetime") or 0)
         self.lifetime_set_at = current.get("lifetime_set_at")
@@ -539,7 +523,7 @@ class WormholeFields(QWidget):
         layout.addWidget(self.lifetime_help)
         self.lifetime.changed.connect(self._sync_lifetime)
 
-        layout.addWidget(caption_label("Mass"))
+        layout.addWidget(caption("Mass"))
         self.mass = Segmented(mass_segments())
         self.mass.set_value(current.get("mass") or "fresh")
         layout.addWidget(self.mass)
@@ -556,7 +540,7 @@ class WormholeFields(QWidget):
         box = QVBoxLayout(widget)
         box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(PIXELS["sp-8"])
-        box.addWidget(caption_label(title))
+        box.addWidget(caption(title))
         layout.addWidget(widget)
         return widget, box
 
@@ -570,7 +554,7 @@ class WormholeFields(QWidget):
     def type_info_text(self) -> str:
         """Return the info line for the selected type (or the hint for K162 / unknown)."""
         code = self.type.code()
-        known = self.state.universe.wormhole_type(code) if code and code != "K162" else None
+        known = self.state.universe.known_type(code)
         if known:
             details = [f"→ {'/'.join(known.destinations)}"] if known.destinations else []
             if known.size:

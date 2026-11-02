@@ -12,12 +12,14 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
+from .http import BackgroundFetcher, make_client, parse_utc
 from .mapdb.store import Store, ZkillStats, utc_now_iso
 from .validation import require_integer, require_text, require_type
 
 API_URL = "https://zkillboard.com/api/kills/solarSystemID/{}/pastSeconds/86400/"
-USER_AGENT = "homebound/0.1 (personal offline wormhole mapper)"
 CACHE_LIFETIME = timedelta(minutes=10)
+RECENT_KILL_WINDOW = timedelta(minutes=10)   # a kill this young counts as "just now"
+ZKILL_STALE_AFTER = timedelta(minutes=30)    # cached stats this old are shown as stale
 REQUEST_INTERVAL = 1.2        # seconds between requests
 RATE_LIMIT_PAUSE = 10         # seconds to wait after HTTP 429
 POD_TYPE_IDS = {670, 33328}   # capsule, Genolution 'Auroral' 197-variant capsule
@@ -44,9 +46,8 @@ def summarize(system_id: int, kills: list[dict], now: datetime | None = None) ->
     times = []
     pod_kills_1h = 0
     for kill in kills:
-        try:
-            killed_at = datetime.fromisoformat(kill["killmail_time"].replace("Z", "+00:00"))
-        except (KeyError, ValueError, TypeError, AttributeError):
+        killed_at = parse_utc(kill.get("killmail_time")) if isinstance(kill, dict) else None
+        if killed_at is None:
             continue
         times.append(killed_at)
         victim = kill.get("victim") or {}
@@ -60,13 +61,26 @@ def summarize(system_id: int, kills: list[dict], now: datetime | None = None) ->
 def is_fresh(stats: ZkillStats | None, now: datetime | None = None) -> bool:
     """Return whether cached stats are younger than CACHE_LIFETIME (None is never fresh)."""
     require_type(stats, (ZkillStats, type(None)), "stats")
+    return bool(stats) and age(stats, now) < CACHE_LIFETIME
+
+
+def age(stats: ZkillStats | None, now: datetime | None = None) -> timedelta | None:
+    """Return the time since the stats were fetched (None without stats)."""
+    require_type(stats, (ZkillStats, type(None)), "stats")
     if not stats:
+        return None
+    return (now or datetime.now(timezone.utc)) - datetime.fromisoformat(stats.fetched_at)
+
+
+def had_recent_kill(stats: ZkillStats | None, now: datetime | None = None) -> bool:
+    """Return whether the last kill was within RECENT_KILL_WINDOW."""
+    require_type(stats, (ZkillStats, type(None)), "stats")
+    if not stats or not stats.last_kill_at:
         return False
-    now = now or datetime.now(timezone.utc)
-    return now - datetime.fromisoformat(stats.fetched_at) < CACHE_LIFETIME
+    return (now or datetime.now(timezone.utc)) - datetime.fromisoformat(stats.last_kill_at) < RECENT_KILL_WINDOW
 
 
-class ZkillFetcher:
+class ZkillFetcher(BackgroundFetcher):
     """Fetches zKill activity on a background thread.
 
     Call :meth:`request` whenever the visible set of systems changes. ``on_update(system_id)`` is
@@ -83,21 +97,13 @@ class ZkillFetcher:
             on_status: Called with ``(level, text)`` after each request.
         """
         require_text(database_path, "database_path")
-        if not callable(on_update) or (on_status is not None and not callable(on_status)):
-            raise TypeError("on_update and on_status must be callable")
+        super().__init__("zkill", on_update, on_status)
         self.database_path = database_path
-        self.on_update, self.on_status = on_update, on_status
         self.queue: queue.Queue[tuple[int, bool] | None] = queue.Queue()
         self.pending: set[int] = set()
         self.forced: set[int] = set()      # queued systems that are to be fetched even if fresh
         self._pending_lock = threading.Lock()
         self.enabled = True
-        self._stopping = False
-        self.thread = threading.Thread(target=self._run, name="zkill", daemon=True)
-
-    def start(self) -> None:
-        """Start the worker thread."""
-        self.thread.start()
 
     def stop(self) -> None:
         """Ask the worker thread to finish after its current request."""
@@ -137,16 +143,11 @@ class ZkillFetcher:
             queued += 1
         return queued
 
-    def _status(self, level: str, text: str) -> None:
-        """Report a status if a status callback was given."""
-        if self.on_status:
-            self.on_status(level, text)
-
     def _run(self) -> None:
         """Worker loop: one request per queued system, at most one per REQUEST_INTERVAL."""
         path = self.database_path
         store = Store(path)  # own connection for this thread
-        client = httpx.Client(headers={"User-Agent": USER_AGENT, "Accept-Encoding": "gzip"}, timeout=30)
+        client = make_client()
         while not self._stopping:
             item = self.queue.get()
             if item is _STOP:

@@ -4,7 +4,6 @@ Frameless, translucent, always on top, click-through while locked. Everything is
 text uses the halo recipe so it reads over explosions and black space alike.
 """
 import sys
-from datetime import datetime, timedelta, timezone
 
 from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QMouseEvent, QPainter, QPaintEvent, QPen
@@ -14,13 +13,13 @@ from ..mapping.chain import Chain, ChainRow
 from ..theme import painting
 from ..theme.tokens import OPACITY, PIXELS, color, font
 from ..validation import require_type
+from ..zkill import had_recent_kill
 from .focus import FocusTracker
 from .map_scene import hub_text
 from .state import AppState
 
 MODE_LABELS = {"follow": "follow", "pinned_eve": "pinned", "pinned_always": "pinned · always"}
 HEADER_HEIGHT = 26
-RECENT_KILL_WINDOW = timedelta(minutes=10)
 
 
 class OverlayFonts:
@@ -333,8 +332,7 @@ class Overlay(QWidget):
             painting.draw_halo_text(painter, right - text_width, baseline, text, fonts.mono,
                                     ink if (stats.kills_24h or 0) else muted)
             right -= text_width + 4
-            if (stats.last_kill_at and datetime.now(timezone.utc) - datetime.fromisoformat(stats.last_kill_at)
-                    < RECENT_KILL_WINDOW):
+            if had_recent_kill(stats):
                 painting.draw_recent_kill(painter, right - 7, y + row_height / 2)
                 right -= 18
         if hub := hub_text(state.universe, row.system_id):

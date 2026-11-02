@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from homebound.mapping.scan_status import ScanStatus, age_text, scan_status
+from homebound.mapping.scan_status import ScanStatus, age_text, format_duration, scan_status
 from homebound.settings import Settings
 
 NOW = datetime(2026, 11, 1, 12, 0, tzinfo=timezone.utc)
@@ -101,3 +101,25 @@ def test_age_text_edge_cases() -> None:
         age_text(5)
     with pytest.raises(TypeError):
         age_text(ago(hours=1), "now")
+
+
+@pytest.mark.parametrize("delta,long,short,minimum", [
+    (timedelta(seconds=-5), "0m", "0m", "0 min"), (timedelta(seconds=59), "0m", "0m", "0 min"),
+    (timedelta(minutes=7), "7m", "7m", "7 min"), (timedelta(minutes=59, seconds=59), "59m", "59m", "59 min"),
+    (timedelta(hours=1), "1h", "1h", "1h 0m"), (timedelta(hours=2, minutes=10), "2h 10m", "2h", "2h 10m"),
+    (timedelta(hours=23, minutes=59), "23h 59m", "23h", "23h 59m"), (timedelta(hours=24), "1d", "24h", "24h 0m"),
+    (timedelta(hours=99, minutes=59), "4d 3h", "99h", "99h 59m"), (timedelta(hours=100), "4d 4h", "4d", "100h 0m"),
+    (timedelta(days=3, hours=4), "3d 4h", "76h", "76h 0m")])
+def test_format_duration_styles(delta, long, short, minimum) -> None:
+    """The three styles round down to minutes and switch units at the documented boundaries."""
+    assert format_duration(delta) == format_duration(delta, "long") == long
+    assert format_duration(delta, "short") == short
+    assert format_duration(delta, "min") == minimum
+
+
+def test_format_duration_rejects_bad_arguments() -> None:
+    """A non-timedelta raises TypeError, an unknown style ValueError."""
+    with pytest.raises(TypeError):
+        format_duration(5)
+    with pytest.raises(ValueError):
+        format_duration(timedelta(minutes=1), "tiny")

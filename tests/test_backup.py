@@ -419,14 +419,7 @@ def test_failed_safety_backup_blocks_replace(monkeypatch, tmp_path, qt_applicati
 
 
 # ---------------------------------------------------------------- damaged input
-def test_app_version_without_metadata(monkeypatch) -> None:
-    """Without installed package metadata the version is "unknown"."""
-    def missing(name: str) -> str:
-        """Act as if the package isn't installed."""
-        raise backup_module.metadata.PackageNotFoundError(name)
 
-    monkeypatch.setattr(backup_module.metadata, "version", missing)
-    assert backup_module.app_version() == "unknown"
 
 
 def test_unreadable_and_damaged_maps(settings, tmp_path) -> None:

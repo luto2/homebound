@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QListWidget, QListWidgetItem, QStyle, QStyledItemD
 from ..theme import painting
 from ..theme.tokens import PIXELS, color, font
 from . import menus
-from .map_scene import age_text
+from ..mapping.scan_status import age_text
 from .state import AppState
 
 ROW_HEIGHT = 44
@@ -31,13 +31,10 @@ class CharacterDelegate(QStyledItemDelegate):
         rect = QRectF(option.rect)
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        if character_id == state.followed:
-            painter.fillRect(rect, color("accent-dim"))
+        followed = character_id == state.followed
+        painting.row_background(painter, rect, followed, bool(option.state & QStyle.StateFlag.State_MouseOver))
+        if followed:
             painter.fillRect(QRectF(rect.left(), rect.top(), 2, rect.height()), color("accent"))
-        elif option.state & QStyle.StateFlag.State_MouseOver:
-            painter.fillRect(rect, color("bg-4"))
-        painter.setPen(color("line-1"))
-        painter.drawLine(rect.bottomLeft(), rect.bottomRight())
         x = rect.left() + PIXELS["sp-8"]
         y = rect.top() + 6
         painting.draw_character_marker(painter, x, y + 1, slot)

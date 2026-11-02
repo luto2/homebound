@@ -6,7 +6,8 @@ from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 from .platform.paths import data_directory, documents_directory, is_windows
-from .validation import require_choice, require_integer, require_text, require_type
+from .universe.db import SIZES
+from .validation import is_int, is_number, require_choice, require_integer, require_text, require_type
 
 DATA_DIR = data_directory()
 SETTINGS_FILE = DATA_DIR / "settings.json"
@@ -14,10 +15,9 @@ SETTINGS_FILE = DATA_DIR / "settings.json"
 OVERLAY_MODES = ("off", "follow", "pinned_eve", "pinned_always")
 SCHEMES = ("numeric", "a2a", "letter_numeric")
 ROUTE_PREFERENCES = ("shortest", "safer", "less_secure")   # same as routing.PREFERENCES
-SHIP_SIZES = ("S", "M", "L", "XL")
 TRADE_HUBS = ["Jita", "Amarr", "Dodixie", "Rens", "Hek"]   # default route destinations
 # route settings that must be one of a few values; anything else keeps the default
-SETTING_CHOICES = {"route_preference": ROUTE_PREFERENCES, "route_ship_size": SHIP_SIZES}
+SETTING_CHOICES = {"route_preference": ROUTE_PREFERENCES, "route_ship_size": SIZES}
 DEFAULT_MAP = "Main"
 MAP_NAME_LIMIT = 32                       # characters
 MARKER_SLOTS = 6
@@ -244,11 +244,11 @@ class Settings:
                 continue
             default = defaults[key]
             if key == "overlay_pinned_character":
-                fits = value is None or (isinstance(value, int) and not isinstance(value, bool))
+                fits = value is None or is_int(value)
             elif isinstance(default, bool):
                 fits = isinstance(value, bool)
             elif isinstance(default, float):
-                fits = isinstance(value, (int, float)) and not isinstance(value, bool)
+                fits = is_number(value)
             else:
                 fits = isinstance(value, type(default)) and not (isinstance(value, bool) and not isinstance(default, bool))
             if key in SETTING_CHOICES:

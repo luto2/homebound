@@ -30,7 +30,7 @@ def test_parse_keeps_usable_wormholes_only() -> None:
     assert links[0].hub_id == THERA and links[0].system_id == HOME.id and links[0].remaining_hours == 8
     assert links[1].wormhole_type is None and links[2].expires_at is None and links[2].remaining_hours is None
     assert eve_scout.parse_signatures({"not": "a list"}) == []
-    assert eve_scout._expiry("2026-11-02T12:00:00").tzinfo is timezone.utc
+    assert eve_scout.parse_utc("2026-11-02T12:00:00").tzinfo is timezone.utc
     with pytest.raises(TypeError):
         eve_scout.parse_signatures([], now="now")
 

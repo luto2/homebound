@@ -4,7 +4,7 @@ Every draw_* function paints at (x, y) = top-left, vertically sized to `size-bad
 unless stated, and returns the width it used so callers can lay out runs left to right.
 """
 import math
-from functools import lru_cache
+from functools import cache, lru_cache
 from importlib.resources import files
 
 from PySide6.QtCore import QPointF, QRectF, Qt
@@ -13,6 +13,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtSvg import QSvgRenderer
 
+from ..mapdb.store import LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED
 from ..validation import require_integer, require_number, require_type
 from .tokens import OPACITY, PIXELS, color, font
 
@@ -447,8 +448,9 @@ def draw_chip(painter: QPainter, x: float, y: float, text: str, background: QCol
 
 # ---------------------------------------------------------------- edges
 
+@cache
 def edge_pens() -> dict[str, QPen]:
-    """Return the connection pens by state.
+    """Return the connection pens by state (built once; ``edge_pens.cache_clear()`` rebuilds them).
 
     Keys: the mass states (fresh, reduced, critical, unknown), ``frigate_only``, ``lifetime_4h`` and
     ``lifetime_1h`` (dotted casings), and ``selected``. Dash patterns are divided by the pen width,
@@ -479,10 +481,62 @@ def edge_pens() -> dict[str, QPen]:
     return pens
 
 
+def stroke_edge(painter: QPainter, path: QPainterPath, mass: str, lifetime: int, wider: bool = False) -> None:
+    """Stroke a connection: the dotted lifetime underlay, then the mass pen (faded when expired).
+
+    Args:
+        painter: The painter to draw with.
+        path: The line or curve of the connection.
+        mass: A key of :func:`edge_pens` for the main stroke (a mass state, or ``"frigate_only"``).
+        lifetime: The lifetime state (``LIFETIME_*``).
+        wider: Make the main stroke one pixel wider (hover).
+
+    Raises:
+        TypeError: If an argument has the wrong type.
+        ValueError: If ``mass`` is not a pen.
+    """
+    require_type(painter, QPainter, "painter")
+    require_type(path, QPainterPath, "path")
+    require_type(mass, str, "mass")
+    require_integer(lifetime, "lifetime")
+    pens = edge_pens()
+    if mass not in pens:
+        raise ValueError(f"unknown mass state {mass!r}")
+    if lifetime in (LIFETIME_4H, LIFETIME_1H):
+        painter.strokePath(path, pens["lifetime_1h" if lifetime == LIFETIME_1H else "lifetime_4h"])
+    pen = QPen(pens[mass])
+    if wider:
+        pen.setWidthF(pen.widthF() + 1)
+    painter.save()
+    if lifetime == LIFETIME_EXPIRED:   # fading out
+        painter.setOpacity(0.4)
+    painter.strokePath(path, pen)
+    painter.restore()
+
+
 EDGE_CHIPS = {"reduced": ("R", "edge-reduced"), "critical": ("CRIT", "edge-critical"), "unknown": ("?", "edge-unknown")}
 
 
 # ---------------------------------------------------------------- text / backgrounds
+
+def row_background(painter: QPainter, rect: QRectF, selected: bool, hover: bool) -> None:
+    """Paint a list row: accent tint when selected, else a lighter ground on hover, and a bottom line.
+
+    Args:
+        painter: The painter to draw with (its pen is left set to the line colour).
+        rect: The row rectangle.
+        selected: Whether the row is selected.
+        hover: Whether the mouse is over the row.
+    """
+    require_type(painter, QPainter, "painter")
+    require_type(rect, QRectF, "rect")
+    if selected:
+        painter.fillRect(rect, color("accent-dim"))
+    elif hover:
+        painter.fillRect(rect, color("bg-4"))
+    painter.setPen(color("line-1"))
+    painter.drawLine(rect.bottomLeft(), rect.bottomRight())
+
 
 def halo_path(x: float, baseline: float, text: str, text_font: QFont) -> QPainterPath:
     """Return text as a path, for drawing with a halo."""

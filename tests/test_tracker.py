@@ -5,11 +5,12 @@ import pytest
 
 from conftest import HOME, SCAN, UNIVERSE, MapSimulation, pick_system
 from homebound.logs.parser import SystemChange
-from homebound.mapdb.store import LIFETIME_1H, LIFETIME_4H, Store
+from homebound.ui.map_scene import removed_in
+from homebound.mapdb.store import LIFETIME_1H, LIFETIME_4H, LIFETIME_REMAINING, Store
 from homebound.mapping import signature_parser
 from homebound.mapping.naming import Namer
 from homebound.mapping.tracker import (AutoNamed, MapChanged, Moved, NamingRequest, Tracker, UnknownJump,
-                                       hole_size, is_wormhole_side)
+                                       expires_at, hole_size, is_wormhole_side)
 
 
 def paste(simulation: MapSimulation, text: str = SCAN) -> None:
@@ -437,3 +438,42 @@ def test_first_change_of_a_session_is_not_a_jump() -> None:
     tracker.on_system_change(SystemChange(5, "Alt", "Jita", now, first=True))
     tracker.on_system_change(SystemChange(5, "Alt", HOME.name, now, first=True))
     assert store.connections() == []
+
+
+def test_expires_at_is_the_earlier_limit_and_agrees_with_expire(simulation) -> None:
+    """A < 4h hole of a short-lived type goes at the type's limit, not 4h after the state was set."""
+    c1 = pick_system("C1")
+    simulation.jump(c1.name)
+    store = simulation.store
+    connection = store.connection(HOME.id, c1.id)
+    store.update_connection(connection.id, wormhole_type="E004")
+    connection = store.connection_by_id(connection.id)
+    created = datetime.fromisoformat(connection.created_at)
+    type_limit = created + timedelta(hours=UNIVERSE.wormhole_type("E004").lifetime_hours)
+    assert expires_at(connection, UNIVERSE) == type_limit
+    store.update_connection(connection.id, lifetime=LIFETIME_4H,
+                            lifetime_set_at=(created + timedelta(hours=3)).isoformat())
+    connection = store.connection_by_id(connection.id)
+    assert expires_at(connection, UNIVERSE) == type_limit < created + timedelta(hours=7)
+    store.update_connection(connection.id, lifetime=LIFETIME_1H,
+                            lifetime_set_at=(created + timedelta(hours=1)).isoformat())
+    connection = store.connection_by_id(connection.id)
+    assert expires_at(connection, UNIVERSE) == created + timedelta(hours=1) + LIFETIME_REMAINING[LIFETIME_1H]
+    with pytest.raises(TypeError):
+        expires_at("x", UNIVERSE)
+
+
+def test_removed_in_matches_when_expire_drops_the_connection(simulation) -> None:
+    """The tooltip countdown ends exactly where Tracker.expire drops a short-lived < 4h hole."""
+    c1 = pick_system("C1")
+    simulation.jump(c1.name)
+    store = simulation.store
+    connection = store.connection(HOME.id, c1.id)
+    now = datetime.now(timezone.utc)
+    store.update_connection(connection.id, lifetime=LIFETIME_4H, lifetime_set_at=now.isoformat(),
+                            wormhole_type="E004", created_at=(now - timedelta(hours=4)).isoformat())
+    connection = store.connection_by_id(connection.id)
+    limit = expires_at(connection, UNIVERSE)
+    assert removed_in(connection, UNIVERSE) in ("29 min", "30 min")
+    assert simulation.tracker.expire(limit - timedelta(minutes=1)) == 0
+    assert simulation.tracker.expire(limit + timedelta(minutes=1)) == 1

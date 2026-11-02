@@ -5,10 +5,10 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices, QMouseEvent
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QCompleter, QDialog, QFileDialog, QFrame, QHBoxLayout,
-    QHeaderView, QLabel, QLineEdit, QListWidget, QPushButton, QRadioButton, QSlider, QSpinBox, QStackedWidget,
+    QHeaderView, QLabel, QLineEdit, QListWidget, QPushButton, QSlider, QSpinBox, QStackedWidget,
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -23,6 +23,7 @@ from ..universe.db import SIZE_NAMES, SIZES
 from ..validation import require_integer, require_text, require_type
 from .dialogs import RestoreBackupDialog
 from .state import AppState
+from .widgets import RadioCard, caption, help_label
 
 # the KWin script functions; Linux only, since they come with the D-Bus backend
 kwin = None if sys.platform == "win32" else importlib.import_module("homebound.platform.focus_linux")
@@ -50,21 +51,6 @@ KWIN_BANNERS = {
 }
 
 
-def caption(text: str) -> QLabel:
-    """Return a small upper-case caption label."""
-    label = QLabel(text.upper())
-    label.setProperty("role", "caption")
-    return label
-
-
-def help_label(text: str = "", role: str = "help") -> QLabel:
-    """Return a word-wrapped help label with a theme role (``help``, ``help-ok``, ``help-warn``, ``help-err``)."""
-    label = QLabel(text)
-    label.setProperty("role", role)
-    label.setWordWrap(True)
-    return label
-
-
 def set_help(label: QLabel, text: str, role: str) -> None:
     """Set a help label's text and role, and restyle it."""
     label.setText(text)
@@ -72,7 +58,7 @@ def set_help(label: QLabel, text: str, role: str) -> None:
     repolish(label)
 
 
-class Card(QFrame):
+class Card(RadioCard):
     """A clickable option card: a radio button with a description and an optional monospace preview."""
 
     def __init__(self, title: str, description: str, preview: str = "", group: QButtonGroup | None = None) -> None:
@@ -84,16 +70,10 @@ class Card(QFrame):
             preview: Optional monospace example line.
             group: Button group that makes the cards of one page exclusive.
         """
-        super().__init__()
-        self.setProperty("card", "true")
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        super().__init__(title, group)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(PIXELS["sp-12"], PIXELS["sp-8"], PIXELS["sp-12"], PIXELS["sp-8"])
-        self.radio = QRadioButton(title)
         self.radio.setStyleSheet("font-weight: 600;")
-        if group:
-            group.addButton(self.radio)
-        self.radio.toggled.connect(self._sync)
         layout.addWidget(self.radio)
         layout.addWidget(help_label(description))
         self.preview_label: QLabel | None = None
@@ -102,15 +82,6 @@ class Card(QFrame):
             self.preview_label.setProperty("role", "mono")
             self.preview_label.setStyleSheet(f"color: {color('ink').name()};")
             layout.addWidget(self.preview_label)
-
-    def mousePressEvent(self, event: QMouseEvent) -> None:
-        """Select the card's radio button when the card is clicked."""
-        self.radio.setChecked(True)
-
-    def _sync(self, selected: bool) -> None:
-        """Mark the card as selected or not for the stylesheet."""
-        self.setProperty("selected", "true" if selected else "false")
-        repolish(self)
 
 
 class SettingsDialog(QDialog):

@@ -12,7 +12,7 @@ towards home is "S-0".
 """
 from dataclasses import dataclass
 
-from ..mapdb.store import MapSystem, Store
+from ..mapdb.store import MapSystem, Signature, Store
 from ..universe.db import Universe
 from ..validation import require_integer, require_type
 
@@ -225,6 +225,23 @@ def static_slot_for_class(universe: Universe, parent_id: int, child_class: str |
     return 1
 
 
+def signature_destination(universe: Universe, signature: Signature) -> str | None:
+    """Return where a signature leads: the destination set on it, else its known type's first one."""
+    require_type(signature, Signature, "signature")
+    if signature.destination:
+        return signature.destination
+    known = universe.known_type(signature.type)
+    return known.destinations[0] if known and known.destinations else None
+
+
+def is_static_signature(universe: Universe, system_id: int, signature: Signature) -> bool:
+    """Return whether a signature's type is one of the system's statics (case-insensitive)."""
+    require_type(signature, Signature, "signature")
+    system = universe.by_id(system_id)
+    code = (signature.type or "").strip().upper()
+    return bool(system and code and code in {static.upper() for static in system.statics})
+
+
 def next_hole_index(store: Store, universe: Universe, parent_id: int, is_static: bool,
                     child_class: str | None = None) -> int:
     """Return the hole index a new child of ``parent_id`` gets.
@@ -335,6 +352,12 @@ class Namer:
         if not system or display == system.name or display.endswith(f" {system.name}"):
             return display
         return f"{display} {system.name}"
+
+    def names(self, system_id: int) -> set[str]:
+        """Return the names a system answers to: its display name, label and real name (empty ones left out)."""
+        system = self.universe.by_id(system_id)
+        return {name for name in (self.display(system_id), self.label(system_id), system.name if system else "")
+                if name}
 
     def preview(self, parent_id: int, hole_index: int, level_index: int | None = None) -> str:
         """Return the name a new child of ``parent_id`` would get behind this hole.

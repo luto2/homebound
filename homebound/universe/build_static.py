@@ -25,6 +25,7 @@ import zipfile
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
+from ..http import user_agent
 from ..platform.paths import RESOLVED_FILE, UNIVERSE_FILE, bundled_data_directory, static_build_directory
 from ..validation import require_integer, require_number, require_text, require_type
 
@@ -33,7 +34,7 @@ CACHE = DATA / "cache"
 OUTPUT = DATA / UNIVERSE_FILE
 RESOLVED = DATA / RESOLVED_FILE
 SHIPPED_RESOLVED = bundled_data_directory() / RESOLVED_FILE   # the same file as RESOLVED in a checkout
-HEADERS = {"User-Agent": "homebound/0.1 (personal offline mapper; build script)"}
+HEADERS = {"User-Agent": user_agent("personal offline mapper; build script")}
 SCHEMA_VERSION = "3"         # bump together with db.SCHEMA_VERSION
 
 SDE_URL = "https://developers.eveonline.com/static-data/eve-online-static-data-latest-jsonl.zip"

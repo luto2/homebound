@@ -10,8 +10,8 @@ from conftest import HOME, UNIVERSE, pick_system
 from homebound.mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, LIFETIME_REMAINING, Connection,
                                    ZkillStats)
 from homebound.ui import map_scene
-from homebound.mapping.scan_status import ScanStatus
-from homebound.ui.map_scene import (GRID, ConnectionEdge, MapScene, MapView, SystemNode, age_text, elide, removed_in,
+from homebound.mapping.scan_status import ScanStatus, age_text
+from homebound.ui.map_scene import (GRID, ConnectionEdge, MapScene, MapView, SystemNode, elide, removed_in,
                                     scan_tab_label)
 from homebound.ui.state import AppState
 from ui_helpers import make_state
@@ -115,25 +115,25 @@ class TestHelpers:
     def test_removed_in(self) -> None:
         """An expired hole set 3 minutes ago is removed in 6-7 min; a < 4h hole set an hour ago in about 2h."""
         connection = make_connection(lifetime=LIFETIME_EXPIRED, lifetime_set_at=iso_ago(minutes=3))
-        assert removed_in(connection) in ("6 min", "7 min")
+        assert removed_in(connection, UNIVERSE) in ("6 min", "7 min")
         long_one = make_connection(lifetime=LIFETIME_4H, lifetime_set_at=iso_ago(hours=1))
-        assert removed_in(long_one).startswith("2h ")
+        assert removed_in(long_one, UNIVERSE).startswith("2h ")
 
     def test_removed_in_overdue_is_zero(self) -> None:
         """An expired hole past its removal time shows "0 min", never a negative time."""
         connection = make_connection(lifetime=LIFETIME_EXPIRED,
                                      lifetime_set_at=iso_ago(minutes=LIFETIME_REMAINING[LIFETIME_EXPIRED].seconds))
-        assert removed_in(connection) == "0 min"
+        assert removed_in(connection, UNIVERSE) == "0 min"
 
     def test_removed_in_unknown(self) -> None:
         """Without a lifetime, or with a lifetime but no time it was set, the countdown is "?"."""
-        assert removed_in(make_connection()) == "?"
-        assert removed_in(make_connection(lifetime=LIFETIME_1H)) == "?"
+        assert removed_in(make_connection(), UNIVERSE) == "?"
+        assert removed_in(make_connection(lifetime=LIFETIME_1H), UNIVERSE) == "?"
 
     def test_removed_in_rejects_wrong_type(self) -> None:
         """A non-Connection raises TypeError."""
         with pytest.raises(TypeError):
-            removed_in("x")
+            removed_in("x", UNIVERSE)
 
     def test_elide(self, qt_application) -> None:
         """Text that fits is unchanged; text that doesn't is cut short and ends in an ellipsis."""

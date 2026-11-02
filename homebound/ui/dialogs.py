@@ -20,9 +20,10 @@ from ..theme.qss import repolish
 from ..theme.tokens import PIXELS, color, font
 from ..universe.db import System
 from ..validation import require_choice, require_text, require_type
-from .map_scene import age_text
+from ..mapping.scan_status import age_text
 from .menus import copy_icon, glyph_icon
 from .state import AppState
+from .widgets import RadioCard, caption
 from .wormhole_fields import WormholeFields
 
 BANNER_TOKENS = {"info": "accent", "warning": "warning", "success": "success", "danger": "danger"}
@@ -35,7 +36,7 @@ REASON_ROLE = Qt.ItemDataRole.UserRole + 1
 Validator = Callable[[str], tuple[bool, str]]
 
 
-class ChoiceRow(QFrame):
+class ChoiceRow(RadioCard):
     """Full-width radio row: radio · mono main text · secondary text · optional caption."""
 
     clicked = Signal()
@@ -49,17 +50,11 @@ class ChoiceRow(QFrame):
             caption: An accent caption on the right, e.g. "BEST GUESS".
             group: The exclusive group of the radio button.
         """
-        super().__init__()
-        self.setProperty("card", "true")
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        super().__init__(group=group)
         row = QHBoxLayout(self)
         row.setContentsMargins(PIXELS["sp-8"], PIXELS["sp-6"], PIXELS["sp-8"], PIXELS["sp-6"])
         row.setSpacing(PIXELS["sp-8"])
-        self.radio = QRadioButton()
         self.radio.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        if group:
-            group.addButton(self.radio)
-        self.radio.toggled.connect(self._sync_selected)
         self.main = QLabel(main)
         self.main.setFont(font("mono-sig"))
         self.secondary = QLabel(secondary)
@@ -74,13 +69,8 @@ class ChoiceRow(QFrame):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         """A click anywhere on the row picks it."""
-        self.radio.setChecked(True)
+        super().mousePressEvent(event)
         self.clicked.emit()
-
-    def _sync_selected(self, checked: bool) -> None:
-        """Show the selected card style."""
-        self.setProperty("selected", "true" if checked else "false")
-        repolish(self)
 
 
 def add_shadow(widget: QWidget) -> QGraphicsDropShadowEffect:
@@ -190,8 +180,7 @@ class BaseDialog(QDialog):
 
     def caption(self, text: str) -> QLabel:
         """Add a field caption to the body and return it."""
-        label = QLabel(text.upper())
-        label.setProperty("role", "caption")
+        label = caption(text)
         self.body.addWidget(label)
         return label
 
@@ -312,9 +301,8 @@ class NamingDialog(BaseDialog):
 
     def signature_text(self, signature: Signature, child_class: str) -> str:
         """Describe a candidate: 'H296 → C5 · 100%', 'K162 → C3 (typed in; you landed in a C4) · 100%'."""
-        known = (self.state.universe.wormhole_type(signature.type)
-                 if signature.type and signature.type != "K162" else None)
-        if signature.type == "K162":
+        known = self.state.universe.known_type(signature.type)
+        if (signature.type or "").upper() == "K162":
             what = f"K162 → {signature.destination}" if signature.destination else "K162"
             if signature.destination and signature.destination != child_class:
                 what += f" (typed in; you landed in a {child_class})"

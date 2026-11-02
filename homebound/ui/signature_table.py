@@ -14,13 +14,14 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QHeaderView, QSt
                                QStyleOptionViewItem, QTableView, QWidget)
 
 from ..mapdb.store import LIFETIME_CHIPS, Signature
-from ..mapping.naming import next_hole_index, static_slot_count, static_slot_for_class, used_hole_indices
+from ..mapping.naming import (is_static_signature, next_hole_index, signature_destination, static_slot_count,
+                             static_slot_for_class, used_hole_indices)
 from ..mapping.signature_parser import GROUP_ORDER
 from ..mapping.tracker import hole_size
 from ..theme import painting
 from ..theme.tokens import PIXELS, color, font
 from ..validation import require_integer, require_type
-from .map_scene import age_text
+from ..mapping.scan_status import age_text
 from .state import AppState
 
 COLUMNS = ["", "Sig", "Group", "Type", "Name", "Scan", "Age", ""]
@@ -35,7 +36,6 @@ GROUP_WORDS = {"wormhole": "WH", "combat": "Combat", "data": "Data", "relic": "R
                "ore": "Ore", "ice": "Ice", "unknown": "?", None: "—"}
 GROUP_TITLES = {"wormhole": "Wormholes", "combat": "Combat", "data": "Data", "relic": "Relic", "gas": "Gas",
                 "ore": "Ore", "ice": "Ice", "unknown": "Unscanned"}
-MASS_CHIPS = {"reduced": "R", "critical": "CRIT"}
 ANOMALY_PREFIX = "Anomalies · "
 COPIED_FEEDBACK_MS = 1500
 WIDTH_SAVE_DELAY_MS = 600
@@ -187,9 +187,8 @@ class SignatureModel(QAbstractTableModel):
         The slot is the one :func:`next_hole_index` gives a static of that type.
         """
         universe = self.state.universe
-        system = universe.by_id(self.system_id)
-        known = universe.wormhole_type(signature.type) if signature.type else None
-        if not (known and system and signature.type in system.statics
+        known = universe.known_type(signature.type)
+        if not (known and is_static_signature(universe, self.system_id, signature)
                 and static_slot_count(universe, self.system_id)):
             return None
         return static_slot_for_class(universe, self.system_id, known.destinations[0] if known.destinations else None)
@@ -306,18 +305,17 @@ class SignatureModel(QAbstractTableModel):
         """Return destination and state of an unlinked WH sig, e.g. ``['→ C5', 'L', '◷ <1h', 'CRIT']``."""
         universe = self.state.universe
         details = []
-        known = universe.wormhole_type(signature.type) if signature.type and signature.type != "K162" else None
-        destination = signature.destination or (known.destinations[0] if known and known.destinations else None)
+        destination = signature_destination(universe, signature)
         if destination:
             details.append(f"→ {destination}")
-        if signature.type == "K162" and (size := hole_size(universe, signature.type, signature.size)):
+        if (signature.type or "").upper() == "K162" and (size := hole_size(universe, signature.type, signature.size)):
             details.append(size)
         elif signature.frigate_only:
             details.append("F")
         if signature.lifetime in LIFETIME_CHIPS:
-            details.append(LIFETIME_CHIPS[signature.lifetime])
-        if signature.mass in MASS_CHIPS:
-            details.append(MASS_CHIPS[signature.mass])
+            details.append(LIFETIME_CHIPS[signature.lifetime][0])
+        if signature.mass in ("reduced", "critical"):   # "?" for unknown mass is left out here
+            details.append(painting.EDGE_CHIPS[signature.mass][0])
         return details
 
     def lead_class(self, signature: Signature) -> str | None:
@@ -326,8 +324,7 @@ class SignatureModel(QAbstractTableModel):
         if signature.signature_id in self.leads:
             system = universe.by_id(self.leads[signature.signature_id][0])
             return system.system_class if system else None
-        known = universe.wormhole_type(signature.type) if signature.type and signature.type != "K162" else None
-        return signature.destination or (known.destinations[0] if known and known.destinations else None)
+        return signature_destination(universe, signature)
 
     def bookmark_for(self, signature: Signature) -> str:
         """Return the bookmark label of a wormhole signature.
@@ -365,8 +362,8 @@ class SignatureModel(QAbstractTableModel):
             index = self.provisional.pop(signature.signature_id)
             state.store.update_signature(self.system_id, signature.signature_id, hole_index=index)
             return index
-        known = state.universe.wormhole_type(signature.type) if signature.type else None
-        is_static = bool(known and signature.type in state.universe.by_id(self.system_id).statics)
+        known = state.universe.known_type(signature.type)
+        is_static = is_static_signature(state.universe, self.system_id, signature)
         index = next_hole_index(state.store, state.universe, self.system_id, is_static,
                                 known.destinations[0] if known and known.destinations else None)
         if not dry_run:
