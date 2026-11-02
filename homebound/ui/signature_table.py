@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from PySide6.QtCore import (QAbstractItemModel, QAbstractTableModel, QEvent, QModelIndex, QPersistentModelIndex,
                             QPointF, QRect, QRectF, Qt, QTimer, Signal)
-from PySide6.QtGui import QFontMetricsF, QPainter, QPen, QResizeEvent
+from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPen, QResizeEvent
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QHeaderView, QStyle, QStyledItemDelegate,
                                QStyleOptionViewItem, QTableView, QWidget)
 
@@ -320,6 +320,15 @@ class SignatureModel(QAbstractTableModel):
             details.append(MASS_CHIPS[signature.mass])
         return details
 
+    def lead_class(self, signature: Signature) -> str | None:
+        """Return the class of where a WH sig leads: the linked system's, else the set or known destination."""
+        universe = self.state.universe
+        if signature.signature_id in self.leads:
+            system = universe.by_id(self.leads[signature.signature_id][0])
+            return system.system_class if system else None
+        known = universe.wormhole_type(signature.type) if signature.type and signature.type != "K162" else None
+        return signature.destination or (known.destinations[0] if known and known.destinations else None)
+
     def bookmark_for(self, signature: Signature) -> str:
         """Return the bookmark label of a wormhole signature.
 
@@ -442,11 +451,36 @@ class SignatureDelegate(QStyledItemDelegate):
             name_font = font("ui-small")
             painter.setFont(name_font)
             linked = signature.signature_id in self.model.leads
-            painter.setPen(color("accent") if linked else (ink if text.startswith("→") else muted))
-            painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter,
-                             QFontMetricsF(name_font).elidedText(text, Qt.TextElideMode.ElideRight, text_rect.width()))
+            base = color("accent") if linked else (ink if text.startswith("→") else muted)
+            class_ink = painting.class_color(self.model.lead_class(signature)) if text.startswith("→ ") else None
+            if class_ink is None:
+                painter.setPen(base)
+                painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, QFontMetricsF(name_font).elidedText(
+                    text, Qt.TextElideMode.ElideRight, text_rect.width()))
+                return
+            # "→ " · where it leads, in its class colour (faint when stale) · the rest
+            target, separator, rest = text[2:].partition(" · ")
+            if faint:
+                class_ink = color("ink-faint")
+            self._draw_runs(painter, text_rect, name_font, [("→ ", base), (target, class_ink), (separator + rest, base)])
         elif column == COLUMN_ACTION and is_wormhole_signature(signature):
             self._paint_copy_button(painter, rect, signature)
+
+    @staticmethod
+    def _draw_runs(painter: QPainter, rect: QRectF, text_font: QFont, runs: list[tuple[str, QColor]]) -> None:
+        """Draw text runs left to right in their colours, eliding where the cell ends."""
+        metrics = QFontMetricsF(text_font)
+        x = rect.left()
+        for text, ink in runs:
+            room = rect.right() - x
+            if not text or room <= 0:
+                continue
+            shown = metrics.elidedText(text, Qt.TextElideMode.ElideRight, room)
+            painter.setPen(ink)
+            painter.drawText(QRectF(x, rect.top(), room, rect.height()), Qt.AlignmentFlag.AlignVCenter, shown)
+            if shown != text:
+                return
+            x += metrics.horizontalAdvance(text)
 
     def _paint_copy_button(self, painter: QPainter, rect: QRectF, signature: Signature) -> None:
         """Paint "⧉ 123-1", or "✓ Copied" for a moment after a copy."""

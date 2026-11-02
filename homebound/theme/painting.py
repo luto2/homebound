@@ -41,6 +41,12 @@ def _device_pixel_ratio(painter: QPainter) -> float:
     return painter.device().devicePixelRatioF() if painter.device() else 1.0
 
 
+def class_color(system_class: str | None) -> QColor | None:
+    """Return the colour of a class badge, for text in that class; None for an unknown class."""
+    entry = CLASSES.get(system_class or "")
+    return color(entry[0]) if entry else None
+
+
 def class_badge_width(system_class: str, security: float | None = None) -> float:
     """Return the width of a class badge, with room for the security status of k-space.
 

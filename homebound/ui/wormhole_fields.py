@@ -224,6 +224,55 @@ class WormholeTypeCombo(QComboBox):
                        self.rows.get(code) or TypeRow(code, self.state.universe))
 
 
+def paint_destination_row(painter: QPainter, rect: QRectF, system_class: str) -> None:
+    """Paint a "Leads to" row: the class in its badge colour, or a muted "Unknown"."""
+    painter.setFont(font("mono-sig" if system_class else "ui-body"))
+    painter.setPen(painting.class_color(system_class) or color("ink-muted"))
+    painter.drawText(rect.adjusted(PIXELS["sp-8"], 0, 0, 0), Qt.AlignmentFlag.AlignVCenter, system_class or "Unknown")
+
+
+class _DestinationDelegate(QStyledItemDelegate):
+    """Paints the "Leads to" rows in the class colours."""
+
+    def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
+        """Rows as tall as the type dropdown's."""
+        return QSize(120, ROW_HEIGHT)
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
+        """Paint the selection and the class."""
+        painter.save()
+        rect = QRectF(option.rect)
+        if option.state & QStyle.StateFlag.State_Selected:
+            painter.fillRect(rect, color("accent-dim"))
+            painter.fillRect(QRectF(rect.left(), rect.top(), 2, rect.height()), color("accent"))
+        paint_destination_row(painter, rect, index.data(Qt.ItemDataRole.UserRole) or "")
+        painter.restore()
+
+
+class DestinationCombo(QComboBox):
+    """Dropdown of the classes a K162 can lead to, each in its class colour."""
+
+    def __init__(self, current: str | None) -> None:
+        """Fill in Unknown and every class, with ``current`` selected."""
+        super().__init__()
+        self.setItemDelegate(_DestinationDelegate(self))
+        self.addItem("Unknown", "")
+        for system_class in DESTINATION_CLASSES:
+            self.addItem(system_class, system_class)
+        self.setCurrentIndex(max(0, self.findData(current or "")))
+
+    def paintEvent(self, event: QPaintEvent) -> None:
+        """Paint the closed combo with the same row as the dropdown."""
+        painter = QStylePainter(self)
+        option = QStyleOptionComboBox()
+        self.initStyleOption(option)
+        option.currentText = ""
+        painter.drawComplexControl(QStyle.ComplexControl.CC_ComboBox, option)
+        field = QRectF(self.style().subControlRect(QStyle.ComplexControl.CC_ComboBox, option,
+                                                   QStyle.SubControl.SC_ComboBoxEditField, self))
+        paint_destination_row(painter, field.adjusted(-PIXELS["sp-4"], 0, 0, 0), self.currentData() or "")
+
+
 _EDGE_PENS = None
 
 
@@ -470,11 +519,7 @@ class WormholeFields(QWidget):
         layout.addWidget(self.info)
 
         self.destination_box, box = self._box(layout, "Leads to")
-        self.destination = QComboBox()
-        self.destination.addItem("Unknown", "")
-        for system_class in DESTINATION_CLASSES:
-            self.destination.addItem(system_class, system_class)
-        self.destination.setCurrentIndex(max(0, self.destination.findData(current.get("destination") or "")))
+        self.destination = DestinationCombo(current.get("destination"))
         box.addWidget(self.destination)
         self.ask_destination = ask_destination
 
