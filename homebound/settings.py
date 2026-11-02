@@ -1,13 +1,14 @@
-"""User settings, stored as JSON in ~/.local/share/homebound/settings.json."""
+"""User settings, stored as JSON in the data folder (``~/.local/share/homebound`` or ``%APPDATA%\\Homebound``)."""
 import json
 import os
 import re
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
+from .platform.paths import data_directory, documents_directory, is_windows
 from .validation import require_choice, require_integer, require_text, require_type
 
-DATA_DIR = Path(os.environ.get("HOMEBOUND_HOME", Path.home() / ".local/share/homebound"))
+DATA_DIR = data_directory()
 SETTINGS_FILE = DATA_DIR / "settings.json"
 
 OVERLAY_MODES = ("off", "follow", "pinned_eve", "pinned_always")
@@ -279,8 +280,19 @@ def steam_libraries() -> list[Path]:
     return unique
 
 
-def detect_log_directories() -> list[Path]:
-    """Return the likely Chatlogs folders that exist: Steam/Proton prefix, Lutris/wine, the old /mnt mount."""
+def windows_log_candidates() -> list[Path]:
+    """Return the Chatlogs folders EVE uses on Windows: Documents (wherever it is), then the OneDrive variants."""
+    home = Path.home()
+    documents = [documents_directory()]
+    for onedrive in (os.environ.get("OneDrive"), home / "OneDrive"):
+        if onedrive:
+            documents += [Path(onedrive) / "Documents", Path(onedrive) / "Dokumente"]
+    documents.append(home / "Documents")
+    return [folder / "EVE/logs/Chatlogs" for folder in documents]
+
+
+def linux_log_candidates() -> list[Path]:
+    """Return the Chatlogs folders of EVE under Linux: Steam/Proton prefix, Lutris/wine, the old /mnt mount."""
     home = Path.home()
     candidates = [Path("/mnt/EVE-logs/logs/ChatLogs"), Path("/mnt/EVE-logs/logs/Chatlogs")]
     for library in steam_libraries():
@@ -291,8 +303,13 @@ def detect_log_directories() -> list[Path]:
     for wine in (home / ".wine", home / "Games/eve-online"):
         candidates += sorted(wine.glob("**/Documents/EVE/logs/Chatlogs")) if wine.is_dir() else []
     candidates.append(home / "Documents/EVE/logs/Chatlogs")
+    return candidates
+
+
+def detect_log_directories() -> list[Path]:
+    """Return the likely Chatlogs folders that exist, best guess first, without duplicates."""
     found: list[Path] = []
-    for candidate in candidates:
+    for candidate in windows_log_candidates() if is_windows() else linux_log_candidates():
         if candidate.is_dir() and all(candidate.resolve() != other.resolve() for other in found):
             found.append(candidate)
     return found

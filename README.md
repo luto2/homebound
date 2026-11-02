@@ -1,23 +1,37 @@
 # Homebound
 
-An offline wormhole mapper for EVE Online that runs only on your machine. It follows your characters through the EVE Local chat logs instead of ESI. Signatures are pasted from the probe scanner. All map data stays in `~/.local/share/homebound/`.
+An offline wormhole mapper for EVE Online that runs only on your machine. It follows your characters through the EVE Local chat logs instead of ESI. Signatures are pasted from the probe scanner. All map data stays in `~/.local/share/homebound/` (Windows: `%APPDATA%\Homebound\`).
 
-The only network access is optional zKillboard activity for systems in visible chains, which can be turned off in Settings.
+Network access: once, on first start, Homebound downloads the EVE static data export and the community wormhole data (about 100 MB) and builds its universe data from them. After that the only network access is optional zKillboard activity for systems in visible chains, which can be turned off in Settings.
 
-## Setup
+## Install
+
+Releases on GitHub carry ready-made packages. They contain no EVE game data: on first start Homebound offers to download it and builds the universe data on your machine (about 100 MB, a minute or less).
+
+- **Linux**: `Homebound-<version>-x86_64.AppImage`. Make it executable and run it; no install needed. Qt needs `libxcb-cursor0` (`xcb-util-cursor` on Arch), which Plasma systems have.
+- **Arch / CachyOS**: the `homebound` AUR package, built from the release's `PKGBUILD`. It uses the system's `pyside6` and `python-httpx`.
+- **Windows**: `Homebound-<version>-windows-setup.exe` installs per user (no admin rights) into `%LOCALAPPDATA%\Programs\Homebound`, with a Start-menu entry and optional autostart. `Homebound-<version>-windows-portable.zip` is the same folder to unpack anywhere. The builds aren't signed yet, so SmartScreen warns on the first start (*More info → Run anyway*).
+
+`homebound --version` prints the version; Settings and the tray menu show it too.
+
+## Run from source
+
+Python 3.12 or newer and [uv](https://docs.astral.sh/uv/):
 
 ```sh
 uv sync
-uv run python -m homebound.universe.build_static   # one-time: CCP SDE + statics -> data/universe.sqlite
+uv run python -m homebound.universe.build_static   # one-time: EVE SDE + statics -> data/universe.sqlite
 uv run python -m homebound
 ```
 
-In EVE, *Settings → Chat → Log chat to file* must be on. On first start, pick the `Chatlogs` folder in Settings. Auto-detect checks the Steam/Proton prefix.
+## First start
 
-For the overlay to follow the focused client on Plasma Wayland, open **Settings → KWin focus script → Install**. This installs a tiny KWin script that reports the active window title over D-Bus. Without it, Homebound falls back to X11 polling.
+In EVE, *Settings → Chat → Log chat to file* must be on. On first start, pick the `Chatlogs` folder in Settings. Auto-detect checks the Steam/Proton prefix on Linux and the Documents folder (OneDrive included) on Windows.
+
+For the overlay to follow the focused client on Plasma Wayland, open **Settings → KWin focus script → Install**. This installs a tiny KWin script that reports the active window title over D-Bus. Without it, Homebound falls back to X11 polling. On Windows focus tracking needs no setup, but EVE must run windowed or borderless: the overlay can't sit above exclusive fullscreen.
 
 ## Static data
-- **CCP SDE**: systems, classes, security, stargates, effects (via secondary sun type).
+- **EVE SDE** (Static Data Export): systems, classes, security, stargates, effects (via secondary sun type).
 - **Wanderer** (MIT) `wormholeSystems.json` / `wormholes.json` and **anoik.is** `static.json`: statics and wormhole types.
 - **whtype.info** `wormholes.js`: which classes each type can wander into, so the type dropdown only offers holes that can actually be there.
 - Where Wanderer and anoik disagree on a system's statics, the build asks zKillboard's system page and pins the answer in `data/statics_resolved.json`.
@@ -62,6 +76,14 @@ uv run python -m homebound.logs.replay path/to/Local_*.txt --home J161940   # re
 
 Code layout notes: signature scan parsing is `homebound/mapping/signature_parser.py`, the signature table `homebound/ui/signature_table.py`, the wormhole type/size/lifetime fields `homebound/ui/wormhole_fields.py` and the character list `homebound/ui/character_dock.py`. Names are spelled out (no abbreviations), every public entry point validates its arguments with `homebound/validation.py`, and `uv run pytest --cov=homebound` reports coverage. Known bugs and loose ends are in `TODO.md`.
 
+Packages (details in [docs/plan-packaging.md](docs/plan-packaging.md)):
+```sh
+uv run --group packaging pyinstaller packaging/homebound.spec --noconfirm --workpath build/pyinstaller --distpath dist
+packaging/linux/build_appimage.sh                                    # Linux: dist/Homebound-<version>-x86_64.AppImage
+iscc /DAppVersion=<version> packaging\windows\homebound.iss          # Windows: dist\Homebound-<version>-windows-setup.exe
+```
+A `v*` tag runs `.github/workflows/release.yml`, which builds all of them on GitHub's runners and attaches them to a draft release. `test.yml` runs the tests on Linux and Windows for every push. The app icon is drawn in code; `packaging/make_icons.py` renders it to the PNG/SVG/ICO files.
+
 Schema changes: the map database (settings keys, tables and columns were renamed to unabbreviated names, e.g. `log_dir` is now `log_directory`) and `data/universe.sqlite` changed. Old map files migrate automatically when they are opened. `universe.sqlite` must be rebuilt once with `uv run python -m homebound.universe.build_static`, which works offline from `data/cache`.
 
 The UI follows `design-system/`: tokens, component specs and Qt notes.
@@ -70,4 +92,4 @@ The UI follows `design-system/`: tokens, component specs and Qt notes.
 
 Homebound is free software under the [GNU General Public License v3.0 or later](LICENSE).
 
-The licence covers Homebound's own code. Bundled third-party data keeps its own terms: the CCP SDE and EVE icons are used under CCP's licence, and the Wanderer data under MIT.
+The licence covers Homebound's own code. Bundled third-party software, fonts and data keep their own terms; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). In short: Qt/PySide6 under LGPLv3, the EVE icons under the EVE Online terms of Fenris Creations (formerly CCP Games), and the fonts under OFL/MIT. The packages contain no EVE game data: Homebound downloads it and builds `universe.sqlite` on first start.

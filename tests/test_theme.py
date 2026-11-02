@@ -5,7 +5,7 @@ import pytest
 from collections.abc import Iterator
 
 from PySide6.QtCore import QRectF
-from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainter, QPixmap
+from PySide6.QtGui import QBrush, QColor, QFont, QFontDatabase, QFontMetricsF, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QLabel
 
 from homebound.theme import painting
@@ -15,6 +15,7 @@ from homebound.theme.painting import (
     draw_recent_kill, draw_site, draw_static, draw_zkill, edge_pens, effect_pixmap, halo_path, opacity,
     owner_width, site_pixmap, stale_brush, zkill_level,
 )
+from homebound.theme.fonts import FONT_FILES, font_directory, load_fonts
 from homebound.theme.qss import apply_theme, build_palette, build_qss, repolish
 from homebound.theme.tokens import HEX_COLORS, OPACITY, PIXELS, TYPE, color, font, hex_to_rgba, qss_color
 
@@ -144,6 +145,17 @@ def test_apply_theme(qt_application) -> None:
     with pytest.raises(TypeError):
         apply_theme("not an application")
     assert isinstance(qt_application, QApplication)
+
+
+def test_bundled_fonts_load_privately(qt_application) -> None:
+    """Every bundled font file loads and adds Noto Sans or Hack; the licences ship next to them."""
+    loaded = load_fonts()
+    assert set(loaded) == set(FONT_FILES)
+    assert all(families and families[0] in ("Noto Sans", "Hack") for families in loaded.values())
+    assert load_fonts() is loaded  # only once
+    assert {"Noto Sans", "Hack"} <= set(QFontDatabase.families())
+    for licence in ("OFL-NotoSans.txt", "LICENSE-Hack.txt"):
+        assert (font_directory() / licence).is_file()
 
 
 def test_repolish(qt_application) -> None:

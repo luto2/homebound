@@ -1,5 +1,7 @@
 """Settings dialog (spec: Settings): a nav list and stacked pages, every option shows its live result."""
 import copy
+import importlib
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl
@@ -10,7 +12,7 @@ from PySide6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
-from .. import backup
+from .. import app_version, backup
 from ..logs.parser import LogFile
 from ..mapping.naming import SCHEMES, scheme_for_key
 from ..settings import (KNOWN_SPACE_RADIUS_RANGE, OVERLAY_OPACITY_RANGE, OVERLAY_TEXT_SIZE_RANGE,
@@ -18,9 +20,11 @@ from ..settings import (KNOWN_SPACE_RADIUS_RANGE, OVERLAY_OPACITY_RANGE, OVERLAY
 from ..theme.qss import repolish
 from ..theme.tokens import PIXELS, color
 from ..validation import require_integer, require_text, require_type
-from . import focus
 from .dialogs import RestoreBackupDialog
 from .state import AppState
+
+# the KWin script functions; Linux only, since they come with the D-Bus backend
+kwin = None if sys.platform == "win32" else importlib.import_module("homebound.platform.focus_linux")
 
 PAGES = ["Log folder", "Home system", "Naming scheme", "Signatures", "Overlay", "zKill", "KWin focus script",
          "Backups"]
@@ -130,6 +134,7 @@ class SettingsDialog(QDialog):
             raise ValueError(f"page must be below {len(PAGES)}, got {page}")
         self.edited = copy.deepcopy(state.settings)
         self.kwin_status = "missing"
+        self.kwin_shown = kwin is not None and kwin.kwin_available()
         self.setWindowTitle("Homebound · Settings")
         self.resize(820, 560)
         outer = QVBoxLayout(self)
@@ -152,6 +157,7 @@ class SettingsDialog(QDialog):
             build(layout)
             layout.addStretch(1)
             self.stack.addWidget(widget)
+        self.nav.item(PAGES.index("KWin focus script")).setHidden(not self.kwin_shown)
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
         self.nav.setCurrentRow(page)
         middle.addWidget(self.nav)
@@ -161,6 +167,9 @@ class SettingsDialog(QDialog):
         footer.setStyleSheet(f"QFrame {{ background: {color('bg-1').name()}; border-top: 1px solid {color('line-1').name()}; }}")
         footer_layout = QHBoxLayout(footer)
         footer_layout.setContentsMargins(PIXELS["sp-16"], PIXELS["sp-8"], PIXELS["sp-16"], PIXELS["sp-8"])
+        self.version_label = QLabel(f"Homebound {app_version()}")
+        self.version_label.setProperty("role", "help")
+        footer_layout.addWidget(self.version_label)
         footer_layout.addStretch(1)
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.setProperty("variant", "ghost")
@@ -403,8 +412,11 @@ class SettingsDialog(QDialog):
 
     # ------------------------------------------------------------ KWin
     def _build_kwin_page(self, layout: QVBoxLayout) -> None:
-        """Build the KWin focus script page."""
+        """Build the KWin focus script page (an empty note where KWin scripts can't be managed)."""
         layout.addWidget(caption("KWin focus script"))
+        if not self.kwin_shown:
+            layout.addWidget(help_label("Not needed here: Homebound reads the focused window directly."))
+            return
         layout.addWidget(help_label("Plasma on Wayland doesn't tell apps which window is focused. A tiny KWin script reports "
                                     "the active window title (\"EVE - Name\") to Homebound over D-Bus so the overlay can follow it."))
         self.kwin_banner = QFrame()
@@ -432,7 +444,7 @@ class SettingsDialog(QDialog):
         Returns:
             The status: ``active``, ``inactive``, ``missing`` or ``unavailable``.
         """
-        status = focus.kwin_script_status()
+        status = kwin.kwin_script_status()
         banner, text, button_text = KWIN_BANNERS[status]
         self.kwin_banner.setProperty("banner", banner)
         repolish(self.kwin_banner)
@@ -452,7 +464,7 @@ class SettingsDialog(QDialog):
             Whether the action succeeded.
         """
         enable = self.kwin_status == "inactive"
-        succeeded, message = focus.enable_kwin_script() if enable else focus.install_kwin_script()
+        succeeded, message = kwin.enable_kwin_script() if enable else kwin.install_kwin_script()
         self.refresh_kwin("" if succeeded else message)
         return succeeded
 
@@ -462,7 +474,7 @@ class SettingsDialog(QDialog):
         Returns:
             Whether removing succeeded.
         """
-        succeeded, message = focus.remove_kwin_script()
+        succeeded, message = kwin.remove_kwin_script()
         self.refresh_kwin("" if succeeded else message)
         return succeeded
 

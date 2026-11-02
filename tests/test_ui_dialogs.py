@@ -1,12 +1,13 @@
 """Offscreen tests of the dialogs and the shared wormhole fields."""
+import threading
 from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from PySide6.QtCore import QEvent, QRectF, Qt
+from PySide6.QtCore import QCoreApplication, QEvent, QRectF, Qt
 from PySide6.QtGui import QGuiApplication, QKeyEvent, QPainter, QPixmap
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QButtonGroup, QLineEdit, QPushButton
+from PySide6.QtWidgets import QButtonGroup, QLabel, QLineEdit, QPushButton
 
 from conftest import HOME, UNIVERSE, pick_system
 from homebound.logs.parser import SystemChange
@@ -14,9 +15,9 @@ from homebound.mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, L
                                    Store)
 from homebound.mapping.tracker import NamingRequest
 from homebound.ui import dialogs, wormhole_fields
-from homebound.ui.dialogs import (AddSystemDialog, BaseDialog, ChoiceRow, ConfirmDeleteMapDialog, ConnectionDialog,
-                                  NamingDialog, PromptDialog, SignatureDialog, StartupErrorDialog, add_shadow,
-                                  banner, system_completer)
+from homebound.ui.dialogs import (AddSystemDialog, BaseDialog, BuildDataDialog, ChoiceRow, ConfirmDeleteMapDialog,
+                                  ConnectionDialog, NamingDialog, PromptDialog, SignatureDialog, add_shadow, banner,
+                                  system_completer)
 from homebound.ui.wormhole_fields import (SHOW_ALL, Segment, SegmentButton, Segmented, TypeRow, WormholeFields,
                                           WormholeTypeCombo, draw_edge_icon, kilotons_text, lifetime_help_text,
                                           lifetime_segments, mass_segments, paint_type_row, size_segments)
@@ -497,20 +498,91 @@ def test_confirm_delete_missing_map(qt_application, tmp_path) -> None:
         ConfirmDeleteMapDialog(None, "n", "x.db", "")
 
 
-def test_startup_error_copy_command(qt_application, tmp_path) -> None:
-    """The copy button puts the command on the clipboard and flashes a check."""
+def test_build_data_dialog_copy_command(qt_application) -> None:
+    """The copy button puts the fallback command on the clipboard; Quit rejects; arguments are checked."""
     command = "uv run python -m homebound.universe.build_static"
-    dialog = StartupErrorDialog(tmp_path / "data" / "universe.db", command)
+    dialog = BuildDataDialog(command, build=lambda **options: None)
     assert dialog.copy_command() == command
     assert QGuiApplication.clipboard().text() == command
-    dialog.copy_button.click()
     assert dialog.windowTitle() == "Homebound"
     dialog.show()
-    quit_button = next(button for button in dialog.findChildren(QPushButton) if button.text() == "Quit")
-    quit_button.click()
+    dialog.quit_button.click()
     assert dialog.result() == 0
     with pytest.raises(ValueError):
-        StartupErrorDialog("x", "")
+        BuildDataDialog("")
+    with pytest.raises(TypeError):
+        BuildDataDialog("x", outdated="yes")
+
+
+def run_build(dialog) -> None:
+    """Start the dialog's build and deliver the worker's signals."""
+    worker = dialog.start()
+    worker.wait(5000)
+    QCoreApplication.processEvents()
+    QCoreApplication.processEvents()
+
+
+def test_build_data_dialog_success(qt_application, monkeypatch) -> None:
+    """A successful build shows its steps and accepts; a package doesn't keep the downloads."""
+    import homebound.ui.dialogs
+    monkeypatch.setattr(homebound.ui.dialogs, "is_packaged", lambda: True)
+    calls = []
+
+    def fake_build(progress, keep_cache) -> None:
+        """Report two steps and remember the options."""
+        calls.append(keep_cache)
+        progress("Downloading x …", 0.5)
+        progress("Writing universe.sqlite …", None)
+
+    dialog = BuildDataDialog("homebound --build-static", outdated=True, build=fake_build)
+    assert "update" in dialog.findChildren(QLabel)[0].text()
+    run_build(dialog)
+    assert calls == [False] and dialog.result() == 1
+
+
+def test_build_data_dialog_failure_offers_retry(qt_application) -> None:
+    """A failed build shows the error, turns Download into Retry, and a retry can succeed."""
+    attempts = []
+
+    def flaky_build(progress, keep_cache) -> None:
+        """Fail the first time."""
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise OSError("no network")
+
+    dialog = BuildDataDialog("x", build=flaky_build)
+    run_build(dialog)
+    assert "no network" in dialog.status.text() and dialog.status.property("role") == "help-err"
+    assert dialog.download_button.text() == "Retry" and dialog.download_button.isEnabled()
+    run_build(dialog)
+    assert dialog.result() == 1
+
+
+def test_build_data_dialog_progress_and_cancel(qt_application) -> None:
+    """Progress sets the bar (busy when the size is unknown); Quit during a build cancels it at its next step."""
+    started, release = threading.Event(), threading.Event()
+    outcome = []
+
+    def slow_build(progress, keep_cache) -> None:
+        """Wait until released, then report a step (which raises once cancelled)."""
+        started.set()
+        release.wait(5)
+        try:
+            progress("Downloading …", 0.1)
+        except Exception as error:
+            outcome.append(type(error).__name__)
+            raise
+
+    dialog = BuildDataDialog("x", build=slow_build)
+    dialog.show_progress("Downloading …", 0.25)
+    assert dialog.progress.maximum() == 1000 and dialog.progress.value() == 250
+    dialog.show_progress("Merging …", -1.0)
+    assert dialog.progress.maximum() == 0
+    dialog.start()
+    started.wait(5)
+    threading.Timer(0.1, release.set).start()
+    dialog.reject()                      # Escape / close while running
+    assert outcome == ["BuildCancelled"] and dialog.result() == 0 and not dialog.worker.isRunning()
 
 
 # ---------- wormhole_fields ----------

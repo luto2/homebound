@@ -13,7 +13,7 @@ One icon per signature group, used in the SignatureTable group headers, the SigE
 | Ice site | `iceField.png` | `accent` |
 | Unscanned | Homebound's own dashed ? glyph (no EVE counterpart) | `ink-faint` |
 
-- **Source:** CCP's official Image Export Collection, Uprising V21.03 (`Uprising_V21.03_Icons.zip`). EVE Online and its images are the intellectual property of CCP hf; Homebound is free, non-commercial and not affiliated with CCP. See `homebound/theme/sites/NOTICE.md`.
+- **Source:** The official EVE Online Image Export Collection, Uprising V21.03 (`Uprising_V21.03_Icons.zip`). EVE Online and its images are the intellectual property of Fenris Creations (formerly CCP Games); Homebound is free, non-commercial and not affiliated with Fenris Creations. See `homebound/theme/sites/NOTICE.md`.
 - **Tinting:** the originals are white with a dark drop shadow. Tint by **brightness**: each pixel becomes the token colour with alpha = original alpha × lightness, so the shadow drops out on dark rows and the shape stays crisp. A plain `SourceIn` fill would turn the shadow into a thick outline.
 - **Size:** native 16×16. Draw at 16px (pixel-exact at 1×); at fractional or 2× scaling use smooth scaling. Don't go below 16.
 - The shapes come from the game, so colour is still a support signal: Relic and Ore share `warning`, Wormhole and Ice share `accent`, and their EVE silhouettes differ.

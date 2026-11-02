@@ -52,8 +52,8 @@ Accounts that break these rules can be suspended without refund.
 - You can stop paying at any time. Your maps then lapse as described in §3.
 - The operator may shut the service down with at least 30 days' notice. Remaining paid time would then be refunded in ISK.
 
-## 8. CCP
-EVE Online and all related marks are the property of CCP hf. Homebound is not affiliated with or endorsed by CCP hf. Use of EVE Online itself is governed by CCP's EULA.
+## 8. Fenris Creations
+EVE Online and all related marks are the property of Fenris Creations (formerly CCP Games). Homebound is not affiliated with or endorsed by Fenris Creations. Use of EVE Online itself is governed by the EVE Online EULA.
 
 ## 9. Law
 German law applies, as far as this doesn't take away consumer protections you have in your own country.

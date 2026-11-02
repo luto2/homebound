@@ -3,6 +3,7 @@
 Frameless, translucent, always on top, click-through while locked. Everything is painted;
 text uses the halo recipe so it reads over explosions and black space alike.
 """
+import sys
 from datetime import datetime, timedelta, timezone
 
 from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, Qt, Signal
@@ -70,11 +71,16 @@ class Overlay(QWidget):
         windows. Bypassing the window manager (override-redirect on XWayland) makes the overlay an
         unmanaged window, which KWin keeps above everything, fullscreen games included.
 
+        Windows has no such bypass: a topmost window stays above windowed and borderless clients,
+        but not above exclusive fullscreen.
+
         Returns:
             The flags set.
         """
         flags = (Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool
-                 | Qt.WindowType.WindowDoesNotAcceptFocus | Qt.WindowType.X11BypassWindowManagerHint)
+                 | Qt.WindowType.WindowDoesNotAcceptFocus)
+        if sys.platform != "win32":
+            flags |= Qt.WindowType.X11BypassWindowManagerHint
         if not self.unlocked:
             flags |= Qt.WindowType.WindowTransparentForInput
         visible = self.isVisible()
@@ -162,6 +168,10 @@ class Overlay(QWidget):
             self._restore_position()
             self.show()
         self.raise_()
+        if sys.platform == "win32":
+            # Windows may lower a topmost window when an EVE client becomes active
+            from ..platform.focus_windows import keep_on_top
+            keep_on_top(int(self.winId()))
         self.update()
         return True
 

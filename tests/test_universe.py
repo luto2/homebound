@@ -8,8 +8,13 @@ from contextlib import closing
 import pytest
 
 from conftest import HOME, UNIVERSE
+from homebound.platform.paths import static_data_path
 from homebound.universe import build_static
+from homebound.universe import db
 from homebound.universe.db import Universe, UniverseDataError, size_for_jump_mass
+
+
+UNIVERSE_PATH = static_data_path()
 
 
 def test_lookups_by_name_and_id() -> None:
@@ -62,7 +67,7 @@ def test_wormhole_types() -> None:
 
 
 def test_size_for_jump_mass() -> None:
-    """Max jump mass maps to S/M/L/XL at CCP's limits."""
+    """Max jump mass maps to S/M/L/XL at the game's limits."""
     assert [size_for_jump_mass(mass) for mass in (None, 0, 5e6, 62e6, 375e6, 2e9)] == [None, None, "S", "M", "L", "XL"]
     with pytest.raises(TypeError):
         size_for_jump_mass("big")
@@ -86,6 +91,35 @@ def test_missing_and_outdated_files(tmp_path) -> None:
         Universe(broken)
     with pytest.raises(TypeError):
         Universe(5)
+
+
+def test_open_universe_skips_an_outdated_rebuild(tmp_path, monkeypatch) -> None:
+    """A rebuilt copy with an old schema gives way to the bundled file; with nothing usable the first error is raised."""
+    old = tmp_path / "old.sqlite"
+    with closing(sqlite3.connect(old)) as database:
+        database.executescript("CREATE TABLE meta (key TEXT, value TEXT);")
+    monkeypatch.setattr(db, "static_data_candidates", lambda: [old, UNIVERSE_PATH])
+    assert len(db.open_universe().all_names()) == len(UNIVERSE.all_names())
+    monkeypatch.setattr(db, "static_data_candidates", lambda: [old])
+    with pytest.raises(UniverseDataError, match="schema 1"):
+        db.open_universe()
+    monkeypatch.setattr(db, "static_data_candidates", lambda: [])
+    monkeypatch.setattr(db, "static_data_path", lambda: tmp_path / "missing.sqlite")
+    with pytest.raises(UniverseDataError, match="missing"):
+        db.open_universe()
+
+
+def test_build_command_per_install(monkeypatch) -> None:
+    """uv in a checkout, the executable (or the AppImage) in a frozen build, the script in a system install."""
+    assert db.build_command().startswith("uv run")
+    monkeypatch.setattr(db, "source_tree", lambda: None)
+    assert db.build_command() == "homebound --build-static"
+    monkeypatch.setattr(db.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(db.sys, "executable", "C:/Users/A B/Homebound/Homebound.exe")
+    monkeypatch.delenv("APPIMAGE", raising=False)
+    assert db.build_command() == '"C:/Users/A B/Homebound/Homebound.exe" --build-static'
+    monkeypatch.setenv("APPIMAGE", "/home/a/Homebound.AppImage")
+    assert db.build_command() == "/home/a/Homebound.AppImage --build-static"
 
 
 def test_whtype_wander_reads_wandering_types_only() -> None:

@@ -2,17 +2,19 @@
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QModelIndex, QObject, QRectF, QSize, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import (QDesktopServices, QFontMetricsF, QGuiApplication, QIcon, QKeySequence, QMouseEvent,
+from PySide6.QtCore import QEvent, QModelIndex, QObject, QRectF, QSize, Qt, QThread, QTimer, Signal
+from PySide6.QtGui import (QFontMetricsF, QGuiApplication, QIcon, QKeySequence, QMouseEvent,
                            QPainter, QShortcut, QShowEvent, QStandardItem, QStandardItemModel)
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QCompleter, QDialog, QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QRadioButton, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QVBoxLayout, QWidget,
+    QLineEdit, QProgressBar, QPushButton, QRadioButton, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QVBoxLayout,
+    QWidget,
 )
 
 from ..backup import BackupInfo, day_month
 from ..mapdb.store import Connection, Signature, map_stats
 from ..mapping.tracker import NamingRequest
+from ..platform.paths import is_packaged
 from ..theme import painting
 from ..theme.qss import repolish
 from ..theme.tokens import PIXELS, color, font
@@ -759,60 +761,154 @@ class ConfirmDeleteMapDialog(BaseDialog):
         return loss
 
 
-class StartupErrorDialog(BaseDialog):
-    """Shown before the main window when the static universe data is missing (spec: StartupError).
+class BuildCancelled(Exception):
+    """Raised from the build's progress callback when the user quits during the first-run build."""
 
-    Quit is the only way out; the fix is one command, so it gets a code box with a copy button.
+
+class BuildWorker(QThread):
+    """Runs the universe build off the UI thread and reports its steps."""
+
+    progressed = Signal(str, float)      # step text, fraction done (-1 when unknown)
+    done = Signal(str)                   # "" on success, else the error message
+
+    def __init__(self, build: Callable[..., Path], keep_cache: bool) -> None:
+        """Remember the build function (``build_static.build``) and whether it keeps its downloads."""
+        super().__init__()
+        self.build, self.keep_cache, self.cancelled = build, keep_cache, False
+
+    def report(self, text: str, fraction: float | None) -> None:
+        """Forward one progress step; stop the build when cancelled."""
+        if self.cancelled:
+            raise BuildCancelled
+        self.progressed.emit(text, -1.0 if fraction is None else fraction)
+
+    def run(self) -> None:
+        """Build, then emit ``done``."""
+        try:
+            self.build(progress=self.report, keep_cache=self.keep_cache)
+        except BuildCancelled:
+            self.done.emit("Cancelled.")
+        except Exception as error:          # network, disk or source format: show it and offer a retry
+            self.done.emit(f"{type(error).__name__}: {error}")
+        else:
+            self.done.emit("")
+
+
+class BuildDataDialog(BaseDialog):
+    """Shown before the main window when the universe data is missing or outdated (spec: StartupError).
+
+    It downloads the sources and builds the data in a background thread; Download turns into Retry
+    after an error. The terminal command stays as a fallback, with a copy button.
     """
 
-    def __init__(self, data_file: Path | str, command: str) -> None:
-        """Build the error for a missing ``data_file`` and the ``command`` that builds it."""
+    def __init__(self, command: str, outdated: bool = False, build: Callable[..., Path] | None = None) -> None:
+        """Build the dialog.
+
+        Args:
+            command: The terminal command that does the same build.
+            outdated: The data exists but is from an older version (changes the wording).
+            build: The build function; ``build_static.build`` unless a test passes a fake.
+        """
         require_text(command, "command")
-        super().__init__(None, "Map data is missing",
-                         f"Homebound needs {Path(data_file).name} (systems, classes, statics, gates) and "
-                         "builds it once from CCP's static data.")
-        self.command = command
+        require_type(outdated, bool, "outdated")
+        super().__init__(None, "Map data needs an update" if outdated else "Download map data",
+                         "Homebound builds its map of New Eden (systems, classes, statics, gates) once from the "
+                         "EVE static data export and community wormhole data. That's about 100 MB to download; "
+                         "after that Homebound works offline.")
+        if build is None:
+            from ..universe import build_static
+            build = build_static.build
+        self.build, self.command, self.worker = build, command, None
         self.setWindowTitle("Homebound")
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowTitleHint)
         self.setFixedWidth(440)
-        self._add_header_glyph()
-        self.caption("Run this in the project folder")
+        self.status = QLabel("")
+        self.status.setProperty("role", "help")
+        self.status.setWordWrap(True)
+        self.progress = QProgressBar()
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(6)
+        self.progress.hide()
+        self.body.addWidget(self.progress)
+        self.body.addWidget(self.status)
+        self.caption("Or run this in a terminal")
         self.body.addWidget(self._code_box(command))
-        help_label = QLabel("It downloads the data once; after that Homebound works offline. "
-                            "Start Homebound again when it's done.")
-        help_label.setProperty("role", "help")
-        help_label.setWordWrap(True)
-        self.body.addWidget(help_label)
 
-        root = Path(data_file).resolve().parent.parent
-        where = QLabel(str(root).replace(str(Path.home()), "~"))
-        where.setFont(font("mono-small"))
-        where.setStyleSheet(f"color: {color('ink-faint').name()}; background: transparent; border: 0;")
-        folder = QPushButton("Open folder")
-        folder.setProperty("variant", "ghost")
-        folder.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(root))))
-        quit_button = QPushButton("Quit")
-        quit_button.setProperty("variant", "primary")
-        quit_button.setDefault(True)
-        quit_button.clicked.connect(self.reject)
-        self.foot.addWidget(where, 1)
-        self.foot.addWidget(folder)
-        self.foot.addWidget(quit_button)
+        self.quit_button = QPushButton("Quit")
+        self.quit_button.setProperty("variant", "ghost")
+        self.quit_button.clicked.connect(self.quit)
+        self.download_button = QPushButton("Download")
+        self.download_button.setProperty("variant", "primary")
+        self.download_button.setDefault(True)
+        self.download_button.clicked.connect(self.start)
+        self.foot.addStretch(1)
+        self.foot.addWidget(self.quit_button)
+        self.foot.addWidget(self.download_button)
 
-    def _add_header_glyph(self) -> None:
-        """Put a red "!" before the title: the only dialog with one, because it stops the app."""
-        title = self.body.itemAt(0).widget()
-        self.body.removeWidget(title)
-        head = QHBoxLayout()
-        head.setSpacing(PIXELS["sp-8"])
-        glyph = QLabel("!")
-        glyph.setFixedSize(22, 22)
-        glyph.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        glyph.setStyleSheet(f"background: {color('danger').name()}; color: {color('ink-inverse').name()};"
-                            " border-radius: 11px; font-weight: 800;")
-        head.addWidget(glyph)
-        head.addWidget(title, 1)
-        self.body.insertLayout(0, head)
+    def _set_status(self, text: str, role: str) -> None:
+        """Set the status line's text and theme role, and fit the height (the bar and the text change it)."""
+        self.status.setText(text)
+        self.status.setProperty("role", role)
+        repolish(self.status)
+        self.adjustSize()
+
+    def start(self) -> BuildWorker:
+        """Start the build in a thread; the dialog accepts itself when it succeeds.
+
+        Returns:
+            The running worker.
+        """
+        self.download_button.setEnabled(False)
+        self.progress.setRange(0, 0)
+        self.progress.show()
+        self._set_status("Starting …", "help")
+        # a package deletes the downloads afterwards; a checkout keeps them in data/cache for offline rebuilds
+        self.worker = BuildWorker(self.build, keep_cache=not is_packaged())
+        self.worker.progressed.connect(self.show_progress)
+        self.worker.done.connect(self.finish)
+        self.worker.start()
+        return self.worker
+
+    def show_progress(self, text: str, fraction: float) -> None:
+        """Show one build step; a negative fraction means the size isn't known."""
+        self._set_status(text, "help")
+        if fraction < 0:
+            self.progress.setRange(0, 0)
+        else:
+            self.progress.setRange(0, 1000)
+            self.progress.setValue(round(fraction * 1000))
+
+    def finish(self, error: str) -> bool:
+        """Accept on success; otherwise show the error and offer a retry.
+
+        Returns:
+            Whether the build succeeded.
+        """
+        if self.worker is not None:
+            self.worker.wait()
+        if not error:
+            self.accept()
+            return True
+        self.progress.hide()
+        self._set_status(f"✕ The build failed: {error}", "help-err")
+        self.download_button.setText("Retry")
+        self.download_button.setEnabled(True)
+        return False
+
+    def quit(self) -> None:
+        """Stop a running build (at its next step or download chunk) and close."""
+        if self.worker is not None and self.worker.isRunning():
+            self.worker.cancelled = True
+            self.worker.done.disconnect(self.finish)
+            self.worker.wait(10000)
+        self.reject()
+
+    def reject(self) -> None:
+        """Escape and the window's close button quit the same way as the Quit button."""
+        if self.worker is not None and self.worker.isRunning():
+            self.quit()
+            return
+        super().reject()
 
     def _code_box(self, command: str) -> QFrame:
         """Return the "$ command  ⧉" box."""

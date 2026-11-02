@@ -1,0 +1,95 @@
+name: release
+
+# A v* tag builds the AppImage, the Windows installer and portable zip, and the AUR files, and attaches
+# them to a draft release. Publishing the draft stays a manual step. No package contains the universe data
+# (EVE game data); Homebound builds it on the user's machine at first start.
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  PYTHON_VERSION: "3.14"
+  UV_PYTHON_PREFERENCE: only-system
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04              # oldest supported runner: the AppImage runs on glibc 2.35 and newer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v6
+      - name: Tag matches pyproject.toml
+        run: |
+          version="$(uv run --no-project python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")"
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME but pyproject.toml says $version"; exit 1; }
+      - name: Qt and xcb libraries (PyInstaller bundles them)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libxkbcommon-x11-0 libfontconfig1 libdbus-1-3 \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
+            libxcb-shape0 libxcb-xinerama0 libxcb-xfixes0 libxcb-xkb1
+      - run: uv sync --group packaging --python ${{ env.PYTHON_VERSION }}
+      - run: uv run pyinstaller packaging/homebound.spec --noconfirm --workpath build/pyinstaller --distpath dist
+      - name: Start check
+        run: dist/homebound/homebound --version
+      - run: packaging/linux/build_appimage.sh
+      - name: Source tarball and PKGBUILD for the AUR
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          git archive --prefix="homebound-$version/" -o "dist/homebound-$version-source.tar.gz" HEAD
+          sed -e "s/@VERSION@/$version/" \
+              -e "s/@SOURCE_SHA256@/$(sha256sum "dist/homebound-$version-source.tar.gz" | cut -d' ' -f1)/" \
+              packaging/linux/aur/PKGBUILD.in > dist/PKGBUILD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            dist/*.AppImage
+            dist/*-source.tar.gz
+            dist/PKGBUILD
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --group packaging --python ${{ env.PYTHON_VERSION }}
+      - run: uv run pyinstaller packaging/homebound.spec --noconfirm --workpath build/pyinstaller --distpath dist
+      - name: Installer and portable zip
+        shell: pwsh
+        run: |
+          $version = "$env:GITHUB_REF_NAME".TrimStart("v")
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc "/DAppVersion=$version" packaging\windows\homebound.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Compress-Archive -Path dist\Homebound -DestinationPath "dist\Homebound-$version-windows-portable.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/*-setup.exe
+            dist/*-portable.zip
+
+  release:
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          (cd assets && sha256sum * > SHA256SUMS)
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --generate-notes \
+            --title "Homebound ${GITHUB_REF_NAME#v}" assets/*

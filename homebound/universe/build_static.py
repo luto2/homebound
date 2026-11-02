@@ -1,34 +1,38 @@
-"""One-time build of data/universe.sqlite.
+"""One-time build of universe.sqlite (data/ in a checkout, the data folder in a package).
 
 Sources (downloaded once into data/cache/, everything afterwards is offline):
-  * CCP SDE (JSONL): systems, security, wormhole class, stargates, secondary suns (= WH effect)
+  * EVE SDE (JSONL, Fenris Creations): systems, security, wormhole class, stargates, secondary suns (= WH effect)
   * Wanderer (MIT) wormholeSystems.json + wormholes.json: statics per J-system, WH type info
   * anoik.is static.json: second statics source
   * whtype.info wormholes.js: where each type can wander (spawn as a non-static hole)
 Statics where Wanderer and anoik disagree are resolved against zkillboard.com's system page
-and the resolution is pinned in data/statics_resolved.json so later builds don't need zKill.
+and the resolution is pinned in statics_resolved.json so later builds don't need zKill. A package ships
+its copy of that file; a rebuild in a package starts from it and writes its own next to the output.
 
-Usage:  python -m homebound.universe.build_static [--refresh]
+Usage:  python -m homebound.universe.build_static [--refresh]      (packaged: homebound --build-static)
 """
 import argparse
 import html
 import io
 import json
 import re
+import shutil
 import sqlite3
 import sys
 import time
 import urllib.request
 import zipfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
+from ..platform.paths import RESOLVED_FILE, UNIVERSE_FILE, bundled_data_directory, static_build_directory
 from ..validation import require_integer, require_number, require_text, require_type
 
-DATA = Path(__file__).resolve().parents[2] / "data"
+DATA = static_build_directory()
 CACHE = DATA / "cache"
-OUTPUT = DATA / "universe.sqlite"
-RESOLVED = DATA / "statics_resolved.json"
+OUTPUT = DATA / UNIVERSE_FILE
+RESOLVED = DATA / RESOLVED_FILE
+SHIPPED_RESOLVED = bundled_data_directory() / RESOLVED_FILE   # the same file as RESOLVED in a checkout
 HEADERS = {"User-Agent": "homebound/0.1 (personal offline mapper; build script)"}
 SCHEMA_VERSION = "2"         # bump together with db.SCHEMA_VERSION
 
@@ -68,13 +72,20 @@ SCHEMA = """
 """
 
 
-def fetch(url: str, destination: Path, refresh: bool) -> Path:
+Progress = Callable[[str, float | None], None]   # (what is happening, fraction done or None)
+CHUNK = 1 << 20
+
+
+def fetch(url: str, destination: Path, refresh: bool, progress: Callable[[float | None], None] | None = None) -> Path:
     """Download a file into the cache unless it is already there.
+
+    The download goes to ``<destination>.part`` first, so an interrupted one is never taken for a cached file.
 
     Args:
         url: Where to download from.
         destination: The cache file.
         refresh: Download even if the file exists.
+        progress: Called with the fraction downloaded (None while the size is unknown); it may raise to cancel.
 
     Returns:
         ``destination``.
@@ -84,8 +95,17 @@ def fetch(url: str, destination: Path, refresh: bool) -> Path:
     if destination.exists() and not refresh:
         return destination
     print(f"  downloading {url}", file=sys.stderr)
+    partial = destination.with_name(destination.name + ".part")
     with urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=600) as response:
-        destination.write_bytes(response.read())
+        total = int(response.headers.get("Content-Length") or 0)
+        done = 0
+        with partial.open("wb") as file:
+            while chunk := response.read(CHUNK):
+                file.write(chunk)
+                done += len(chunk)
+                if progress:
+                    progress(min(done / total, 1.0) if total else None)
+    partial.replace(destination)
     return destination
 
 
@@ -184,7 +204,8 @@ def resolve_statics(known: dict[int, str], wanderer: dict[int, list], anoik: dic
     """
     for argument, name in ((known, "known"), (wanderer, "wanderer"), (anoik, "anoik")):
         require_type(argument, dict, name)
-    pinned = json.loads(RESOLVED.read_text()) if RESOLVED.exists() else {}
+    source = RESOLVED if RESOLVED.exists() else SHIPPED_RESOLVED
+    pinned = json.loads(source.read_text()) if source.exists() else {}
     statics: dict[int, list[str]] = {}
     disputed = []
     for system_id in set(wanderer) | set(anoik):
@@ -227,23 +248,37 @@ def whole_number(value: object) -> int | None:
         return None
 
 
-def build(refresh: bool = False) -> Path:
-    """Download the sources (unless cached) and write data/universe.sqlite.
+def build(refresh: bool = False, progress: Progress | None = None, keep_cache: bool = True) -> Path:
+    """Download the sources (unless cached) and write universe.sqlite to ``OUTPUT``.
 
     Args:
         refresh: Download every source again.
+        progress: Called with a description of each step and its fraction done (None if unknown); it may
+            raise to cancel the build.
+        keep_cache: Keep the downloads in ``CACHE`` for an offline rebuild (about 110 MB); the first-run build
+            in a package deletes them.
 
     Returns:
         The path of the written file.
     """
     require_type(refresh, bool, "refresh")
-    CACHE.mkdir(parents=True, exist_ok=True)
-    sde = fetch(SDE_URL, CACHE / "sde.zip", refresh)
-    wanderer_systems = json.loads(fetch(WANDERER_URL + "wormholeSystems.json", CACHE / "wormholeSystems.json",
-                                        refresh).read_text())
-    wanderer_types = json.loads(fetch(WANDERER_URL + "wormholes.json", CACHE / "wormholes.json", refresh).read_text())
-    anoik = json.loads(fetch(ANOIK_URL, CACHE / "anoik.json", refresh).read_text())
-    wander = whtype_wander(fetch(WHTYPE_URL, CACHE / "whtype-wormholes.js", refresh).read_text())
+    require_type(keep_cache, bool, "keep_cache")
+    report: Progress = progress or (lambda text, fraction: None)
+
+    def download(url: str, name: str, label: str) -> Path:
+        """Fetch one source into the cache, reporting it as "Downloading <label>"."""
+        report(f"Downloading {label} …", None)
+        return fetch(url, CACHE / name, refresh, lambda fraction: report(f"Downloading {label} …", fraction))
+
+    CACHE.mkdir(parents=True, exist_ok=True)   # also creates DATA, which a package's data folder may not have yet
+    sde = download(SDE_URL, "sde.zip", "the EVE static data export")
+    wanderer_systems = json.loads(download(WANDERER_URL + "wormholeSystems.json", "wormholeSystems.json",
+                                           "Wanderer's wormhole systems").read_text())
+    wanderer_types = json.loads(download(WANDERER_URL + "wormholes.json", "wormholes.json",
+                                         "Wanderer's wormhole types").read_text())
+    anoik = json.loads(download(ANOIK_URL, "anoik.json", "anoik.is statics").read_text())
+    wander = whtype_wander(download(WHTYPE_URL, "whtype-wormholes.js", "whtype.info wandering holes").read_text())
+    report("Reading systems and gates …", None)
 
     archive = zipfile.ZipFile(sde)
     regions = {record["_key"]: record for record in json_lines(archive, "mapRegions.jsonl")}
@@ -273,6 +308,7 @@ def build(refresh: bool = False) -> Path:
     wanderer_statics = {record["solarSystemID"]: sorted(record["statics"] or []) for record in wanderer_systems}
     anoik_statics = {entry["solarSystemID"]: sorted(entry.get("statics") or []) for entry in anoik["systems"].values()
                      if "solarSystemID" in entry}
+    report("Merging statics …", None)
     statics = resolve_statics({row[0]: row[1] for row in rows}, wanderer_statics, anoik_statics)
 
     types = []
@@ -286,9 +322,11 @@ def build(refresh: bool = False) -> Path:
                       ",".join(spawns_in) or None,
                       ",".join(wander[record["name"]]) if record["name"] in wander else None))
 
-    if OUTPUT.exists():
-        OUTPUT.unlink()
-    database = sqlite3.connect(OUTPUT)
+    report("Writing universe.sqlite …", None)
+    partial = OUTPUT.with_name(OUTPUT.name + ".part")
+    if partial.exists():
+        partial.unlink()
+    database = sqlite3.connect(partial)
     database.executescript(SCHEMA)
     database.executemany("INSERT INTO systems VALUES (?,?,?,?,?,?,?,?,?)", rows)
     database.executemany("INSERT INTO gates VALUES (?,?)", sorted(gates))
@@ -302,6 +340,10 @@ def build(refresh: bool = False) -> Path:
                                                            ("schema_version", SCHEMA_VERSION)])
     database.commit()
     database.close()
+    archive.close()
+    partial.replace(OUTPUT)      # the app never sees a half-written file
+    if not keep_cache:
+        shutil.rmtree(CACHE, ignore_errors=True)
     print(f"wrote {OUTPUT}: {len(rows)} systems, {len(gates)} gates, "
           f"{sum(len(codes) for codes in statics.values())} statics, {len(types)} WH types", file=sys.stderr)
     return OUTPUT
