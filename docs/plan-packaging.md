@@ -1,6 +1,6 @@
 # Plan: packaging for Linux and Windows
 
-Status: implemented on branch `packaging` (on top of `windows-support`, 2026-11-01). The PyInstaller folder (including the first-start build into an empty data folder) and the wheel/AUR layout were tried locally on Linux; the AppImage, the Windows build and the workflows have not run yet (they run on the first `v*` tag).
+Status: implemented (2026-11-01), merged into `master`. The PyInstaller folder (including the first-start build into an empty data folder) and the wheel/AUR layout were tried locally on Linux; the AppImage, the Windows build and the workflows have not run yet (they run on the first `v*` tag).
 
 Depends on: [Windows support](plan-windows-support.md) for the Windows build. Signing: [code signing](plan-code-signing.md).
 
@@ -13,8 +13,8 @@ The app can't ask a packaged user to run `build_static`. Instead:
   (2026-11-01): the data is EVE game data, so packages don't ship it. On first start Homebound
   offers to download the sources and build `universe.sqlite` in the data folder. Only
   `statics_resolved.json` ships.
-- `static_data_path()` looks, in order, at `HOMEBOUND_UNIVERSE`, a rebuilt copy in the data
-  folder, then the bundled copy (`importlib.resources` / PyInstaller's bundle dir).
+- `static_data_path()` looks, in order, at `HOMEBOUND_UNIVERSE`, a built copy in the data
+  folder, then the checkout's `data/` (packages have no bundled copy; see the implementation notes).
 - In packaged mode, `build_static` writes to the data folder. A "Rebuild static data" button in
   Settings is optional, and is the only other thing that would go online.
 

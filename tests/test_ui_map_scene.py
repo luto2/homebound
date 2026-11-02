@@ -344,8 +344,9 @@ class TestSystemNode:
         state.characters_in = lambda system_id: [(character_id, f"Pilot {character_id}", character_id % 5 + 1)
                                                  for character_id in range(1, 6)]
         scene.rebuild()
+        assert scene.nodes[HOME.id].zkill.kills_1h == 3
+        assert all(node.zkill is None for system_id, node in scene.nodes.items() if system_id != HOME.id)
         for node in scene.nodes.values():
-            assert node.zkill is None or node.zkill.kills_1h == 3
             node.hover = True
             for zoom in (0.2, 0.5, 1.0):
                 assert not paint_item(node, zoom, selected=True).isNull()

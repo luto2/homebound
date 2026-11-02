@@ -96,7 +96,7 @@ def is_wormhole_side(universe: Universe, system_id: int) -> bool:
     return bool(system and (system.wormhole_space or system.system_class in ("PV", "TH")))
 
 
-def expires_at(connection: Connection, universe: Universe) -> datetime | None:
+def expires_at(connection: Connection, universe: Universe) -> datetime:
     """Return when a connection is removed: the earlier of its two limits.
 
     The limits are the type's lifetime from ``created_at`` (``DEFAULT_LIFETIME_HOURS`` if the type
@@ -107,7 +107,7 @@ def expires_at(connection: Connection, universe: Universe) -> datetime | None:
         universe: Static data.
 
     Returns:
-        The time (UTC), or None if it has no limit.
+        The time (UTC). There is always one: the type lifetime, or the default one.
     """
     require_type(connection, Connection, "connection")
     known = universe.known_type(connection.wormhole_type)

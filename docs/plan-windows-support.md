@@ -1,6 +1,6 @@
 # Plan: Windows support
 
-Status: implemented on branch `windows-support` (2026-11-01); not yet tried on a real Windows machine.
+Status: implemented (2026-11-01), merged into `master`; the tests pass on Windows in CI, but it hasn't been tried on a real Windows machine yet.
 
 Depends on: nothing. [Packaging](plan-packaging.md) builds on it.
 

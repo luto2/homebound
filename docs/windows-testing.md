@@ -16,17 +16,17 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 Then close PowerShell and open a new one, so it finds `git` and `uv`. You don't need to install
 Python: `uv` downloads the right version.
 
-## 2. Get the branch and set it up
+## 2. Get it and set it up
 
 ```powershell
-git clone -b windows-support https://github.com/luto2/homebound.git
+git clone https://github.com/luto2/homebound.git
 cd homebound
 uv sync
-uv run python -m homebound.universe.build_static
 ```
 
-`build_static` downloads EVE's static data (systems, wormhole statics) once and takes a few
-minutes. After that Homebound doesn't go online, except for optional zKillboard lookups.
+On first start Homebound offers to download EVE's static data (systems, wormhole statics) and
+build its map data; that takes a few minutes, once. After that it doesn't go online, except for
+optional zKillboard lookups.
 
 ## 3. In EVE
 
@@ -40,7 +40,7 @@ minutes. After that Homebound doesn't go online, except for optional zKillboard 
 uv run python -m homebound
 ```
 
-On first start Settings opens on **Log folder**. Click **Auto-detect**. It should find
+First click **Download** in the map data dialog and wait for it to finish. Then Settings opens on **Log folder**. Click **Auto-detect**. It should find
 `Documents\EVE\logs\Chatlogs`, even if OneDrive moved your Documents folder. Then set any home
 system, for example `J161940`, and click **Save**.
 
