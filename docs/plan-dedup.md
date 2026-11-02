@@ -1,6 +1,16 @@
 # Plan: remove duplicated functionality
 
-Status: planned 2026-11-02, nothing implemented yet.
+Status: implemented 2026-11-02 on branch `dedup`. Deviations from the plan:
+- `lifetime_help_text` keeps its own maths and "4h" / "10 min" format: it describes a state that isn't
+  saved yet (no connection or type), and no `format_duration` style matches its text.
+- The signature table's row background stays in its delegate (it has a `missing` tint and a column-0
+  bar between the fill and the line); `painting.row_background` is used by the character and route docks.
+- `character_dock._paint_location` is unchanged: the two colours need `namer.display` plus the real name
+  drawn separately, which it already does.
+- `ConnectionEdge.PENS` is gone; `painting.edge_pens()` is cached (`edge_pens.cache_clear()` rebuilds).
+- `BackgroundFetcher` (step 4) does not own the HTTP client; each `_run` calls `make_client()`.
+- Remaining `"K162"` hits outside the list below are deliberate K162 special cases
+  (`naming.guess_static`, `tracker` copying a sig type to its connection, the signature table's K162 size).
 
 Depends on: nothing. Each step stands alone and can be its own commit; steps 1 and 2 first,
 because they fix behaviour, the rest is cleanup.
@@ -133,4 +143,5 @@ with step 3; skip it if the base class ends up bigger than the duplicated code.
 - `uv run pytest` passes, with new tests for steps 1 and 2.
 - `grep -rn '"K162"' homebound` only hits `Universe.known_type`, the K162 special cases in the
   editors (`wormhole_fields`, `dialogs.signature_text`) and `db.py`.
-- `grep -rn 'homebound/0.1\|timedelta(minutes=10)' homebound` hits only `LIFETIME_REMAINING`.
+- `grep -rn 'homebound/0.1\|timedelta(minutes=10)' homebound` hits only named constants
+  (`LIFETIME_REMAINING`, `zkill.CACHE_LIFETIME`, `zkill.RECENT_KILL_WINDOW`).
