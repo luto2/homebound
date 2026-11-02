@@ -12,10 +12,10 @@ from ..mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_CHIPS, LIFETIME_EX
                            LIFETIME_REMAINING, Connection)
 from ..mapping.chain import connected_component, wormhole_adjacency
 from ..mapping.scan_status import ScanStatus, age_text  # age_text: also imported from here by dialogs and panels
-from ..mapping.tracker import hole_size
+from ..mapping.tracker import expires_at, hole_size
 from ..theme import painting
 from ..theme.tokens import OPACITY, PIXELS, color, font
-from ..universe.db import SIZE_NAMES
+from ..universe.db import SIZE_NAMES, Universe
 from ..validation import require_integer, require_number, require_text, require_type
 
 NODE_WIDTH, NODE_HEIGHT = PIXELS["size-node-w"], PIXELS["size-node-h"]
@@ -24,11 +24,12 @@ GRID = NODE_HEIGHT / 3  # background grid cell: a third of a system node's heigh
 MINIMUM_ZOOM, MAXIMUM_ZOOM = 0.2, 2.5
 
 
-def removed_in(connection: Connection) -> str:
+def removed_in(connection: Connection, universe: Universe) -> str:
     """Time until tracker.expire drops the connection, e.g. "7 min" / "2h 10m".
 
     Args:
         connection: The connection to look at.
+        universe: Static data (the type's lifetime).
 
     Returns:
         The remaining time, or "?" when the lifetime state has no countdown.
@@ -36,8 +37,7 @@ def removed_in(connection: Connection) -> str:
     require_type(connection, Connection, "connection")
     if not connection.lifetime_set_at or connection.lifetime not in LIFETIME_REMAINING:
         return "?"
-    remaining = (datetime.fromisoformat(connection.lifetime_set_at) + LIFETIME_REMAINING[connection.lifetime]
-                 - datetime.now(timezone.utc))
+    remaining = expires_at(connection, universe) - datetime.now(timezone.utc)
     minutes = max(0, int(remaining.total_seconds() // 60))
     if minutes < 60:
         return f"{minutes} min"
@@ -464,7 +464,7 @@ class ConnectionEdge(QGraphicsItem):
                  {"fresh": "Mass fresh", "reduced": "Mass reduced (<50%)", "critical": "Mass critical (<10%)",
                   "unknown": "Mass unknown"}[connection.mass]]
         if connection.lifetime == LIFETIME_EXPIRED:
-            parts.append(f"Expired · removed in {removed_in(connection)}")
+            parts.append(f"Expired · removed in {removed_in(connection, self.state.universe)}")
         elif connection.lifetime:
             parts.append(f"Lifetime {LIFETIME_LABELS[connection.lifetime]} "
                          f"(set {age_text(connection.lifetime_set_at)} ago)")

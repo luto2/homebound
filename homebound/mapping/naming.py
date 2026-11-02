@@ -12,7 +12,7 @@ towards home is "S-0".
 """
 from dataclasses import dataclass
 
-from ..mapdb.store import MapSystem, Store
+from ..mapdb.store import MapSystem, Signature, Store
 from ..universe.db import Universe
 from ..validation import require_integer, require_type
 
@@ -223,6 +223,23 @@ def static_slot_for_class(universe: Universe, parent_id: int, child_class: str |
         if child_class and child_class in static_type.destinations:
             return slot
     return 1
+
+
+def signature_destination(universe: Universe, signature: Signature) -> str | None:
+    """Return where a signature leads: the destination set on it, else its known type's first one."""
+    require_type(signature, Signature, "signature")
+    if signature.destination:
+        return signature.destination
+    known = universe.known_type(signature.type)
+    return known.destinations[0] if known and known.destinations else None
+
+
+def is_static_signature(universe: Universe, system_id: int, signature: Signature) -> bool:
+    """Return whether a signature's type is one of the system's statics (case-insensitive)."""
+    require_type(signature, Signature, "signature")
+    system = universe.by_id(system_id)
+    code = (signature.type or "").strip().upper()
+    return bool(system and code and code in {static.upper() for static in system.statics})
 
 
 def next_hole_index(store: Store, universe: Universe, parent_id: int, is_static: bool,

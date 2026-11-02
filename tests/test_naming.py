@@ -4,8 +4,8 @@ import pytest
 from conftest import HOME, UNIVERSE, MapSimulation, pick_system
 from homebound.mapdb.store import Signature, Store
 from homebound.mapping.naming import (SCHEMES, ChainDepthPositionScheme, Namer, Scheme, chain_letter, guess_static,
-                                      hole_digit, hole_path, letters_for_number, next_hole_index, next_level_index,
-                                      scheme_for_key,
+                                      hole_digit, hole_path, is_static_signature, letters_for_number,
+                                      next_hole_index, next_level_index, scheme_for_key, signature_destination,
                                       static_slot_count, static_slot_for_class)
 
 
@@ -188,3 +188,19 @@ def test_with_real_name_adds_it_once() -> None:
     store.add_system(root)
     assert namer.with_real_name(root) == "Amarr"
     assert namer.with_real_name(1) == namer.display(1)
+
+
+def test_signature_destination_and_static_signature_ignore_case() -> None:
+    """The set destination wins, else the known type's first; lower-case h296 is HOME's static, k162 knows nothing."""
+    assert signature_destination(UNIVERSE, Signature(HOME.id, "A", type="h296")) == "C5"
+    assert signature_destination(UNIVERSE, Signature(HOME.id, "A", type="h296", destination="C3")) == "C3"
+    assert signature_destination(UNIVERSE, Signature(HOME.id, "A", type="k162")) is None
+    assert signature_destination(UNIVERSE, Signature(HOME.id, "A", type="k162", destination="HS")) == "HS"
+    assert signature_destination(UNIVERSE, Signature(HOME.id, "A")) is None
+    assert is_static_signature(UNIVERSE, HOME.id, Signature(HOME.id, "A", type="h296"))
+    assert is_static_signature(UNIVERSE, HOME.id, Signature(HOME.id, "A", type="H296"))
+    assert not is_static_signature(UNIVERSE, HOME.id, Signature(HOME.id, "A", type="B274"))
+    assert not is_static_signature(UNIVERSE, HOME.id, Signature(HOME.id, "A", type="k162"))
+    assert not is_static_signature(UNIVERSE, HOME.id, Signature(HOME.id, "A"))
+    with pytest.raises(TypeError):
+        signature_destination(UNIVERSE, "A")
