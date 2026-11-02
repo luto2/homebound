@@ -1,0 +1,3 @@
+#!/bin/sh
+# Push gate: tests + GitHub CI + Sonnet reviewers must pass before anything is pushed (tools/push_gate.py).
+exec python3 "$(git rev-parse --show-toplevel)/tools/push_gate.py" pre-push "$@"

@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/tools/push_gate.py\" claude-hook",
+            "timeout": 3600,
+            "statusMessage": "Push gate: tests, GitHub CI and Sonnet reviewers"
+          }
+        ]
+      }
+    ]
+  }
+}
