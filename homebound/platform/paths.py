@@ -11,6 +11,7 @@ from pathlib import Path
 
 APP_FOLDER = "Homebound"
 UNIVERSE_FILE = "universe.sqlite"
+RESOLVED_FILE = "statics_resolved.json"
 FOLDERID_DOCUMENTS = "FDD39AD0-238F-46AF-ADB4-6C85480369C7"
 
 
@@ -64,20 +65,52 @@ def documents_directory() -> Path:
     return Path.home() / "Documents"
 
 
-def bundled_directory() -> Path:
-    """Return the folder that holds ``data/`` next to the code: the source tree, or PyInstaller's bundle."""
+def source_tree() -> Path | None:
+    """Return the project folder when Homebound runs from a source checkout, else None (an installed package)."""
+    if getattr(sys, "frozen", False):
+        return None
+    root = Path(__file__).resolve().parents[2]
+    return root if (root / "pyproject.toml").is_file() else None
+
+
+def is_packaged() -> bool:
+    """Return whether Homebound runs from a package (PyInstaller, AppImage, system install) instead of a checkout."""
+    return source_tree() is None
+
+
+def bundled_data_directory() -> Path:
+    """Return the folder holding the shipped ``statics_resolved.json`` (and, in a checkout, ``universe.sqlite``).
+
+    That is PyInstaller's bundle, the checkout's ``data/``, or ``<prefix>/share/homebound`` for a system
+    install (the AUR package puts it in ``/usr/share/homebound``). Packages ship no ``universe.sqlite``: it is
+    EVE game data, built into the data folder at first start.
+    """
     bundle = getattr(sys, "_MEIPASS", None)
-    return Path(bundle) if bundle else Path(__file__).resolve().parents[2]
+    if bundle:
+        return Path(bundle) / "data"
+    tree = source_tree()
+    return tree / "data" if tree else Path(sys.prefix) / "share/homebound"
+
+
+def static_build_directory() -> Path:
+    """Return where ``build_static`` writes: the checkout's ``data/``, or the data folder in a package."""
+    tree = source_tree()
+    return tree / "data" if tree else data_directory()
+
+
+def static_data_candidates() -> list[Path]:
+    """Return the universe files to try, best first: ``HOMEBOUND_UNIVERSE`` alone, else a rebuilt copy in the
+    data folder and then the one in a checkout's ``data/`` (only those that exist)."""
+    if os.environ.get("HOMEBOUND_UNIVERSE"):
+        return [Path(os.environ["HOMEBOUND_UNIVERSE"])]
+    candidates = [data_directory() / UNIVERSE_FILE, bundled_data_directory() / UNIVERSE_FILE]
+    return [path for index, path in enumerate(candidates) if path.is_file() and path not in candidates[:index]]
 
 
 def static_data_path() -> Path:
     """Return the universe file to read: ``HOMEBOUND_UNIVERSE``, a rebuilt copy in the data folder, else the bundled one.
 
-    When none exists, the bundled path is returned, so the error names the file the build writes.
+    When none exists, the path ``build_static`` writes is returned, so the error names the file the build makes.
     """
-    if os.environ.get("HOMEBOUND_UNIVERSE"):
-        return Path(os.environ["HOMEBOUND_UNIVERSE"])
-    rebuilt = data_directory() / UNIVERSE_FILE
-    if rebuilt.is_file():
-        return rebuilt
-    return bundled_directory() / "data" / UNIVERSE_FILE
+    candidates = static_data_candidates()
+    return candidates[0] if candidates else static_build_directory() / UNIVERSE_FILE

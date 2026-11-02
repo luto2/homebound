@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget, QWidgetAction,
 )
 
+from .. import app_version
 from ..mapdb.store import map_stats
 from ..mapping.naming import SCHEMES, guess_static
 from ..mapping.tracker import NamingRequest
@@ -459,6 +460,8 @@ class MapWindow(QMainWindow):
         menu.addAction("Show map window", self.raise_window)
         menu.addAction("Settings …", self.open_settings)
         menu.addSeparator()
+        self.version_action = menu.addAction(f"Homebound {app_version()}")
+        self.version_action.setEnabled(False)
         menu.addAction("Quit", QApplication.quit)
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(self._tray_activated)

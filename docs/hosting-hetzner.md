@@ -48,7 +48,7 @@ Everything runs on one machine, with one app process and one database file. Ther
    - Callback URL: `https://homebound.luthopian.de/sso/callback`.
    - Scopes registered: `esi-wallet.read_character_wallet.v1`. Login itself requests **no scopes**. Only the one-time admin link of the receiving character requests the wallet scope.
    - The client ID and secret go in the server's secrets file (§6). They are never committed to git.
-4. **Receiving character**, along the lines of **"Homebound Admin"**. Check that the name is free and allowed: CCP's naming policy can reject names that look like staff or admin accounts, so keep "Homebound Billing" or "Homebound Mapper" as fallbacks. The admin links it once through `/admin/link-wallet`.
+4. **Receiving character**, along the lines of **"Homebound Admin"**. Check that the name is free and allowed: the EVE naming policy can reject names that look like staff or admin accounts, so keep "Homebound Billing" or "Homebound Mapper" as fallbacks. The admin links it once through `/admin/link-wallet`.
 5. **Backblaze B2** account (region **EU Central**) with a bucket called `homebound-backup`. It needs an application key limited to that bucket, with no delete permission if possible. Lifecycle setting: keep 30 days of versions.
 6. **DNS** at the luthopian.de registrar: an `A` and an `AAAA` record for `homebound` pointing at the VPS, with a low TTL until the setup is stable.
 7. **healthchecks.io** check called `homebound-wallet-poller`.
@@ -166,7 +166,7 @@ LITESTREAM_SECRET_ACCESS_KEY=…
 - [ ] SSH key-only login, no root login, cloud firewall in place
 - [ ] Caddy HTTPS with HSTS, and the app bound to `127.0.0.1` only
 - [ ] Rate limits in the app, per IP and per account: for logins, WebSocket connects and ops per second
-- [ ] SSO JWT checked against CCP's JWKS (issuer, audience, expiry)
+- [ ] SSO JWT checked against the EVE SSO JWKS (issuer, audience, expiry)
 - [ ] Session tokens signed, with expiry and a revocation list (logout, member removed)
 - [ ] Every `push` checks role and map state (viewer, lapsed, read-only)
 - [ ] The wallet refresh token encrypted at rest, and `/admin` limited to `HB_ADMIN_CHAR_IDS`
@@ -175,7 +175,7 @@ LITESTREAM_SECRET_ACCESS_KEY=…
 
 ## 11. Legal and policy (to check before going public)
 
-- **CCP rules:** the third-party developer license allows tools, but forbids charging **real money**. ISK-only payments are what other EVE tools do. Re-read the current CCP Developer License Agreement and EULA before launch.
+- **Fenris Creations (formerly CCP) rules:** the third-party developer license allows tools, but forbids charging **real money**. ISK-only payments are what other EVE tools do. Re-read the current EVE Developer License Agreement and EULA before launch.
 - **German Impressum (DDG §5) and privacy policy:** drafts are in [`legal/`](legal/) and will be served at `/impressum`, `/datenschutz` and `/terms`. The contact placeholders still need filling in. The service stores character IDs and names, and corp IDs, which are personal-ish data under GDPR.
   - Data minimisation already helps: no emails, no IPs stored beyond the log retention, and presence never stored.
   - Hetzner offers a data processing agreement (AVV/DPA) in the console. Accept it.

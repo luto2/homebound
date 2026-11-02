@@ -80,6 +80,25 @@ def test_nav_switches_page(dialog) -> None:
     assert dialog.stack.currentIndex() == 3
 
 
+def test_footer_shows_version(dialog) -> None:
+    """The footer names the version from pyproject.toml."""
+    from homebound import app_version
+    assert dialog.version_label.text() == f"Homebound {app_version()}" != "Homebound unknown"
+
+
+def test_app_version_without_metadata(monkeypatch) -> None:
+    """Without package metadata the version is "unknown" instead of an error."""
+    import homebound
+    from importlib.metadata import PackageNotFoundError
+
+    def missing(name: str) -> str:
+        """Fail like an uninstalled package."""
+        raise PackageNotFoundError(name)
+
+    monkeypatch.setattr(homebound, "version", missing)
+    assert homebound.app_version() == "unknown"
+
+
 def test_cancel_leaves_settings(dialog, state) -> None:
     """Cancel after editing a field leaves the saved home system unchanged."""
     dialog.home.setText("")

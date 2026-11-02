@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Homebound
+GenericName=Wormhole Mapper
+Comment=Offline EVE Online wormhole mapper with a client overlay
+Exec=homebound
+Icon=homebound
+Terminal=false
+Categories=Game;
+Keywords=EVE;wormhole;mapper;
+StartupWMClass=homebound

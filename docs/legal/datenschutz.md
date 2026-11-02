@@ -21,8 +21,8 @@ Die Desktop-App funktioniert auch vollständig ohne den Sync-Dienst. In diesem F
 
 | Daten | Herkunft | Zweck | Rechtsgrundlage | Speicherdauer |
 |---|---|---|---|---|
-| EVE-Charakter-ID und -Name | EVE-SSO-Login (CCP) | Anmeldung, Zuordnung zu Karten und Zahlungen | Art. 6 Abs. 1 lit. b DSGVO (Vertrag) | solange das Konto besteht |
-| Corporation-ID des Charakters | öffentliche ESI-Schnittstelle von CCP | Zuordnung verpasster Zahlungen (siehe Nutzungsbedingungen) | Art. 6 Abs. 1 lit. b und f DSGVO | solange das Konto besteht, Verwarnungen 12 Monate |
+| EVE-Charakter-ID und -Name | EVE-SSO-Login (Fenris Creations) | Anmeldung, Zuordnung zu Karten und Zahlungen | Art. 6 Abs. 1 lit. b DSGVO (Vertrag) | solange das Konto besteht |
+| Corporation-ID des Charakters | öffentliche ESI-Schnittstelle von Fenris Creations | Zuordnung verpasster Zahlungen (siehe Nutzungsbedingungen) | Art. 6 Abs. 1 lit. b und f DSGVO | solange das Konto besteht, Verwarnungen 12 Monate |
 | Sitzungs-Token | vom Server erzeugt | angemeldet bleiben | Art. 6 Abs. 1 lit. b DSGVO | bis Abmeldung oder Ablauf |
 | Karteninhalte (Systeme, Verbindungen, Signaturen, Notizen, Einstellungen) | von Nutzern eingetragen | Synchronisierung zwischen Mitgliedern | Art. 6 Abs. 1 lit. b DSGVO | Verbindungen automatisch nach 2 Tagen, Systeme nach 4 Tagen (außer Heimatsystem und angeheftete Systeme); die ganze Karte 2 Monate nach Ablauf der Zahlung |
 | Live-Standort von Charakteren | Desktop-App, nur wenn pro Charakter aktiviert (Opt-in) | Anzeige für Kartenmitglieder | Art. 6 Abs. 1 lit. a DSGVO (Einwilligung, jederzeit abschaltbar) | **wird nicht gespeichert**, nur im Arbeitsspeicher, solange die Verbindung besteht |
@@ -35,9 +35,9 @@ Es werden keine besonderen Kategorien personenbezogener Daten verarbeitet.
 
 Die Web-Ansicht setzt nur ein **technisch notwendiges Sitzungs-Cookie** für die Anmeldung (§ 25 Abs. 2 Nr. 2 TDDDG). Dafür ist keine Einwilligung nötig. Andere Cookies gibt es nicht. Die Desktop-App speichert ihr Sitzungs-Token lokal auf dem eigenen Rechner.
 
-## 5. Anmeldung über EVE Online (CCP)
+## 5. Anmeldung über EVE Online (Fenris Creations)
 
-Die Anmeldung erfolgt über EVE Single Sign-On von CCP hf., Reykjavík, Island. Beim Login wird man zu CCP weitergeleitet. Homebound fordert dabei **keine Berechtigungen** (Scopes) an und erhält nur Charakter-ID und Charakternamen. Für die Verarbeitung bei CCP gilt deren Datenschutzerklärung: https://www.ccpgames.com/privacy-policy. Island ist als EWR-Staat datenschutzrechtlich gleichgestellt.
+Die Anmeldung erfolgt über EVE Single Sign-On von Fenris Creations (vormals CCP Games), Reykjavík, Island. Beim Login wird man zu Fenris Creations weitergeleitet. Homebound fordert dabei **keine Berechtigungen** (Scopes) an und erhält nur Charakter-ID und Charakternamen. Für die Verarbeitung bei Fenris Creations gilt deren Datenschutzerklärung: https://www.ccpgames.com/privacy-policy. Island ist als EWR-Staat datenschutzrechtlich gleichgestellt.
 
 ## 6. Empfänger und Auftragsverarbeiter
 

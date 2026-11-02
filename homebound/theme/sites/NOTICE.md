@@ -1,6 +1,6 @@
 # Site icons
 
-`site-wormhole/combat/data/relic/gas/ore/ice.png` are EVE Online bracket icons from CCP's official
+`site-wormhole/combat/data/relic/gas/ore/ice.png` are EVE Online bracket icons from the official
 Image Export Collection (Uprising V21.03, `Icons/items/Brackets/`), unchanged apart from being
 re-saved without metadata:
 
@@ -14,8 +14,9 @@ re-saved without metadata:
 | site-ore.png | ore_Site_16.png |
 | site-ice.png | iceField.png |
 
-EVE Online and all related images are the intellectual property of CCP hf. Homebound is a free,
-non-commercial tool and is not affiliated with or endorsed by CCP. Check CCP's current terms for
+EVE Online and all related images are the intellectual property of Fenris Creations (formerly CCP Games).
+Homebound is a free, non-commercial tool and is not affiliated with or endorsed by Fenris Creations. Check
+the current EVE Online terms for
 third-party developers before redistributing these files.
 
 `site-unknown.svg` (unscanned signature) has no EVE counterpart and is Homebound's own glyph.

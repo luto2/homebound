@@ -1,21 +1,39 @@
 """Read-only lookups over universe.sqlite (built by build_static.py; found by :func:`static_data_path`)."""
+import os
 import sqlite3
+import sys
 from collections import deque
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
-from ..platform.paths import static_data_path
+from ..platform.paths import source_tree, static_data_candidates, static_data_path
 from ..validation import require_integer, require_text, require_type
 
 DEFAULT_PATH = static_data_path()
-BUILD_COMMAND = "uv run python -m homebound.universe.build_static"
 SCHEMA_VERSION = "2"         # bump together with build_static.SCHEMA_VERSION
 KNOWN_SPACE_CLASSES = ("HS", "LS", "NS")
 
-# max mass per jump (kg) -> size class; the sizes CCP uses are 5, 62, 375 and ≥ 1000 kt
+# max mass per jump (kg) -> size class; the sizes the game uses are 5, 62, 375 and ≥ 1000 kt
 SIZES = ["S", "M", "L", "XL"]
 SIZE_NAMES = {"S": "Frigate", "M": "Medium", "L": "Large", "XL": "Capital"}
+
+
+def build_command() -> str:
+    """Return the command that rebuilds the universe file, for how Homebound was installed.
+
+    A checkout runs the module through uv; a PyInstaller build or AppImage runs its own executable with
+    ``--build-static``; a system install (AUR) runs the ``homebound`` script.
+    """
+    if getattr(sys, "frozen", False):
+        executable = os.environ.get("APPIMAGE") or sys.executable
+        return f'"{executable}" --build-static' if " " in executable else f"{executable} --build-static"
+    if source_tree():
+        return "uv run python -m homebound.universe.build_static"
+    return "homebound --build-static"
+
+
+BUILD_COMMAND = build_command()
 
 
 class UniverseDataError(FileNotFoundError):
@@ -276,3 +294,21 @@ def load_universe() -> Universe:
         UniverseDataError: If the file is missing or outdated.
     """
     return Universe()
+
+
+def open_universe() -> Universe:
+    """Load the first universe file that works: a rebuilt copy, else the bundled one.
+
+    A rebuilt copy left over from an older version (older schema) gives way to the bundled file of the
+    current version instead of stopping the start.
+
+    Raises:
+        UniverseDataError: If no file loads; the error is the first file's.
+    """
+    errors = []
+    for path in static_data_candidates() or [static_data_path()]:
+        try:
+            return Universe(path)
+        except UniverseDataError as error:
+            errors.append(error)
+    raise errors[0]

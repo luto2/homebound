@@ -376,6 +376,12 @@ def test_tray_activation_raises_window(window) -> None:
     assert window.isVisible()
 
 
+def test_tray_menu_shows_version(window) -> None:
+    """The tray menu shows the version from the package metadata as a disabled row."""
+    from homebound import app_version
+    assert window.version_action.text() == f"Homebound {app_version()}" and not window.version_action.isEnabled()
+
+
 def test_status_bar_updates(window) -> None:
     """Status lines go to their label with a glyph; unknown sources are ignored."""
     assert window._status("logs", "ok", "Watching 2 logs") is True

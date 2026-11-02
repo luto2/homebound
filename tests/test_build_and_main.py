@@ -78,9 +78,10 @@ def fake_sources(tmp_path, monkeypatch) -> dict:
     monkeypatch.setattr(build_static, "CACHE", tmp_path / "cache")
     monkeypatch.setattr(build_static, "OUTPUT", tmp_path / "universe.sqlite")
     monkeypatch.setattr(build_static, "RESOLVED", tmp_path / "resolved.json")
+    monkeypatch.setattr(build_static, "SHIPPED_RESOLVED", tmp_path / "shipped.json")
     state = {"sde_build": True, "calls": []}
 
-    def fake_fetch(url: str, destination: Path, refresh: bool) -> Path:
+    def fake_fetch(url: str, destination: Path, refresh: bool, progress=None) -> Path:
         """Record the call and write the fake file for the source URL."""
         state["calls"].append((url, refresh))
         if url == build_static.SDE_URL:
@@ -159,6 +160,44 @@ def test_build_uses_pinned_resolution(fake_sources, monkeypatch) -> None:
     assert Universe(fake_sources["tmp"] / "universe.sqlite").by_name("J100002").statics == ("B274",)
 
 
+def test_build_starts_from_shipped_resolution(fake_sources, monkeypatch) -> None:
+    """Without its own resolution file (a fresh package), the build uses the shipped one and writes its own."""
+    (fake_sources["tmp"] / "shipped.json").write_text(json.dumps({"J100002": {"statics": ["B274"]}}))
+    monkeypatch.setattr(build_static, "zkill_statics", lambda system_id: pytest.fail("asked zKill again"))
+    build_static.build()
+    assert Universe(fake_sources["tmp"] / "universe.sqlite").by_name("J100002").statics == ("B274",)
+    assert json.loads((fake_sources["tmp"] / "resolved.json").read_text())["J100002"]["statics"] == ["B274"]
+
+
+def test_build_reports_progress_and_drops_the_cache(fake_sources) -> None:
+    """Each step is reported; keep_cache=False deletes the downloads; a stale .part file from a crashed build is
+    replaced and none is left behind."""
+    steps = []
+    (fake_sources["tmp"] / "universe.sqlite.part").write_text("stale")
+    build_static.build(progress=lambda text, fraction: steps.append(text), keep_cache=False)
+    assert steps[0].startswith("Downloading the EVE static data export") and steps[-1] == "Writing universe.sqlite …"
+    assert not (fake_sources["tmp"] / "cache").exists()
+    assert (fake_sources["tmp"] / "universe.sqlite").is_file()
+    assert not list(fake_sources["tmp"].glob("*.part"))
+    with pytest.raises(TypeError):
+        build_static.build(keep_cache="no")
+
+
+def test_build_cancel_keeps_the_old_file(fake_sources) -> None:
+    """A progress callback that raises stops the build; the existing universe file is untouched."""
+    build_static.build()
+    before = (fake_sources["tmp"] / "universe.sqlite").read_bytes()
+
+    def cancel(text: str, fraction) -> None:
+        """Cancel at the write step."""
+        if text.startswith("Writing"):
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        build_static.build(progress=cancel)
+    assert (fake_sources["tmp"] / "universe.sqlite").read_bytes() == before
+
+
 def test_resolve_statics_union_when_zkill_has_nothing(fake_sources, monkeypatch) -> None:
     """When the sources disagree and zKill has no answer, the statics are the sorted union, pinned with
     source "union"; systems without a name are dropped and a list of names raises TypeError."""
@@ -184,6 +223,24 @@ def test_main_passes_refresh(monkeypatch) -> None:
     assert calls == [True, False]
 
 
+def test_fetch_reports_fractions(tmp_path, monkeypatch) -> None:
+    """With a Content-Length, fetch reports the fraction per chunk; without one it reports None."""
+    class SizedResponse(FakeResponse):
+        """A response that announces its length."""
+
+        headers = {"Content-Length": "6"}
+
+    monkeypatch.setattr(build_static, "CHUNK", 4)
+    monkeypatch.setattr(build_static.urllib.request, "urlopen", lambda request, timeout: SizedResponse(b"abcdef"))
+    fractions = []
+    build_static.fetch("https://example.invalid/x", tmp_path / "a", True, fractions.append)
+    assert fractions == [4 / 6, 1.0]
+    monkeypatch.setattr(build_static.urllib.request, "urlopen", lambda request, timeout: FakeResponse(b"abc"))
+    fractions.clear()
+    build_static.fetch("https://example.invalid/x", tmp_path / "b", True, fractions.append)
+    assert fractions == [None]
+
+
 def test_main_never_touches_real_outputs() -> None:
     """After the tests that redirect the build, its output and resolution paths are the real ones again."""
     assert build_static.OUTPUT == REAL_OUTPUT and build_static.RESOLVED == REAL_RESOLVED
@@ -191,6 +248,8 @@ def test_main_never_touches_real_outputs() -> None:
 
 class FakeResponse(io.BytesIO):
     """A urlopen result usable as a context manager."""
+
+    headers: dict = {}
 
     def __enter__(self) -> "FakeResponse":
         """Return self."""
@@ -219,6 +278,7 @@ def test_fetch_downloads_and_caches(tmp_path, monkeypatch) -> None:
     assert len(requested) == 1                       # cached
     build_static.fetch("https://example.invalid/x", target, True)
     assert len(requested) == 2                       # refreshed
+    assert not target.with_name("file.bin.part").exists()
     with pytest.raises(ValueError):
         build_static.fetch("", target, False)
     with pytest.raises(TypeError):
@@ -336,7 +396,8 @@ def fake_app(qt_application, monkeypatch) -> type:
     monkeypatch.setattr(homebound.ui.map_window, "MapWindow", FakeWindow)
     monkeypatch.setattr(homebound.ui.state, "AppState", FakeState)
     monkeypatch.setattr(homebound.ui.focus, "FocusTracker", FakeFocus)
-    monkeypatch.setattr("homebound.universe.db.Universe", lambda: "universe")
+    monkeypatch.setattr("homebound.universe.db.open_universe", lambda: "universe")
+    monkeypatch.setattr(entry_point.sys, "argv", ["homebound"])
     return homebound.settings.Settings
 
 
@@ -362,21 +423,51 @@ def test_main_forces_xcb_only_on_linux(fake_app, monkeypatch, platform, expected
     assert entry_point.os.environ.get("QT_QPA_PLATFORM") == expected
 
 
-def test_main_missing_universe_shows_error(fake_app, monkeypatch) -> None:
-    """Without universe data, main() shows the startup error dialog, opens no window and returns 1."""
+def test_main_missing_universe_quit(fake_app, monkeypatch) -> None:
+    """Without universe data, main() offers the build; quitting it opens no window and returns 1."""
     shown = []
 
-    def broken_universe() -> None:
+    def broken_universe(*arguments) -> None:
         """Fail like a missing universe file."""
         raise UniverseDataError("missing")
 
-    monkeypatch.setattr("homebound.universe.db.Universe", broken_universe)
+    monkeypatch.setattr("homebound.universe.db.open_universe", broken_universe)
     import homebound.ui.dialogs
     from PySide6.QtWidgets import QDialog
     monkeypatch.setattr(QDialog, "exec", lambda dialog: shown.append(dialog) or 0)
     assert entry_point.main() == 1
-    assert len(shown) == 1 and isinstance(shown[0], homebound.ui.dialogs.StartupErrorDialog)
+    assert len(shown) == 1 and isinstance(shown[0], homebound.ui.dialogs.BuildDataDialog)
     assert not FakeWindow.instances
+
+
+def test_main_builds_then_starts(fake_app, monkeypatch) -> None:
+    """When the first-run build succeeds, main() loads the new data and opens the window."""
+    attempts = []
+
+    def universe_after_build(*arguments) -> str:
+        """Fail the first time (no data yet), then return the universe."""
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise UniverseDataError("missing")
+        return "universe"
+
+    monkeypatch.setattr("homebound.universe.db.open_universe", universe_after_build)
+    from PySide6.QtWidgets import QDialog
+    monkeypatch.setattr(QDialog, "exec", lambda dialog: 1)
+    assert entry_point.main() == 0
+    assert len(attempts) == 2 and len(FakeWindow.instances) == 1
+
+
+def test_main_version_and_build_static(monkeypatch, capsys) -> None:
+    """--version prints the version; --build-static hands the remaining arguments to the build, without Qt."""
+    monkeypatch.setattr(entry_point.sys, "argv", ["homebound", "--version"])
+    assert entry_point.main() == 0
+    assert capsys.readouterr().out.startswith("Homebound ")
+    calls = []
+    monkeypatch.setattr(build_static, "build", lambda refresh=False: calls.append(refresh))
+    monkeypatch.setattr(entry_point.sys, "argv", ["homebound", "--build-static", "--refresh"])
+    assert entry_point.main() == 0
+    assert calls == [True]
 
 
 def test_module_exposes_main() -> None:

@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
-from .. import backup
+from .. import app_version, backup
 from ..logs.parser import LogFile
 from ..mapping.naming import SCHEMES, scheme_for_key
 from ..settings import (KNOWN_SPACE_RADIUS_RANGE, OVERLAY_OPACITY_RANGE, OVERLAY_TEXT_SIZE_RANGE,
@@ -167,6 +167,9 @@ class SettingsDialog(QDialog):
         footer.setStyleSheet(f"QFrame {{ background: {color('bg-1').name()}; border-top: 1px solid {color('line-1').name()}; }}")
         footer_layout = QHBoxLayout(footer)
         footer_layout.setContentsMargins(PIXELS["sp-16"], PIXELS["sp-8"], PIXELS["sp-16"], PIXELS["sp-8"])
+        self.version_label = QLabel(f"Homebound {app_version()}")
+        self.version_label.setProperty("role", "help")
+        footer_layout.addWidget(self.version_label)
         footer_layout.addStretch(1)
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.setProperty("variant", "ghost")

@@ -1,0 +1,31 @@
+# Template: the release workflow fills in @VERSION@ and the checksum and attaches the result as PKGBUILD.
+# The universe data is not packaged; Homebound builds it into ~/.local/share/homebound on first start.
+# Publish to the AUR with the attached file:  makepkg --printsrcinfo > .SRCINFO
+pkgname=homebound
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc="Offline EVE Online wormhole mapper with a client overlay"
+arch=('any')
+url="https://github.com/luto2/homebound"
+license=('GPL-3.0-or-later')
+depends=('python' 'pyside6' 'python-httpx')
+makedepends=('python-build' 'python-installer' 'python-hatchling')
+optdepends=('xorg-xprop: focus tracking on X11 without the KWin script')
+source=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/homebound-$pkgver-source.tar.gz")
+sha256sums=('@SOURCE_SHA256@')
+
+build() {
+  cd "$pkgname-$pkgver"
+  python -m build --wheel --no-isolation
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  python -m installer --destdir="$pkgdir" dist/*.whl
+  # the first-start build starts from these pinned statics (bundled_data_directory() is <prefix>/share/homebound)
+  install -Dm644 data/statics_resolved.json "$pkgdir/usr/share/homebound/statics_resolved.json"
+  install -Dm644 packaging/linux/homebound.desktop "$pkgdir/usr/share/applications/homebound.desktop"
+  install -Dm644 packaging/icons/homebound.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/homebound.svg"
+  install -Dm644 packaging/icons/homebound.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/homebound.png"
+  install -Dm644 THIRD_PARTY_NOTICES.md "$pkgdir/usr/share/licenses/$pkgname/THIRD_PARTY_NOTICES.md"
+}

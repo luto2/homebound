@@ -70,12 +70,31 @@ def test_static_data_path(clean_environment, monkeypatch) -> None:
     home = clean_environment
     monkeypatch.setenv("HOMEBOUND_HOME", str(home / "data"))
     source_tree = Path(paths.__file__).resolve().parents[2]
-    assert paths.bundled_directory() == source_tree
-    assert paths.static_data_path() == source_tree / "data/universe.sqlite"
+    assert paths.source_tree() == source_tree and not paths.is_packaged()
+    assert paths.bundled_data_directory() == paths.static_build_directory() == source_tree / "data"
     monkeypatch.setattr(sys, "_MEIPASS", str(home / "bundle"), raising=False)
+    (home / "bundle/data").mkdir(parents=True)
+    (home / "bundle/data/universe.sqlite").write_bytes(b"")
     assert paths.static_data_path() == home / "bundle/data/universe.sqlite"
     (home / "data").mkdir()
     (home / "data/universe.sqlite").write_bytes(b"")
     assert paths.static_data_path() == home / "data/universe.sqlite"
+    assert paths.static_data_candidates() == [home / "data/universe.sqlite", home / "bundle/data/universe.sqlite"]
     monkeypatch.setenv("HOMEBOUND_UNIVERSE", str(home / "elsewhere.sqlite"))
     assert paths.static_data_path() == home / "elsewhere.sqlite"
+
+
+def test_packaged_paths(clean_environment, monkeypatch) -> None:
+    """A frozen build reads its bundle and builds into the data folder; a system install reads <prefix>/share."""
+    home = clean_environment
+    monkeypatch.setenv("HOMEBOUND_HOME", str(home / "data"))
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "_MEIPASS", str(home / "bundle"), raising=False)
+    assert paths.is_packaged() and paths.source_tree() is None
+    assert paths.bundled_data_directory() == home / "bundle/data"
+    assert paths.static_build_directory() == home / "data"
+    assert paths.static_data_candidates() == []
+    assert paths.static_data_path() == home / "data/universe.sqlite"     # what the build would write
+    monkeypatch.delattr(sys, "_MEIPASS")
+    monkeypatch.setattr(sys, "prefix", str(home / "usr"))
+    assert paths.bundled_data_directory() == home / "usr/share/homebound"

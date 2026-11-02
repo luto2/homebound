@@ -95,6 +95,8 @@ QScrollBar::handle:hover { background: {line-2}; }
 QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
 QScrollBar::add-page, QScrollBar::sub-page { background: none; }
 
+QProgressBar { background: {bg-4}; border: 0; border-radius: 3px; }
+QProgressBar::chunk { background: {accent}; border-radius: 3px; }
 QSlider::groove:horizontal { height: 4px; background: {bg-4}; border-radius: 2px; }
 QSlider::sub-page:horizontal { background: {accent}; border-radius: 2px; }
 QSlider::handle:horizontal { background: {ink}; width: 12px; margin: -5px 0; border-radius: 6px; }
