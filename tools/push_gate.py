@@ -77,7 +77,7 @@ def tail(text: str, lines: int = 40) -> str:
 # ---------------------------------------------------------------- 1. local tests
 
 def local_tests(worktree: Path) -> tuple[bool, str]:
-    env = {"QT_QPA_PLATFORM": "offscreen", "UV_PYTHON_PREFERENCE": "only-system"}
+    env = {"QT_QPA_PLATFORM": "offscreen"}   # unlike CI, a uv-managed Python is fine here (3.12 is one)
     report = []
     for i, python in enumerate(PYTHONS):
         venv = {**env, "UV_PROJECT_ENVIRONMENT": str(STATE / f"venv-{python}")}
