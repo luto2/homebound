@@ -282,6 +282,7 @@ class MapWindow(QMainWindow):
         self.scene.linkRequested.connect(self.link_systems)
         state.namingRequested.connect(self.queue_naming)
         state.unknownJump.connect(self._unknown_jump)
+        state.wormholeJumped.connect(self.focus_jumped_system)
         state.autoNamed.connect(self._auto_named)
         state.settingsChanged.connect(self._sync_settings)
         state.mapChanged.connect(self._refresh_find)
@@ -794,6 +795,18 @@ class MapWindow(QMainWindow):
             self.toasts.show("err", f"{text} isn't on the map")
         return False
 
+    def focus_jumped_system(self, system_id: int) -> bool:
+        """Select and centre a system a character just jumped into by wormhole, if Settings asks for it.
+
+        Returns:
+            Whether the view moved.
+        """
+        if not self.state.settings.focus_on_wormhole_jump or system_id not in self.scene.nodes:
+            return False
+        self.state.select(system_id)
+        self.view.centerOn(self.scene.nodes[system_id])
+        return True
+
     def fit_chain(self) -> QRectF:
         """Zoom the view to the chain of the selected system (or of home).
 
@@ -880,6 +893,7 @@ class MapWindow(QMainWindow):
         def add() -> None:
             """Add the jump as a wormhole connection."""
             state.dispatch(state.tracker.add_wormhole(event.from_id, event.to_id, event.character_name))
+            self.focus_jumped_system(event.to_id)
         default = add if state.settings.unknown_jump_default == "add" else None
         self.toasts.show("ask", f"Unknown jump {origin.name} → {destination.name} ({event.character_name}). "
                                 f"Add as WH connection?",

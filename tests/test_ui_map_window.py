@@ -1,5 +1,6 @@
 """Tests for the main window: toolbar, maps, naming queue, context menus, shortcuts, tray and legend."""
 from collections.abc import Callable, Iterator
+from datetime import datetime, timedelta, timezone
 from typing import NoReturn
 
 import pytest
@@ -19,6 +20,8 @@ from homebound.ui.map_window import Legend, MapArea, MapWindow, Scrim, app_mark
 from homebound.ui.toast import Glyph
 from homebound.universe.db import System
 from ui_helpers import FakeFocus, make_state
+
+NOW = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
 
 
 @pytest.fixture
@@ -562,6 +565,22 @@ def test_unknown_jump_default_add(window) -> None:
     assert callable(toast.default)
     toast.default()                      # the timeout answer is "add"
     assert window.state.store.connection(source.id, destination.id)
+
+
+def test_wormhole_jump_focuses_the_new_system(window) -> None:
+    """A wormhole jump selects and centres the new system unless Settings turns it off."""
+    state = window.state
+    assert state.settings.focus_on_wormhole_jump is True
+    state.on_system_change(SystemChange(1, "Pilot", HOME.name, NOW, first=True))
+    target = pick_system("C3", exclude={HOME.id})
+    state.on_system_change(SystemChange(1, "Pilot", target.name, NOW + timedelta(minutes=1)))
+    node = window.scene.nodes[target.id]
+    assert state.selected == target.id
+    centre = window.view.mapToScene(window.view.viewport().rect().center())
+    assert (centre - node.sceneBoundingRect().center()).manhattanLength() <= 4
+    state.select(0)
+    state.settings.focus_on_wormhole_jump = False
+    assert window.focus_jumped_system(target.id) is False and state.selected == 0
 
 
 # ---------------------------------------------------------------- node menu and actions

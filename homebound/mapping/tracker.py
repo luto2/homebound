@@ -34,6 +34,7 @@ class Moved:
     character_name: str
     system_id: int | None
     previous_id: int | None
+    wormhole: bool = False                # the jump went through a wormhole (it was added to the map)
 
 
 @dataclass
@@ -137,6 +138,7 @@ class Tracker:
         if self.universe.gate_adjacent(previous, system_id):
             return events
         if is_wormhole_side(self.universe, previous) or is_wormhole_side(self.universe, system_id):
+            events[0].wormhole = True
             events += self.add_wormhole(previous, system_id, change.character_name)
         else:
             events.append(UnknownJump(change.character_id, change.character_name, previous, system_id))

@@ -57,6 +57,7 @@ class Settings:
     zkill_enabled: bool = True
     rescan_due_hours: int = 24            # a system's last paste this old is due for a rescan
     unknown_jump_default: str = "ignore"  # "add" | "ignore"
+    focus_on_wormhole_jump: bool = True   # centre the map on the system a character just jumped into by wormhole
     character_slots: dict = field(default_factory=dict)          # character id (str) -> marker slot 1..6
     signature_column_widths: dict = field(default_factory=dict)  # sig table column (str) -> width px
     backup_copy_directory: str = ""       # also copy each backup here (e.g. a synced folder); empty = off

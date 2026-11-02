@@ -103,6 +103,10 @@ def test_dispatch_emits_per_event(state) -> None:
     assert unknown == [(jump,), (jump,)] and len(changed) == 1 and len(characters) == 2
     with pytest.raises(TypeError):
         state.dispatch(None)
+    jumped = spy(state.wormholeJumped)
+    state.dispatch([Moved(7, "Pilot", 2, 1)])
+    state.dispatch([Moved(7, "Pilot", 3, 2, wormhole=True), MapChanged()])
+    assert jumped == [(3,)]
 
 
 def test_on_system_change_runs_the_tracker(state) -> None:

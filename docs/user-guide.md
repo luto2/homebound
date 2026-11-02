@@ -95,6 +95,8 @@ Homebound tails the newest Local log of each character. Each time Local changes 
 - **Into or out of w-space, Thera or Pochven**: the new system and a wormhole connection are added.
 - **K-space to k-space without a gate** (jump bridge, filament, clone jump): a toast asks whether to add it as a wormhole connection. If you don't answer, the default from Settings is used.
 
+After a wormhole jump the map selects the new system and centres on it, so a sig paste lands there. Turn this off in Settings → Home system → *Centre the map on a system when a character jumps into it by wormhole*.
+
 The first line after logging in only sets where the character is; it never creates a connection.
 
 A real jump through a hand-drawn connection confirms it (see [§7](#7-editing-the-map-by-hand)).
@@ -295,7 +297,7 @@ While the main window is hidden, toasts are also sent as desktop notifications.
 | Page | What's there |
 |---|---|
 | Log folder | The EVE `Chatlogs` folder, with Browse and Auto-detect. |
-| Home system | Home for the open map. |
+| Home system | Home for the open map, and whether the map centres on a system after a wormhole jump (on by default). |
 | Naming scheme | The three schemes with a preview each, and *Don't ask when the guess is certain*. |
 | Signatures | *Rescan due after* 1–72 h (default 24): from then on a system shows `SCAN 26h` and its sigs are drawn faint. |
 | Overlay | Mode, background opacity (55–92%), text size (11–14px), k-space radius in gate jumps. |

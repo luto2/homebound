@@ -37,6 +37,16 @@ def test_gate_jump_creates_no_connection(simulation) -> None:
     assert [type(event) for event in events] == [Moved]
 
 
+def test_wormhole_jump_marks_the_move(simulation) -> None:
+    """A jump into w-space flags its move as a wormhole jump; a gate jump doesn't."""
+    simulation.jump(HOME.name, first=True)
+    target = pick_system("C5", exclude={HOME.id})
+    moved = simulation.jump(target.name)[0]
+    assert isinstance(moved, Moved) and moved.wormhole and moved.system_id == target.id
+    simulation.jump("Jita", first=True)
+    assert simulation.jump("Perimeter")[0].wormhole is False
+
+
 def test_known_space_teleport_is_an_unknown_jump(simulation) -> None:
     """K-space to k-space without a gate is reported for the UI to ask."""
     simulation.jump("Jita", first=True)

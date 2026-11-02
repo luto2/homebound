@@ -29,6 +29,7 @@ class AppState(QObject):
     systemUpdated = Signal(int)           # details/sigs/zkill of one system
     charactersChanged = Signal()
     characterMoved = Signal(int)          # character id
+    wormholeJumped = Signal(int)          # system id a character just jumped into by wormhole (map already rebuilt)
     namingRequested = Signal(object)      # NamingRequest
     unknownJump = Signal(object)          # UnknownJump
     autoNamed = Signal(object)            # AutoNamed
@@ -319,9 +320,12 @@ class AppState(QObject):
         """
         require_type(events, list, "events")
         changed = False
+        jumped_into: int | None = None
         for event in events:
             if isinstance(event, Moved):
                 self.characterMoved.emit(event.character_id)
+                if event.wormhole and event.system_id is not None:
+                    jumped_into = event.system_id
             elif isinstance(event, MapChanged):
                 changed = True
             elif isinstance(event, NamingRequest):
@@ -333,6 +337,8 @@ class AppState(QObject):
         if changed:
             self.mapChanged.emit()
         self.charactersChanged.emit()
+        if jumped_into is not None:
+            self.wormholeJumped.emit(jumped_into)
         return changed
 
     # ------------------------------------------------------------ helpers

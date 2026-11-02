@@ -278,6 +278,10 @@ class SettingsDialog(QDialog):
         self.home_help = help_label()
         layout.addWidget(self.home_help)
         layout.addWidget(help_label("Home is the root of the naming scheme: its static is hole 1, and every name counts from here."))
+        layout.addWidget(caption("Map view"))
+        self.focus_jump = QCheckBox("Centre the map on a system when a character jumps into it by wormhole")
+        self.focus_jump.setChecked(self.edited.focus_on_wormhole_jump)
+        layout.addWidget(self.focus_jump)
         self.home.textChanged.connect(self.validate_home)
         self.validate_home()
 
@@ -679,6 +683,7 @@ class SettingsDialog(QDialog):
                 edited.home_system = home.name
         edited.naming_scheme = next(key for key, card in self.scheme_cards.items() if card.radio.isChecked())
         edited.auto_name_when_certain = self.auto_name.isChecked()
+        edited.focus_on_wormhole_jump = self.focus_jump.isChecked()
         edited.overlay_mode = next(key for key, card in self.mode_cards.items() if card.radio.isChecked())
         edited.overlay_pinned_character = self.pinned.currentData()
         edited.overlay_opacity = self.opacity.value() / 100
