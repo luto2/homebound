@@ -570,7 +570,7 @@ class WormholeFields(QWidget):
     def type_info_text(self) -> str:
         """Return the info line for the selected type (or the hint for K162 / unknown)."""
         code = self.type.code()
-        known = self.state.universe.wormhole_type(code) if code and code != "K162" else None
+        known = self.state.universe.known_type(code)
         if known:
             details = [f"→ {'/'.join(known.destinations)}"] if known.destinations else []
             if known.size:

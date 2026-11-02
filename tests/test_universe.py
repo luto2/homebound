@@ -186,3 +186,13 @@ def test_resolve_statics_asks_zkill_for_new_disputes(tmp_path, monkeypatch) -> N
     assert statics == {1: ["H296"], 2: ["A239", "B274"]}
     pinned = json.loads(resolved.read_text())
     assert pinned["J1"]["source"] == "zkill" and pinned["J2"]["source"] == "union"
+
+
+def test_known_type_ignores_k162_blanks_and_case() -> None:
+    """known_type gives the type for any case, and None for empty, unknown and K162 codes."""
+    assert UNIVERSE.known_type("h296").name == "H296" and UNIVERSE.known_type(" H296 ").name == "H296"
+    assert UNIVERSE.known_type("k162") is None and UNIVERSE.known_type("K162") is None
+    assert UNIVERSE.known_type(None) is None and UNIVERSE.known_type("") is None
+    assert UNIVERSE.known_type("XXXX") is None
+    with pytest.raises(TypeError):
+        UNIVERSE.known_type(5)

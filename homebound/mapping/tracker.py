@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from ..logs.parser import SystemChange
-from ..mapdb.store import LIFETIME_REMAINING, Store
+from ..mapdb.store import LIFETIME_REMAINING, Connection, Store
 from ..universe.db import Universe
 from ..validation import require_integer, require_text, require_type
 from .naming import (Namer, StaticGuess, guess_static, hole_path, next_hole_index, next_level_index,
@@ -86,7 +86,7 @@ def hole_size(universe: Universe, wormhole_type: str | None, size: str | None) -
     """
     require_type(wormhole_type, (str, type(None)), "wormhole_type")
     require_type(size, (str, type(None)), "size")
-    known = universe.wormhole_type(wormhole_type) if wormhole_type and wormhole_type.upper() != "K162" else None
+    known = universe.known_type(wormhole_type)
     return (known.size if known else None) or size
 
 
@@ -94,6 +94,28 @@ def is_wormhole_side(universe: Universe, system_id: int) -> bool:
     """Return whether a jump touching this system can only be a wormhole (w-space, Thera, Pochven)."""
     system = universe.by_id(system_id)
     return bool(system and (system.wormhole_space or system.system_class in ("PV", "TH")))
+
+
+def expires_at(connection: Connection, universe: Universe) -> datetime | None:
+    """Return when a connection is removed: the earlier of its two limits.
+
+    The limits are the type's lifetime from ``created_at`` (``DEFAULT_LIFETIME_HOURS`` if the type
+    is unknown) and, for < 4h / < 1h / expired, the time left in that state from ``lifetime_set_at``.
+
+    Args:
+        connection: The connection.
+        universe: Static data.
+
+    Returns:
+        The time (UTC), or None if it has no limit.
+    """
+    require_type(connection, Connection, "connection")
+    known = universe.known_type(connection.wormhole_type)
+    hours = known.lifetime_hours if known and known.lifetime_hours else DEFAULT_LIFETIME_HOURS
+    limit = datetime.fromisoformat(connection.created_at) + timedelta(hours=hours)
+    if connection.lifetime in LIFETIME_REMAINING and connection.lifetime_set_at:
+        limit = min(limit, datetime.fromisoformat(connection.lifetime_set_at) + LIFETIME_REMAINING[connection.lifetime])
+    return limit
 
 
 class Tracker:
@@ -185,8 +207,7 @@ class Tracker:
             if (signature.group != "wormhole" or signature.kind == "anom" or signature.signature_id in linked
                     or signature.state == "missing"):
                 continue
-            known = (self.universe.wormhole_type(signature.type)
-                     if signature.type and signature.type.upper() != "K162" else None)
+            known = self.universe.known_type(signature.type)
             if to_class and known and known.destinations and to_class not in known.destinations:
                 continue
             unlinked.append(signature.signature_id)
@@ -326,7 +347,7 @@ class Tracker:
         if not (signature and connection):
             return False
         changes: dict[str, Any] = {}
-        if signature.type and signature.type != "K162" and not connection.wormhole_type:
+        if signature.type and signature.type.upper() != "K162" and not connection.wormhole_type:
             changes["wormhole_type"] = signature.type
         # WH details entered on the sig before the jump carry over to the connection
         if signature.mass:
@@ -372,7 +393,7 @@ class Tracker:
             return None
         changes = {key: values[key] for key in ("mass", "lifetime", "frigate_only", "size") if key in values}
         code = values.get("type")
-        if code and code != "K162":
+        if code and code.upper() != "K162":
             changes["wormhole_type"] = code
         if changes:
             self.store.update_connection(connection.id, **changes)
@@ -399,13 +420,8 @@ class Tracker:
         removed = 0
         expired_ends: set[int] = set()
         for connection in self.store.connections():
-            known = self.universe.wormhole_type(connection.wormhole_type) if connection.wormhole_type else None
-            hours = known.lifetime_hours if known and known.lifetime_hours else DEFAULT_LIFETIME_HOURS
-            dead = now - datetime.fromisoformat(connection.created_at) > timedelta(hours=hours)
-            if connection.lifetime in LIFETIME_REMAINING and connection.lifetime_set_at:
-                set_at = datetime.fromisoformat(connection.lifetime_set_at)
-                dead |= now - set_at > LIFETIME_REMAINING[connection.lifetime]
-            if dead:
+            limit = expires_at(connection, self.universe)
+            if limit is not None and now > limit:
                 self.store.remove_connection(connection.id)
                 expired_ends.update((connection.system_a, connection.system_b))
                 removed += 1

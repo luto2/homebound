@@ -249,6 +249,20 @@ class Universe:
         require_text(name, "name")
         return self._types.get(name.strip().upper())
 
+    def known_type(self, code: str | None) -> WormholeType | None:
+        """Return the wormhole type for a signature / connection type code, or None.
+
+        Args:
+            code: The code as stored (any case), or None.
+
+        Returns:
+            None for empty, unknown and K162 (which says nothing about the hole), else the type.
+        """
+        require_type(code, (str, type(None)), "code")
+        if not code or not code.strip() or code.strip().upper() == "K162":
+            return None
+        return self.wormhole_type(code)
+
     def wormhole_type_names(self) -> list[str]:
         """Return every wormhole type code, sorted."""
         return sorted(self._types)

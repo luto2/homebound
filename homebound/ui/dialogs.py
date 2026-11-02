@@ -312,9 +312,8 @@ class NamingDialog(BaseDialog):
 
     def signature_text(self, signature: Signature, child_class: str) -> str:
         """Describe a candidate: 'H296 → C5 · 100%', 'K162 → C3 (typed in; you landed in a C4) · 100%'."""
-        known = (self.state.universe.wormhole_type(signature.type)
-                 if signature.type and signature.type != "K162" else None)
-        if signature.type == "K162":
+        known = self.state.universe.known_type(signature.type)
+        if (signature.type or "").upper() == "K162":
             what = f"K162 → {signature.destination}" if signature.destination else "K162"
             if signature.destination and signature.destination != child_class:
                 what += f" (typed in; you landed in a {child_class})"
