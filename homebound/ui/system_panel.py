@@ -464,9 +464,7 @@ class SystemPanel(QWidget):
             if connection.signature_on(self.system_id) in signature_ids:
                 removed += state.store.remove_connection(connection.id)
         if removed:
-            for mapped in state.store.systems():
-                if mapped.parent_id and not state.store.connection(mapped.parent_id, mapped.id):
-                    state.store.update_system(mapped.id, parent_id=None, hole_index=None)
+            state.store.clear_broken_parents()
         deleted = state.store.delete_signatures(self.system_id, signature_ids)
         self.refresh()
         state.systemUpdated.emit(self.system_id)

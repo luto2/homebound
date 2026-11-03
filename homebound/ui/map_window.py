@@ -1142,9 +1142,7 @@ class MapWindow(QMainWindow):
                     and not state.store.connections_of_system(system_id)):
                 state.store.remove_system(system_id)
                 gone.append(names[system_id])
-        for mapped in state.store.systems():
-            if mapped.parent_id and not state.store.connection(mapped.parent_id, mapped.id):
-                state.store.update_system(mapped.id, parent_id=None, hole_index=None)
+        state.store.clear_broken_parents()
         state.mapChanged.emit()
         detail = (f"{' and '.join(gone)} {'was' if len(gone) == 1 else 'were'} removed from the map." if gone
                   else "Both systems stay on the map.")

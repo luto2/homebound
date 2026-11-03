@@ -180,6 +180,20 @@ def test_key_values(store) -> None:
         store.put_value("key", 5)
 
 
+def test_clear_broken_parents(store) -> None:
+    """Only systems whose parent connection is gone are detached."""
+    c5, c3 = pick_system("C5", exclude=(HOME.id,)), pick_system("C3")
+    store.add_system(c5.id, parent_id=HOME.id, hole_index=1)
+    store.add_system(c3.id, parent_id=c5.id, hole_index=2)
+    store.add_connection(HOME.id, c5.id)
+    removed = store.add_connection(c5.id, c3.id)
+    assert store.clear_broken_parents() == 0
+    store.remove_connection(removed.id)
+    assert store.clear_broken_parents() == 1
+    assert (store.system(c3.id).parent_id, store.system(c3.id).hole_index) == (None, None)
+    assert store.system(c5.id).parent_id == HOME.id
+
+
 def test_snapshot_restore_undoes_a_removal(store) -> None:
     """Restoring puts back removed systems and connections and keeps what was added since."""
     c5, c3 = pick_system("C5", exclude=(HOME.id,)), pick_system("C3")

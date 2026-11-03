@@ -431,9 +431,7 @@ class Tracker:
                 system = self.store.system(system_id)
                 if system and not system.pinned and not self.store.connections_of_system(system_id):
                     self.store.remove_system(system_id)
-            for system in self.store.systems():
-                if system.parent_id and not self.store.connection(system.parent_id, system.id):
-                    self.store.update_system(system.id, parent_id=None, hole_index=None)
+            self.store.clear_broken_parents()
         return removed
 
     # ------------------------------------------------------------ answers from the UI
