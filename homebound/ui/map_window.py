@@ -922,7 +922,7 @@ class MapWindow(QMainWindow):
         node = self.scene.nodes.get(system_id)
         is_home = system_id == state.home_id
         if node and node.unconfirmed:
-            menus.item(menu, "✓ Mark as confirmed", lambda: self._confirm(system_id=system_id))
+            menus.item(menu, "Mark as confirmed", lambda: self._confirm(system_id=system_id), icon=menus.confirm_icon())
             menu.addSeparator()
         menus.item(menu, "Rename …", lambda: self._rename(system_id), "F2")
         menus.item(menu, "Draw connection from here", lambda: self.scene.start_link(system_id), "Shift+drag")
@@ -936,7 +936,7 @@ class MapWindow(QMainWindow):
         menus.item(menu, "Add as route destination", lambda: self.route_dock.add_system(system_id))
         menu.addSeparator()
         menus.item(menu, "Remove from map", lambda: self._remove(system_id), "Del", danger=True,
-                   enabled=not is_home, why="Home can't be removed. Set another home first.")
+                   enabled=not is_home, why="Home can’t be removed. Set another home first.")
         menu.exec(position)
 
     def _selected_system(self) -> int | None:
@@ -1069,7 +1069,7 @@ class MapWindow(QMainWindow):
             return
         menu = menus.menu(self)
         if not connection.confirmed:
-            menus.item(menu, "✓ Mark as confirmed", lambda: self._confirm(connection_id=connection_id))
+            menus.item(menu, "Mark as confirmed", lambda: self._confirm(connection_id=connection_id), icon=menus.confirm_icon())
             menu.addSeparator()
         menus.item(menu, "Edit connection …", lambda: self.edit_connection(connection_id), "Enter")
         menu.addSeparator()

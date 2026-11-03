@@ -77,6 +77,11 @@ def danger_icon() -> QIcon:
     return glyph_icon("✕", "danger")
 
 
+def confirm_icon() -> QIcon:
+    """Return the success-coloured ✓ icon of the Mark as confirmed items."""
+    return glyph_icon("✓", "success")
+
+
 def menu(parent: QWidget | None = None) -> QMenu:
     """Return a new menu that shows the tooltips of its items."""
     new_menu = QMenu(parent)
@@ -105,7 +110,7 @@ def section(target: QMenu, text: str) -> QWidgetAction:
 
 def item(target: QMenu, text: str, callback: Callable[[], object] | None = None, key: str | None = None, *,
          enabled: bool = True, why: str = "", danger: bool = False, checked: bool | None = None,
-         group: QActionGroup | None = None) -> QAction:
+         group: QActionGroup | None = None, icon: QIcon | None = None) -> QAction:
     """Add one menu row.
 
     Args:
@@ -119,6 +124,7 @@ def item(target: QMenu, text: str, callback: Callable[[], object] | None = None,
         danger: Destructive item: a red ✕ icon.
         checked: Makes the item checkable with this state; None for a plain item.
         group: An exclusive group for checkable items.
+        icon: An icon for the check column, e.g. the ✓ of Mark as confirmed; ``danger`` wins over it.
 
     Returns:
         The action.
@@ -130,6 +136,8 @@ def item(target: QMenu, text: str, callback: Callable[[], object] | None = None,
     action = QAction(f"{text}\t{key}" if key else text, target)
     if callback:
         action.triggered.connect(lambda _=False: callback())
+    if icon is not None:
+        action.setIcon(icon)
     if danger:
         action.setIcon(danger_icon())
     if checked is not None:
