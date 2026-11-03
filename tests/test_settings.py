@@ -152,6 +152,24 @@ def test_detect_log_directories_in_a_fake_home(tmp_path, monkeypatch) -> None:
     assert settings_module.detect_log_directories() == [chatlogs]
 
 
+def test_detect_log_directories_skips_unreadable_mounts(tmp_path, monkeypatch) -> None:
+    """A candidate whose stat fails (a dead automount: ENODEV) is skipped, not raised."""
+    good = tmp_path / "Chatlogs"
+    good.mkdir()
+    dead = tmp_path / "dead"
+    real_is_dir = Path.is_dir
+
+    def is_dir(path: Path) -> bool:
+        if path == dead:
+            raise OSError(19, "No such device")
+        return real_is_dir(path)
+
+    monkeypatch.setattr(Path, "is_dir", is_dir)
+    monkeypatch.setattr(settings_module, "is_windows", lambda: False)
+    monkeypatch.setattr(settings_module, "linux_log_candidates", lambda: [dead, good])
+    assert settings_module.detect_log_directories() == [good]
+
+
 def test_detect_log_directories_on_windows(tmp_path, monkeypatch) -> None:
     """On Windows the Documents folder Windows reports comes first, then OneDrive's Documents/Dokumente."""
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
