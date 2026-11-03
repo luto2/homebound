@@ -2,8 +2,9 @@
 from collections.abc import Iterator
 
 import pytest
-from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, Qt
 from PySide6.QtGui import QHelpEvent, QImage, QPainter
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (QApplication, QStyle, QStyleOptionGraphicsItem, QStyleOptionViewItem,
                                QToolTip)
 
@@ -223,6 +224,24 @@ def test_hovering_a_strip_square_names_that_system(dock, state, qt_application) 
     assert QToolTip.text() == hop_text(state, route.hops[1]) and "Perimeter" in QToolTip.text()
     assert f"{UNIVERSE.by_id(PERIMETER).security:.1f}" in QToolTip.text()
     QToolTip.hideText()
+
+
+def test_clicking_a_strip_square_copies_the_system_name(dock, state, qt_application) -> None:
+    """A left click on a square copies that system's name with a toast; clicks elsewhere copy nothing."""
+    route = routing.Route(THERA, [routing.Hop(JITA, ""), routing.Hop(PERIMETER, routing.VIA_GATE),
+                                  routing.Hop(THERA, routing.VIA_WORMHOLE)])
+    list_item = dock.list.item(0)
+    list_item.setData(256, (THERA, route))
+    toasts = []
+    dock.toast.connect(lambda kind, text: toasts.append((kind, text)))
+    QApplication.clipboard().setText("before")
+    top_left = dock.list.visualItemRect(list_item).topLeft()
+    QTest.mouseClick(dock.list.viewport(), Qt.MouseButton.LeftButton, pos=top_left + QPoint(60, 12))   # the name
+    QTest.mouseClick(dock.list.viewport(), Qt.MouseButton.RightButton, pos=top_left + QPoint(22, 30))
+    assert QApplication.clipboard().text() == "before" and not toasts
+    QTest.mouseClick(dock.list.viewport(), Qt.MouseButton.LeftButton, pos=top_left + QPoint(22, 30))  # 2nd square
+    assert QApplication.clipboard().text() == "Thera"
+    assert toasts == [("ok", "Copied Thera")]
 
 
 def test_security_colour_scale() -> None:

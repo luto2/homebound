@@ -3,8 +3,8 @@
 Routes use stargates, the map's wormhole connections and (when on) EVE-Scout's Thera and Turnur
 connections; see :mod:`homebound.routing`.
 """
-from PySide6.QtCore import QEvent, QModelIndex, QPoint, QPointF, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QActionGroup, QHelpEvent, QPainter
+from PySide6.QtCore import QAbstractItemModel, QEvent, QModelIndex, QPoint, QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QActionGroup, QHelpEvent, QMouseEvent, QPainter
 from PySide6.QtWidgets import (
     QApplication, QCompleter, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton,
     QAbstractItemView, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QToolTip, QVBoxLayout, QWidget,
@@ -84,6 +84,8 @@ def route_names(state: AppState, route: routing.Route) -> str:
 class RouteDelegate(QStyledItemDelegate):
     """Paints one destination row: badge, name and jumps, then a strip with one square per system."""
 
+    systemCopied = Signal(str)            # system name put on the clipboard
+
     def __init__(self, state: AppState, parent: QWidget | None = None) -> None:
         """Create the delegate for the routes of ``state``."""
         super().__init__(parent)
@@ -144,6 +146,19 @@ class RouteDelegate(QStyledItemDelegate):
                 return True
         return super().helpEvent(event, view, option, index)
 
+    def editorEvent(self, event: QEvent, model: QAbstractItemModel, option: QStyleOptionViewItem,
+                    index: QModelIndex) -> bool:
+        """A left click on a square of the strip copies that system's name."""
+        if (event.type() == QEvent.Type.MouseButtonRelease and isinstance(event, QMouseEvent)
+                and event.button() == Qt.MouseButton.LeftButton and index.isValid()):
+            hop = self.hop_at(QRectF(option.rect), index.data(Qt.ItemDataRole.UserRole)[1], event.position())
+            if hop:
+                name = self.state.universe.by_id(hop.system_id).name
+                QApplication.clipboard().setText(name)
+                self.systemCopied.emit(name)
+                return True
+        return super().editorEvent(event, model, option, index)
+
     def _paint_strip(self, painter: QPainter, x: float, y: float, width: float, route: routing.Route | None) -> int:
         """Draw one square per system after the origin, coloured by security; holes as rings, EVE-Scout in Thera violet.
 
@@ -201,7 +216,9 @@ class RouteDock(QWidget):
         layout.addLayout(header)
 
         self.list = QListWidget()
-        self.list.setItemDelegate(RouteDelegate(state, self.list))
+        delegate = RouteDelegate(state, self.list)
+        delegate.systemCopied.connect(lambda name: self.toast.emit("ok", f"Copied {name}"))
+        self.list.setItemDelegate(delegate)
         self.list.setMouseTracking(True)
         self.list.itemDoubleClicked.connect(lambda list_item: self.copy_route(self.list.row(list_item)))
         self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
