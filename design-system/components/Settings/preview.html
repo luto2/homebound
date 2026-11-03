@@ -57,9 +57,9 @@ g += win('Home system', cap('Home system · map “Main”') +
   cap('Map view') + chk(true, 'Centre the map on a system when a character jumps into it by wormhole') +
   cap('Other results') + help('✕ Unknown system', 'err') + help('No home set: each chain is named from the first system mapped.'));
 g += win('Naming scheme', cap('Naming scheme') +
-  radio(true, 'Letters + digits', '', 'Home → A → A1, A2   ·   Home → B      bookmark in A: A-1, A-2, A-0') +
-  radio(false, 'Digits', '', 'Home → 1 → 11, 12   ·   Home → 2      bookmark in 1: 1-1, 1-2, 1-0') +
-  radio(false, 'J-name only', '', 'Home → J105443 → J163856, J120617   ·   Home → J005299') +
+  radio(true, 'Numeric path', 'Each hop adds the hole number; the static is always 1. Home → 1 → 12 → 123.', 'Home → 1 → 11, 12   ·   Home → 2      bookmark in 1: 1-1, 1-2, 1-0') +
+  radio(false, 'Chain · depth · position', 'Chain letter from home (A = static, B = 2nd static, then Z, Y, W … as on EVE Uni; no C), jumps deep, then the system’s letter at that depth. A1a, A2a, A2b, Z1a.', 'Home → A1a → A2a, A2b   ·   Home → Z1a      bookmark in A1a: A1a-1, A1a-2, A1a-0') +
+  radio(false, 'Letter-led numeric', 'Like numeric, but the first hop from home is a chain letter (same letters as above). A → A2 → A23, Z.', 'Home → A → A1, A2   ·   Home → Z      bookmark in A: A-1, A-2, A-0') +
   chk(true, 'Don’t ask “was this the static?” when the guess is certain') +
   help('Bookmarks: the hole with number n in system S is S-n (static = S-1); the way back home is S-0.'));
 g += win('Signatures', cap('Signatures') +
@@ -73,7 +73,7 @@ g += win('Overlay', cap('Overlay mode') +
   radio(false, 'Pinned character · always shown', 'The pinned character’s chain, visible all the time.') +
   '<div class="lm-row" style="gap:10px">' + cap('Pinned character') + '<span class="lm-input combo" style="width:180px">—</span></div>' +
   '<div class="lm-row" style="gap:18px"><span class="slider">' + cap('Background') + '<span class="tr"><b></b><i></i></span><span class="lm-mono">78%</span></span><span class="lm-row">' + cap('Text') + '<span class="spin">12 px</span></span></div>' +
-  '<div class="lm-row" style="gap:10px">' + cap('K-space radius') + '<span class="spin">3 j</span></div>' +
+  '<div class="lm-row" style="gap:10px">' + cap('K-space radius') + '<span class="spin">3 jumps</span></div>' +
   help('A character in k-space counts as in a chain while within this many gate jumps of an entrance.'));
 g += win('zKill', cap('zKillboard') + chk(true, 'Show kill activity from zKillboard') +
   help('Homebound asks zkillboard.com for the last 24h of kills in each system of a visible chain, at most one request per second, cached for 10 minutes. Only system IDs are sent. Apart from EVE-Scout (Routes page), this is the only network access Homebound makes.'));
