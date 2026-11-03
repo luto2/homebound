@@ -602,7 +602,8 @@ def test_node_menu_actions(window, modal) -> None:
     window._node_menu(child.id, QPoint(0, 0))
     menu = modal.menus[-1]
     texts = [action.text() for action in menu.actions()]
-    assert any("Mark as confirmed" in text for text in texts)
+    assert "Mark as confirmed" in texts  # the success-coloured ✓ is the icon, not part of the label
+    assert not find_action(menu, "Mark as confirmed").icon().isNull()
     assert find_action(menu, "Set as home").isEnabled()
     assert find_action(menu, "Remove from map").isEnabled()
     window._node_menu(HOME.id, QPoint(0, 0))
@@ -610,6 +611,7 @@ def test_node_menu_actions(window, modal) -> None:
     assert not find_action(home_menu, "Remove from map").isEnabled()
     assert not find_action(home_menu, "Set as home").isEnabled()
     assert not find_action(home_menu, "Change static").isEnabled()
+    assert find_action(home_menu, "Remove from map").toolTip() == "Home can’t be removed. Set another home first."
     window._node_menu(123456789, QPoint(0, 0))  # not on the map: no menu
     assert len(modal.menus) == 2
 
@@ -619,7 +621,7 @@ def test_node_menu_confirm_and_zkill(window, modal, monkeypatch) -> None:
     child = add_child(window)
     window.state.store.update_system(child.id, confirmed=0)
     window.scene.rebuild()
-    modal.menu_handler = pick("✓ Mark as confirmed")
+    modal.menu_handler = pick("Mark as confirmed")
     window._node_menu(child.id, QPoint(0, 0))
     assert window.state.store.system(child.id).confirmed
     requests = []
@@ -779,7 +781,7 @@ def test_edge_menu_sets_mass_and_lifetime(window, modal) -> None:
     window._edge_menu(connection_id, QPoint(0, 0))
     assert window.state.store.connection_by_id(connection_id).lifetime == 2
     window.state.store.update_connection(connection_id, confirmed=0)
-    modal.menu_handler = pick("✓ Mark as confirmed")
+    modal.menu_handler = pick("Mark as confirmed")
     window._edge_menu(connection_id, QPoint(0, 0))
     assert window.state.store.connection_by_id(connection_id).confirmed
     window._edge_menu(987654, QPoint(0, 0))  # unknown: no menu

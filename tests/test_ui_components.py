@@ -300,6 +300,7 @@ def test_glyph_icon_cached_and_validated(qt_application) -> None:
     assert menus.glyph_icon("✕", "danger") is icon and not icon.isNull()
     assert menus.glyph_icon("✕", "accent") is not icon
     assert menus.danger_icon() is icon
+    assert menus.confirm_icon() is menus.glyph_icon("✓", "success")
     with pytest.raises(ValueError):
         menus.glyph_icon("", "danger")
     with pytest.raises(ValueError):
