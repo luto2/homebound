@@ -16,4 +16,4 @@ The settings window, 820 × 560. A nav list on the left (190px, `bg-2`) and one 
 
 **Behaviour:** Cancel discards every page's edits. Save applies all pages at once. Backups and the KWin script act at once, with their own status, and are not part of Cancel.
 
-**Mockup note:** the old mockup stacks every section on one page. In the app each item is its own page; design a page per item at the same width.
+**Mockup:** one 820 × 560 window per page, in nav order. Pages with several outcomes (Log folder, Home system, KWin focus script) list the other results under an `Other results` caption; in the app only one shows at a time.

@@ -1,66 +1,105 @@
-<!-- @dsCard group="Screens" height=920 width=1000 page subtitle="Settings dialog" -->
+<!-- @dsCard group="Screens" height=3060 width=1700 page subtitle="Settings, 820 × 560: one window per page" -->
 <!doctype html>
 <html data-theme="dark">
 <head><link rel="stylesheet" href="../tokens.css"><link rel="stylesheet" href="../components/bundle.css"><script src="../components/bundle.js"></script><meta charset="utf-8"><style>
-body { padding: 0; }
-.set { width: 1000px; height: 920px; display: flex; flex-direction: column; background: var(--bg-2); }
+body { padding: 12px; }
+.grid { display: grid; grid-template-columns: repeat(2, 820px); gap: 28px 24px; }
+.st { display: flex; flex-direction: column; gap: 8px; }
+.win { width: 820px; height: 560px; display: flex; flex-direction: column; background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--radius-4); box-shadow: var(--shadow-dialog); overflow: hidden; }
 .cols { flex: 1; display: flex; min-height: 0; }
-.nav { width: 190px; border-right: 1px solid var(--line-1); padding: 8px 0; background: var(--bg-1); }
+.nav { width: 190px; border-right: 1px solid var(--line-1); padding: 8px 0; background: var(--bg-2); flex: none; }
 .nav div { height: 28px; display: flex; align-items: center; padding: 0 16px; color: var(--ink-muted); }
 .nav div.on { background: var(--accent-dim); color: var(--ink); font-weight: 600; box-shadow: inset 2px 0 0 var(--accent); }
-.body { flex: 1; padding: 16px 24px; display: flex; flex-direction: column; gap: 18px; overflow: hidden; }
-.sec { display: grid; grid-template-columns: 170px 1fr; gap: 8px 16px; align-items: start; padding-bottom: 16px; border-bottom: 1px solid var(--line-1); }
-.sec > .lab { font-weight: 600; padding-top: 4px; } .sec > .lab small { display: block; font-weight: 400; color: var(--ink-faint); font-size: 12px; line-height: 16px; margin-top: 2px; }
-.prev { display: flex; gap: 16px; }
-.pv { border: 1px solid var(--line-1); border-radius: var(--radius-2); padding: 6px 10px; background: var(--bg-3); font-family: var(--font-mono); font-size: 12px; line-height: 18px; min-width: 150px; }
-.pv.on { border-color: var(--accent); background: var(--accent-dim); }
-.pv .t { font-family: var(--font-sans); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-muted); margin-bottom: 2px; }
-.modes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.page { flex: 1; padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; background: var(--bg-1); }
+.page .lm-caption { margin-top: 6px; } .page .lm-caption:first-child { margin-top: 0; }
+.ft { height: 52px; flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0 16px; border-top: 1px solid var(--line-1); background: var(--bg-1); }
+.kv { display: grid; grid-template-columns: 90px 200px; gap: 8px; align-items: center; }
+.card { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line-1); border-radius: var(--radius-2); background: var(--bg-3); }
+.card.on { border-color: var(--accent); background: var(--accent-dim); }
+.card b { display: block; } .card .lm-help { display: block; margin-top: 2px; }
+.card .pv { font-family: var(--font-mono); font-size: 11px; color: var(--ink-muted); margin-top: 4px; white-space: nowrap; }
+.spin { display: inline-flex; align-items: center; height: var(--size-control); border: 1px solid var(--line-2); border-radius: var(--radius-2); background: var(--bg-3); padding: 0 4px 0 8px; gap: 6px; font-family: var(--font-mono); }
+.spin::after { content: "▴▾"; font-size: 9px; letter-spacing: -1px; color: var(--ink-muted); writing-mode: vertical-lr; line-height: 6px; }
 .slider { display: flex; align-items: center; gap: 10px; }
-.slider .tr { width: 220px; height: 4px; background: var(--bg-4); border-radius: 2px; position: relative; }
+.slider .tr { width: 200px; height: 4px; background: var(--bg-4); border-radius: 2px; position: relative; }
 .slider .tr b { position: absolute; left: 0; top: 0; bottom: 0; width: 62%; background: var(--accent); border-radius: 2px; }
 .slider .tr i { position: absolute; left: 62%; top: -5px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: var(--ink); border: 2px solid var(--accent); }
-.ft { height: 52px; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0 16px; border-top: 1px solid var(--line-1); background: var(--bg-1); }
+.tree { border: 1px solid var(--line-1); }
+.tree .lm-table th { position: static; }
+.tree tr.is-selected td { background: var(--accent-dim); }
+.mono { font-family: var(--font-mono); font-size: 12px; }
 </style></head>
 <body>
-<div class="set">
- <div class="lm-dialog" style="width:auto;border-radius:0;box-shadow:none;border:0;border-bottom:1px solid var(--line-1)"><div class="hd" style="padding-bottom:12px"><h3>Settings</h3><span class="x">✕</span></div></div>
- <div class="cols">
-  <div class="nav"><div class="on">General</div><div>Map &amp; naming</div><div>Overlay</div><div>zKillboard</div><div>KDE integration</div><div>Owners &amp; tags</div><div>Shortcuts</div></div>
-  <div class="body">
-   <div class="sec"><div class="lab">EVE log folder<small>Chatlogs folder with Local_*.txt</small></div>
-    <div class="lm-col" style="gap:4px"><div class="lm-row" style="flex-wrap:nowrap"><div class="lm-input is-valid lm-mono" style="flex:1;font-size:12px">/mnt/EVE-logs/logs/Chatlogs</div><button class="lm-btn">Browse…</button><button class="lm-btn ghost">Auto-detect</button></div>
-     <span class="lm-help ok">✓ 6 Local logs today · 4 characters: Ryn Vass, Kade Morrow, Ostrava, Ilse Tarn</span></div></div>
-   <div class="sec"><div class="lab">Home system</div>
-    <div class="lm-col" style="gap:4px"><div class="lm-input" style="width:320px"><span>⌂</span><span class="lm-mono">J161940</span><span class="lm-muted">— Home</span><span id="hb" style="margin-left:auto;display:flex;gap:4px"></span></div><span class="lm-help">Root of the chain and of every name. Type a J-name or system name.</span></div></div>
-   <div class="sec"><div class="lab">Naming scheme<small>Applied to new systems; existing names are kept</small></div>
-    <div class="prev">
-     <div class="pv on"><div class="t">● Letters + digits</div>Home<br>├ A &nbsp;&nbsp;→ A1, A2<br>│ └ A2a, A2b<br>└ B &nbsp;&nbsp;→ B1<br><span class="lm-faint">bookmark: A2-1</span></div>
-     <div class="pv"><div class="t">○ Digits</div>Home<br>├ 1 &nbsp;&nbsp;→ 11, 12<br>│ └ 121, 122<br>└ 2 &nbsp;&nbsp;→ 21<br><span class="lm-faint">bookmark: 123-1</span></div>
-     <div class="pv"><div class="t">○ J-name only</div>J161940<br>├ J105443<br>│ └ J163856<br>└ J005299<br><span class="lm-faint">bookmark: J1638-1</span></div>
-    </div></div>
-   <div class="sec"><div class="lab">Overlay mode</div>
-    <div class="lm-col" style="gap:10px"><div class="modes">
-     <div class="lm-choice"><span class="lm-check lm-radio"><i></i></span><span><b>Off</b><br><span class="lm-help">No overlay window.</span></span></div>
-     <div class="lm-choice on"><span class="lm-check lm-radio on"><i></i></span><span><b>Follow active client</b><br><span class="lm-help">Shows the chain of whichever client has focus.</span></span></div>
-     <div class="lm-choice"><span class="lm-check lm-radio"><i></i></span><span><b>Pinned character, over all clients</b><br><span class="lm-help">Always one character; shown while any client has focus.</span></span></div>
-     <div class="lm-choice"><span class="lm-check lm-radio"><i></i></span><span><b>Pinned character, always shown</b><br><span class="lm-help">Visible even when no client has focus.</span></span></div></div>
-     <div class="lm-row" style="gap:24px"><span class="slider"><span class="lm-caption">Background</span><span class="tr"><b></b><i></i></span><span class="lm-mono">78%</span></span>
-      <span class="lm-row"><span class="lm-caption">Text</span><span class="lm-seg"><span>11</span><span class="on">12</span><span>13</span><span>14 px</span></span></span></div>
-     <span class="lm-help warn">▲ Below 55% background, text over explosions can't be guaranteed legible; the slider stops there.</span></div></div>
-   <div class="sec"><div class="lab">zKillboard</div>
-    <div class="lm-col" style="gap:4px"><span class="lm-check on"><i></i>Fetch kill activity for systems in the chain</span><span class="lm-help">Queries zkillboard.com only for J-names on your map, every 5 min. Nothing about you is sent.</span></div></div>
-   <div class="sec" style="border-bottom:0"><div class="lab">KWin focus script<small>Lets the overlay know which client is focused on Plasma Wayland</small></div>
-    <div class="lm-col" style="gap:8px">
-     <div class="lm-banner ok"><span class="g">✓</span><span>Installed and running · v1.2 · reports focus for 4 EVE clients</span><span class="end"><button class="lm-btn sm">Reinstall</button><button class="lm-btn sm ghost">Remove</button></span></div>
-     <div class="lm-banner warn"><span class="g">▲</span><span>Installed, not active yet. Enable it in System Settings → Window Management → KWin Scripts, or log out and back in.</span></div>
-     <div class="lm-row"><button class="lm-btn">Install KWin focus script</button><span class="lm-help">Not installed · the overlay can only follow a pinned character.</span></div></div></div>
-  </div>
- </div>
- <div class="ft"><span class="lm-help" style="margin-right:auto">Settings are stored in ~/.config/homebound/settings.toml</span><button class="lm-btn ghost">Cancel</button><button class="lm-btn primary">Save</button></div>
-</div>
+<div class="grid" id="g"></div>
 <script>
 var LM = window.Homebound;
+var PAGES = ['Log folder', 'Home system', 'Naming scheme', 'Signatures', 'Overlay', 'zKill', 'Routes', 'KWin focus script', 'Backups'];
+function cap(t) { return '<span class="lm-caption">' + t + '</span>'; }
+function help(t, k) { return '<span class="lm-help ' + (k || '') + '">' + t + '</span>'; }
+function chk(on, t) { return '<span class="lm-check' + (on ? ' on' : '') + '"><i></i>' + t + '</span>'; }
+function radio(on, title, desc, pv) { return '<div class="card' + (on ? ' on' : '') + '"><span class="lm-check lm-radio' + (on ? ' on' : '') + '" style="margin-top:2px"><i></i></span><span><b>' + title + '</b>' + (desc ? help(desc) : '') + (pv ? '<span class="pv">' + pv + '</span>' : '') + '</span></div>'; }
+function win(page, body, label) {
+  return '<div class="st">' + cap(label || page) + '<div class="win"><div class="cols"><div class="nav">' +
+    PAGES.map(function (p) { return '<div class="' + (p === page ? 'on' : '') + '">' + p + '</div>'; }).join('') +
+    '</div><div class="page">' + body + '</div></div><div class="ft"><span class="lm-help" style="margin-right:auto">Homebound 0.1.0</span><button class="lm-btn ghost">Cancel</button><button class="lm-btn primary">Save</button></div></div></div>';
+}
+var g = '';
+g += win('Log folder', cap('EVE chat log folder') +
+  '<div class="lm-row" style="flex-wrap:nowrap"><div class="lm-input is-valid lm-mono" style="flex:1;font-size:12px">~/.local/share/Steam/steamapps/compatdata/8500/…/EVE/logs/Chatlogs</div><button class="lm-btn">Browse</button><button class="lm-btn ghost">Auto-detect</button></div>' +
+  help('✓ 214 Local logs from 4 characters', 'ok') +
+  help('Homebound reads only Local_*.txt files to see which system each character is in. Nothing is sent anywhere. In EVE, Settings → Chat → "Log chat to file" must be on.') +
+  cap('Other results while typing') + help('▲ Folder exists but has no Local_*.txt logs yet', 'warn') + help('✕ Folder not found. Expected …/EVE/logs/Chatlogs containing Local_*.txt', 'err') +
+  help('No folder set: characters aren’t tracked until you choose one.'));
+g += win('Home system', cap('Home system · map “Main”') +
+  '<div class="lm-input is-valid" style="width:320px"><span class="lm-mono">J161940</span><span id="hb" style="margin-left:auto;display:flex;gap:4px"></span></div>' +
+  help('✓ J161940 · C2 · B-R00005 · O477 → C3, B274 → HS', 'ok') +
+  help('Home is the root of the naming scheme: its static is hole 1, and every name counts from here.') +
+  cap('Map view') + chk(true, 'Centre the map on a system when a character jumps into it by wormhole') +
+  cap('Other results') + help('✕ Unknown system', 'err') + help('No home set: each chain is named from the first system mapped.'));
+g += win('Naming scheme', cap('Naming scheme') +
+  radio(true, 'Letters + digits', '', 'Home → A → A1, A2   ·   Home → B      bookmark in A: A-1, A-2, A-0') +
+  radio(false, 'Digits', '', 'Home → 1 → 11, 12   ·   Home → 2      bookmark in 1: 1-1, 1-2, 1-0') +
+  radio(false, 'J-name only', '', 'Home → J105443 → J163856, J120617   ·   Home → J005299') +
+  chk(true, 'Don’t ask “was this the static?” when the guess is certain') +
+  help('Bookmarks: the hole with number n in system S is S-n (static = S-1); the way back home is S-0.'));
+g += win('Signatures', cap('Signatures') +
+  '<div class="lm-row"><span>Rescan due after</span><span class="spin">24 h</span></div>' +
+  help('A system whose last signature paste is this old is marked for a rescan. Wormhole systems that were never pasted are marked too.') +
+  '<div class="lm-row" style="margin-top:8px;gap:8px"><span class="lm-help">On the map:</span><span class="lm-ntab" style="background:var(--stale)">SCAN 26h</span><span class="lm-ntab" style="background:var(--stale)">NO SCAN</span></div>');
+g += win('Overlay', cap('Overlay mode') +
+  radio(false, 'Off', 'No overlay.') +
+  radio(true, 'Follow active client', 'Shows the chain of the character whose EVE window is focused. Hidden when no EVE client is focused.') +
+  radio(false, 'Pinned character · over all clients', 'Always the pinned character’s chain, shown whenever any EVE client is focused.') +
+  radio(false, 'Pinned character · always shown', 'The pinned character’s chain, visible all the time.') +
+  '<div class="lm-row" style="gap:10px">' + cap('Pinned character') + '<span class="lm-input combo" style="width:180px">—</span></div>' +
+  '<div class="lm-row" style="gap:18px"><span class="slider">' + cap('Background') + '<span class="tr"><b></b><i></i></span><span class="lm-mono">78%</span></span><span class="lm-row">' + cap('Text') + '<span class="spin">12 px</span></span></div>' +
+  '<div class="lm-row" style="gap:10px">' + cap('K-space radius') + '<span class="spin">3 j</span></div>' +
+  help('A character in k-space counts as in a chain while within this many gate jumps of an entrance.'));
+g += win('zKill', cap('zKillboard') + chk(true, 'Show kill activity from zKillboard') +
+  help('Homebound asks zkillboard.com for the last 24h of kills in each system of a visible chain, at most one request per second, cached for 10 minutes. Only system IDs are sent. Apart from EVE-Scout (Routes page), this is the only network access Homebound makes.'));
+g += win('Routes', cap('EVE-Scout') + chk(true, 'Route through EVE-Scout’s Thera and Turnur connections') +
+  help('Homebound asks api.eve-scout.com for its public list of Thera and Turnur wormholes every 5 minutes. Nothing about you or your map is sent.') +
+  cap('Routes') + '<div class="kv"><span>Prefer</span><span class="lm-input combo">Shortest</span><span>Ship size</span><span class="lm-input combo">Large</span></div>' +
+  chk(false, 'Use holes at end of life (&lt; 4h, &lt; 1h)') + chk(false, 'Use mass-critical holes') +
+  help('Routes use stargates, the wormholes on the open map and EVE-Scout’s connections. Holes smaller than the ship size are skipped; expired holes never count.') +
+  cap('Destinations') + '<span class="mono lm-muted">Jita, Amarr, Dodixie, Rens, Hek, 1DQ1-A</span><div><button class="lm-btn ghost">Reset to the trade hubs</button></div>');
+var ABOUT = help('Plasma on Wayland doesn’t tell apps which window is focused. A tiny KWin script reports the active window title (“EVE - Name”) to Homebound over D-Bus so the overlay can follow it.');
+g += win('KWin focus script', cap('KWin focus script') + ABOUT +
+  '<div class="lm-banner ok"><span class="g">✓</span><span>Installed and running</span><span class="end"><button class="lm-btn sm">Reinstall</button><button class="lm-btn sm ghost">Remove</button></span></div>' +
+  cap('Other states') +
+  '<div class="lm-banner warn"><span class="g">▲</span><span>Installed but not enabled. Enable it here, or in System Settings → Window Management → KWin Scripts.</span><span class="end"><button class="lm-btn sm">Enable</button><button class="lm-btn sm ghost">Remove</button></span></div>' +
+  '<div class="lm-banner err"><span class="g">✕</span><span>Not installed. Without it the overlay falls back to X11 polling, which only sees XWayland windows.</span><span class="end"><button class="lm-btn sm primary">Install</button></span></div>' +
+  '<div class="lm-banner warn"><span class="g">▲</span><span>kpackagetool6 not found; this doesn’t look like Plasma 6.<br><span class="lm-faint">Last action: kpackagetool6: command not found</span></span><span class="end"><button class="lm-btn sm">Install</button></span></div>' +
+  help('Hidden from the nav where it doesn’t apply (not Plasma on Wayland).'), 'KWin focus script · all four states');
+var B = [['2026-11-03 09:12', 'daily', '2', '1.4 MB'], ['2026-11-02 21:40', 'by hand', '2', '1.4 MB', 'is-selected'], ['2026-11-02 08:55', 'daily', '2', '1.3 MB'], ['2026-11-01 19:03', 'before delete', '3', '1.9 MB'], ['2026-10-31 12:00', 'before update', '2', '1.1 MB'], ['2026-10-30 22:17', 'before restore', '2', '1.0 MB']];
+g += win('Backups', cap('Backups') +
+  '<div class="tree"><table class="lm-table"><tr><th>Date</th><th>Reason</th><th class="num">Maps</th><th class="num">Size</th></tr>' +
+  B.map(function (b) { return '<tr class="' + (b[4] || '') + '"><td class="lm-mono">' + b[0] + '</td><td>' + b[1] + '</td><td class="num">' + b[2] + '</td><td class="num">' + b[3] + '</td></tr>'; }).join('') + '</table></div>' +
+  '<div class="lm-row"><button class="lm-btn">Back up now</button><button class="lm-btn">Restore …</button><button class="lm-btn ghost">Open folder</button></div>' +
+  help('A backup is made once a day at start, before a map is updated to a new format, deleted or replaced by a restore, and when you click Back up now. The newest 7 daily and 10 safety backups are kept; backups made by hand stay until you delete them in the folder.') +
+  cap('Also copy backups to') + '<div class="lm-row" style="flex-wrap:nowrap"><div class="lm-input" style="flex:1"><span class="ph">Off, e.g. a Nextcloud or Syncthing folder</span></div><button class="lm-btn">Browse</button></div>' +
+  help('Off. Backups stay on this PC only.'));
+document.getElementById('g').innerHTML = g;
 document.getElementById('hb').innerHTML = LM.cls('C2') + LM.statik('C3') + LM.statik('HS');
 </script>
 </body>

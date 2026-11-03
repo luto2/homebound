@@ -92,13 +92,16 @@ body { padding: var(--sp-12); }
 .lm-node .jn { font-family: var(--font-mono); font-size: 11px; color: var(--ink-muted); }
 .lm-node .l2 .end { margin-left: auto; display: flex; gap: 3px; }
 .lm-node .l3 { display: flex; align-items: center; gap: 3px; height: 16px; }
-.lm-node .chars { position: absolute; top: -9px; right: 6px; display: flex; gap: 2px; }
+.lm-node .tabs { position: absolute; top: -7px; left: 8px; right: 50px; display: flex; gap: 4px; align-items: center; height: 14px; }
+.lm-node .tabs .lm-char { margin-right: -2px; }
+.lm-ntab { height: 13px; padding: 0 3px; border-radius: 2px; font-family: var(--font-mono); font-size: 9px; font-weight: 700; line-height: 13px; color: var(--ink-inverse); white-space: nowrap; flex: none; }
+.lm-node .lm-ntab.home { position: absolute; top: -7px; left: 122px; background: var(--accent); }
+.lm-node.is-selected .tabs { left: 7px; } .lm-node.is-selected .lm-ntab.home { left: 121px; top: -8px; }
 .lm-node:hover, .lm-node.is-hover { background: var(--bg-4); }
 .lm-node.is-selected { border: var(--border-selected) solid var(--accent); padding: 4px 7px 0; }
-.lm-node.is-home::after { content: "HOME"; position: absolute; left: 6px; top: -8px; font-size: 9px; font-weight: 800; letter-spacing: .08em; padding: 0 4px; line-height: 13px; background: var(--ink); color: var(--ink-inverse); border-radius: var(--radius-1); }
 .lm-node.is-stale { background-image: repeating-linear-gradient(135deg, transparent 0 3px, var(--line-1) 3px 4px); }
 .lm-node.is-stale > * { opacity: var(--op-stale); }
-.lm-node.is-stale .stale-tag { opacity: 1; }
+.lm-node.is-stale .stale-tag, .lm-node.is-stale .tabs, .lm-node.is-stale .lm-ntab { opacity: 1; }
 .lm-node.compact { height: 34px; }
 .lm-node.minimal { width: 72px; height: 28px; padding: 5px 6px; }
 .lm-node.k { border-style: solid; border-color: var(--line-1); background: var(--bg-1); }
