@@ -300,6 +300,18 @@ def pre_push(stdin: str) -> int:
     return 0
 
 
+def push_checkout(command: str, cwd: str | None) -> Path:
+    """The checkout a Bash command pushes from: ``git -C <dir>``, else a leading ``cd <dir>``, else the hook's cwd.
+
+    The hook script lives in the main checkout, so without this a push from a worktree would gate the
+    main checkout's HEAD instead of the commit being pushed.
+    """
+    base = Path(cwd) if cwd else REPO
+    m = re.search(r"\bgit\s+-C\s+(\"[^\"]+\"|'[^']+'|\S+)", command) or \
+        re.match(r"\s*cd\s+(\"[^\"]+\"|'[^']+'|\S+)\s*(&&|;)", command)
+    return (base / Path(m.group(1).strip("\"'")).expanduser()) if m else base
+
+
 GATED = re.compile(r"(^|[;&|(\s])(git(\s+-\S+(\s+[^-\s]\S*)?)*\s+push|gh\s+pr\s+merge)\b")
 TAMPER = re.compile(r"core\.hooksPath|PUSH_GATE_|push-gate/\S*\.pass")
 
@@ -311,7 +323,8 @@ def claude_hook(stdin: str) -> int:
     """
     if os.environ.get("PUSH_GATE_INNER") == "1":
         return 0
-    command = json.loads(stdin).get("tool_input", {}).get("command", "")
+    payload = json.loads(stdin)
+    command = payload.get("tool_input", {}).get("command", "")
     if TAMPER.search(command) or (GATED.search(command) and "--no-verify" in command):
         print("[push-gate] blocked: this command would bypass or tamper with the push gate. "
               "Only the user can do that.", file=sys.stderr)
@@ -339,8 +352,9 @@ def claude_hook(stdin: str) -> int:
         return 0
     # git push: gate what HEAD points at, with CI when the push looks like it lands on master. The git
     # pre-push hook then checks each pushed ref exactly (already stamped, so instant, unless the guess was off).
-    with_ci = bool(re.search(rf"\b{MASTER}\b", command)) or git("branch", "--show-current") == MASTER
-    passed, report = check(commit_of("HEAD"), with_ci)
+    checkout = push_checkout(command, payload.get("cwd"))
+    with_ci = bool(re.search(rf"\b{MASTER}\b", command)) or git("branch", "--show-current", cwd=checkout) == MASTER
+    passed, report = check(git("rev-parse", "--verify", "HEAD^{commit}", cwd=checkout), with_ci)
     if not passed:
         print(report + "\n\n[push-gate] push blocked. Fix the findings, commit, and push again.", file=sys.stderr)
         return 2
