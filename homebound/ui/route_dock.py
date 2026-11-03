@@ -3,11 +3,11 @@
 Routes use stargates, the map's wormhole connections and (when on) EVE-Scout's Thera and Turnur
 connections; see :mod:`homebound.routing`.
 """
-from PySide6.QtCore import QModelIndex, QPoint, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QActionGroup, QPainter
+from PySide6.QtCore import QEvent, QModelIndex, QPoint, QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QActionGroup, QHelpEvent, QPainter
 from PySide6.QtWidgets import (
     QApplication, QCompleter, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton,
-    QStyle, QStyledItemDelegate, QStyleOptionViewItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QToolTip, QVBoxLayout, QWidget,
 )
 
 from .. import routing
@@ -57,6 +57,25 @@ def route_tooltip(state: AppState, route: routing.Route | None) -> str:
                      for index, hop in enumerate(route.hops))
 
 
+def strip_squares(x: float, y: float, width: float,
+                  route: routing.Route) -> tuple[float, list[tuple[QRectF, routing.Hop]]]:
+    """Lay out the strip of a route: one square per system after the origin, cut off when it doesn't fit.
+
+    Returns:
+        The step from one square to the next, and each square with its hop.
+    """
+    hops = route.hops[1:]
+    step = max(MIN_STEP, min(SQUARE + SQUARE_GAP, width / max(1, len(hops))))
+    size = min(SQUARE, step - 1)
+    return step, [(QRectF(x + index * step, y, size, size), hop)
+                  for index, hop in enumerate(hops[:int((width + 1) // step)])]
+
+
+def strip_origin(rect: QRectF) -> tuple[float, float, float]:
+    """Return x, y and width of the strip inside a row."""
+    return rect.left() + PIXELS["sp-8"], rect.top() + 26, rect.width() - 2 * PIXELS["sp-8"]
+
+
 def route_names(state: AppState, route: routing.Route) -> str:
     """Return a route as system names, e.g. for pasting into chat: ``Jita → Perimeter → Thera``."""
     return " → ".join(state.universe.by_id(hop.system_id).name for hop in route.hops)
@@ -99,9 +118,31 @@ class RouteDelegate(QStyledItemDelegate):
         painter.drawText(QRectF(x, y, width, 16), Qt.AlignmentFlag.AlignVCenter,
                          painter.fontMetrics().elidedText(system_label(self.state, destination_id),
                                                           Qt.TextElideMode.ElideRight, int(width)))
-        self._paint_strip(painter, rect.left() + PIXELS["sp-8"], rect.top() + 26, rect.width() - 2 * PIXELS["sp-8"],
-                          route)
+        self._paint_strip(painter, *strip_origin(rect), route)
         painter.restore()
+
+    def hop_at(self, rect: QRectF, route: routing.Route | None, point: QPointF) -> routing.Hop | None:
+        """Return the hop whose square in a row's strip is under ``point``, or None.
+
+        The whole step of a square counts, plus a little above and below, so tiny squares can be hit.
+        """
+        if route is None:
+            return None
+        step, squares = strip_squares(*strip_origin(rect), route)
+        for square, hop in squares:
+            if QRectF(square.left(), square.top() - SQUARE_GAP, step, square.height() + 2 * SQUARE_GAP).contains(point):
+                return hop
+        return None
+
+    def helpEvent(self, event: QHelpEvent, view: QAbstractItemView, option: QStyleOptionViewItem,
+                  index: QModelIndex) -> bool:
+        """Over a square of the strip, show that system's name and security; elsewhere the row's tooltip."""
+        if event.type() == QEvent.Type.ToolTip and index.isValid():
+            hop = self.hop_at(QRectF(option.rect), index.data(Qt.ItemDataRole.UserRole)[1], QPointF(event.pos()))
+            if hop:
+                QToolTip.showText(event.globalPos(), hop_text(self.state, hop), view)
+                return True
+        return super().helpEvent(event, view, option, index)
 
     def _paint_strip(self, painter: QPainter, x: float, y: float, width: float, route: routing.Route | None) -> int:
         """Draw one square per system after the origin, coloured by security; holes as rings, EVE-Scout in Thera violet.
@@ -114,14 +155,10 @@ class RouteDelegate(QStyledItemDelegate):
             painter.setPen(color("ink-faint"))
             painter.drawText(QRectF(x, y - 4, width, 14), Qt.AlignmentFlag.AlignVCenter, "no known route")
             return 0
-        hops = route.hops[1:]
-        step = max(MIN_STEP, min(SQUARE + SQUARE_GAP, width / max(1, len(hops))))
-        size = min(SQUARE, step - 1)
         drawn = 0
-        for hop in hops[:int((width + 1) // step)]:   # a route too long even at the smallest step is cut off
+        for square, hop in strip_squares(x, y, width, route)[1]:   # a route too long is cut off
             system = self.state.universe.by_id(hop.system_id)
             fill = painting.security_color(system.system_class, system.security)
-            square = QRectF(x + drawn * step, y, size, size)
             if hop.via == routing.VIA_GATE:
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.setBrush(fill)
