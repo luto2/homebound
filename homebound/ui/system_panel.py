@@ -1,7 +1,7 @@
 """Right dock: selected system details + signatures (spec: MapWindow right dock, SignatureTable)."""
 
 from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QFontMetricsF, QIcon, QPainter, QPaintEvent, QPixmap
+from PySide6.QtGui import QFontMetricsF, QIcon, QKeySequence, QPainter, QPaintEvent, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
     QSizePolicy, QVBoxLayout, QWidget,
@@ -268,6 +268,8 @@ class SystemPanel(QWidget):
         self.table.copied.connect(lambda label: self.toast.emit("ok", f"Copied bookmark name {label}"))
         self.table.editRequested.connect(self.edit_signature)
         self.table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        QShortcut(QKeySequence.StandardKey.Delete, self.table, activated=self.delete_selected,
+                  context=Qt.ShortcutContext.WidgetShortcut)
         body.addWidget(self.table, 1)
         bottom = QHBoxLayout()
         self.delete_selected_button = QPushButton("Delete selected")
@@ -439,7 +441,7 @@ class SystemPanel(QWidget):
         return self.delete_signatures(self.table.selected_signatures())
 
     def delete_signatures(self, signature_ids: list[str], what: str = "") -> int:
-        """Delete signatures, unlink them from connections, and offer Undo.
+        """Delete signatures, remove the connections they belong to (systems stay), and offer Undo.
 
         Args:
             signature_ids: The signatures to delete.
@@ -457,12 +459,19 @@ class SystemPanel(QWidget):
         shown = ", ".join(signature_ids[:3]) + (f" and {count - 3} more" if count > 3 else "")
         title = f"Deleted {plural(count, what + 'sig')}" if count > 1 or what else f"Deleted {signature_ids[0]}"
         detail = f"{shown} in {state.namer.display(self.system_id)}"
+        removed = 0
         for connection in state.store.connections_of_system(self.system_id):
             if connection.signature_on(self.system_id) in signature_ids:
-                state.store.set_connection_signature(connection.id, self.system_id, None)
+                removed += state.store.remove_connection(connection.id)
+        if removed:
+            for mapped in state.store.systems():
+                if mapped.parent_id and not state.store.connection(mapped.parent_id, mapped.id):
+                    state.store.update_system(mapped.id, parent_id=None, hole_index=None)
         deleted = state.store.delete_signatures(self.system_id, signature_ids)
         self.refresh()
         state.systemUpdated.emit(self.system_id)
+        if removed:
+            state.mapChanged.emit()
         self.undoable.emit(title, detail, snapshot)
         return deleted
 
