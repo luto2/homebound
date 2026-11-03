@@ -20,7 +20,9 @@ def main() -> int:
         return build_static.main(arguments[1:])
     if sys.platform == "linux":
         # The overlay needs always-on-top, click-through and move(); those work reliably on KWin via XWayland.
-        os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+        # Overrides a desktop-wide "wayland;xcb" (Hyprland configs set it): on native Wayland the overlay
+        # is a plain toplevel that tiling compositors tile.
+        os.environ["QT_QPA_PLATFORM"] = "xcb"
     from PySide6.QtWidgets import QApplication
 
     from .settings import Settings

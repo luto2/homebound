@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ["QT_QPA_PLATFORM"] = "offscreen"   # a desktop-wide "wayland;xcb" would put test windows on screen
 
 from homebound.logs.parser import SystemChange  # noqa: E402
 from homebound.mapdb.store import Store  # noqa: E402
