@@ -1,6 +1,8 @@
 # Missing mockups
 
-> **Status (2026-10-31): done.** Every part below now has a spec and mockup (SigEditor, SignatureTable, MapMenu, PromptDialog, ConfirmDialog, ContextMenu, StartupError, MapWindow line grid), and the app follows them. This file is kept as the original brief.
+> **Status (2026-10-31): §1–8 done.** Every part in §1–8 now has a spec and mockup (SigEditor, SignatureTable, MapMenu, PromptDialog, ConfirmDialog, ContextMenu, StartupError, MapWindow line grid), and the app follows them. Those sections are kept as the original brief.
+>
+> **Open (2026-11-03): §9 SystemPanel and §10 CharacterDock.** Both are built and only get one line each in the MapWindow README and a rough sketch in `previews/MapWindow.html`; neither has its own spec or mockup.
 
 These parts of Homebound exist in the app but have no mockup in `previews/` or spec in `components/`. Most are stock Qt widgets that only get the global stylesheet. A few were built from the general Dialog rules without a screen to match.
 
@@ -163,3 +165,57 @@ The design asks for a dot grid at `sp-24` pitch (MapWindow README, `qt-implement
 - Nodes snap to the cell. New children are placed 12 cells right and 5 cells down per sibling.
 
 **Needs:** the design docs (MapWindow README, `qt-implementation.md` "Dot grid", Cover preview, `grid-dot` token usage text) should be updated to describe the line grid, or the line grid restyled.
+
+---
+
+## 9. System panel (right dock)
+
+**Status:** built (`homebound/ui/system_panel.py` → `SystemPanel`), titled "System" in its dock. It has one line in the MapWindow README ("Right dock") and is sketched in `previews/MapWindow.html`; there's no spec of its own. The signature part uses SignatureTable, which has a spec.
+
+**What it does:** shows and edits everything about the selected system: its custom name, owner, notes, zKill activity and signatures. Signatures are pasted from the probe scanner here.
+
+**Shown when:** a system is selected on the map (click a node, find, or Show on map in the character dock). With nothing selected it shows one help line: "Select a system on the map".
+
+**Contents, top to bottom** (`sp-12` padding, `sp-8` between rows, at least `size-panel-right` wide):
+| Part | Control | Notes |
+|---|---|---|
+| Name row | text field (`ui-title`) · J-name (mono, right) | Custom name. Empty shows the scheme name as placeholder (`A2`); clearing it brings the scheme name back. Saved on Enter or leaving the field. |
+| Location line | help text, wraps | `A2 · Region · Constellation · 3 j to Jita`, or `· trade hub` when the system is one. |
+| Badge strip | painted, 22px | Class badge (k-space with security) · effect glyph + name in its `effect-*` colour · each static as StaticBadge + type code (`mono-small`, `ink-faint`). |
+| Owner row | `OWNER` caption · ticker field (mono, 80px, max 6, saved uppercase) · colour swatch combo (10 `owner-*` swatches) · note field ("Note (structure, timers …)") | Feeds the OwnerTag on the node. Saved on Enter, leaving a field or picking a colour. |
+| zKill row | `ZKILL` caption · mono line, wraps · `Refresh` (ghost) | `2/14 kills · 0 pods 1h · last kill 25m ago`, `no kills 24h`, `loading …` or `off`; `· stale 14m` appended when old. Refresh forces a fetch. Selecting a system requests one too. |
+| Notes | plain text, 56px | Placeholder "Notes". Saved 0.6 s after the last keystroke. |
+| Divider | `line-1` rule | |
+| Signatures title row | `Signatures` (title) · summary (help, elided) · `Paste sigs (Ctrl+V)` (primary) | Summary: `5 sigs · 3 anoms · last paste 2m ago` or `never pasted`; when a rescan is due it adds `· ▲ rescan due` and turns `warning`. |
+| Missing banner | `warning` banner, only when rows are missing | `▲ 2 sigs missing from the last paste · anomalies untouched` · `Keep` (ghost) · `✕ Delete 2` (danger). |
+| Table | SignatureTable, takes the rest of the height | Double-click a signature row opens the SigEditor. Delete removes the selected rows. |
+| Bottom row | `Delete selected` (ghost, right) | |
+
+**Behaviour:**
+- Fields that have focus aren't overwritten when the map updates, so typing isn't lost to a log or zKill refresh.
+- Paste reads the clipboard. No system selected: error toast "Select a system before pasting sigs". No scanner rows: error toast with an example line. Otherwise a toast `5 sigs + 3 anoms · 2 new · 1 updated · 1 missing`, and the pasted rows flash.
+- Deleting sigs (selected, missing, or from the SigEditor) also removes the connections they belong to (the systems stay) and shows an Undo toast: `Deleted 3 missing sigs` / `HJK-447, PLW-662, UTE-071 in A2`.
+- Copying a bookmark name from the table shows `Copied bookmark name …`.
+
+**Needs:** a mockup of the panel at 440px with a wormhole system (effect, two statics, owner set), the missing banner showing, and the empty state. The MapWindow sketch has an "owner combo"; the app uses a ticker field, swatch and note instead.
+
+---
+
+## 10. Character dock (left dock)
+
+**Status:** built (`homebound/ui/character_dock.py` → `CharacterDock`), titled "Characters" in its dock, above Routes. It has one line in the MapWindow README and a sketch in `previews/MapWindow.html`; CharacterMarker covers only the marker shapes.
+
+**What it does:** lists every character the log watcher has seen, where each one is, and which one the overlay follows.
+
+**Row** (44px, `size-panel-left` wide), painted by a delegate:
+- Line 1: CharacterMarker in the character's slot colour and shape · name in `ui-body` bold (`ink` online, `ink-muted` offline; elided) · online state right-aligned in `ui-small` 11px: `● online` in `success`, or `○ offline 2h` in `ink-faint` (age since last seen, left out when unknown).
+- Line 2, indented under the name: class badge · the map name (`A2`, custom name, or the real name if not on the map) in `ink`, then the J-name in `mono-small` `ink-muted` when it differs (not for k-space). Unknown location: "Location unknown" in `ink-faint`.
+- The row the overlay follows: `accent-dim` fill and a 2px `accent` bar on the left edge. Hover: `bg-4`.
+- Tooltip: `Name (character id)`.
+
+**Behaviour:**
+- Double-click or Space selects the character's system on the map, if it's on this map.
+- Right-click: `Pin overlay to this character` · `Show on map` (`Space`; disabled with "Not in a system on this map." when it isn't).
+- The list rebuilds when characters change and repaints when the followed character or the map changes.
+
+**Needs:** a mockup with three rows (followed + online, online in k-space, offline with age), plus the unknown-location row and the context menu.
