@@ -1,0 +1,77 @@
+<!-- @dsCard group="Navigation" height=520 width=1080 subtitle="Left dock under Characters: routes to each destination, strip tooltip, row and options menus" -->
+<!doctype html>
+<html data-theme="dark">
+<head><link rel="stylesheet" href="../tokens.css"><link rel="stylesheet" href="../components/bundle.css"><script src="../components/bundle.js"></script><meta charset="utf-8"><style>
+.row { display: flex; gap: 24px; align-items: flex-start; }
+.st { display: flex; flex-direction: column; gap: 8px; position: relative; }
+.dock { width: 300px; background: var(--bg-2); border: 1px solid var(--line-1); }
+.dock .hdr { height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 4px 0 8px; border-bottom: 1px solid var(--line-1); font-size: 12px; color: var(--ink-muted); }
+.dock .hdr span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dock .hdr .lm-btn { width: 22px; height: 22px; }
+.rt { height: 40px; padding: 5px 8px 0; border-bottom: 1px solid var(--line-1); box-sizing: border-box; }
+.rt.is-hover { background: var(--bg-4); } .rt.is-selected { background: var(--accent-dim); }
+.rt .l1 { display: flex; align-items: center; gap: 6px; height: 16px; }
+.rt .nm { flex: 1; min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rt .j { font-family: var(--font-mono); font-size: 11px; width: 48px; text-align: right; }
+.rt .strip { display: flex; gap: 2px; height: 8px; margin-top: 5px; align-items: center; }
+.rt .strip i { width: 8px; height: 8px; flex: none; }
+.rt .strip i.wh { border-radius: 50%; box-shadow: 0 0 0 1px var(--ink-muted); width: 6px; height: 6px; margin: 0 1px; }
+.rt .strip i.es { box-shadow: 0 0 0 1px var(--class-thera); }
+.rt .strip.tight { gap: 0; } .rt .strip.tight i { width: 3px; }
+.rt .none { font-size: 11px; color: var(--ink-faint); margin-top: 1px; display: block; }
+.dock .add { display: flex; gap: 6px; padding: 8px; background: var(--bg-1); }
+.dock .add .lm-input { flex: 1; }
+.lm-menu.ctx { width: 240px; } .lm-menu .it { white-space: nowrap; }
+.hit { position: absolute; width: 12px; height: 12px; outline: 1px dashed var(--accent); outline-offset: 0; }
+</style></head>
+<body>
+<div class="row" id="r"></div>
+<script>
+var LM = window.Homebound;
+/* strip step: 's10'…'s00' security square · 'c3' etc. class colour · prefix 'w:' entered by wormhole · 'e:' EVE-Scout hole */
+function sq(s) {
+  var k = s.split(':'), v = k.pop(), c = v[0] === 's' ? 'var(--sec-' + v.slice(1) + ')' : 'var(--class-' + v + ')';
+  var cl = k[0] === 'w' ? 'wh' : k[0] === 'e' ? 'wh es' : '';
+  return '<i class="' + cl + '" style="background:' + c + '"></i>';
+}
+/* o: {cls, sec, name, j, strip:[], tight, state} */
+function rt(o) {
+  var strip = o.strip ? '<div class="strip' + (o.tight ? ' tight' : '') + '">' + o.strip.map(sq).join('') + '</div>' : '<span class="none">no known route</span>';
+  return '<div class="rt ' + (o.state || '') + '"><div class="l1">' + LM.cls(o.cls, o.sec) + '<span class="nm">' + o.name + '</span><span class="j' + (o.strip ? '' : ' lm-faint') + '">' + (o.strip ? o.j + ' j' : '—') + '</span></div>' + strip + '</div>';
+}
+function long(n) { var a = []; for (var i = 0; i < n; i++) a.push(['s10', 's09', 's07', 's05', 's04', 's02', 's00'][i % 7]); return a; }
+function menu(items) {
+  return '<div class="lm-menu ctx">' + items.map(function (i) {
+    if (i === '-') return '<div class="sep"></div>';
+    if (i[0] === '#') return '<div class="sec">' + i[1] + '</div>';
+    return '<div class="it ' + (i[3] || '') + '"><span class="' + (i[4] ? 'ic ' + i[4] : 'ck') + '">' + (i[0] || '') + '</span><span>' + i[1] + '</span>' + (i[2] ? '<span class="meta">' + i[2] + '</span>' : '') + '</div>';
+  }).join('') + '</div>';
+}
+function st(cap, html, extra) { return '<div class="st"><span class="lm-caption">' + cap + '</span>' + html + (extra || '') + '</div>'; }
+var rows = [
+  { cls: 'HS', sec: '1.0', name: 'Jita', j: 6, strip: ['e:thera', 'w:s05', 's07', 's09', 's09', 's10'], state: 'is-selected' },
+  { cls: 'HS', sec: '0.9', name: 'Amarr', j: 11, strip: ['e:thera', 'w:s04', 's05', 's07', 's08', 's09', 's09', 's10', 's10', 's09', 's10'] },
+  { cls: 'HS', sec: '0.9', name: 'Dodixie', j: 14, strip: ['w:c3', 'w:s03', 's02', 's04', 's05', 's06', 's07', 's09', 's09', 's09', 's08', 's09', 's09', 's09'], state: 'is-hover' },
+  { cls: 'HS', sec: '0.7', name: 'Rens', j: 41, strip: long(41), tight: true },
+  { cls: 'NS', sec: '-0.4', name: '1DQ1-A', j: 0 }
+];
+var dock = '<div class="dock"><div class="hdr"><span>From Main (A2 · J120617)</span><button class="lm-btn ghost icon" title="Route options">⚙</button></div>' +
+  rows.map(rt).join('') +
+  '<div class="add"><div class="lm-input"><span class="ph">Add destination (any system)</span></div><button class="lm-btn">Add</button></div></div>';
+var tips = '<div class="hit" style="left:7px;top:82px"></div>' +
+  '<div class="lm-tip" style="left:20px;top:100px">Thera · TH · EVE-Scout Q063, Large, 9h left</div>' +
+  '<div class="lm-tip" style="left:60px;top:300px;white-space:pre;line-height:17px">You are here: A2 · C3\n→ Thera · TH · wormhole\n→ Ahbazon · 0.4 · wormhole\n→ Hophib · 0.5\n→ … 9 more\n→ Dodixie · 0.9</div>';
+var r = '';
+r += st('Dock · Jita selected, Dodixie hovered', dock, tips);
+r += st('Right-click a row · Jita', menu([['', 'Copy route', 'Double-click'], '-', ['', 'Move up', '', 'is-disabled'], ['', 'Move down'], '-', ['✕', 'Remove destination', '', '', 'danger']]) +
+  '<span class="lm-caption" style="margin-top:12px">Unreachable row · 1DQ1-A</span>' +
+  menu([['', 'Copy route', 'Double-click', 'is-disabled'], '-', ['', 'Move up'], ['', 'Move down', '', 'is-disabled'], '-', ['✕', 'Remove destination', '', '', 'danger']]),
+  '<div class="lm-tip" style="left:120px;top:240px">There is no known route.</div>');
+r += st('Options ⚙', menu([['#', 'Prefer'], ['●', 'Shortest'], ['', 'Safer'], ['', 'Less secure'], '-', ['#', 'Use'], ['✓', 'EVE-Scout Thera &amp; Turnur'], ['', 'Holes at end of life'], ['', 'Mass-critical holes'], '-', ['#', 'Ship size'], ['', 'Frigate'], ['', 'Medium'], ['●', 'Large'], ['', 'Capital'], '-', ['', 'Reset destinations to the trade hubs']]));
+r += st('Toasts', '<div class="lm-toast" style="width:260px"><span class="g" style="background:var(--success)">✓</span><div><div class="t">Copied route, 6 jumps</div></div></div>' +
+  '<div class="lm-toast" style="width:260px"><span class="g" style="background:var(--success)">✓</span><div><div class="t">Copied Thera</div></div></div>' +
+  '<div class="lm-toast" style="width:260px"><span class="g" style="background:var(--danger)">✕</span><div><div class="t">Xyz isn’t a known system</div></div></div>');
+document.getElementById('r').innerHTML = r;
+</script>
+</body>
+</html>
