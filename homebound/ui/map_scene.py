@@ -219,6 +219,7 @@ class SystemNode(QGraphicsObject):
             painter.setPen(color("ink"))
             painter.drawText(body.adjusted(6, 0, -6, 0), Qt.AlignmentFlag.AlignVCenter,
                              elide(self.name, name_font, NODE_WIDTH - 12))
+            painter.setOpacity(1)                    # the markers sit with the tabs, at full strength
             self._paint_character_markers(painter)
             return
         self._paint_title(painter, level_of_detail)
@@ -380,7 +381,7 @@ class SystemNode(QGraphicsObject):
         for _, _, slot in self.characters[:shown]:
             x += painting.draw_character_marker(painter, x, -7, slot) + 2
         if shown < count:
-            painting.draw_chip(painter, x, -6, f"+{count - shown}", color("bg-4"), ink=color("ink"))
+            painting.draw_chip(painter, x, -7, f"+{count - shown}", color("bg-4"), height=13, ink=color("ink"))
 
     # ------------------------------------------------------------ interaction
     def hoverEnterEvent(self, event) -> None:

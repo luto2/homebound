@@ -305,6 +305,29 @@ class TestSystemNode:
         x, text, width = chips[2]
         assert text.startswith("+") and int(text[1:]) >= 3 and x + width < home_x
 
+    def test_more_chip_is_a_13px_tab_and_markers_stay_at_full_strength(self, monkeypatch, state, scene) -> None:
+        """The "+n" chip is 13px high at -7 like the other tabs, and markers ignore op-stale at every zoom."""
+        state.characters_in = lambda system_id: [(number, f"Pilot {number}", number) for number in range(1, 6)]
+        state.store.update_system(state.wormhole.id, scanned_at=iso_ago(hours=26))
+        scene.refresh_all()
+        node = scene.nodes[state.wormhole.id]
+        chips, opacities = [], []
+        original_chip, original_marker = map_scene.painting.draw_chip, map_scene.painting.draw_character_marker
+
+        def record_chip(painter, x, y, text, *args, **kwargs):
+            chips.append((y, text, kwargs.get("height")))
+            return original_chip(painter, x, y, text, *args, **kwargs)
+
+        def record_marker(painter, *args, **kwargs):
+            opacities.append(painter.opacity())
+            return original_marker(painter, *args, **kwargs)
+        monkeypatch.setattr(map_scene.painting, "draw_chip", record_chip)
+        monkeypatch.setattr(map_scene.painting, "draw_character_marker", record_marker)
+        for zoom in (1.0, 0.5, 0.2):
+            paint_item(node, zoom)
+        assert [chip for chip in chips if chip[1].startswith("+")] == [(-7, "+3", 13)] * 3
+        assert opacities and set(opacities) == {1}
+
     def test_tick_repaints_only_changed_nodes(self, monkeypatch, state, scene) -> None:
         """The scan age tick updates a node whose state or shown age changed, and leaves the others alone."""
         state.store.update_system(state.wormhole.id, scanned_at=iso_ago(hours=23, minutes=59, seconds=55))
