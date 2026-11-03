@@ -439,7 +439,7 @@ class SystemPanel(QWidget):
         return self.delete_signatures(self.table.selected_signatures())
 
     def delete_signatures(self, signature_ids: list[str], what: str = "") -> int:
-        """Delete signatures, unlink them from connections, and offer Undo.
+        """Delete signatures, remove the connections they belong to (systems stay), and offer Undo.
 
         Args:
             signature_ids: The signatures to delete.
@@ -457,12 +457,19 @@ class SystemPanel(QWidget):
         shown = ", ".join(signature_ids[:3]) + (f" and {count - 3} more" if count > 3 else "")
         title = f"Deleted {plural(count, what + 'sig')}" if count > 1 or what else f"Deleted {signature_ids[0]}"
         detail = f"{shown} in {state.namer.display(self.system_id)}"
+        removed = 0
         for connection in state.store.connections_of_system(self.system_id):
             if connection.signature_on(self.system_id) in signature_ids:
-                state.store.set_connection_signature(connection.id, self.system_id, None)
+                removed += state.store.remove_connection(connection.id)
+        if removed:
+            for mapped in state.store.systems():
+                if mapped.parent_id and not state.store.connection(mapped.parent_id, mapped.id):
+                    state.store.update_system(mapped.id, parent_id=None, hole_index=None)
         deleted = state.store.delete_signatures(self.system_id, signature_ids)
         self.refresh()
         state.systemUpdated.emit(self.system_id)
+        if removed:
+            state.mapChanged.emit()
         self.undoable.emit(title, detail, snapshot)
         return deleted
 
