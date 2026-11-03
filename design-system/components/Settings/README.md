@@ -1,12 +1,19 @@
 # Settings
 
-The settings window. Every option is shown with its live result: a validation line, scheme previews, the KWin script status.
+The settings window, 820 × 560. A nav list on the left (190px, `bg-2`) and one page per item on the right. Every option shows its live result: a validation line, scheme previews, the KWin script status, the backup list.
 
-- **Log folder**: path field (mono) + Browse + Auto-detect; ✓ / ✕ help line counting the logs and characters found. Validate on every edit (debounced 300ms).
-- **Home system**: autocomplete over known J-names and names; shows class and statics once resolved.
-- **Naming scheme**: a radio card per scheme, each previewing the same small chain *and* its bookmark format. The selected card gets `accent-dim` + `accent` border.
-- **Overlay mode**: four radio cards with one-line descriptions, a background-opacity slider limited to `op-overlay-bg-min` … `op-overlay-bg-max`, and a text-size control (11–14px).
-- **zKill**: one toggle and a plain statement of what is queried.
-- **KWin focus script**: three states shown — installed (✓ `success` banner with Reinstall/Remove), installed-but-inactive (▲ `warning` with the exact fix), not installed (Install button + consequence).
+**Frame:** the nav is a `QListWidget`, each page is a `QStackedWidget` page. Pages: **Log folder · Home system · Naming scheme · Signatures · Overlay · zKill · Routes · KWin focus script · Backups**. The KWin page is hidden where the script doesn't apply (not Plasma on Wayland). Footer: version in `help` on the left; `Cancel` (ghost) · `Save` (primary) on the right, on `bg-1` with a `line-1` rule. Every page has `ui-label` captions.
 
-The mockup stacks every section on one page; in the app each nav item is a page of a `QStackedWidget`, driven by a `QListWidget` nav.
+- **Log folder:** path field (mono) + Browse + Auto-detect. A ✓ / ✕ help line counts the logs and characters found. Validate on every edit (debounced 300 ms). Errors say what was expected: `Folder not found. Expected …/logs/Chatlogs containing Local_*.txt`.
+- **Home system:** caption `Home system · map “Main”`. Autocomplete over known J-names and names; the help line shows the result (`✓ J161940 · C2 · Tenal · C3 → K162 · HS → …`, or `✕ Unknown system`). Under it the note that home is the root of the naming scheme. Then **Map view**: a checkbox "Centre the map on a system when a character jumps into it by wormhole".
+- **Naming scheme:** a radio card per scheme (letters + digits, digits, J-name only), each previewing the same small chain *and* its bookmark format. The selected card gets `accent-dim` + `accent` border. Below: a checkbox "Don't ask 'was this the static?' when the guess is certain".
+- **Signatures:** `Rescan due after [ 24 ] h` (spinbox, suffix `h`), help line: a system whose last paste is this old is marked for a rescan; never-pasted wormhole systems are marked too.
+- **Overlay:** four radio cards (Off · Follow active client · Pinned character over all clients · Pinned character always shown), each with a one-line description. Then `Pinned character` (combo of known characters, `—` for none), `Background` slider limited to `op-overlay-bg-min` … `op-overlay-bg-max` with a live `78%` readout, `Text` size spinbox (11–14 px), `K-space radius` spinbox (jumps) with its help line.
+- **zKill:** one toggle "Show kill activity from zKillboard" and a plain statement of what is queried (last 24h per system in the chain, at most one request per second, cached 10 min, only system IDs sent).
+- **Routes:** caption **EVE-Scout** (toggle, and the statement that only public Thera/Turnur data is fetched, every 5 minutes). Caption **Routes**: `Prefer` combo (Shortest · Safer · Less secure) and `Ship size` combo (Frigate · Medium · Large · Capital) in 90px label columns; checkboxes "Use holes at end of life (< 4h, < 1h)" and "Use mass-critical holes"; help line on what routes use. Caption **Destinations**: the current list in mono, then ghost `Reset to the trade hubs`.
+- **KWin focus script:** a banner per state, with its glyph and text. Installed: ✓ `success` "Installed and running", button `Reinstall`, plus `Remove` (ghost). Installed but off: ▲ `warning`, "Enable it here, or in System Settings → Window Management → KWin Scripts", button `Enable`, plus `Remove`. Not installed: ✕ `danger`, "Without it the overlay falls back to X11 polling, which only sees XWayland windows", button `Install` (primary). Plasma 5 or no `kpackagetool6`: ▲ `warning`, "doesn't look like Plasma 6", button `Install`. The error from the last action is added under the status text.
+- **Backups:** a `QTreeWidget` (Date · Reason · Maps · Size; newest first). Reasons read as `daily`, `by hand`, `before update`, `before delete`, `before restore`. Buttons: `Back up now` · `Restore …` (disabled until a row is selected; double-click does the same; opens the RestoreBackupDialog) · `Open folder` (ghost). Help: a backup is made once a day, before a format update, before a delete or restore, and on request; the newest 7 daily and 10 safety backups are kept, by-hand ones stay. Caption **Also copy backups to**: path field + Browse, placeholder "Off, e.g. a Nextcloud or Syncthing folder", with a validation line.
+
+**Behaviour:** Cancel discards every page's edits. Save applies all pages at once. Backups and the KWin script act at once, with their own status, and are not part of Cancel.
+
+**Mockup note:** the old mockup stacks every section on one page. In the app each item is its own page; design a page per item at the same width.
