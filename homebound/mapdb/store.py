@@ -593,6 +593,18 @@ class Store:
         self.database.commit()
         return cursor.rowcount > 0
 
+    def clear_broken_parents(self) -> int:
+        """Detach systems whose parent link no longer has a connection (keeps the tree layout honest).
+
+        Returns:
+            The number of systems detached.
+        """
+        broken = [system.id for system in self.systems()
+                  if system.parent_id and not self.connection(system.parent_id, system.id)]
+        for system_id in broken:
+            self.update_system(system_id, parent_id=None, hole_index=None)
+        return len(broken)
+
     # ------------------------------------------------------------ signatures
     def signatures(self, system_id: int) -> list[Signature]:
         """Return the signatures and anomalies of a system, ordered by signature ID."""
