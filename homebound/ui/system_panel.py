@@ -1,7 +1,7 @@
 """Right dock: selected system details + signatures (spec: MapWindow right dock, SignatureTable)."""
 
 from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QFontMetricsF, QIcon, QPainter, QPaintEvent, QPixmap
+from PySide6.QtGui import QFontMetricsF, QIcon, QKeySequence, QPainter, QPaintEvent, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
     QSizePolicy, QVBoxLayout, QWidget,
@@ -268,6 +268,8 @@ class SystemPanel(QWidget):
         self.table.copied.connect(lambda label: self.toast.emit("ok", f"Copied bookmark name {label}"))
         self.table.editRequested.connect(self.edit_signature)
         self.table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        QShortcut(QKeySequence.StandardKey.Delete, self.table, activated=self.delete_selected,
+                  context=Qt.ShortcutContext.WidgetShortcut)
         body.addWidget(self.table, 1)
         bottom = QHBoxLayout()
         self.delete_selected_button = QPushButton("Delete selected")

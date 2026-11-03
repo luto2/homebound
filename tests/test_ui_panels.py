@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, Qt
-from PySide6.QtGui import QMouseEvent
+from PySide6.QtGui import QKeySequence, QMouseEvent, QShortcut
 from PySide6.QtWidgets import QApplication, QStyleOptionViewItem
 
 from conftest import HOME, SCAN, UNIVERSE, pick_system
@@ -510,6 +510,22 @@ def test_delete_selected_removes_connection(state, panel, qt_application) -> Non
     assert state.store.connection(HOME.id, child.id) is None
     assert state.store.system(child.id) and state.store.system(HOME.id)
     assert state.store.system(child.id).parent_id is None
+
+
+def test_delete_key_removes_selected_rows(state, panel, qt_application) -> None:
+    """Pressing Delete in the table deletes the selected signatures."""
+    add_signature(state, "SIG-000")
+    add_signature(state, "SIG-001")
+    panel.refresh()
+    model = panel.table.signature_model
+    row = next(index for index, entry in enumerate(model.rows) if getattr(entry, "signature_id", "") == "SIG-000")
+    panel.table.selectRow(row)
+    undo = collect(panel.undoable)
+    shortcut = next(item for item in panel.table.findChildren(QShortcut)
+                    if item.key() == QKeySequence(QKeySequence.StandardKey.Delete))
+    shortcut.activated.emit()
+    assert undo[0][0] == "Deleted SIG-000"
+    assert [signature.signature_id for signature in state.store.signatures(HOME.id)] == ["SIG-001"]
 
 
 def test_delete_signatures_titles(state, panel) -> None:
