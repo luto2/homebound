@@ -326,6 +326,10 @@ def detect_log_directories() -> list[Path]:
     """Return the likely Chatlogs folders that exist, best guess first, without duplicates."""
     found: list[Path] = []
     for candidate in windows_log_candidates() if is_windows() else linux_log_candidates():
-        if candidate.is_dir() and all(candidate.resolve() != other.resolve() for other in found):
+        try:
+            exists = candidate.is_dir()
+        except OSError:   # an automount whose drive is gone raises ENODEV on Python < 3.14
+            continue
+        if exists and all(candidate.resolve() != other.resolve() for other in found):
             found.append(candidate)
     return found

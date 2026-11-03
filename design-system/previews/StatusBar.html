@@ -1,0 +1,31 @@
+<!-- @dsCard group="Feedback" height=300 width=1000 subtitle="Bottom strip of the map window: one label per background source" -->
+<!doctype html>
+<html data-theme="dark">
+<head><link rel="stylesheet" href="../tokens.css"><link rel="stylesheet" href="../components/bundle.css"><script src="../components/bundle.js"></script><meta charset="utf-8"><style>
+.st { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.bar { width: 980px; height: 24px; background: var(--bg-1); border-top: 1px solid var(--line-1); display: flex; align-items: center; gap: 6px; padding: 0 12px; font-size: 12px; color: var(--ink-faint); white-space: nowrap; }
+.bar .d { color: var(--ink-faint); }
+.bar .g { font-weight: 800; margin-right: 3px; }
+.bar .ok { color: var(--success); } .bar .warn { color: var(--warning); } .bar .err { color: var(--danger); }
+.bar .t.warn, .bar .t.err { color: var(--ink-muted); }
+</style></head>
+<body>
+<div id="r"></div>
+<script>
+/* label: [glyph class or '', text] · glyph: ok ✓ · warn ▲ · err ✕ · '' = neutral note, no glyph */
+var G = { ok: '✓', warn: '▲', err: '✕' };
+function bar(items) {
+  return '<div class="bar">' + items.map(function (i) {
+    return (i[0] ? '<span><span class="g ' + i[0] + '">' + G[i[0]] + '</span><span class="t ' + i[0] + '">' + i[1] + '</span></span>' : '<span>' + i[1] + '</span>');
+  }).join('<span class="d">·</span>') + '</div>';
+}
+function st(cap, items) { return '<div class="st"><span class="lm-caption">' + cap + '</span>' + bar(items) + '</div>'; }
+var r = '';
+r += st('All sources reporting', [['ok', 'Log watcher · 4 clients'], ['ok', 'zKill · updated 1m ago'], ['ok', 'EVE-Scout · 12 holes'], ['ok', 'KWin focus script installed'], ['ok', 'Backed up 09:41']]);
+r += st('First start · nothing reported yet · backup hidden with its separator', [['', 'Log watcher …'], ['', 'zKill …'], ['', 'EVE-Scout …'], ['', 'KWin …']]);
+r += st('EVE-Scout switched off · backup copied locally only (also raises a toast)', [['ok', 'Log watcher · 2 clients'], ['ok', 'zKill · updated 4m ago'], ['', 'EVE-Scout off'], ['ok', 'KWin focus script installed'], ['warn', 'Backed up, but not copied: /mnt/nas/homebound not reachable']]);
+r += st('Errors', [['err', 'Log folder not found'], ['warn', 'zKill · rate limited, retry in 2m'], ['err', 'EVE-Scout · request failed'], ['ok', 'KWin focus script installed'], ['err', 'Backup failed: disk full']]);
+document.getElementById('r').innerHTML = r;
+</script>
+</body>
+</html>

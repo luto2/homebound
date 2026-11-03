@@ -1,0 +1,36 @@
+<!-- @dsCard group="Feedback" height=470 width=960 subtitle="Settings → Backups → Restore …: as opened, and ready to replace the open map" -->
+<!doctype html>
+<html data-theme="dark">
+<head><link rel="stylesheet" href="../tokens.css"><link rel="stylesheet" href="../components/bundle.css"><script src="../components/bundle.js"></script><meta charset="utf-8"><style>
+.row { display: flex; gap: 28px; align-items: flex-start; }
+.st { display: flex; flex-direction: column; gap: 8px; }
+.lst { display: flex; flex-direction: column; gap: 6px; }
+.lst .lm-check .lm-mono { color: var(--ink-muted); font-size: 12px; }
+.lm-dialog .bd .lm-caption { margin-bottom: -4px; }
+</style></head>
+<body>
+<div class="row" id="r"></div>
+<script>
+function chk(on, html) { return '<span class="lm-check' + (on ? ' on' : '') + '"><i></i>' + html + '</span>'; }
+function rad(on, html) { return '<span class="lm-check lm-radio' + (on ? ' on' : '') + '"><i></i>' + html + '</span>'; }
+function map(on, name, home) { return chk(on, '<span>' + name + '</span><span class="lm-faint">·</span>' + (home ? '<span class="lm-mono">' + home + '</span>' : '<span class="lm-faint">no home</span>')); }
+/* o: {maps:[on,on], how: null|'new'|'replace', settings, note, ok} */
+function dlg(o) {
+  return '<div class="lm-dialog" style="width:440px">' +
+    '<div class="hd"><div class="tt"><h3>Restore the backup of 3 Nov 2026, 09:41</h3><span class="sub">Reason: daily · 2 maps</span></div><span class="x">✕</span></div>' +
+    '<div class="bd">' +
+    '<span class="lm-caption">Maps</span><div class="lst">' + map(o.maps[0], 'Main', 'J161940') + map(o.maps[1], 'Corp', null) + '</div>' +
+    '<span class="lm-caption">How</span><div class="lst">' + rad(o.how === 'new', 'Restore as new map (nothing is overwritten)') + rad(o.how === 'replace', 'Replace the map (the current state is backed up first)') + '</div>' +
+    (o.note ? '<span class="lm-help warn">▲ Replacing “Main” closes and reopens it.</span>' : '') +
+    '<div class="grp2">' + chk(o.settings, 'Also restore settings (the list of maps stays)') + '</div>' +
+    '</div>' +
+    '<div class="ft">' + (o.ok ? '' : '<span class="start">Pick how to restore</span>') + '<button class="lm-btn ghost">Cancel <span class="lm-kbd">Esc</span></button><button class="lm-btn primary' + (o.ok ? '"' : ' is-disabled" disabled') + '>Restore</button></div></div>';
+}
+function st(cap, html) { return '<div class="st"><span class="lm-caption">' + cap + '</span>' + html + '</div>'; }
+var r = '';
+r += st('As opened · no way picked, Restore disabled', dlg({ maps: [true, true], how: null }));
+r += st('Replace · the open map is in the backup', dlg({ maps: [true, false], how: 'replace', note: true, settings: true, ok: true }));
+document.getElementById('r').innerHTML = r;
+</script>
+</body>
+</html>

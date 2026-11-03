@@ -1,0 +1,35 @@
+<!-- @dsCard group="Feedback" height=620 width=960 subtitle="First-run map data: before, during and after a failed build" -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><style>
+.row { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; width: 930px; }
+.st { display: flex; flex-direction: column; gap: 8px; }
+.pg { height: 6px; background: var(--bg-3); border-radius: 3px; overflow: hidden; position: relative; }
+.pg b { position: absolute; top: 0; bottom: 0; left: 0; background: var(--accent); border-radius: 3px; }
+.pg.ind b { left: 30%; width: 28%; }
+.ft .stat { margin-right: auto; display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
+</style></head>
+<body>
+<div class="row" id="r"></div>
+<script>
+var SUB = 'Systems, classes, statics and gates from the static data export, about 100 MB. Homebound works offline afterwards.';
+var CMD = '<span class="lm-caption">Or run this in a terminal</span><div class="lm-codebox"><span class="p">$</span><span>uv run python -m homebound.universe.build_static</span><button class="lm-btn sm icon" style="width:24px" title="Copy command">⧉</button></div>';
+/* o: {title, sub, status, statusCls, bar: null | 'ind' | percent, primary, busy} */
+function dlg(o) {
+  var bar = o.bar == null ? '' : '<div class="pg ' + (o.bar === 'ind' ? 'ind' : '') + '"><b' + (o.bar === 'ind' ? '' : ' style="width:' + o.bar + '%"') + '></b></div>';
+  return '<div class="lm-dialog" style="width:440px">' +
+    '<div class="hd"><div class="tt"><h3>' + o.title + '</h3><span class="sub">' + (o.sub || SUB) + '</span></div></div>' +
+    '<div class="bd"><div class="lm-field">' + CMD + '</div></div>' +
+    '<div class="ft"><div class="stat">' + (o.status ? '<span class="lm-help ' + (o.statusCls || '') + '">' + o.status + '</span>' : '') + bar + '</div>' +
+    '<button class="lm-btn ghost">Quit</button><button class="lm-btn primary' + (o.busy ? ' is-disabled" disabled' : '"') + '>' + o.primary + '</button></div></div>';
+}
+function st(cap, html) { return '<div class="st"><span class="lm-caption">' + cap + '</span>' + html + '</div>'; }
+var r = '';
+r += st('Missing · before the build', dlg({ title: 'Download map data', primary: 'Download <span class="lm-kbd">Enter</span>' }));
+r += st('Building · download size known', dlg({ title: 'Download map data', status: 'Downloading the static export · 42 MB of 100 MB', bar: 42, primary: 'Download', busy: true }));
+r += st('Outdated · building the database, size unknown', dlg({ title: 'Map data needs an update', sub: 'This data was built by an older Homebound. ' + SUB, status: 'Building the system tables · step 3 of 5', bar: 'ind', primary: 'Download', busy: true }));
+r += st('Failed · Retry', dlg({ title: 'Download map data', status: '✕ The build failed: connection reset while downloading sde.zip', statusCls: 'err', primary: 'Retry <span class="lm-kbd">Enter</span>' }));
+document.getElementById('r').innerHTML = r;
+</script>
+</body>
+</html>
