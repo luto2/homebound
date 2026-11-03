@@ -6,7 +6,7 @@ The settings window, 820 × 560. A nav list on the left (190px, `bg-2`) and one 
 
 - **Log folder:** path field (mono) + Browse + Auto-detect. A ✓ / ✕ help line counts the logs and characters found. Validate on every edit (debounced 300 ms). Errors say what was expected: `Folder not found. Expected …/logs/Chatlogs containing Local_*.txt`.
 - **Home system:** caption `Home system · map “Main”`. Autocomplete over known J-names and names; the help line shows the result (`✓ J161940 · C2 · Tenal · C3 → K162 · HS → …`, or `✕ Unknown system`). Under it the note that home is the root of the naming scheme. Then **Map view**: a checkbox "Centre the map on a system when a character jumps into it by wormhole".
-- **Naming scheme:** a radio card per scheme (letters + digits, digits, J-name only), each previewing the same small chain *and* its bookmark format. The selected card gets `accent-dim` + `accent` border. Below: a checkbox "Don't ask 'was this the static?' when the guess is certain".
+- **Naming scheme:** a radio card per scheme (Numeric path, Chain · depth · position, Letter-led numeric; Numeric path is the default), each with a one-line description and a preview of the same small chain *and* its bookmark format. The selected card gets `accent-dim` + `accent` border. Below: a checkbox "Don't ask 'was this the static?' when the guess is certain".
 - **Signatures:** `Rescan due after [ 24 ] h` (spinbox, suffix `h`), help line: a system whose last paste is this old is marked for a rescan; never-pasted wormhole systems are marked too.
 - **Overlay:** four radio cards (Off · Follow active client · Pinned character over all clients · Pinned character always shown), each with a one-line description. Then `Pinned character` (combo of known characters, `—` for none), `Background` slider limited to `op-overlay-bg-min` … `op-overlay-bg-max` with a live `78%` readout, `Text` size spinbox (11–14 px), `K-space radius` spinbox (jumps) with its help line.
 - **zKill:** one toggle "Show kill activity from zKillboard" and a plain statement of what is queried (last 24h per system in the chain, at most one request per second, cached 10 min, only system IDs sent).
@@ -16,4 +16,4 @@ The settings window, 820 × 560. A nav list on the left (190px, `bg-2`) and one 
 
 **Behaviour:** Cancel discards every page's edits. Save applies all pages at once. Backups and the KWin script act at once, with their own status, and are not part of Cancel.
 
-**Mockup note:** the old mockup stacks every section on one page. In the app each item is its own page; design a page per item at the same width.
+**Mockup:** one 820 × 560 window per page, in nav order. Pages with several outcomes (Log folder, Home system, KWin focus script) list the other results under an `Other results` caption; in the app only one shows at a time.

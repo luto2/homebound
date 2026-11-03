@@ -1,11 +1,12 @@
 # ConfirmDialog
 
-A Dialog variant for the one action that can't be undone: **deleting a map**. It replaces `QMessageBox.question`.
+A Dialog variant for the one action that asks first: **deleting a map**. It replaces `QMessageBox.question`. Undo can't bring a map back, but a `before delete` backup is made first, so it can be restored from Settings → Backups.
 
-- Title asks the question with the object in it: `Delete the map “Corp”?`. Subtitle: "This deletes its file and can't be undone."
-- Body: a three-cell summary of what will be lost (systems, signatures, last activity), mono numbers on `bg-1`, then a help line with the home system and file name, and what is kept.
+- Title asks the question with the object in it: `Delete the map “Corp”?`. Subtitle: "This deletes its file."
+- Body: a three-cell summary of what will be lost (systems, signatures, last activity), mono numbers on `bg-1`, then a help line with the home system and file name, what is kept, and where the backup is: `Home J120617 · file maps/corp.db (+ -wal, -shm). Characters and settings are kept. A backup is kept in Settings → Backups.`
 - Footer: `✕ Delete map` (danger, far left) · **Cancel is the default button and has focus**, so Enter and Esc both keep the map. There is no primary button. `QPushButton.setDefault(True)` on Cancel; Delete needs a click or Alt+D.
-- Afterwards: toast `Map “Corp” deleted · Switched to Main` (`success` glyph). The active map can't be deleted, so it never appears in the Delete map submenu.
+- Afterwards: toast `Map “Corp” deleted` (`success` glyph). The active map can't be deleted, so it never appears in the Delete map submenu, and nothing switches.
+- If the backup fails, the map is kept and an error toast says why: `Map “Corp” not deleted: <reason>`.
 
 ## Everything else gets Undo, not a question
 

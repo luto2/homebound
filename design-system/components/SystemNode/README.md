@@ -13,7 +13,9 @@ A draggable `QGraphicsItem` for one system, 168×62 at 100% zoom (`size-node-w`,
 - Nothing when the scan is fresh.
 - Next to UNCONFIRMED or HOME the tab is compact: `SCAN` with no age, or `NO` dropped, so it doesn't collide. If characters are on the node too, the compact tab is left out (the hatch and tooltip remain).
 
-**States**: default `bg-2` + 1px `line-2`; hover `bg-4`; selected 2px `accent` outline; home gets a "HOME" tab on the top edge; k-space nodes sit on `bg-1` with a `line-1` border so the w-space chain stands out; stale nodes get a 45° `line-1` hatch, content at `op-stale`, and a "stale 3h" tag.
+**States**: default `bg-2` + 1px `line-2`; hover `bg-4`; selected 2px `accent` outline; home gets the `⌂ HOME` tab; k-space nodes sit on `bg-1` with a `line-1` border so the w-space chain stands out; a system due for a rescan gets a 45° `line-1` hatch with its content at `op-stale` (the tabs stay at full strength).
+
+**Tabs** are 13px chips in mono 9px/700 with `ink-inverse` text and radius 2, drawn 7px above the node's top edge (`painting.draw_chip`). Markers that don't fit become 2 markers and a `+n` chip on `bg-4`.
 
 **Level of detail** (`QStyleOptionGraphicsItem.levelOfDetailFromTransform`):
 - ≥ 0.6: full node.

@@ -39,12 +39,24 @@ window.Homebound = (function () {
   function owner(t, n, home) { return '<span class="lm-owner' + (home ? ' home' : '') + '" style="background:var(--owner-' + n + ')">' + t + '</span>'; }
   function chr(n) { return '<svg class="lm-char" viewBox="0 0 14 14" fill="var(--char-' + n + ')" stroke="var(--ink-inverse)" stroke-width="1" aria-label="character ' + n + '">' + CHAR[n - 1] + '</svg>'; }
   function zk(level, recent) { return '<span class="lm-zk ' + (level || 'none') + '" aria-label="zKill ' + (level || 'none') + '"><i></i><i></i><i></i></span>' + (recent ? '<span class="lm-zk-recent" title="kill < 10 min"></span>' : ''); }
-  /* o: {name, sub, j, cls, sec, fx, statics:[], owner:[ticker,n,home], chars:[n], zk, recent, state:'is-selected …', x, y} */
+  /* o: {name, sub, j, cls, sec, fx, statics:[], owner:[ticker,n,home], chars:[n], zk, recent, unconfirmed, scan, state:'is-selected …', x, y} */
   function node(o) {
     var pos = o.x != null ? ' style="position:absolute;left:' + o.x + 'px;top:' + o.y + 'px"' : '';
     var k = CLS[o.cls] && CLS[o.cls][2] === 'k';
     var h = '<div class="lm-node ' + (k ? 'k ' : '') + (o.state || '') + '"' + pos + '>';
-    if (o.chars && o.chars.length) h += '<div class="chars">' + o.chars.map(chr).join('') + '</div>';
+    /* top-edge tabs, as SystemNode._paint_tabs: ▲ UNCONFIRMED · rescan tab · character markers from the left, ⌂ HOME at the right end.
+       o.unconfirmed; o.scan: '26h' (rescan due) | 'never' (wormhole system never pasted). Next to both UNCONFIRMED and HOME
+       the rescan tab is compact ("SCAN"), and is left out when characters are on the node too. */
+    var home = /is-home/.test(o.state || ''), crowded = home && o.unconfirmed, tabs = '';
+    if (o.unconfirmed) tabs += '<span class="lm-ntab" style="background:var(--warning)">▲ UNCONFIRMED</span>';
+    if (o.scan && !(crowded && o.chars && o.chars.length))
+      tabs += '<span class="lm-ntab" style="background:var(--stale)">' + (crowded ? 'SCAN' : o.scan === 'never' ? 'NO SCAN' : 'SCAN ' + o.scan) + '</span>';
+    if (o.chars && o.chars.length) {
+      var n = o.chars.length, shown = n <= 3 ? n : 2;
+      tabs += o.chars.slice(0, shown).map(chr).join('') + (shown < n ? '<span class="lm-ntab" style="background:var(--bg-4);color:var(--ink)">+' + (n - shown) + '</span>' : '');
+    }
+    if (tabs) h += '<div class="tabs">' + tabs + '</div>';
+    if (home) h += '<span class="lm-ntab home">⌂ HOME</span>';
     h += '<div class="l1"><span class="nm">' + o.name + (o.sub ? ' <small>' + o.sub + '</small>' : '') + '</span><span class="end">' + zk(o.zk, o.recent) + '</span></div>';
     h += '<div class="l2">' + cls(o.cls, o.sec) + (o.fx && o.fx !== 'none' ? fx(o.fx) : '') + '<span class="jn">' + (o.j || '') + '</span><span class="end">' + (o.statics || []).map(statik).join('') + '</span></div>';
     if (o.owner || o.stale) h += '<div class="l3">' + (o.owner ? owner(o.owner[0], o.owner[1], o.owner[2]) : '') + (o.stale ? '<span class="lm-faint stale-tag" style="font-size:10px;margin-left:auto">stale ' + o.stale + '</span>' : '') + '</div>';
