@@ -1,8 +1,10 @@
-# Homebound user guide
+# How to use Homebound
 
 Homebound is a wormhole mapper for EVE Online that runs on your own machine. It learns where your characters go from EVE's Local chat logs, builds the chain as you jump, and names new systems with the scheme you pick. A small overlay over the game shows the chain your active character is in.
 
 Nothing leaves your computer except the one-time download of the map data on first start and optional zKillboard lookups. There is no ESI login.
+
+![The main window: characters and routes on the left, the chain in the middle, the selected system and its signatures on the right](docs/images/main-window.png)
 
 Contents:
 1. [Install and first start](#1-install-and-first-start)
@@ -27,7 +29,6 @@ Contents:
 
 **From a release** (the easy way), download from the GitHub release page:
 - **Linux**: the `.AppImage`. Make it executable (`chmod +x Homebound-*.AppImage`, or the file manager's Properties) and start it. If it doesn't start, install `libxcb-cursor0` (Arch: `xcb-util-cursor`).
-- **Arch / CachyOS**: install the `homebound` AUR package, for example `paru -S homebound`.
 - **Windows**: run `Homebound-<version>-windows-setup.exe`. It installs for your user only, without admin rights, and can add a desktop shortcut and start Homebound when you sign in. Windows SmartScreen warns about the unsigned installer: *More info → Run anyway*. The `-portable.zip` holds the same program to unpack anywhere.
 
 Packages contain no EVE game data. On first start, a **Download map data** dialog explains that Homebound builds its map of New Eden once from the EVE static data export and the community wormhole data (about 100 MB). Click **Download**; a bar shows each step, and the main window opens when it's done. If the download fails (no network, say), the dialog shows why and **Download** becomes **Retry**. **Quit** stops the build and closes Homebound. In a package the downloads are deleted afterwards, so only the finished `universe.sqlite` (a few MB) stays in the data folder.
@@ -72,6 +73,8 @@ High- and low-sec nodes have their empire's colour as background (Amarr gold, Ca
 
 **Connection lines** show the hole's state:
 
+![A chain with a reduced hole (R), an end-of-life hole (<4h) and a mass-critical K162 (CRIT)](docs/images/chain.png)
+
 | Line | Meaning | Chip |
 |---|---|---|
 | Thin solid | Mass fresh | |
@@ -104,7 +107,7 @@ Homebound tails the newest Local log of each character. Each time Local changes 
 
 - **Gate jump** (the systems share a stargate): the character moves; nothing is added to the map.
 - **Into or out of w-space, Thera or Pochven**: the new system and a wormhole connection are added.
-- **K-space to k-space without a gate** (jump bridge, filament, clone jump): a toast asks whether to add it as a wormhole connection. If you don't answer, the default from Settings is used.
+- **K-space to k-space without a gate** (jump bridge, filament, clone jump): a toast asks whether to add it as a wormhole connection. If you don't answer, the jump is ignored. To have unanswered jumps added instead, set `"unknown_jump_default": "add"` in `settings.json` (there's no switch for it in the Settings dialog).
 
 After a wormhole jump the map selects the new system and centres on it, so a sig paste lands there. Turn this off in Settings → Home system → *Centre the map on a system when a character jumps into it by wormhole*.
 
@@ -173,12 +176,14 @@ The summary above the table says when you last pasted, for example "last paste 2
 - The header shows the count, plus `· 1 −` / `· 1 +` when rows are missing or new.
 - Click a column header (Sig, Type, Name, Seen, Age) to sort the rows inside every group; click it again to reverse. Homebound remembers the order per map.
 - Drag the rules between the column headers to resize them. The widths are remembered.
-- Select rows and click *Delete selected* to remove them.
+- Select rows and click *Delete selected* (or press Del) to remove them.
 - For a wormhole sig, the Name column shows where it leads (`→ A2`) or what you entered in the editor (`→ C3 · M · ◷ <1h · R`).
 
 ### The signature editor
 
 Double-click a sig (not an anomaly) to enter what the scanner can't show.
+
+![The signature editor for a wormhole](docs/images/signature-editor.png)
 
 | Field | When | Notes |
 |---|---|---|
@@ -262,7 +267,11 @@ Each map is its own file with its own systems, sigs, home system and naming sche
 
 ## 10. The overlay
 
-A small see-through window over the game that shows one character's chain as a tree. The rows show:
+A small see-through window over the game that shows one character's chain as a tree.
+
+![The overlay following a character four jumps out](docs/images/overlay.png)
+
+The rows show:
 - custom name, class, J-name, effect, kills and pod kills (1h / 24h) and owner
 - your current system highlighted with ▶
 - k-space systems with their distance, for example "Jita 3j from A"
@@ -329,6 +338,7 @@ While the main window is hidden, toasts are also sent as desktop notifications.
 | Ctrl+Z | anywhere | Undo the last removal while its toast is up |
 | F2 | map | Rename the selected system |
 | Del | map | Remove the selected system |
+| Del | sig table | Delete the selected sigs |
 | Ins | map | Add a system |
 | F | map | Fit the chain into view |
 | Enter | map | Edit the selected connection |

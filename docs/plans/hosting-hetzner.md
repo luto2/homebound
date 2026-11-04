@@ -197,7 +197,7 @@ LITESTREAM_SECRET_ACCESS_KEY=…
 - **Domain:** subdomain `homebound.luthopian.de`.
 - **Off-site backup:** Backblaze B2, EU Central region.
 - **Receiving character:** "Homebound Admin" or similar. The final name depends on in-game availability.
-- **Legal pages:** drafted now in `docs/legal/` (WIP).
+- **Legal pages:** drafted now in [`legal/`](legal/) (WIP).
 
 ## 14. Open items
 
