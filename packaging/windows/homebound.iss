@@ -45,8 +45,8 @@ Type: filesandordirs; Name: "{app}\_internal"
 Source: "..\..\dist\Homebound\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\Homebound"; Filename: "{app}\Homebound.exe"
-Name: "{autodesktop}\Homebound"; Filename: "{app}\Homebound.exe"; Tasks: desktopicon
+Name: "{autoprograms}\Homebound"; Filename: "{app}\Homebound.exe"; AppUserModelID: "Homebound.Homebound"
+Name: "{autodesktop}\Homebound"; Filename: "{app}\Homebound.exe"; AppUserModelID: "Homebound.Homebound"; Tasks: desktopicon
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Homebound"; ValueData: """{app}\Homebound.exe"""; Flags: uninsdeletevalue; Tasks: autostart

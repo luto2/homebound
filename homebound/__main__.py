@@ -2,6 +2,8 @@
 import os
 import sys
 
+APP_USER_MODEL_ID = "Homebound.Homebound"   # also in packaging/windows/homebound.iss
+
 
 def main() -> int:
     """Start the app and run the Qt event loop, or handle ``--version`` / ``--build-static [--refresh]``.
@@ -23,6 +25,11 @@ def main() -> int:
         # Overrides a desktop-wide "wayland;xcb" (Hyprland configs set it): on native Wayland the overlay
         # is a plain toplevel that tiling compositors tile.
         os.environ["QT_QPA_PLATFORM"] = "xcb"
+    elif sys.platform == "win32":
+        # From source the process is python.exe, and the task bar shows Python's icon for it. An app ID of our own
+        # makes it use the window icon. The installer's shortcuts carry the same ID, so pinned shortcuts group with it.
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
     from PySide6.QtWidgets import QApplication
 
     from .settings import Settings

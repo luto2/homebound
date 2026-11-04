@@ -19,16 +19,19 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 Then close PowerShell and open a new one, so it finds `git` and `uv`. You don't need to install
 Python: `uv` downloads the right version.
 
-## 2. Get it and run the tests
+## 2. Get it, build the universe data, run the tests
 
 ```powershell
 git clone https://github.com/luto2/homebound.git
 cd homebound
 uv sync
+uv run python -m homebound.universe.build_static
 uv run pytest -q
 ```
 
-The last line should say `… passed`. If anything fails, copy the whole output.
+`build_static` downloads the EVE static data export and the community wormhole data (about
+100 MB) and writes `data\universe.sqlite`, which takes about a minute. The tests and the app need
+it. The last line of the tests should say `… passed`. If anything fails, copy the whole output.
 
 ## 3. Start it
 
@@ -36,9 +39,8 @@ The last line should say `… passed`. If anything fails, copy the whole output.
 uv run python -m homebound
 ```
 
-The **Download map data** dialog comes first. Click **Download** and wait: it fetches about
-100 MB and builds the universe data, which takes about a minute. Then the main window opens and
-Settings opens on **Log folder**. Leave Settings open for now and go on with Part A (or Part B on a
+The main window opens, and Settings opens on **Log folder**. The task bar should show
+Homebound's icon, not Python's. Leave Settings open for now and go on with Part A (or Part B on a
 PC with EVE).
 
 Your data goes to `%APPDATA%\Homebound`. To remove everything afterwards, delete that folder, the
@@ -171,7 +173,7 @@ $env:HOMEBOUND_HOME = "$env:TEMP\homebound-test"
 dist\Homebound\Homebound.exe
 ```
 
-It should ask to download the map data again (the test folder is empty) and then start like
+It should ask to download the map data, since the test folder is empty, and then start like
 before. Close it from the tray and run `Remove-Item Env:HOMEBOUND_HOME` afterwards.
 
 ## Send back
