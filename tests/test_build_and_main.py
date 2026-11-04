@@ -1,9 +1,11 @@
 """Tests for the universe build script (offline, with fake sources) and the application entry point."""
+import ctypes
 import io
 import json
 import sys
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -410,15 +412,27 @@ def test_main_normal_path(fake_app, monkeypatch, log_directory, settings_page) -
 @pytest.mark.parametrize("platform, preset, expected",
                          [("linux", None, "xcb"), ("linux", "wayland;xcb", "xcb"), ("win32", None, None)])
 def test_main_forces_xcb_only_on_linux(fake_app, monkeypatch, platform, preset, expected) -> None:
-    """QT_QPA_PLATFORM=xcb is a Linux (XWayland) setting, also over a desktop-wide value; Windows keeps Qt's."""
+    """QT_QPA_PLATFORM=xcb is a Linux (XWayland) setting, also over a desktop-wide value; Windows keeps Qt's and
+    sets its own task bar app ID instead."""
     monkeypatch.setattr(fake_app, "load", classmethod(lambda cls: FakeSettings("/logs")))
     if preset is None:
         monkeypatch.delenv("QT_QPA_PLATFORM")
     else:
         monkeypatch.setenv("QT_QPA_PLATFORM", preset)
     monkeypatch.setattr(entry_point.sys, "platform", platform)
+    app_ids: list[str] = []
+    shell32 = SimpleNamespace(SetCurrentProcessExplicitAppUserModelID=app_ids.append)
+    monkeypatch.setattr(ctypes, "windll", SimpleNamespace(shell32=shell32), raising=False)
     assert entry_point.main() == 0
     assert entry_point.os.environ.get("QT_QPA_PLATFORM") == expected
+    assert app_ids == ([entry_point.APP_USER_MODEL_ID] if platform == "win32" else [])
+
+
+def test_installer_shortcuts_use_the_app_id() -> None:
+    """The Start menu and desktop shortcuts carry the app ID main() sets, so a pinned shortcut groups with the window."""
+    script = (Path(__file__).parent.parent / "packaging" / "windows" / "homebound.iss").read_text()
+    shortcuts = [line for line in script.splitlines() if 'Filename: "{app}\\Homebound.exe"' in line and line.startswith("Name:")]
+    assert shortcuts and all(f'AppUserModelID: "{entry_point.APP_USER_MODEL_ID}"' in line for line in shortcuts)
 
 
 def test_main_missing_universe_quit(fake_app, monkeypatch) -> None:
