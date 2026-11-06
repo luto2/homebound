@@ -1,0 +1,18 @@
+# Left out on request
+tools/
+
+# The summaries in design-system/summaries/ stand in for the mockups and their specs
+design-system/previews/
+design-system/components/
+
+# Images would each need a vision pass; the packaging and summary files name them instead
+*.png
+*.svg
+*.ico
+
+# Point-in-time audit, goes stale and would swamp the graph
+findings.md
+
+# Downloaded sources and font licences
+data/
+homebound/theme/fonts/
