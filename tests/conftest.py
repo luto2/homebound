@@ -92,6 +92,30 @@ def close_databases(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
             pass
 
 
+@pytest.fixture(autouse=True)
+def no_desktop_notifications(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Never send a real desktop notification, from any test: no gdbus process and no tray balloon."""
+    from PySide6.QtCore import QProcess
+    from PySide6.QtWidgets import QSystemTrayIcon
+
+    from homebound.ui import notify
+
+    class FakeProcess:
+        """Stands in for QProcess so no notification is ever sent."""
+
+        nullDevice = staticmethod(QProcess.nullDevice)
+
+        def __init__(self, *arguments: object) -> None:
+            """Ignore everything."""
+
+        def __getattr__(self, name: str) -> Callable[..., None]:
+            """Accept any QProcess call."""
+            return lambda *arguments, **keywords: None
+
+    monkeypatch.setattr(notify, "QProcess", FakeProcess)
+    monkeypatch.setattr(QSystemTrayIcon, "showMessage", lambda *arguments, **keywords: None)
+
+
 @pytest.fixture
 def simulation() -> MapSimulation:
     """A fresh scripted map with the numeric scheme."""
@@ -148,15 +172,14 @@ class ModalResponder:
 
 @pytest.fixture
 def modal(monkeypatch, qt_application) -> ModalResponder:
-    """Never block on QDialog.exec or QMenu.exec, and never start a real desktop notification.
+    """Never block on QDialog.exec or QMenu.exec.
 
     PySide ignores class-level patches of ``QMenu.exec``, so menus built through ``homebound.ui.menus``
     are instances of a subclass that answers itself; ``QDialog.exec`` patches fine.
     """
-    from PySide6.QtCore import QProcess
     from PySide6.QtWidgets import QDialog, QMenu
 
-    from homebound.ui import menus, notify
+    from homebound.ui import menus
     responder = ModalResponder()
 
     class AnsweringMenu(QMenu):
@@ -166,19 +189,6 @@ def modal(monkeypatch, qt_application) -> ModalResponder:
             """Record the menu and trigger the action the handler picks."""
             return responder.answer_menu(self, *arguments)
 
-    class FakeProcess:
-        """Stands in for QProcess so no notification is ever sent."""
-
-        nullDevice = staticmethod(QProcess.nullDevice)
-
-        def __init__(self, *arguments: object) -> None:
-            """Ignore everything."""
-
-        def __getattr__(self, name: str) -> Callable[..., None]:
-            """Accept any QProcess call."""
-            return lambda *arguments, **keywords: None
-
     monkeypatch.setattr(QDialog, "exec", lambda dialog: responder.answer_dialog(dialog))
     monkeypatch.setattr(menus, "QMenu", AnsweringMenu)
-    monkeypatch.setattr(notify, "QProcess", FakeProcess)
     return responder
