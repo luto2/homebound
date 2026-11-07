@@ -3,6 +3,8 @@
 > **Status (2026-10-31): §1–8 done.** Every part in §1–8 now has a spec and mockup (SigEditor, SignatureTable, MapMenu, PromptDialog, ConfirmDialog, ContextMenu, StartupError, MapWindow line grid), and the app follows them. Those sections are kept as the original brief.
 >
 > **Open (2026-11-03): §9 SystemPanel and §10 CharacterDock.** Both are built and only get one line each in the MapWindow README and a rough sketch in `previews/MapWindow.html`; neither has its own spec or mockup.
+>
+> **Open (2026-11-07): §11 Cloud sync UI.** Not built; brief and design-pass plan for the sync screens.
 
 These parts of Homebound exist in the app but have no mockup in `previews/` or spec in `components/`. Most are stock Qt widgets that only get the global stylesheet. A few were built from the general Dialog rules without a screen to match.
 
@@ -219,3 +221,26 @@ The design asks for a dot grid at `sp-24` pitch (MapWindow README, `qt-implement
 - The list rebuilds when characters change and repaints when the followed character or the map changes.
 
 **Needs:** a mockup with three rows (followed + online, online in k-space, offline with age), plus the unknown-location row and the context menu.
+
+---
+
+## 11. Cloud sync UI (not built yet)
+
+**Status:** design only. Nothing is built, and cloud sync itself is still WIP (`docs/plans/cloud-sync-plan.md`). This section is the brief, so the screens exist before the client sync work (plan §11, phase 3) starts. The web view is deferred and isn't part of this.
+
+**Plan for the design pass, in this order** (each step one spec in `components/` plus a preview in `previews/`):
+
+1. **Sign in** (plan §6): a small dialog with "Sign in with EVE Online" (opens the browser), a waiting state ("Finish signing in in your browser …", Cancel), and the fallback field "Paste the code from the browser". Error states: browser closed or timed out, code invalid. Also a **re-login due** variant: "Sign in" (primary) and a single "Do it later" (ghost, +36 h), which is gone once it has been used.
+2. **Account dialog** (plan §6): the account code (mono, copy button) · linked characters (portrait, name, corp ticker, `✕ Unlink`, disabled on the last one) · `+ Add character` · a devices list (device name, last used, `Sign out`; the current device is marked) · footer with `✕ Delete account` (danger, left), which opens a ConfirmDialog stating what is lost (maps it owns transfer, balance forfeited).
+3. **Sync status pill** (toolbar, next to the map menu): the states offline · syncing · live · warning (lapse soon) · read-only · conflict (brief, after a `reject`). Each one has a glyph and a label, not colour alone. Clicking it opens a popover with details and "Retry now".
+4. **Make cloud map** (Settings → map section, plan §15): the payer character picker (character, balance or "trial available"), the monthly price for the current seats, and "Make cloud map". Shows a progress and done state.
+5. **Share / members dialog** (owner and managers, plan §5): the member list (name, role combo, joined date, `✕ Remove`) · `Create invite` (role, expiry, uses) → a link or code with copy · a seats line `4 of 3 included · +25M ISK / 30 days`.
+6. **Billing panel** (owner, plan §7): paid until · balance · the price breakdown by tier, showing how the maps are ranked · how to pay (receiving character name with copy, account or corp code with copy, "send as player donation") · the trial state · map count `3 / 6`.
+7. **Lapse warning** (plan §7): a banner on launch and on the map for the warning and read-only states, with the date and "How to pay".
+8. **Not-saved toast / list** (plan §5 and `sync-protocol.md` §7): edits rejected after a role change or lapse. "3 changes weren't saved: you can no longer edit this map", with a "Show" link.
+9. **Conflict toast** (`sync-protocol.md` §6): "A3 was already mapped by Kira; your version was replaced".
+10. **Presence toggles** (character dock, plan §3): a per-character "Share location on this map" toggle, and remote members' characters in the dock (marked as remote, with the account name, and an AFK state after 1 h).
+11. **Map menu:** a cloud marker on cloud maps, plus each map's sync state (§3 of this README).
+12. **Corp map extras** (plan §16): a CEO badge and hand-picked managers in the members list, a seat limit field, the corp balance in the billing panel, and an optional "Let corp members join as viewer" switch.
+
+**General rules:** the same as above. Money amounts are mono, with `M`/`B` suffixes (`125M ISK`). Destructive actions (unlink, remove member, delete account) are `danger` and sit far left.

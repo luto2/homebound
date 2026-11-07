@@ -45,13 +45,15 @@ Everything runs on one machine, with one app process and one database file. Ther
 2. **SSH key** (ed25519) uploaded to Hetzner, used when the server is created. Password login is never enabled.
 3. **EVE third-party application** at developers.eveonline.com:
    - Name: Homebound.
-   - Callback URL: `https://homebound.luthopian.de/sso/callback`.
-   - Scopes registered: `esi-wallet.read_character_wallet.v1`. Login itself requests **no scopes**. Only the one-time admin link of the receiving character requests the wallet scope.
+   - Callback URL: `https://homebound.luthopian.de/sso/callback`. This is the only callback EVE needs. The desktop app's random loopback port sits behind it (cloud-sync-plan §6).
+   - Scopes registered: `esi-wallet.read_character_wallet.v1` and `esi-mail.read_mail.v1`. Login itself requests **no scopes**. Only the one-time admin link of the receiving character requests the wallet and mail scopes.
    - The client ID and secret go in the server's secrets file (§6). They are never committed to git.
-4. **Receiving character**, along the lines of **"Homebound Admin"**. Check that the name is free and allowed: the EVE naming policy can reject names that look like staff or admin accounts, so keep "Homebound Billing" or "Homebound Mapper" as fallbacks. The admin links it once through `/admin/link-wallet`.
+4. **Receiving character** (the name is still open, see cloud-sync-plan §20), along the lines of **"Homebound Admin"**. Check that the name is free and allowed: the EVE naming policy can reject names that look like staff or admin accounts, so keep "Homebound Billing" or "Homebound Mapper" as fallbacks. The admin links it once through `/admin/link-wallet`.
 5. **Backblaze B2** account (region **EU Central**) with a bucket called `homebound-backup`. It needs an application key limited to that bucket, with no delete permission if possible. Lifecycle setting: keep 30 days of versions.
 6. **DNS** at the luthopian.de registrar: an `A` and an `AAAA` record for `homebound` pointing at the VPS, with a low TTL until the setup is stable.
 7. **healthchecks.io** check called `homebound-wallet-poller`.
+8. **Discord webhook** in your personal server, for admin notifications (cloud-sync-plan §17).
+9. **A second EVE application** for development, with the callback `http://localhost:8080/sso/callback` (cloud-sync-plan §18).
 
 ## 4. Base OS setup
 
@@ -110,7 +112,9 @@ EVE_CLIENT_SECRET=…
 HB_SESSION_KEY=…            # 32 random bytes, used to sign session tokens
 HB_TOKEN_ENC_KEY=…          # encrypts the wallet character's refresh token at rest in the DB
 HB_ADMIN_CHAR_IDS=…         # character IDs allowed to use /admin
+HB_RECEIVER_CHAR_ID=…       # receiving character; luto5 during development
 HB_HEALTHCHECK_URL=https://hc-ping.com/…
+HB_DISCORD_WEBHOOK=https://discord.com/api/webhooks/…   # admin notifications (cloud-sync-plan §17)
 LITESTREAM_ACCESS_KEY_ID=…
 LITESTREAM_SECRET_ACCESS_KEY=…
 ```
