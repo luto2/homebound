@@ -8,6 +8,7 @@ A->B classification:
 New systems get a provisional name straight away (best guess), and a NamingRequest
 is emitted so the UI can confirm "was this the static?" / "which sig?".
 """
+import functools
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -16,7 +17,7 @@ from ..logs.parser import SystemChange
 from ..mapdb.store import LIFETIME_REMAINING, Connection, Store
 from ..universe.db import Universe
 from ..validation import require_integer, require_text, require_type
-from .naming import (Namer, StaticGuess, guess_static, hole_path, next_hole_index, next_level_index,
+from .naming import (Namer, StaticGuess, guess_static, hole_path, next_hole_index,
                      static_slot_count, static_slot_for_class, used_hole_indices)
 
 GRID = 62 / 3                          # map grid cell = 1/3 of the node height (token size-node-h)
@@ -24,6 +25,15 @@ CHILD_OFFSET_X, CHILD_OFFSET_Y = 12 * GRID, 5 * GRID  # offset of a new child fr
 DEFAULT_LIFETIME_HOURS = 48            # for connections whose type (and so lifetime) is unknown
 SIGNATURE_EDIT_KEYS = ("group", "type", "name", "destination", "mass", "lifetime", "lifetime_set_at",
                        "frigate_only", "size")
+
+
+def _one_action(method):
+    """Run a Tracker method as one Store batch, so all its writes are one action (one Undo, one sync batch)."""
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self.store.batch():
+            return method(self, *args, **kwargs)
+    return wrapper
 
 
 @dataclass
@@ -137,6 +147,7 @@ class Tracker:
         self.auto_when_certain = bool(auto_when_certain)
 
     # ------------------------------------------------------------ log events
+    @_one_action
     def on_system_change(self, change: SystemChange) -> list:
         """Handle one Local channel change from a log.
 
@@ -213,6 +224,7 @@ class Tracker:
             unlinked.append(signature.signature_id)
         return unlinked
 
+    @_one_action
     def add_wormhole(self, system_a: int, system_b: int, character_name: str = "", manual: bool = False) -> list:
         """Connect two systems by wormhole, adding them to the map as needed.
 
@@ -268,6 +280,7 @@ class Tracker:
             return self.confirm(connection_id=connection.id)  # someone just jumped the hand-drawn connection
         return False
 
+    @_one_action
     def confirm(self, system_id: int | None = None, connection_id: int | None = None,
                 with_connections: bool = False) -> bool:
         """Mark a hand-added system and/or connection as real.
@@ -308,10 +321,8 @@ class Tracker:
         child_class = self.universe.by_id(child_id).system_class
         guess = guess_static(self.store, self.universe, parent_id, child_id)
         hole = next_hole_index(self.store, self.universe, parent_id, guess.applies and guess.guess, child_class)
-        root, path = hole_path(self.store, parent_id)
-        level = next_level_index(self.store, root, path + [hole])
-        previous = {"parent_id": child.parent_id, "hole_index": child.hole_index, "level_index": child.level_index}
-        self.store.update_system(child_id, parent_id=parent_id, hole_index=hole, level_index=level)
+        previous = {"parent_id": child.parent_id, "hole_index": child.hole_index}
+        self.store.update_system(child_id, parent_id=parent_id, hole_index=hole)
 
         candidates = self.unlinked_wormhole_signatures(parent_id, child_class)
         if len(candidates) == 1:
@@ -325,6 +336,7 @@ class Tracker:
         events.append(NamingRequest(parent_id, child_id, connection.id, guess, candidates, character_name))
         return events
 
+    @_one_action
     def link_signature(self, connection_id: int, system_id: int, signature_id: str, hole_index: int | None) -> bool:
         """Link a signature to a connection and carry its wormhole details over.
 
@@ -364,6 +376,7 @@ class Tracker:
             self.store.update_connection(connection_id, **changes)
         return True
 
+    @_one_action
     def save_signature(self, system_id: int, signature_id: str, values: dict) -> int | None:
         """Store edits from the signature dialog and mirror the wormhole details onto the linked connection.
 
@@ -400,6 +413,7 @@ class Tracker:
         return connection.id
 
     # ------------------------------------------------------------ expiry
+    @_one_action
     def expire(self, now: datetime | None = None) -> int:
         """Drop connections past their lifetime, and the systems they leave without connections.
 
@@ -435,6 +449,7 @@ class Tracker:
         return removed
 
     # ------------------------------------------------------------ answers from the UI
+    @_one_action
     def apply_naming(self, request: NamingRequest, is_static: bool, signature_id: str | None = None,
                      custom_name: str | None = None) -> int:
         """Apply the answer to a naming question.
@@ -470,6 +485,7 @@ class Tracker:
         self.store.update_system(child_id, custom_name=custom_name or None)
         return self.store.system(child_id).hole_index
 
+    @_one_action
     def undo_auto_naming(self, event: AutoNamed) -> bool:
         """Put a system back the way it was before it was named automatically.
 
@@ -498,7 +514,7 @@ class Tracker:
         free = statics + 1
         while free in used:
             free += 1
-        level = current.level_index
+        level = self.namer.level_index(child_id)
         if_static = self.namer.preview(parent_id, static_slot, level) if static_slot else ""
         keeps_own = current.hole_index and current.hole_index > statics
         if_not = self.namer.preview(parent_id, current.hole_index if keeps_own else free, level)

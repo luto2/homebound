@@ -87,15 +87,30 @@ class AppState(QObject):
         self._constructed = True
 
     def _ensure_home(self) -> bool:
-        """Put the home system on the map if it is set and missing.
+        """Put the home system on the map if it is set and missing, and keep the map's own settings in step.
+
+        Home and naming scheme are stored in the map file too (``map_settings``), so they travel with
+        the map (cloud sync, backups).
 
         Returns:
-            True if it was added.
+            True if home was added.
         """
+        self.store_map_settings()
         if self.home_id and not self.store.has_system(self.home_id):
             self.store.add_system(self.home_id)
             return True
         return False
+
+    def store_map_settings(self) -> bool:
+        """Write the active map's home and naming scheme from the settings into the map file.
+
+        Returns:
+            True if anything changed.
+        """
+        with self.store.batch():
+            changed = self.store.set_map_setting("home_system", self.settings.home_system)
+            changed |= self.store.set_map_setting("naming_scheme", self.settings.naming_scheme)
+        return changed
 
     def _open_store(self) -> Store:
         """Open the active map file, backing it up first if its schema is about to be migrated."""

@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS systems (
     id           INTEGER PRIMARY KEY,
     parent_id    INTEGER REFERENCES systems(id) ON DELETE SET NULL,  -- towards home / chain root
     hole_index   INTEGER,          -- index of the hole in the parent leading here; 1 = static
-    level_index  INTEGER,          -- creation order among systems at the same depth in the same chain (A2a/A2b)
+    level_index  INTEGER,          -- unused: the order at a depth is derived from (added_at, id), see naming.level_position
     custom_name  TEXT,             -- user override; NULL = scheme name
     x REAL DEFAULT 0, y REAL DEFAULT 0,
     owner_ticker TEXT, owner_slot INTEGER, owner_note TEXT,
@@ -71,5 +71,11 @@ CREATE TABLE IF NOT EXISTS zkill (
     fetched_at TEXT NOT NULL
 );
 
--- per-map settings (sort order, collapsed groups …)
+-- settings of the map itself; they sync on a cloud map (home system, naming scheme)
+CREATE TABLE IF NOT EXISTS map_settings (key TEXT PRIMARY KEY, value TEXT);
+
+-- local position of a node on a cloud map, over the shared one (dragging doesn't move others' layout)
+CREATE TABLE IF NOT EXISTS layout_override (system_id INTEGER PRIMARY KEY, x REAL, y REAL);
+
+-- per-map UI state, local only (sort order, collapsed groups …)
 CREATE TABLE IF NOT EXISTS key_value (key TEXT PRIMARY KEY, value TEXT);

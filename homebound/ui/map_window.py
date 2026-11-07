@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import app_version
-from ..mapdb.store import map_stats
+from ..mapdb.store import Action, map_stats
 from ..mapping.naming import SCHEMES, guess_static
 from ..mapping.tracker import NamingRequest
 from ..settings import MAP_NAME_LIMIT
@@ -1013,21 +1013,24 @@ class MapWindow(QMainWindow):
         while current:
             chain.append(current)
             current = state.store.system(current.parent_id) if current.parent_id else None
-        for index, node in enumerate(chain):
-            if index == 0:
-                state.store.update_system(node.id, parent_id=None, hole_index=None)
-            else:
-                state.store.update_system(node.id, parent_id=chain[index - 1].id,
-                                          hole_index=chain[index - 1].hole_index)
+        with state.store.batch():
+            for index, node in enumerate(chain):
+                if index == 0:
+                    state.store.update_system(node.id, parent_id=None, hole_index=None)
+                else:
+                    state.store.update_system(node.id, parent_id=chain[index - 1].id,
+                                              hole_index=chain[index - 1].hole_index)
         state.apply_settings()
 
-    def offer_undo(self, title: str, detail: str, snapshot) -> None:
+    def offer_undo(self, title: str, detail: str, action: Action) -> None:
         """Show an Undo toast for a destructive action.
+
+        Undo reverses just that action (its inverse changes), so later edits stay.
 
         Args:
             title: The toast headline.
             detail: The second line.
-            snapshot: ``store.snapshot()`` taken just before the action.
+            action: The Store action to reverse.
 
         Raises:
             TypeError: If ``title`` or ``detail`` is not a string.
@@ -1038,11 +1041,11 @@ class MapWindow(QMainWindow):
         store = state.store
 
         def undo() -> None:
-            """Restore the snapshot unless the map was switched in the meantime."""
+            """Reverse the action unless the map was switched in the meantime."""
             if state.store is not store:
                 self.toasts.show("err", "Can't undo: that was on another map")
                 return
-            store.restore(snapshot)
+            store.undo(action)
             state.mapChanged.emit()
             if state.selected:
                 state.systemUpdated.emit(state.selected)
@@ -1053,14 +1056,14 @@ class MapWindow(QMainWindow):
         state = self.state
         name = state.namer.display(system_id)
         count = len(state.store.connections_of_system(system_id))
-        snapshot = state.store.snapshot()
-        state.store.remove_system(system_id)
+        with state.store.batch() as action:
+            state.store.remove_system(system_id)
         if state.selected == system_id:
             state.select(0)
         state.mapChanged.emit()
         self.offer_undo(f"Removed {name} from the map",
                         f"Its {count} connection{'s' if count != 1 else ''} went with it." if count
-                        else "It had no connections.", snapshot)
+                        else "It had no connections.", action)
 
     def _edge_menu(self, connection_id: int, position) -> None:
         """Show the context menu of a connection."""
@@ -1128,25 +1131,25 @@ class MapWindow(QMainWindow):
             return False
         name_a, name_b = state.namer.display(connection.system_a), state.namer.display(connection.system_b)
         names = {connection.system_a: name_a, connection.system_b: name_b}
-        snapshot = state.store.snapshot()
-        state.store.remove_connection(connection_id)
-        for side in (connection.system_a, connection.system_b):
-            signature = connection.signature_on(side)
-            if signature:
-                state.store.delete_signatures(side, [signature])
-        # drop systems that are no longer connected to anything (except home / pinned)
-        gone = []
-        for system_id in (connection.system_a, connection.system_b):
-            mapped = state.store.system(system_id)
-            if (mapped and system_id != state.home_id and not mapped.pinned
-                    and not state.store.connections_of_system(system_id)):
-                state.store.remove_system(system_id)
-                gone.append(names[system_id])
-        state.store.clear_broken_parents()
+        with state.store.batch() as action:
+            state.store.remove_connection(connection_id)
+            for side in (connection.system_a, connection.system_b):
+                signature = connection.signature_on(side)
+                if signature:
+                    state.store.delete_signatures(side, [signature])
+            # drop systems that are no longer connected to anything (except home / pinned)
+            gone = []
+            for system_id in (connection.system_a, connection.system_b):
+                mapped = state.store.system(system_id)
+                if (mapped and system_id != state.home_id and not mapped.pinned
+                        and not state.store.connections_of_system(system_id)):
+                    state.store.remove_system(system_id)
+                    gone.append(names[system_id])
+            state.store.clear_broken_parents()
         state.mapChanged.emit()
         detail = (f"{' and '.join(gone)} {'was' if len(gone) == 1 else 'were'} removed from the map." if gone
                   else "Both systems stay on the map.")
-        self.offer_undo(f"Collapsed {name_a} ↔ {name_b}", detail, snapshot)
+        self.offer_undo(f"Collapsed {name_a} ↔ {name_b}", detail, action)
         return True
 
     def _background_menu(self, scene_position, position) -> None:
