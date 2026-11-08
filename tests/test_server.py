@@ -438,22 +438,30 @@ def test_account_export_and_delete(harness) -> None:
     assert harness.service.maps.role(map_id, bob_id) == "owner"
 
 
-def test_admin_cli_credits_and_lists(harness, tmp_path, capsys) -> None:
-    """The admin CLI works on the server database."""
-    from homebound_server.__main__ import main
-    database = tmp_path / "admin.sqlite"
-    other = Harness.__new__(Harness)
-    from homebound_server.config import Config
-    from homebound_server.service import Service
+def test_admin_cli_credits_and_lists(tmp_path, capsys) -> None:
+    """The admin CLI works on the server database: credit, maps, new-key, receiver-link and receiver."""
+    import json
+
     from conftest import UNIVERSE
+    from homebound_server.__main__ import main
+    from homebound_server.config import Config
+    from homebound_server.esi import SsoCharacter
+    from homebound_server.service import Service
+    database = tmp_path / "admin.sqlite"
     service = Service(Config(database=database, dev=True), universe=UNIVERSE)
-    service.auth.attach_character(__import__("homebound_server.esi", fromlist=["SsoCharacter"]).SsoCharacter(
-        91000001, "Kira", "h"), None, None)
+    account_id = service.auth.attach_character(SsoCharacter(91000001, "Kira", "h"), None, None)
+    map_id = service.maps.create(account_id, "Kira's chain", HOME.id, service.maps.payer_for_account(account_id), 6)
     service.db.close()
-    assert main(["--dev", "--db", str(database), "admin", "credit", "Kira", "100000000"]) == 0
-    assert '"balance_isk": 100000000' in capsys.readouterr().out
-    assert main(["--dev", "--db", str(database), "admin", "maps"]) == 0
-    del other
+
+    def admin(*args: str):
+        assert main(["--dev", "--db", str(database), "admin", *args]) == 0
+        return json.loads(capsys.readouterr().out)
+
+    assert admin("credit", "Kira", "100000000")["balance_isk"] == 100000000
+    assert [(row["id"], row["name"]) for row in admin("maps")] == [(map_id, "Kira's chain")]
+    assert len(admin("new-key")["HB_TOKEN_ENC_KEY"]) == 44
+    assert "/admin/link-wallet?key=" in admin("receiver-link")["link"]
+    assert admin("receiver")["has_token"] is False
 
 
 def test_health_and_webhook_outbox(harness) -> None:
