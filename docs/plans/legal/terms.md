@@ -58,4 +58,4 @@ EVE Online and all related marks are the property of Fenris Creations (formerly 
 ## 9. Law
 German law applies, as far as this doesn't take away consumer protections you have in your own country.
 
-Last updated: [date]
+Last updated: 08.11.2026

@@ -729,3 +729,38 @@ def test_the_database_waits_for_locks(tmp_path) -> None:
     database = Database(tmp_path / "server.sqlite")
     assert database.value("PRAGMA journal_mode") == "wal"
     assert database.value("PRAGMA busy_timeout") == 5000
+
+
+def test_deleted_accounts_are_purged_after_12_months(harness) -> None:
+    """Payment records, receipts and the account row go 12 months after deletion; trial records stay."""
+    kira = harness.login(91000001, "Kira")
+    bob = harness.login(91000002, "Bob")
+    kira_id = harness.api("GET", "/api/account", kira).json()["account_id"]
+    harness.api("POST", "/api/maps", kira, json={"name": "Trial", "client_id": A, "ops": []})   # starts the trial
+    harness.eve.journal = [
+        {"id": 1, "ref_type": "player_donation", "first_party_id": 91000001, "amount": 1e6},
+        {"id": 2, "ref_type": "player_donation", "first_party_id": 91000002, "amount": 1e6},
+        {"id": 3, "ref_type": "player_donation", "first_party_id": 99999999, "amount": 1e6, "reason": "?"},
+    ]
+    harness.service.poll_wallet()
+    assert harness.api("POST", "/api/account/delete", kira, json={"confirm": "DELETE"}).status_code == 200
+    db = harness.service.db
+
+    def count(sql: str, *parameters) -> int:
+        return db.value(sql, parameters, 0)
+
+    assert harness.service.purge_old_records(utc_now() + timedelta(days=300))["accounts"] == 0
+    assert count("SELECT count(*) FROM payments WHERE journal_id=1") == 1           # kept for 12 months
+    purged = harness.service.purge_old_records(utc_now() + timedelta(days=400))
+    assert purged["accounts"] == 1 and purged["payments"] == 1
+    assert count("SELECT count(*) FROM accounts WHERE id=?", kira_id) == 0
+    assert count("SELECT count(*) FROM payments WHERE journal_id=1") == 0
+    assert count("SELECT count(*) FROM outgoing_mails WHERE key='receipt:1'") == 0
+    assert count("SELECT count(*) FROM unmatched") == 0
+    assert count("SELECT count(*) FROM outgoing_mails WHERE key='unassigned:3'") == 0
+    assert count("SELECT count(*) FROM admin_events") == 0
+    assert count("SELECT count(*) FROM trials WHERE char_id=91000001") == 1          # one trial per character, ever
+    # Bob's account isn't deleted: his payment and receipt stay
+    assert count("SELECT count(*) FROM payments WHERE journal_id=2") == 1
+    assert count("SELECT count(*) FROM outgoing_mails WHERE key='receipt:2'") == 1
+    assert harness.api("GET", "/api/account", bob).status_code == 200

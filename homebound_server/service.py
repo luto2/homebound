@@ -29,6 +29,7 @@ from .prune import prune_ops
 log = logging.getLogger("homebound.server")
 VERSION = "0.1.0"
 RECEIVER_LINK_MINUTES = 30
+RETENTION_DAYS = 365           # payment records etc. after an account is deleted (privacy policy §7)
 
 
 class Service:
@@ -122,6 +123,46 @@ class Service:
             payer = self.db.value("SELECT id FROM payers WHERE kind='account' AND subject_id=?", (account_id,))
             if payer:
                 self.db.execute("UPDATE billing SET balance_isk=0 WHERE payer_id=?", (payer,))
+
+    def purge_old_records(self, now: datetime | None = None) -> dict:
+        """Delete what the privacy policy keeps only for 12 months (daily job).
+
+        - accounts deleted more than 12 months ago: their payment records, receipt mails, billing
+          and the account row itself (characters and sessions went at deletion)
+        - unmatched payments and their problem mails, admin events, and payment strikes older than 12 months
+
+        Trial records stay: they keep a character from starting a second free trial.
+
+        Returns:
+            How many rows of each kind were deleted.
+        """
+        cutoff = iso((now or utc_now()) - timedelta(days=RETENTION_DAYS))
+        counts = {"accounts": 0, "payments": 0, "mails": 0, "unmatched": 0, "events": 0, "strikes": 0}
+        with self.db.transaction():
+            for account in self.db.all("SELECT id FROM accounts WHERE deleted_at IS NOT NULL AND deleted_at < ?",
+                                       (cutoff,)):
+                account_id = account["id"]
+                payer = self.db.value("SELECT id FROM payers WHERE kind='account' AND subject_id=?", (account_id,))
+                if payer:
+                    journal_ids = [row["journal_id"] for row in
+                                   self.db.all("SELECT journal_id FROM payments WHERE payer_id=?", (payer,))]
+                    for journal_id in journal_ids:
+                        counts["mails"] += self.db.execute("DELETE FROM outgoing_mails WHERE key=?",
+                                                           (f"receipt:{journal_id}",)).rowcount
+                    counts["payments"] += self.db.execute("DELETE FROM payments WHERE payer_id=?", (payer,)).rowcount
+                    if not self.db.one("SELECT 1 FROM maps WHERE payer_id=?", (payer,)):
+                        self.db.execute("DELETE FROM billing WHERE payer_id=?", (payer,))
+                        self.db.execute("DELETE FROM payers WHERE id=?", (payer,))
+                for table in ("sessions", "login_codes", "link_codes", "members", "characters"):
+                    self.db.execute(f"DELETE FROM {table} WHERE account_id=?", (account_id,))
+                counts["accounts"] += self.db.execute("DELETE FROM accounts WHERE id=?", (account_id,)).rowcount
+            for row in self.db.all("SELECT journal_id FROM unmatched WHERE seen_at < ?", (cutoff,)):
+                counts["mails"] += self.db.execute("DELETE FROM outgoing_mails WHERE key=?",
+                                                   (f"unassigned:{row['journal_id']}",)).rowcount
+            counts["unmatched"] = self.db.execute("DELETE FROM unmatched WHERE seen_at < ?", (cutoff,)).rowcount
+            counts["events"] = self.db.execute("DELETE FROM admin_events WHERE created_at < ?", (cutoff,)).rowcount
+            counts["strikes"] = self.db.execute("DELETE FROM payment_strikes WHERE last_at < ?", (cutoff,)).rowcount
+        return counts
 
     def export(self, account_id: int) -> dict:
         """Return the GDPR export of an account (plan §19)."""

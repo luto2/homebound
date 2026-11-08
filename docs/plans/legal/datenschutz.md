@@ -5,7 +5,7 @@
 
 ## 1. Verantwortlicher
 
-[Vorname Nachname], E-Mail: [E-Mail-Adresse] (siehe [Impressum](/impressum)).
+Tobias Luther, E-Mail: luther-tobias@gmx.de (siehe Impressum).
 Ein Datenschutzbeauftragter ist nicht bestellt und nicht erforderlich.
 
 ## 2. Grundsatz
@@ -27,6 +27,7 @@ Die Desktop-App funktioniert auch vollständig ohne den Sync-Dienst. In diesem F
 | Karteninhalte (Systeme, Verbindungen, Signaturen, Notizen, Einstellungen) | von Nutzern eingetragen | Synchronisierung zwischen Mitgliedern | Art. 6 Abs. 1 lit. b DSGVO | Verbindungen automatisch nach 2 Tagen, Systeme nach 4 Tagen (außer Heimatsystem und angeheftete Systeme); die ganze Karte 2 Monate nach Ablauf der Zahlung |
 | Live-Standort von Charakteren | Desktop-App, nur wenn pro Charakter aktiviert (Opt-in) | Anzeige für Kartenmitglieder | Art. 6 Abs. 1 lit. a DSGVO (Einwilligung, jederzeit abschaltbar) | **wird nicht gespeichert**, nur im Arbeitsspeicher, solange die Verbindung besteht |
 | Zahlungsdaten (Journal-ID, zahlender Charakter, ISK-Betrag, Datum, Verwendungszweck) | Wallet-Journal des Empfangscharakters (ESI) | Abrechnung des Abonnements | Art. 6 Abs. 1 lit. b DSGVO | solange das Konto besteht, danach 12 Monate |
+| Nutzung der kostenlosen Testphase (Charakter-ID, Konto-ID, Zeitpunkt) | beim Start der Testphase | Missbrauchsschutz: die Testphase gibt es nur einmal pro Charakter, auch nach Löschung oder Weiterverkauf | Art. 6 Abs. 1 lit. f DSGVO | unbegrenzt |
 | IP-Adresse, Zeitpunkt, Anfrage | technisch bei jedem Aufruf | Betrieb, Missbrauchsschutz (Rate-Limits), Fehlersuche | Art. 6 Abs. 1 lit. f DSGVO | Rate-Limits nur im Arbeitsspeicher; Server-Logs 14 Tage |
 
 Es werden keine besonderen Kategorien personenbezogener Daten verarbeitet.
@@ -42,7 +43,7 @@ Die Anmeldung erfolgt über EVE Single Sign-On von Fenris Creations (vormals CCP
 ## 6. Empfänger und Auftragsverarbeiter
 
 - **Hetzner Online GmbH**, Industriestr. 25, 91710 Gunzenhausen, Deutschland: Server-Hosting in Deutschland. Mit Hetzner besteht ein Vertrag zur Auftragsverarbeitung nach Art. 28 DSGVO.
-- **Hetzner Online GmbH** (wie oben): Datenbank-Backups im Hetzner Object Storage an einem anderen Standort als der Server (Deutschland oder Finnland, also innerhalb der EU). Der Vertrag zur Auftragsverarbeitung mit Hetzner gilt auch dafür. [Standort vor Veröffentlichung eintragen]
+- **Hetzner Online GmbH** (wie oben): Datenbank-Backups im Hetzner Object Storage an einem anderen Standort als der Server (Helsinki1). Der Vertrag zur Auftragsverarbeitung mit Hetzner gilt auch dafür.
 - **healthchecks.io** (SIA Monkey See Monkey Do, Lettland): erhält nur technische Statussignale („Server läuft") und **keine** personenbezogenen Daten von Nutzern.
 - **Andere Mitglieder derselben Karte** sehen Karteninhalte, die Charakternamen der Mitglieder und, falls aktiviert, Live-Standorte.
 
@@ -52,7 +53,7 @@ Eine Weitergabe an sonstige Dritte findet nicht statt, und Daten werden nicht ve
 
 - Verbindungen und Systeme werden wie in der Tabelle beschrieben automatisch entfernt.
 - Läuft ein Abonnement aus, wird die Karte auf dem Server **2 Monate nach Ablauf** gelöscht. Lokale Kopien in den Desktop-Apps der Mitglieder bleiben davon unberührt und liegen in deren eigener Verantwortung.
-- Ein Konto kann jederzeit per E-Mail an [E-Mail-Adresse] oder über die App [sobald vorhanden] gelöscht werden.
+- Ein Konto kann jederzeit per E-Mail an luther-tobias@gmx.de oder in der App unter Cloud → Account → „Delete account …“ gelöscht werden. Verknüpfte Charaktere und Sitzungen werden sofort gelöscht. Zahlungsdaten und Zahlungsbestätigungen bleiben noch 12 Monate gespeichert und werden dann zusammen mit dem restlichen Konto endgültig gelöscht; nur der Eintrag zur kostenlosen Testphase bleibt (siehe Tabelle). Lokale Karten bleiben auf deinem Rechner.
 - Backups werden nach spätestens 30 Tagen überschrieben.
 
 ## 8. Deine Rechte
@@ -66,9 +67,7 @@ Du hast das Recht auf:
 - Widerspruch gegen Verarbeitungen auf Grundlage berechtigter Interessen (Art. 21)
 - Widerruf einer Einwilligung, z. B. für Live-Standorte, jederzeit mit Wirkung für die Zukunft (Art. 7 Abs. 3)
 
-Außerdem hast du das Recht, dich bei einer Datenschutz-Aufsichtsbehörde zu beschweren, z. B. bei der für den Verantwortlichen zuständigen Behörde: [Landesdatenschutzbehörde des Bundeslands eintragen].
-
-Für alle Anfragen genügt eine E-Mail an [E-Mail-Adresse]. Bitte gib dabei deine Charakter-ID oder deinen Charakternamen an.
+Für alle Anfragen genügt eine E-Mail an luther-tobias@gmx.de. Bitte gib dabei deine Charakter-ID oder deinen Charakternamen an.
 
 ## 9. Sicherheit
 
@@ -79,7 +78,7 @@ Für alle Anfragen genügt eine E-Mail an [E-Mail-Adresse]. Bitte gib dabei dein
 
 ## 10. Änderungen
 
-Diese Erklärung wird angepasst, wenn sich der Dienst ändert. Stand: [Datum].
+Diese Erklärung wird angepasst, wenn sich der Dienst ändert. Stand: 08.11.2026.
 
 ---
 
@@ -97,4 +96,4 @@ Hosting is at Hetzner in Germany. Backups go to Hetzner's object storage in anot
 
 Connections are auto-deleted after 2 days and systems after 4 days. A map is deleted 2 months after its subscription lapses.
 
-You have the usual GDPR rights (access, deletion and so on). Contact: [email].
+You have the usual GDPR rights (access, deletion and so on). Contact: luther-tobias@gmx.de.

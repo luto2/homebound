@@ -18,6 +18,7 @@ SCHEDULE = [
     ("poll_affiliations", 3600, True),
     ("send_mails", 120, True),
     ("check_disk", 600, False),
+    ("purge_old_records", 86400, False),
     ("flush_events", 60, True),
 ]
 POLLER_SILENT_SECONDS = 2 * 3600
@@ -35,6 +36,7 @@ def run_job(service: Service, name: str):
         "poll_affiliations": service.poll_affiliations,
         "send_mails": service.send_mails,
         "check_disk": service.check_disk,
+        "purge_old_records": service.purge_old_records,
         "flush_events": service.events.flush,
     }[name]()
 
