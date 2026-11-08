@@ -1,10 +1,10 @@
 #!/bin/sh
-# Restore the newest backup from B2 into a temp folder and check it (hosting-hetzner.md §7).
+# Restore the newest backup from object storage into a temp folder and check it (hosting-hetzner.md §7).
 # Install to /usr/local/bin/hb-restore-test; run daily by homebound-restore-test.timer.
 # Pings HB_RESTORE_HEALTHCHECK_URL (healthchecks.io): /0 when the restore is good, /1 when not.
 set -u
 . /etc/homebound/env 2>/dev/null
-export LITESTREAM_ACCESS_KEY_ID LITESTREAM_SECRET_ACCESS_KEY HB_B2_ENDPOINT HB_B2_REGION
+export LITESTREAM_ACCESS_KEY_ID LITESTREAM_SECRET_ACCESS_KEY HB_BACKUP_ENDPOINT HB_BACKUP_REGION
 
 check() {
     tmp=$(mktemp -d) || return 1

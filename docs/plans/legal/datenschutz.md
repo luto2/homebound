@@ -42,7 +42,7 @@ Die Anmeldung erfolgt über EVE Single Sign-On von Fenris Creations (vormals CCP
 ## 6. Empfänger und Auftragsverarbeiter
 
 - **Hetzner Online GmbH**, Industriestr. 25, 91710 Gunzenhausen, Deutschland: Server-Hosting in Deutschland. Mit Hetzner besteht ein Vertrag zur Auftragsverarbeitung nach Art. 28 DSGVO.
-- **Backblaze, Inc.**, San Mateo, USA: verschlüsselte Datenbank-Backups, gespeichert in der Region **EU Central (Amsterdam, Niederlande)**. Ein Vertrag zur Auftragsverarbeitung wird abgeschlossen. Da Backblaze ein US-Unternehmen ist, ist ein Zugriff aus den USA nicht völlig auszuschließen. Grundlage sind die EU-Standardvertragsklauseln bzw. das EU-US Data Privacy Framework, sofern Backblaze dort zertifiziert ist. [vor Veröffentlichung prüfen]
+- **Hetzner Online GmbH** (wie oben): Datenbank-Backups im Hetzner Object Storage an einem anderen Standort als der Server (Deutschland oder Finnland, also innerhalb der EU). Der Vertrag zur Auftragsverarbeitung mit Hetzner gilt auch dafür. [Standort vor Veröffentlichung eintragen]
 - **healthchecks.io** (SIA Monkey See Monkey Do, Lettland): erhält nur technische Statussignale („Server läuft") und **keine** personenbezogenen Daten von Nutzern.
 - **Andere Mitglieder derselben Karte** sehen Karteninhalte, die Charakternamen der Mitglieder und, falls aktiviert, Live-Standorte.
 
@@ -74,7 +74,7 @@ Für alle Anfragen genügt eine E-Mail an [E-Mail-Adresse]. Bitte gib dabei dein
 
 - Alle Verbindungen sind per TLS verschlüsselt.
 - Der Server ist nur per SSH-Schlüssel erreichbar.
-- Backups sind verschlüsselt.
+- Backups sind verschlüsselt. [erst wahr, wenn die age-Verschlüsselung in Litestream eingerichtet ist; vor Veröffentlichung prüfen]
 - Das Wallet-Token des Empfangscharakters ist zusätzlich verschlüsselt gespeichert.
 
 ## 10. Änderungen
@@ -93,7 +93,7 @@ Homebound stores only what the sync service needs:
 
 Live character locations are opt-in and never stored. There is no tracking and no third-party cookies, only a session cookie.
 
-Hosting is at Hetzner in Germany. Encrypted backups go to Backblaze in the EU region.
+Hosting is at Hetzner in Germany. Backups go to Hetzner's object storage in another EU location.
 
 Connections are auto-deleted after 2 days and systems after 4 days. A map is deleted 2 months after its subscription lapses.
 

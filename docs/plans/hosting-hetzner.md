@@ -33,11 +33,11 @@ Everything runs on one machine, with one app process and one database file. Ther
 | Primary IPv4 | yes | ~€0.50 | Many players still have no IPv6. |
 | Hetzner Backups | optional, +20% of the VPS price | ~€1 | Whole-machine snapshots, kept for 7 days. Handy for "I broke the OS" moments, but they are **not** off-site. |
 | Cloud Firewall | yes | free | Applies in front of the VPS as well as `ufw` on it. |
-| Off-site DB backup | **Backblaze B2, EU Central region (Amsterdam)** | cents | A different provider from Hetzner, used as the Litestream target. The EU region keeps the data inside the EU (see the privacy policy). |
+| DB backup | **Hetzner Object Storage**, in a different location from the VPS | ~€5 | The Litestream target. Backblaze B2 was the plan, but new B2 accounts no longer offer the EU region (2026-11), and the privacy policy promises EU storage. Same provider as the VPS, so an account problem at Hetzner would hit both. |
 | Domain | `homebound.luthopian.de` (subdomain of a domain you already have) | €0 | A dedicated `homebound.*` domain would be about €10 a year. |
 | Uptime monitor | healthchecks.io (free) plus an external HTTP check | free | See §9. |
 
-**Total: about €5–7 a month.**
+**Total: about €10–12 a month.**
 
 ## 3. Accounts and registrations needed
 
@@ -49,7 +49,7 @@ Everything runs on one machine, with one app process and one database file. Ther
    - Scopes registered: `esi-wallet.read_character_wallet.v1`, `esi-mail.read_mail.v1` and `esi-mail.send_mail.v1`. Login itself requests **no scopes**. Only the one-time admin link of the receiving character requests the wallet and mail scopes. It reads payments and map-limit requests, and it sends each payer a receipt, or a mail saying why the ISK couldn't be assigned.
    - The client ID and secret go in the server's secrets file (§6). They are never committed to git.
 4. **Receiving character:** **Homebound Billing**, character ID `2124836346` (created 2026-11-08). The admin links it once: `homebound-server admin receiver-link` prints a one-time link to `/admin/link-wallet` (valid 30 minutes). Open it, sign in as the receiving character, and the server stores its refresh token in the database. `admin receiver` shows the result. `HB_RECEIVER_REFRESH_TOKEN` is only a fallback.
-5. **Backblaze B2** account (region **EU Central**) with a bucket called `homebound-backup`. It needs an application key limited to that bucket, with no delete permission if possible. Lifecycle setting: keep 30 days of versions.
+5. **Hetzner Object Storage** bucket `homebound-backup` in a location other than the VPS's, with its own S3 credentials (§15 step 10).
 6. **DNS** at the luthopian.de registrar: an `A` and an `AAAA` record for `homebound` pointing at the VPS, with a low TTL until the setup is stable.
 7. **healthchecks.io** check called `homebound-wallet-poller`.
 8. **Discord webhook** in your personal server, for admin notifications (cloud-sync-plan §17).
@@ -86,7 +86,7 @@ Everything runs on one machine, with one app process and one database file. Ther
   - the port is only local. The public side is 443, shared with any other site on the VPS: the reverse proxy routes by hostname. If 8080 is taken, any free local port works, as long as the proxy points there.
   - `User=homebound` and `Restart=on-failure`
   - hardening: `ProtectSystem=strict`, `ReadWritePaths=/var/lib/homebound`, `PrivateTmp`, `NoNewPrivileges`, `MemoryMax=512M`
-- `litestream.service`: replicates `sync.db` to B2.
+- `litestream.service`: replicates `sync.db` to Hetzner Object Storage.
 - The wallet poller and prune timers run **inside** the app process, as asyncio tasks. That keeps it to one process.
 
 **Caddyfile, roughly:**
@@ -116,10 +116,10 @@ HB_DISCORD_WEBHOOK=https://discord.com/api/webhooks/…   # admin notifications 
 HB_MUTE_BILLING=0           # 1: no posts for billing state changes
 HB_DISK_WARN_PERCENT=80
 HB_HEALTHCHECK_URL=https://hc-ping.com/…   # pinged after each successful wallet poll
-LITESTREAM_ACCESS_KEY_ID=…       # B2 application key ID (only for the homebound-backup bucket)
-LITESTREAM_SECRET_ACCESS_KEY=…   # B2 application key
-HB_B2_ENDPOINT=s3.eu-central-003.backblazeb2.com   # the bucket's "Endpoint" in B2
-HB_B2_REGION=eu-central-003      # the part after "s3." in the endpoint
+LITESTREAM_ACCESS_KEY_ID=…       # object storage access key
+LITESTREAM_SECRET_ACCESS_KEY=…   # object storage secret key
+HB_BACKUP_ENDPOINT=hel1.your-objectstorage.com   # the bucket's location endpoint, without https://
+HB_BACKUP_REGION=hel1            # the location code: fsn1, nbg1 or hel1
 HB_RESTORE_HEALTHCHECK_URL=https://hc-ping.com/…   # the daily restore test reports here
 ```
 
@@ -130,11 +130,11 @@ HB_RESTORE_HEALTHCHECK_URL=https://hc-ping.com/…   # the daily restore test re
 
 ## 7. Backups and restore
 
-**Litestream** copies every change of `sync.db` to Backblaze B2 (setup: §15 step 10). The files are in `packaging/server/`:
-- `litestream.yml` (to `/etc/litestream.yml`): replica `s3://homebound-backup/sync.db` on the B2 endpoint, sync every 10 s, a snapshot every 24 h, 30 days kept with every change in between (point-in-time restore).
+**Litestream** copies every change of `sync.db` to Hetzner Object Storage (setup: §15 step 10). The files are in `packaging/server/`:
+- `litestream.yml` (to `/etc/litestream.yml`): replica `s3://homebound-backup/sync.db` on the storage endpoint, sync every 10 s, a snapshot every 24 h, 30 days kept with every change in between (point-in-time restore).
 - `litestream-override.conf`: Litestream runs as the `homebound` user with the credentials from `/etc/homebound/env`.
 - At most about 10 s of edits can be lost. Clients still have their own local copies anyway.
-- The B2 bucket keeps prior file versions for 30 days, so even a leaked key that deletes files can't destroy the backup.
+- The bucket lives in a different Hetzner location from the VPS, so one data center outage can't take both.
 - Alliance Auth on the same VPS is **not** part of this.
 
 **Data that is not backed up:**
@@ -149,7 +149,7 @@ HB_RESTORE_HEALTHCHECK_URL=https://hc-ping.com/…   # the daily restore test re
 4. Clients reconnect. Their `last_seq` is either still inside the tail or they get a snapshot.
 
 **Checks:**
-- **A restore test every day** (`hb-restore-test`, run by `homebound-restore-test.timer`): restores the newest backup to a temp folder, runs `PRAGMA integrity_check`, counts the maps, and checks the backup is less than 2 h behind (it compares the last wallet poll). It pings `HB_RESTORE_HEALTHCHECK_URL`: healthchecks.io emails you when a test fails or none arrives. A daily test of a few MB costs nothing on B2.
+- **A restore test every day** (`hb-restore-test`, run by `homebound-restore-test.timer`): restores the newest backup to a temp folder, runs `PRAGMA integrity_check`, counts the maps, and checks the backup is less than 2 h behind (it compares the last wallet poll). It pings `HB_RESTORE_HEALTHCHECK_URL`: healthchecks.io emails you when a test fails or none arrives. A daily test of a few MB costs nothing extra.
 - Hetzner Backups (if enabled) are only for quick OS-level rollback. They are not the DB backup.
 
 ## 8. Deploying updates
@@ -182,7 +182,7 @@ HB_RESTORE_HEALTHCHECK_URL=https://hc-ping.com/…   # the daily restore test re
 - [ ] Session tokens signed, with expiry and a revocation list (logout, member removed)
 - [ ] Every `push` checks role and map state (viewer, lapsed, read-only)
 - [ ] `HB_TOKEN_ENC_KEY` set, and `admin receiver` shows the receiver linked
-- [ ] Backups encrypted (B2 server-side encryption plus a bucket-scoped key), and the restore tested
+- [ ] Backups encrypted (still open: Litestream's own age encryption, so the storage provider only sees ciphertext), and the restore tested
 - [ ] `unattended-upgrades` active
 
 ## 11. Legal and policy (to check before going public)
@@ -199,15 +199,15 @@ HB_RESTORE_HEALTHCHECK_URL=https://hc-ping.com/…   # the daily restore test re
 |------|---------|
 | VPS (smallest, with IPv4) | ~4.5–5.5 |
 | Hetzner Backups (optional) | ~1 |
-| Backblaze B2 | <0.10 |
+| Hetzner Object Storage | ~5 |
 | Domain (subdomain) | 0 |
-| **Total** | **~5–7** |
+| **Total** | **~10–12** |
 
 ## 13. Decided
 
 - **VPS:** x86, the current smallest shared-vCPU plan.
 - **Domain:** subdomain `homebound.luthopian.de`.
-- **Off-site backup:** Backblaze B2, EU Central region.
+- **Backup:** Hetzner Object Storage in another location (B2's EU region isn't offered to new accounts).
 - **Receiving character:** Homebound Billing (ID `2124836346`).
 - **Legal pages:** drafted now in [`legal/`](legal/) (WIP).
 
@@ -345,12 +345,11 @@ cd /opt/homebound && git pull --ff-only && UV_PYTHON_PREFERENCE=only-system uv s
 systemctl restart homebound-sync
 ```
 
-### 10. Backups (Litestream to Backblaze B2)
-**In Backblaze B2** (region EU Central):
-1. Create the bucket `homebound-backup`: **private**, encryption on.
-2. Bucket settings > Lifecycle: **"Keep prior versions for this number of days: 30"**.
-3. Application Keys > Add: access only to `homebound-backup`, **Read and Write** (Litestream needs to delete old snapshots; the 30 days of prior versions protect against a leaked key).
-4. Note the key ID, the key (shown once), and the bucket's **Endpoint** (for example `s3.eu-central-003.backblazeb2.com`).
+### 10. Backups (Litestream to Hetzner Object Storage)
+**In the Hetzner Console:**
+1. Your project > **Object Storage** > create the bucket `homebound-backup`, **private**, in a location other than the VPS's (e.g. VPS in Nuremberg, bucket in Helsinki or Falkenstein).
+2. **Security > S3 credentials** > generate. Note the access key and the secret key (shown once) in the password manager.
+3. Note the bucket's endpoint, e.g. `hel1.your-objectstorage.com`, and its location code (`hel1`).
 
 **On the VPS:**
 ```bash
@@ -359,7 +358,7 @@ wget https://github.com/benbjohnson/litestream/releases/download/v0.3.13/litestr
 dpkg -i litestream-v0.3.13-linux-amd64.deb
 
 # credentials and endpoint: add LITESTREAM_ACCESS_KEY_ID, LITESTREAM_SECRET_ACCESS_KEY,
-# HB_B2_ENDPOINT, HB_B2_REGION and HB_RESTORE_HEALTHCHECK_URL to /etc/homebound/env (§6)
+# HB_BACKUP_ENDPOINT, HB_BACKUP_REGION and HB_RESTORE_HEALTHCHECK_URL to /etc/homebound/env (§6)
 nano /etc/homebound/env
 
 cd /opt/homebound/packaging/server
@@ -373,6 +372,6 @@ journalctl -u litestream -f      # "initialized db", then "snapshot written" and
 ```
 
 **Check it:**
-1. In B2's file browser, `homebound-backup/sync.db/` has `generations/…` with a snapshot and WAL files after a minute.
+1. In the bucket's file list, `homebound-backup/sync.db/` has `generations/…` with a snapshot and WAL files after a minute.
 2. `sudo -u homebound hb-restore-test` prints `restore ok: integrity ok, N maps, …`.
 3. On healthchecks.io, the check `homebound-restore-test` (period 1 day, grace 2 h) turns green.
