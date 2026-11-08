@@ -4,6 +4,28 @@ An offline wormhole mapper for EVE Online. Homebound follows your characters thr
 
 Runs on Linux and Windows.
 
+## Install on Linux
+
+1. Download `Homebound-<version>-x86_64.AppImage` from the [latest release](https://github.com/luto2/homebound/releases/latest).
+2. Make it executable and start it:
+
+   ```sh
+   chmod +x Homebound-*-x86_64.AppImage
+   ./Homebound-*-x86_64.AppImage
+   ```
+
+3. If it doesn't start, Qt is missing `libxcb-cursor`, which Plasma systems already have:
+
+   ```sh
+   sudo apt install libxcb-cursor0      # Debian, Ubuntu, Mint
+   sudo dnf install xcb-util-cursor     # Fedora
+   sudo pacman -S xcb-util-cursor       # Arch, CachyOS, Manjaro
+   ```
+
+On Arch you can build a native package instead: download the `PKGBUILD` from the same release into an empty folder and run `makepkg -si` there.
+
+On first start Homebound offers to download the EVE game data (about 100 MB), then opens Settings on the log folder. [Getting started](#getting-started) has the rest.
+
 ![Homebound's main window with a small chain out of a C5 home](docs/images/main-window.png)
 
 ## What it does
@@ -25,7 +47,7 @@ Runs on Linux and Windows.
 
 Releases on GitHub have ready-made packages:
 
-- **Linux**: `Homebound-<version>-x86_64.AppImage`. Make it executable and run it. Qt needs `libxcb-cursor0` (`xcb-util-cursor` on Arch), which Plasma systems already have.
+- **Linux**: `Homebound-<version>-x86_64.AppImage`, plus a `PKGBUILD` for Arch. See [Install on Linux](#install-on-linux).
 - **Windows**: `Homebound-<version>-windows-setup.exe` installs for your user only (no admin rights), with a Start menu entry and optional autostart. `Homebound-<version>-windows-portable.zip` is the same program to unpack anywhere. The builds aren't signed yet, so SmartScreen warns on the first start: *More info → Run anyway*.
 
 The packages contain no EVE game data. On first start Homebound offers to download the EVE static data export and the community wormhole data (about 100 MB) and builds its universe data from them, which takes a minute or so.
