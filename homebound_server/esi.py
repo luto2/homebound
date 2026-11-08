@@ -10,10 +10,11 @@ from urllib.parse import urlencode
 
 import httpx
 
+from homebound.http import user_agent
+
 SSO_AUTHORIZE = "https://login.eveonline.com/v2/oauth/authorize"
 SSO_TOKEN = "https://login.eveonline.com/v2/oauth/token"
 ESI = "https://esi.evetech.net/latest"
-USER_AGENT = "homebound-server (+https://github.com/luto2/homebound)"
 NPC_CORP_IDS = range(1_000_000, 2_000_000)       # NPC corporations have IDs in this range
 # what the receiving character's one-time admin link asks for: read payments, read map-limit
 # requests, send receipts
@@ -52,7 +53,7 @@ class Eve:
     def __init__(self, client_id: str, client_secret: str, callback: str) -> None:
         """Keep the SSO application's credentials and its registered callback URL."""
         self.client_id, self.client_secret, self.callback = client_id, client_secret, callback
-        self.http = httpx.Client(timeout=20, headers={"User-Agent": USER_AGENT})
+        self.http = httpx.Client(timeout=20, headers={"User-Agent": user_agent("sync server; +https://github.com/luto2/homebound")})
 
     def authorize_url(self, state: str, scopes: str = "") -> str:
         """Return the EVE login page to send the browser to."""

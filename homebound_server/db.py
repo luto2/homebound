@@ -6,6 +6,9 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from homebound.http import parse_utc
+from homebound.mapdb.store import utc_now_iso
+
 SCHEMA = """
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
@@ -193,18 +196,18 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 
 
 def utc_now() -> datetime:
-    """Return the current UTC time with whole seconds."""
-    return datetime.now(timezone.utc).replace(microsecond=0)
+    """Return the current UTC time with whole seconds (the app's :func:`utc_now_iso`, as a datetime)."""
+    return parse_utc(utc_now_iso())
 
 
 def iso(moment: datetime) -> str:
-    """Return a UTC time as ISO 8601 text with whole seconds."""
-    return moment.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+    """Return a time as UTC ISO 8601 text with whole seconds, the form :func:`utc_now_iso` writes."""
+    return moment.astimezone(timezone.utc).isoformat(timespec="seconds")
 
 
 def parse_iso(text: str | None) -> datetime | None:
-    """Parse ISO 8601 text (None stays None)."""
-    return datetime.fromisoformat(text) if text else None
+    """Parse ISO 8601 text with the app's :func:`parse_utc` (None stays None)."""
+    return parse_utc(text) if text else None
 
 
 class Database:
