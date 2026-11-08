@@ -1,5 +1,6 @@
 """Where the session token is kept: keyring first, else a 0600 file (plan §6)."""
 import builtins
+import os
 import stat
 import sys
 import types
@@ -8,6 +9,14 @@ from homebound.sync import token as token_module
 from homebound.sync.token import SERVICE, TokenStore
 
 SERVER = "https://homebound.example:8443"
+
+
+def assert_private(path) -> None:
+    """The token file is readable by its owner only (Windows has no such mode bits; there the folder is per-user)."""
+    if os.name == "posix":
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    else:
+        assert path.is_file()
 
 
 class FakeKeyring:
@@ -46,10 +55,11 @@ def test_the_file_fallback_is_private_and_round_trips(tmp_path) -> None:
     store.save(SERVER, "secret-1")
     path = store._file(SERVER)
     assert path.parent == tmp_path / "data" and "/" not in path.name and ":" not in path.name
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert_private(path)
     assert store.load(SERVER) == "secret-1"
     store.save(SERVER, "secret-2")                           # overwrite stays private
-    assert store.load(SERVER) == "secret-2" and stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert store.load(SERVER) == "secret-2"
+    assert_private(path)
     store.clear(SERVER)
     assert not path.exists() and store.load(SERVER) is None
     store.clear(SERVER)                                      # clearing twice is fine
@@ -74,7 +84,7 @@ def test_a_broken_keyring_falls_back_to_the_file(tmp_path) -> None:
     store = TokenStore(tmp_path, use_keyring=False)
     store.keyring = FakeKeyring(broken=True)
     store.save(SERVER, "secret")
-    assert stat.S_IMODE(store._file(SERVER).stat().st_mode) == 0o600
+    assert_private(store._file(SERVER))
     assert store.load(SERVER) == "secret"
     store.clear(SERVER)
     assert not store._file(SERVER).exists()
