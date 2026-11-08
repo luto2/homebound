@@ -10,3 +10,6 @@ graphify-out/manifest.json
 graphify-out/cost.json
 graphify-out/.graphify_python
 graphify-out/.graphify_root
+
+# private operator notes, never committed
+docs/private/

@@ -116,8 +116,11 @@ HB_DISCORD_WEBHOOK=https://discord.com/api/webhooks/…   # admin notifications 
 HB_MUTE_BILLING=0           # 1: no posts for billing state changes
 HB_DISK_WARN_PERCENT=80
 HB_HEALTHCHECK_URL=https://hc-ping.com/…   # pinged after each successful wallet poll
-LITESTREAM_ACCESS_KEY_ID=…
-LITESTREAM_SECRET_ACCESS_KEY=…
+LITESTREAM_ACCESS_KEY_ID=…       # B2 application key ID (only for the homebound-backup bucket)
+LITESTREAM_SECRET_ACCESS_KEY=…   # B2 application key
+HB_B2_ENDPOINT=s3.eu-central-003.backblazeb2.com   # the bucket's "Endpoint" in B2
+HB_B2_REGION=eu-central-003      # the part after "s3." in the endpoint
+HB_RESTORE_HEALTHCHECK_URL=https://hc-ping.com/…   # the daily restore test reports here
 ```
 
 - Secrets live only here and in your password manager.
@@ -127,23 +130,26 @@ LITESTREAM_SECRET_ACCESS_KEY=…
 
 ## 7. Backups and restore
 
-**Litestream** (`/etc/litestream.yml`):
-- Replica: `s3://homebound-backup/sync.db` on the B2 endpoint.
-- Snapshot interval 24 h, retention 30 days, sync interval about 10 s.
-- At most roughly 10 s of edits can be lost. Clients still have their own local copies anyway.
+**Litestream** copies every change of `sync.db` to Backblaze B2 (setup: §15 step 10). The files are in `packaging/server/`:
+- `litestream.yml` (to `/etc/litestream.yml`): replica `s3://homebound-backup/sync.db` on the B2 endpoint, sync every 10 s, a snapshot every 24 h, 30 days kept with every change in between (point-in-time restore).
+- `litestream-override.conf`: Litestream runs as the `homebound` user with the credentials from `/etc/homebound/env`.
+- At most about 10 s of edits can be lost. Clients still have their own local copies anyway.
+- The B2 bucket keeps prior file versions for 30 days, so even a leaked key that deletes files can't destroy the backup.
+- Alliance Auth on the same VPS is **not** part of this.
 
 **Data that is not backed up:**
 - live presence, which is in memory only
 - the op tail beyond what the DB holds
 
-**Restore:**
-1. Create a fresh VPS (§4 and §5).
-2. Run `litestream restore -o /var/lib/homebound/sync.db s3://…`.
-3. Start the services and repoint DNS.
+**Restore (new VPS or broken database):**
+1. Set up the server (§15 steps 2–5 and the Litestream install from step 10), but don't start `homebound-sync` yet.
+2. `sudo -u homebound sh -c 'set -a; . /etc/homebound/env; litestream restore -config /etc/litestream.yml /var/lib/homebound/sync.db'`
+   - an older point in time: add `-timestamp 2026-11-20T12:00:00Z`
+3. Start `homebound-sync` and `litestream`; repoint DNS if the IP changed.
 4. Clients reconnect. Their `last_seq` is either still inside the tail or they get a snapshot.
 
 **Checks:**
-- Do a **restore test once a month**: restore to a temp path and run `sqlite3 … "PRAGMA integrity_check; SELECT count(*) FROM maps;"`. This can be a systemd timer that pings healthchecks.io.
+- **A restore test every day** (`hb-restore-test`, run by `homebound-restore-test.timer`): restores the newest backup to a temp folder, runs `PRAGMA integrity_check`, counts the maps, and checks the backup is less than 2 h behind (it compares the last wallet poll). It pings `HB_RESTORE_HEALTHCHECK_URL`: healthchecks.io emails you when a test fails or none arrives. A daily test of a few MB costs nothing on B2.
 - Hetzner Backups (if enabled) are only for quick OS-level rollback. They are not the DB backup.
 
 ## 8. Deploying updates
@@ -339,8 +345,34 @@ cd /opt/homebound && git pull --ff-only && UV_PYTHON_PREFERENCE=only-system uv s
 systemctl restart homebound-sync
 ```
 
-### Until backups exist
-§7 (Litestream to B2) isn't set up yet. Meanwhile, a nightly copy from a cron job or systemd timer:
+### 10. Backups (Litestream to Backblaze B2)
+**In Backblaze B2** (region EU Central):
+1. Create the bucket `homebound-backup`: **private**, encryption on.
+2. Bucket settings > Lifecycle: **"Keep prior versions for this number of days: 30"**.
+3. Application Keys > Add: access only to `homebound-backup`, **Read and Write** (Litestream needs to delete old snapshots; the 30 days of prior versions protect against a leaked key).
+4. Note the key ID, the key (shown once), and the bucket's **Endpoint** (for example `s3.eu-central-003.backblazeb2.com`).
+
+**On the VPS:**
 ```bash
-sqlite3 /var/lib/homebound/sync.db ".backup /var/backups/homebound-$(date +%F).db"
+# Litestream 0.3.13 (the config is written for 0.3.x)
+wget https://github.com/benbjohnson/litestream/releases/download/v0.3.13/litestream-v0.3.13-linux-amd64.deb
+dpkg -i litestream-v0.3.13-linux-amd64.deb
+
+# credentials and endpoint: add LITESTREAM_ACCESS_KEY_ID, LITESTREAM_SECRET_ACCESS_KEY,
+# HB_B2_ENDPOINT, HB_B2_REGION and HB_RESTORE_HEALTHCHECK_URL to /etc/homebound/env (§6)
+nano /etc/homebound/env
+
+cd /opt/homebound/packaging/server
+install -m 640 -o root -g homebound litestream.yml /etc/litestream.yml
+install -D -m 644 litestream-override.conf /etc/systemd/system/litestream.service.d/override.conf
+install -m 755 hb-restore-test /usr/local/bin/hb-restore-test
+install -m 644 homebound-restore-test.service homebound-restore-test.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now litestream homebound-restore-test.timer
+journalctl -u litestream -f      # "initialized db", then "snapshot written" and "wal segment written"
 ```
+
+**Check it:**
+1. In B2's file browser, `homebound-backup/sync.db/` has `generations/…` with a snapshot and WAL files after a minute.
+2. `sudo -u homebound hb-restore-test` prints `restore ok: integrity ok, N maps, …`.
+3. On healthchecks.io, the check `homebound-restore-test` (period 1 day, grace 2 h) turns green.

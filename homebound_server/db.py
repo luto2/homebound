@@ -12,6 +12,8 @@ from homebound.mapdb.store import utc_now_iso
 SCHEMA = """
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
+PRAGMA busy_timeout = 5000;      -- wait for Litestream's short locks instead of failing
+PRAGMA synchronous = NORMAL;     -- the usual setting with WAL (and what Litestream recommends)
 
 CREATE TABLE IF NOT EXISTS accounts (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,

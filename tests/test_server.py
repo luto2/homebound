@@ -710,3 +710,11 @@ def test_the_wallet_poller_pings_the_healthcheck(harness) -> None:
     with pytest.raises(Exception):
         harness.service.poll_wallet()
     assert pings == ["https://hc-ping.com/abc"]
+
+
+def test_the_database_waits_for_locks(tmp_path) -> None:
+    """Litestream holds short locks; the server waits instead of failing ("database is locked")."""
+    from homebound_server.db import Database
+    database = Database(tmp_path / "server.sqlite")
+    assert database.value("PRAGMA journal_mode") == "wal"
+    assert database.value("PRAGMA busy_timeout") == 5000

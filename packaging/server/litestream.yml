@@ -1,0 +1,16 @@
+# Litestream: continuous backup of the Homebound server database to Backblaze B2.
+# Install to /etc/litestream.yml (root:homebound, 0640). Credentials come from /etc/homebound/env
+# (LITESTREAM_ACCESS_KEY_ID, LITESTREAM_SECRET_ACCESS_KEY); the endpoint from HB_B2_ENDPOINT.
+# Written for Litestream 0.3.x (hosting-hetzner.md §15).
+dbs:
+  - path: /var/lib/homebound/sync.db
+    replicas:
+      - type: s3
+        bucket: homebound-backup
+        path: sync.db
+        endpoint: https://${HB_B2_ENDPOINT}
+        region: ${HB_B2_REGION}
+        force-path-style: true
+        sync-interval: 10s          # at most ~10 s of edits can be lost
+        snapshot-interval: 24h      # a full copy once a day ...
+        retention: 720h             # ... kept 30 days, with every change in between
