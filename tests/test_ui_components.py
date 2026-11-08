@@ -53,6 +53,17 @@ def state(qt_application, monkeypatch, tmp_path) -> Iterator[AppState]:
 
 # ---------------------------------------------------------------- state
 
+def test_map_settings_follow_the_app_settings(state) -> None:
+    """Opening a map writes home and naming scheme into it; a settings change is written on the next call."""
+    assert state.store.map_setting("home_system") == state.settings.home_system == HOME.name
+    assert state.store.map_setting("naming_scheme") == state.settings.naming_scheme
+    other = pick_system("C3", exclude=(HOME.id,)).name
+    state.settings.home_system = other
+    assert state.store_map_settings() is True
+    assert state.store.map_setting("home_system") == other
+    assert state.store_map_settings() is False                # nothing changed the second time
+
+
 def test_remote_members_show_in_systems_and_afk_is_marked(state) -> None:
     """Shared characters of other members are listed; AFK gets a mark; a character already listed isn't doubled."""
     system = HOME.id
