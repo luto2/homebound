@@ -15,7 +15,7 @@ from typing import Any
 from homebound.sync.hlc import HybridClock
 from homebound.sync.merge import BatchRejected, EntityState, MapState, check_batch, stamp_server_times
 from homebound.sync.protocol import (MAX_BATCH_OPS, MAX_ENTITIES_PER_MAP, InvalidOp, Op, batch_from_json,
-                                     key_to_json)
+                                     key_from_text, key_text, key_to_json)
 
 from .db import Database, iso, utc_now
 from .maps import EDIT_ROLES, Maps
@@ -66,17 +66,6 @@ class Presence:
     afk_sent: bool = False                               # the AFK change was announced
 
 
-def _key_text(key: Any) -> str:
-    """Return the stored text of an entity key."""
-    return json.dumps(key_to_json("", key))
-
-
-def _key_value(entity: str, text: str) -> Any:
-    """Return an entity key from its stored text."""
-    value = json.loads(text)
-    return tuple(value) if isinstance(value, list) else value
-
-
 class Hub:
     """Maps in memory, the sockets that joined them, and the push pipeline."""
 
@@ -107,7 +96,7 @@ class Hub:
         """Return a map's merged state, loading it from the database the first time."""
         if map_id not in self.states:
             self.states[map_id] = MapState({
-                (row["kind"], _key_value(row["kind"], row["key"])): EntityState.from_json(json.loads(row["state"]))
+                (row["kind"], key_from_text(row["key"])): EntityState.from_json(json.loads(row["state"]))
                 for row in self.db.all("SELECT kind, key, state FROM entities WHERE map_id=?", (map_id,))})
         return self.states[map_id]
 
@@ -283,7 +272,7 @@ class Hub:
             self.db.execute("UPDATE maps SET seq=? WHERE id=?", (seq, map_id))
             for entity, key in dict.fromkeys((op.entity, op.key) for op in ops):
                 self.db.execute("INSERT OR REPLACE INTO entities (map_id, kind, key, state) VALUES (?,?,?,?)",
-                                (map_id, entity, _key_text(key), json.dumps(state.get(entity, key).to_json())))
+                                (map_id, entity, key_text(key), json.dumps(state.get(entity, key).to_json())))
             self.db.execute("INSERT INTO ops (map_id, seq, batch_id, account_id, payload, stamped, received_at) "
                             "VALUES (?,?,?,?,?,?,?)", (map_id, seq, batch_id, account_id, json.dumps(payload),
                                                        json.dumps(stamped), iso(now)))

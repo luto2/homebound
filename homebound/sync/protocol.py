@@ -11,6 +11,7 @@ compound field of a system (``[parent_id, hole_index]``), ``full`` marks a whole
 Only the fields listed in :data:`FIELDS` sync. ``x``/``y`` of a system go only with a full upsert
 (the first placement is shared, later drags are local, plan §3 "What syncs").
 """
+import json
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -146,6 +147,17 @@ class Op:
 def key_to_json(entity: str, key: Any) -> Any:
     """Return the wire form of an entity key (tuples become lists)."""
     return list(key) if isinstance(key, tuple) else key
+
+
+def key_text(key: Any) -> str:
+    """Return an entity key as text, for storing it in a database column."""
+    return json.dumps(key_to_json("", key))
+
+
+def key_from_text(text: str) -> Any:
+    """Return an entity key from :func:`key_text`."""
+    value = json.loads(text)
+    return tuple(value) if isinstance(value, list) else value
 
 
 def key_from_json(entity: str, value: Any) -> Any:

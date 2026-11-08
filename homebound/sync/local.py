@@ -14,10 +14,11 @@ import json
 import uuid
 from typing import Any
 
-from ..mapdb.store import ENTITY_TABLES, ENTITY_WHERE, Action, Store, key_values, utc_now_iso
+from ..mapdb.store import ENTITY_TABLES, ENTITY_WHERE, MAP_SETTING_KEYS, Action, Store, key_values, utc_now_iso
 from .hlc import HybridClock
 from .merge import Effect, EntityState, MapState, apply_op
-from .protocol import FIELDS, LAYOUT_FIELDS, Op, full_ops_for_rows, key_from_json, key_to_json, op_from_json, ops_from_action
+from .protocol import (FIELDS, LAYOUT_FIELDS, Op, full_ops_for_rows, key_from_json, key_from_text, key_text,
+                       op_from_json, ops_from_action, row_key)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sync_meta (key TEXT PRIMARY KEY, value TEXT);
@@ -27,16 +28,6 @@ CREATE TABLE IF NOT EXISTS sync_outbox (seq INTEGER PRIMARY KEY AUTOINCREMENT, b
                                         payload TEXT NOT NULL, created_at TEXT NOT NULL);
 """
 
-
-def _key_text(key: Any) -> str:
-    """Return the stored form of an entity key."""
-    return json.dumps(key_to_json("", key))
-
-
-def _key_value(text: str) -> Any:
-    """Return an entity key from its stored form."""
-    value = json.loads(text)
-    return tuple(value) if isinstance(value, list) else value
 
 
 class LocalReplica:
@@ -96,17 +87,17 @@ class LocalReplica:
     def entity(self, entity: str, key: Any) -> EntityState | None:
         """Return the merged state of an entity, or None if it was never seen."""
         row = self.database.execute("SELECT state FROM sync_entities WHERE kind=? AND key=?",
-                                    (entity, _key_text(key))).fetchone()
+                                    (entity, key_text(key))).fetchone()
         return EntityState.from_json(json.loads(row[0])) if row else None
 
     def _save_entity(self, entity: str, key: Any, state: EntityState) -> None:
         """Store an entity's merged state."""
         self.database.execute("INSERT OR REPLACE INTO sync_entities (kind, key, state) VALUES (?,?,?)",
-                              (entity, _key_text(key), json.dumps(state.to_json())))
+                              (entity, key_text(key), json.dumps(state.to_json())))
 
     def state(self) -> MapState:
         """Return the whole merged state."""
-        return MapState({(row[0], _key_value(row[1])): EntityState.from_json(json.loads(row[2]))
+        return MapState({(row[0], key_from_text(row[1])): EntityState.from_json(json.loads(row[2]))
                          for row in self.database.execute("SELECT kind, key, state FROM sync_entities")})
 
     def newest_stamp(self) -> str | None:
@@ -146,7 +137,7 @@ class LocalReplica:
         rows: dict[str, list[dict]] = {}
         for entity, table in ENTITY_TABLES.items():
             rows[entity] = [dict(row) for row in self.database.execute(f"SELECT * FROM {table}")]
-        rows["setting"] = [row for row in rows["setting"] if row["key"] in ("home_system", "naming_scheme")]
+        rows["setting"] = [row for row in rows["setting"] if row["key"] in MAP_SETTING_KEYS]
         return [op.to_json() for op in full_ops_for_rows(rows, clock.tick(), client_id)]
 
     def seed(self, ops: list[dict]) -> None:
@@ -216,7 +207,7 @@ class LocalReplica:
             self.database.execute("DELETE FROM sync_outbox WHERE batch_id=?", (batch_id,))
             for text, values in (stamped or {}).items():
                 entity, key_json = text.split(":", 1)
-                key = _key_value(key_json)
+                key = key_from_text(key_json)
                 state = self.entity(entity, key)
                 if state is None:
                     continue
@@ -243,8 +234,8 @@ class LocalReplica:
         for entity, table in (("signature", "signatures"), ("connection", "connections"), ("system", "systems"),
                               ("setting", "map_settings")):
             for row in [dict(row) for row in self.database.execute(f"SELECT * FROM {table}")]:
-                key = self._row_key(entity, row)
-                if entity == "setting" and key not in ("home_system", "naming_scheme"):
+                key = row_key(entity, row)
+                if entity == "setting" and key not in MAP_SETTING_KEYS:
                     continue
                 if (entity, key) not in visible:
                     self._write(entity, key, None)
@@ -252,17 +243,6 @@ class LocalReplica:
         for (entity, key), entity_state in sorted(visible.items(), key=lambda item: (order[item[0][0]], str(item[0][1]))):
             self._materialise(entity, key, entity_state, placement=False)
         self._fix_placements(force=True)
-
-    @staticmethod
-    def _row_key(entity: str, row: dict) -> Any:
-        """Return the natural key of a map row."""
-        if entity == "system":
-            return row["id"]
-        if entity == "connection":
-            return (row["system_a"], row["system_b"])
-        if entity == "signature":
-            return (row["system_id"], row["signature_id"])
-        return row["key"]
 
     def _materialise(self, entity: str, key: Any, state: EntityState, placement: bool = True) -> None:
         """Write one entity's visible state into its map row (or delete the row)."""
