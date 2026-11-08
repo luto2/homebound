@@ -28,7 +28,7 @@ from .maps import MapError, Maps
 from .prune import prune_ops
 
 log = logging.getLogger("homebound.server")
-VERSION = "0.1.0"
+VERSION = "1.0.0"
 RECEIVER_LINK_MINUTES = 30
 RETENTION_DAYS = 365           # payment records etc. after an account is deleted (privacy policy §7)
 
