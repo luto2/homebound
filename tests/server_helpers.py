@@ -65,13 +65,14 @@ class Harness:
 class Socket:
     """One client socket: ``hello`` done, with helpers to read until a message type arrives."""
 
-    def __init__(self, harness: Harness, token: str, client_id: str) -> None:
-        """Open and greet."""
+    def __init__(self, harness: Harness, token: str, client_id: str, web: bool = False) -> None:
+        """Open and greet (``web``: as the read-only web view)."""
         self.context = harness.client.websocket_connect("/ws")
         self.ws = self.context.__enter__()
         self.client_id = client_id
         self.counter = 0
-        self.ws.send_json({"t": "hello", "id": 1, "token": token, "protocol": 1, "app": "0.1.0", "client_id": client_id})
+        self.ws.send_json({"t": "hello", "id": 1, "token": token, "protocol": 1, "app": "0.1.0", "client_id": client_id,
+                          **({"web": True} if web else {})})
         self.welcome = self.ws.receive_json()
 
     def send(self, message: dict) -> None:

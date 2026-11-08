@@ -6,7 +6,7 @@ the dialog or as a toast, and local editing never depends on any of it.
 import webbrowser
 from collections.abc import Callable
 
-from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (QComboBox, QDialog, QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QSpinBox,
                                QToolButton, QVBoxLayout, QWidget)
@@ -16,6 +16,7 @@ from ..sync.login import LoopbackLogin
 from . import menus
 from .dialogs import BaseDialog, PromptDialog, danger_button
 from .sync_manager import SyncManager
+from .widgets import help_label
 
 ROLE_LABELS = {"owner": "Owner", "manager": "Manager", "editor": "Editor", "viewer": "Viewer"}
 ACCESS_LABELS = {"alliance": "Alliance", "corp": "Corporation", "char": "Character"}
@@ -34,15 +35,6 @@ def isk(amount: float | int | None) -> str:
 def short_date(text: str | None) -> str:
     """Return ``2026-11-08`` from an ISO time (empty for none)."""
     return (text or "")[:10]
-
-
-def help_label(text: str) -> QLabel:
-    """A wrapped help line."""
-    label = QLabel(text)
-    label.setProperty("role", "help")
-    label.setWordWrap(True)
-    label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-    return label
 
 
 def error_label() -> QLabel:
@@ -269,7 +261,8 @@ class MembersDialog(BaseDialog):
             f"paid until {short_date(status.get('paid_until')) or '–'}"))
         if details["invites"]:
             self.extra_layout.addWidget(help_label("Open invites: " + ", ".join(
-                f"{invite['code']} ({ROLE_LABELS[invite['role']]}, {invite['uses_left']} left)" for invite in details["invites"])))
+                f"{invite['code']} ({ROLE_LABELS[invite['role']]}, {invite['uses_left']} left)" for invite in details["invites"]),
+                selectable=True))
         if details["map"].get("seat_limit") is not None or status.get("payer_kind") == "corp":
             self.extra_layout.addWidget(help_label(
                 "Corp map: corp members may join as viewer " + ("(on, " if details["map"]["corp_join"] else "(off, ")
@@ -430,7 +423,7 @@ class AccountDialog(BaseDialog):
         layout.addWidget(help_label(
             f"To pay, give ISK in EVE to the Homebound receiver character{f' (ID {receiver})' if receiver else ''} "
             f"from one of your characters. From another character, put your code “{account['payer_code']}” in the "
-            "reason. Payments show up within about an hour."))
+            "reason. Payments show up within about an hour.", selectable=True))
         layout.addWidget(QLabel("<b>Devices</b>"))
         for session in sessions["sessions"]:
             row = QWidget()

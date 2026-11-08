@@ -169,7 +169,7 @@ def test_the_first_placement_wins_and_the_loser_gets_the_server_state(harness) -
 
 
 def test_viewers_and_web_views_cant_push_and_home_is_owner_only(harness) -> None:
-    """A viewer gets read_only, an editor changing home gets forbidden; a role change applies at once."""
+    """A viewer and the web view get read_only, an editor changing home gets forbidden; roles apply at once."""
     map_id, kira, bob = setup_map(harness)
     socket = Socket(harness, bob, B)
     socket.join(map_id)
@@ -181,6 +181,12 @@ def test_viewers_and_web_views_cant_push_and_home_is_owner_only(harness) -> None
     assert status["role"] == "viewer"
     assert socket.push(map_id, [system_op(C5, 21, B, HOME.id, 1)])["code"] == "read_only"
     socket.close()
+    # the web view can't push even as the owner
+    web = Socket(harness, kira, A, web=True)
+    web.join(map_id)
+    reject = web.push(map_id, [system_op(C5, 22, A, HOME.id, 1)])
+    assert (reject["code"], reject["detail"]) == ("read_only", "The web view can't edit.")
+    web.close()
 
 
 def test_a_removed_member_is_told_and_can_rejoin_no_more(harness) -> None:

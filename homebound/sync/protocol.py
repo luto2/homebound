@@ -19,14 +19,13 @@ from typing import Any
 
 from ..mapdb.store import MAP_SETTING_KEYS, MASS_STATES, Action, Change
 from ..mapping.naming import SCHEMES
-from ..mapping.signature_parser import GROUP_ORDER
+from ..mapping.signature_parser import GROUP_ORDER, SIGNATURE_ID_PATTERN
 from ..universe.db import SIZES
 from .hlc import is_hlc
 
 PROTOCOL = 1
 MIN_PROTOCOL = 1               # the oldest protocol version the server still accepts
 
-SIGNATURE_ID = re.compile(r"^[A-Z]{3}-\d{3}$")
 CLIENT_ID = re.compile(r"^[0-9a-f]{8,32}$")
 MAX_TEXT = 4000
 MAX_SHORT_TEXT = 100
@@ -71,7 +70,7 @@ def _choice(options: Iterable):
 
 _flag = _integer(0, 1)
 _time = _optional(_text(40))
-_signature_id = _optional(lambda value: isinstance(value, str) and bool(SIGNATURE_ID.match(value)))
+_signature_id = _optional(lambda value: isinstance(value, str) and bool(SIGNATURE_ID_PATTERN.match(value)))
 _coordinate = _number(-1e7, 1e7)
 
 # The synced fields of each entity and their checks. Server-stamped times are listed too: a client
@@ -174,7 +173,7 @@ def key_from_json(entity: str, value: Any) -> Any:
             and all(system_id(end) for end in value) and value[0] < value[1]):
         return (value[0], value[1])
     if (entity == "signature" and isinstance(value, list) and len(value) == 2 and system_id(value[0])
-            and isinstance(value[1], str) and SIGNATURE_ID.match(value[1])):
+            and isinstance(value[1], str) and SIGNATURE_ID_PATTERN.match(value[1])):
         return (value[0], value[1])
     if entity == "setting" and value in MAP_SETTING_KEYS:
         return value
