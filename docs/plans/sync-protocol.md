@@ -1,6 +1,6 @@
 # Homebound Sync: protocol spec
 
-> **STATUS: WIP. This is a design only. Do not implement it yet.**
+> **STATUS: implemented (2026-11-08) in `homebound/sync/` and `homebound_server/`. Differences: ops carry `c` (the sender's client ID), snapshots send each entity's full merged state with clocks, and the delete endpoints are POSTs (see the plan's §21).**
 > It belongs with [`cloud-sync-plan.md`](cloud-sync-plan.md), whose §3 has the merge rules and §5 the roles.
 
 ## 1. Transport

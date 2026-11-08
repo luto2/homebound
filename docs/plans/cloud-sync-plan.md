@@ -1,7 +1,7 @@
 # Homebound Cloud Sync: design plan
 
-> **STATUS: WIP. This is a design only. Do not implement it yet.**
-> Open questions are in §20. Nothing here should change the local-mapper work that is going on now, except the small "keep sync possible" notes in §9.
+> **STATUS: implemented on branch `cloud-sync` (2026-11-08), phases 0–9 of §11. The web view (phase 10) is still deferred.**
+> Where the build differs from this design, or fills a gap in it, see §21. Open questions are in §20.
 > Design review 2026-11-07: decisions went into §3, §5–§8, §10, §11 and the new §15–§19. All items are decided, apart from the open questions in §20. The protocol is specified in [`sync-protocol.md`](sync-protocol.md).
 
 ## 1. Goals and non-goals
@@ -478,3 +478,26 @@ The healthchecks.io checks in `hosting-hetzner.md` §9 stay as a second channel 
 
 - **Receiving character name:** placeholder `<RECEIVER>` until shortly before launch, when the real character is created. For development and live ESI tests, **`luto5`** stands in. It is configured as `HB_RECEIVER_CHAR_ID`, never hard-coded.
 - Legal placeholders (name, address, email, dates). These get filled in at the end.
+
+## 21. Implementation notes (2026-11-08)
+
+Code: `homebound/sync/` (shared protocol, merge, client), `homebound/ui/sync_manager.py` and `homebound/ui/cloud.py` (app), `homebound_server/` (server, `uv run homebound-server --dev`). Tests: `tests/test_sync_merge.py`, `test_sync_client.py`, `test_sync_socket.py`, `test_server.py`, `test_ui_cloud.py`.
+
+Decisions taken while building, where the design was open or left a gap:
+- **Sessions** expire 90 days after the SSO login and are not extended by use, so "log in again at least every 90 days" (§6) holds. "Renewed on use" would contradict that, so it was dropped.
+- **Merge state:** each entity keeps per-field stamps `<hlc>@<client_id>` plus the newest full-upsert and the newest tombstone stamp. It exists while the first is newer. Ops therefore carry the sender's client ID (`c`) on the wire, and snapshots send the full state with clocks, tombstones included.
+- **Rejects:** for `conflict`, `read_only`, `forbidden`, `invalid` and `too_large` the client drops the batch and rejoins for a fresh snapshot, with its other unsent batches replayed on top. `reject.current[]` is still sent, but the client doesn't need it.
+- **Level order** is derived from `(added_at, id)`, so when a sibling that was added earlier is removed, the names after it move up (e.g. A2b becomes A2a).
+- **Undo** keeps the inverse changes in memory with its toast. There is no `undo_log` table.
+- **Owner transfer** falls back to the longest-standing viewer if there is no manager or editor.
+- **Corp CEO change:** the previous owner stays on as a manager.
+- **Trial:** a money-less trial covers one map with 3 seats. A second map, or a 4th member joining, is refused with `trial_limit` until there is a balance. A balance must cover at least one day at the new price before a paid map is made.
+- **Balance** never goes below zero: days without money are not owed. `paid_until` stays at the moment the money ran out.
+- **API paths:** account and map deletion are `POST /api/account/delete` (body `{"confirm": "DELETE"}`) and `POST /api/maps/{id}/delete`. Corp settings are `POST /api/maps/{id}/corp` and self-join is `POST /api/maps/{id}/corp-join`.
+- **SSO:** the access token's claims are read without checking the JWT signature again, because the token comes straight from CCP's token endpoint in exchange for the client secret. This hasn't been tried against real EVE SSO yet; dev mode and the tests use the fake.
+
+Not done yet:
+- the web view (deferred, phase 10)
+- Litestream backups and metrics (ops setup, `hosting-hetzner.md`)
+- the designed mockups for the sync UI (`design-system/missing-mockups/README.md` §11): the dialogs are functional, built from the existing dialog parts
+
