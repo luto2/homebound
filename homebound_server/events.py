@@ -11,6 +11,7 @@ from datetime import timedelta
 import httpx
 
 from .db import Database, iso, parse_iso, utc_now
+from .mailer import isk
 
 log = logging.getLogger("homebound.server")
 MAX_ATTEMPTS = 20
@@ -29,11 +30,6 @@ TITLES = {
     "server_started": ("Server started", GREY),
 }
 STATE_WORDS = {"warning": "warning (payment missed, still editable)", "read_only": "read-only", "deleted": "deleted"}
-
-
-def isk(amount: float | None) -> str:
-    """``50,000,000 ISK``."""
-    return f"{amount or 0:,.0f} ISK"
 
 
 class Events:

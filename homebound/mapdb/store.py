@@ -145,6 +145,11 @@ class ZkillStats:
 # The entities a map action changes, and how each is keyed: system -> id, connection -> (low id, high id),
 # signature -> (system id, signature id), setting -> key. Characters, zKill and key_value are local only.
 ENTITIES = ("system", "connection", "signature", "setting")
+# each entity's table and the WHERE clause that finds one row by its key
+ENTITY_TABLES = {"system": "systems", "connection": "connections", "signature": "signatures",
+                 "setting": "map_settings"}
+ENTITY_WHERE = {"system": "id=?", "connection": "system_a=? AND system_b=?",
+                "signature": "system_id=? AND signature_id=?", "setting": "key=?"}
 # Columns that change on every write and say nothing about the map itself.
 VOLATILE_COLUMNS = {"updated_at"}
 
@@ -525,8 +530,7 @@ class Store:
     def _insert_row(self, entity: str, key: Any, row: dict) -> None:
         """Put a whole row back (it doesn't exist now)."""
         self._touch(entity, key)
-        table = {"system": "systems", "connection": "connections", "signature": "signatures",
-                 "setting": "map_settings"}[entity]
+        table = ENTITY_TABLES[entity]
         row = dict(row)
         if entity == "system" and row.get("parent_id") and not self.has_system(row["parent_id"]):
             row["parent_id"] = row["hole_index"] = None   # the parent is gone since: put it back unplaced
@@ -543,10 +547,7 @@ class Store:
     def _update_row(self, entity: str, key: Any, values: dict) -> None:
         """Set columns of an existing entity's row."""
         self._touch(entity, key)
-        table, where = {"system": ("systems", "id=?"),
-                        "connection": ("connections", "system_a=? AND system_b=?"),
-                        "signature": ("signatures", "system_id=? AND signature_id=?"),
-                        "setting": ("map_settings", "key=?")}[entity]
+        table, where = ENTITY_TABLES[entity], ENTITY_WHERE[entity]
         keys = list(key) if isinstance(key, tuple) else [key]
         self.database.execute(f"UPDATE {table} SET {', '.join(f'{_quoted(column)}=?' for column in values)} "
                               f"WHERE {where}", [*values.values(), *keys])

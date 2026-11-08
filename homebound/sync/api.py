@@ -3,7 +3,7 @@ from typing import Any
 
 import httpx
 
-USER_AGENT = "Homebound (+https://github.com/luto2/homebound)"
+from ..http import user_agent
 
 
 class ApiError(Exception):
@@ -22,7 +22,7 @@ class SyncApi:
         """Talk to ``server`` (e.g. ``https://homebound.luthopian.de``)."""
         self.server = server.rstrip("/")
         self.token = token
-        self.http = httpx.Client(base_url=self.server, timeout=20, headers={"User-Agent": USER_AGENT},
+        self.http = httpx.Client(base_url=self.server, timeout=20, headers={"User-Agent": user_agent("cloud sync")},
                                  transport=transport)
 
     def close(self) -> None:

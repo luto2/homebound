@@ -424,6 +424,8 @@ def test_main_normal_path(fake_app, monkeypatch, log_directory, settings_page) -
     window = FakeWindow.instances[0]
     assert window.shown and window.focus.started and window.state.started and window.state.stopped
     assert window.state.universe == "universe"
+    assert isinstance(window.sync, FakeSync) and window.sync.state is window.state
+    assert window.sync.started and window.sync.stopped
     assert window.settings_opened == settings_page
 
 

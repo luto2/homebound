@@ -14,7 +14,7 @@ import json
 import uuid
 from typing import Any
 
-from ..mapdb.store import Action, Store, utc_now_iso
+from ..mapdb.store import ENTITY_TABLES, ENTITY_WHERE, Action, Store, utc_now_iso
 from .hlc import HybridClock
 from .merge import Effect, EntityState, MapState, apply_op
 from .protocol import FIELDS, LAYOUT_FIELDS, Op, full_ops_for_rows, key_from_json, key_to_json, op_from_json, ops_from_action
@@ -26,7 +26,6 @@ CREATE TABLE IF NOT EXISTS sync_entities (kind TEXT NOT NULL, key TEXT NOT NULL,
 CREATE TABLE IF NOT EXISTS sync_outbox (seq INTEGER PRIMARY KEY AUTOINCREMENT, batch_id TEXT UNIQUE NOT NULL,
                                         payload TEXT NOT NULL, created_at TEXT NOT NULL);
 """
-TABLES = {"system": "systems", "connection": "connections", "signature": "signatures", "setting": "map_settings"}
 
 
 def _key_text(key: Any) -> str:
@@ -145,7 +144,7 @@ class LocalReplica:
     def snapshot_ops(self, clock: HybridClock, client_id: str) -> list[dict]:
         """Return full upserts of the whole map, to upload it as a new cloud map (plan §15)."""
         rows: dict[str, list[dict]] = {}
-        for entity, table in TABLES.items():
+        for entity, table in ENTITY_TABLES.items():
             rows[entity] = [dict(row) for row in self.database.execute(f"SELECT * FROM {table}")]
         rows["setting"] = [row for row in rows["setting"] if row["key"] in ("home_system", "naming_scheme")]
         return [op.to_json() for op in full_ops_for_rows(rows, clock.tick(), client_id)]
@@ -305,9 +304,8 @@ class LocalReplica:
                 self.database.execute("DELETE FROM signatures WHERE system_id=?", (key,))
                 self.database.execute("DELETE FROM connections WHERE system_a=? OR system_b=?", (key, key))
                 self.database.execute("DELETE FROM layout_override WHERE system_id=?", (key,))
-            where = {"system": "id=?", "connection": "system_a=? AND system_b=?",
-                     "signature": "system_id=? AND signature_id=?", "setting": "key=?"}[entity]
-            self.database.execute(f"DELETE FROM {TABLES[entity]} WHERE {where}", list(key) if isinstance(key, tuple) else [key])
+            where = ENTITY_WHERE[entity]
+            self.database.execute(f"DELETE FROM {ENTITY_TABLES[entity]} WHERE {where}", list(key) if isinstance(key, tuple) else [key])
             return
         if entity == "connection" and not (store.has_system(key[0]) and store.has_system(key[1])):
             return
@@ -337,7 +335,7 @@ class LocalReplica:
             row = {"key": key, "value": values.get("value")}
         row = {name: value for name, value in row.items() if value is not None or name in ("parent_id", "hole_index")}
         columns = ", ".join(f'"{name}"' for name in row)
-        self.database.execute(f"INSERT INTO {TABLES[entity]} ({columns}) VALUES ({','.join('?' * len(row))})",
+        self.database.execute(f"INSERT INTO {ENTITY_TABLES[entity]} ({columns}) VALUES ({','.join('?' * len(row))})",
                               list(row.values()))
 
 

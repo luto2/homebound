@@ -18,6 +18,7 @@ from typing import Any
 
 from ..mapdb.store import MAP_SETTING_KEYS, MASS_STATES, Action, Change
 from ..mapping.signature_parser import GROUP_ORDER
+from ..universe.db import SIZES
 from .hlc import is_hlc
 
 PROTOCOL = 1
@@ -31,7 +32,6 @@ MAX_BATCH_OPS = 500
 MAX_MESSAGE_BYTES = 256 * 1024
 MAX_ENTITIES_PER_MAP = 20_000
 SIGNATURE_GROUPS = tuple(GROUP_ORDER)   # the groups the scanner parser knows, ice included
-SIZES = ("S", "M", "L", "XL")
 NAMING_SCHEMES = ("numeric", "letter_numeric", "chain_depth_position")
 
 
@@ -99,8 +99,6 @@ FIELDS: dict[str, dict[str, Any]] = {
 }
 LAYOUT_FIELDS = ("x", "y")                     # only sent with a full upsert
 CREATED_FIELD = {"system": "added_at", "connection": "created_at", "signature": "created_at"}
-ENTITY_TABLES = {"system": "systems", "connection": "connections", "signature": "signatures",
-                 "setting": "map_settings"}
 
 
 # ---------------------------------------------------------------- ops

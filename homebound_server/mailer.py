@@ -18,9 +18,9 @@ MAILS_PER_RUN = 4            # EVE answers 520 "MailStopSpamming" to bursts
 THROTTLED = 520
 
 
-def isk(amount: float) -> str:
+def isk(amount: float | None) -> str:
     """Return an ISK amount the way EVE shows it: ``100,000,000 ISK``."""
-    return f"{amount:,.0f} ISK"
+    return f"{amount or 0:,.0f} ISK"
 
 
 def eve_time(moment: datetime | str | None) -> str:
