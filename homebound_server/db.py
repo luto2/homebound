@@ -66,7 +66,14 @@ CREATE TABLE IF NOT EXISTS corporations (
     corp_id    INTEGER PRIMARY KEY,
     name       TEXT,
     ceo_id     INTEGER,
-    checked_at TEXT
+    checked_at TEXT,
+    alliance_id INTEGER                               -- from the affiliation poll and the corp lookup
+);
+CREATE TABLE IF NOT EXISTS alliances (              -- only those named in HB_FREE_MAPS
+    alliance_id      INTEGER PRIMARY KEY,
+    name             TEXT,
+    executor_corp_id INTEGER,                         -- its corp maps are the alliance's free maps
+    checked_at       TEXT
 );
 CREATE TABLE IF NOT EXISTS payers (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,6 +114,15 @@ CREATE TABLE IF NOT EXISTS members (
     joined_at  TEXT NOT NULL,
     via_corp   INTEGER NOT NULL DEFAULT 0,            -- joined through the corp switch, not an invite
     PRIMARY KEY (map_id, account_id)
+);
+CREATE TABLE IF NOT EXISTS map_access (             -- who may join; empty on a personal map: anyone invited
+    map_id     TEXT NOT NULL REFERENCES maps(id),
+    kind       TEXT NOT NULL CHECK (kind IN ('alliance', 'corp', 'char')),
+    subject_id INTEGER NOT NULL,
+    name       TEXT,
+    added_by   INTEGER,
+    added_at   TEXT NOT NULL,
+    PRIMARY KEY (map_id, kind, subject_id)
 );
 CREATE TABLE IF NOT EXISTS invites (
     code       TEXT PRIMARY KEY,
@@ -224,6 +240,13 @@ class Database:
         self.connection.row_factory = sqlite3.Row
         self.lock = threading.RLock()
         self.connection.executescript(SCHEMA)
+        self._add_missing_columns()
+
+    def _add_missing_columns(self) -> None:
+        """Add columns that were added to the schema after a database file was made."""
+        for table, column, kind in (("corporations", "alliance_id", "INTEGER"),):
+            if column not in {row["name"] for row in self.connection.execute(f"PRAGMA table_info({table})")}:
+                self.connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
 
     def close(self) -> None:
         """Close the file."""

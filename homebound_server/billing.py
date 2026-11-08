@@ -8,6 +8,7 @@ seats or maps re-projects it. The balance never goes below zero: time without mo
 import re
 from datetime import datetime, timedelta
 
+from .access import account_owners
 from .db import Database, iso, parse_iso, utc_now
 from .maps import Maps
 
@@ -46,9 +47,15 @@ def rank_maps(maps: list[dict]) -> list[dict]:
     return sorted(maps, key=lambda each: (-each["seats"], each["created_at"], each["id"]))
 
 
-def monthly_total(maps: list[dict], tiers: list[tuple[int, int]], included: int = 3) -> tuple[int, dict[str, int]]:
-    """Return the payer's monthly total and each map's price, after ranking."""
-    prices = {each["id"]: map_price(rank, each["seats"], tiers, included) for rank, each in enumerate(rank_maps(maps))}
+def monthly_total(maps: list[dict], tiers: list[tuple[int, int]], included: int = 3,
+                  free: int = 0) -> tuple[int, dict[str, int]]:
+    """Return the payer's monthly total and each map's price, after ranking.
+
+    ``free`` maps cost nothing, seats included: the top-ranked ones, so the rest keep the price of
+    their rank (with 2 free maps, a third map costs the map-3 price).
+    """
+    prices = {each["id"]: 0 if rank < free else map_price(rank, each["seats"], tiers, included)
+              for rank, each in enumerate(rank_maps(maps))}
     return sum(prices.values()), prices
 
 
@@ -56,9 +63,13 @@ class Billing:
     """Balances and lapse handling for every payer."""
 
     def __init__(self, database: Database, maps: Maps, tiers: list[tuple[int, int]], included_seats: int = 3,
-                 events=None) -> None:
-        """Use the database and map rules; ``events`` receives admin notifications."""
+                 events=None, free_maps: dict[tuple[str, int], int] | None = None) -> None:
+        """Use the database and map rules; ``events`` receives admin notifications.
+
+        ``free_maps`` maps owners (``("alliance" | "corp" | "char", id)``) to how many free maps their payers get.
+        """
         self.db, self.maps, self.tiers, self.included, self.events = database, maps, tiers, included_seats, events
+        self.free_maps = free_maps or {}
         self.on_payment = self.on_unmatched = None
 
     # ------------------------------------------------------------ prices
@@ -72,14 +83,38 @@ class Billing:
             maps.append({"id": "(new)", "name": "(new)", "created_at": "9999", "seats": new_map_seats})
         return maps
 
+    def owners_of(self, payer_id: int) -> set[tuple[str, int]]:
+        """Return the characters, corps and alliances whose ``HB_FREE_MAPS`` entries cover a payer, as ``(kind, id)``.
+
+        A person: those of every linked character. A corp: itself, plus the alliances it is the
+        executor of (its corp maps are the alliance's maps). Other corps of an alliance don't get
+        the alliance's free maps.
+        """
+        payer = self.db.one("SELECT kind, subject_id FROM payers WHERE id=?", (payer_id,))
+        if payer is None:
+            return set()
+        if payer["kind"] == "account":
+            return account_owners(self.db, payer["subject_id"])
+        corp_id = payer["subject_id"]
+        return {("corp", corp_id)} | {("alliance", row["alliance_id"]) for row in self.db.all(
+            "SELECT a.alliance_id FROM alliances a JOIN corporations c ON c.alliance_id = a.alliance_id "
+            "WHERE a.executor_corp_id=? AND c.corp_id=?", (corp_id, corp_id))}
+
+    def free_maps_of(self, payer_id: int) -> int:
+        """Return how many of a payer's maps are free (``HB_FREE_MAPS``; the best matching entry counts)."""
+        if not self.free_maps:
+            return 0
+        return max((self.free_maps.get(owner, 0) for owner in self.owners_of(payer_id)), default=0)
+
     def total(self, payer_id: int) -> tuple[int, dict[str, int]]:
         """Return a payer's current monthly total and each map's price."""
-        return monthly_total(self.payer_maps(payer_id), self.tiers, self.included)
+        return monthly_total(self.payer_maps(payer_id), self.tiers, self.included, self.free_maps_of(payer_id))
 
     def quote(self, payer_id: int, extra_seats: dict[str, int] | None = None, new_map_seats: int | None = None) -> dict:
         """Price preview before changing seats or maps (``GET /api/billing/quote``)."""
         before, _ = self.total(payer_id)
-        after, prices = monthly_total(self.payer_maps(payer_id, extra_seats, new_map_seats), self.tiers, self.included)
+        after, prices = monthly_total(self.payer_maps(payer_id, extra_seats, new_map_seats), self.tiers, self.included,
+                                      self.free_maps_of(payer_id))
         return {"before": before, "after": after, "prices": prices}
 
     # ------------------------------------------------------------ balance
@@ -182,7 +217,7 @@ class Billing:
 
         Returns:
             ``"paid"`` (the balance covers today's new total), ``"trial"`` (start or use the trial),
-            or ``"comp"``.
+            ``"comp"``, or ``"free"`` (``HB_FREE_MAPS`` covers every map, the new one included).
 
         Raises:
             BillingError: ``payment_required`` or ``trial_limit``.
@@ -190,9 +225,11 @@ class Billing:
         row = self.row(payer_id)
         if row["comp"]:
             return "comp"
+        quote = self.quote(payer_id, new_map_seats=1)
+        if quote["after"] == 0:
+            return "free"
         if self.on_trial_without_money(payer_id):
             raise BillingError("trial_limit", "The trial covers one map. Pay to add another.")
-        quote = self.quote(payer_id, new_map_seats=1)
         if row["balance_isk"] >= quote["after"] / 30:      # at least one day at the new price
             return "paid"
         if not self.maps.maps_of_payer(payer_id):
@@ -214,7 +251,8 @@ class Billing:
             BillingError: ``trial_limit``.
         """
         payer_id = self.db.value("SELECT payer_id FROM maps WHERE id=?", (map_id,))
-        if payer_id and self.on_trial_without_money(payer_id) and self.maps.seats(map_id) >= TRIAL_SEATS:
+        if payer_id and self.on_trial_without_money(payer_id) and self.maps.seats(map_id) >= TRIAL_SEATS \
+                and self.quote(payer_id, extra_seats={map_id: 1})["after"] > 0:
             raise BillingError("trial_limit", "This map is on a trial with 3 seats. The owner has to pay before "
                                               "more people can join.")
 
@@ -261,8 +299,8 @@ class Billing:
         row = dict(self.db.one("SELECT * FROM billing WHERE payer_id=?", (payer_id,)))
         old = row["state"]
         paid_until, trial_until = parse_iso(row["paid_until"]), parse_iso(row["trial_until"])
-        if row["comp"] or not self.maps.maps_of_payer(payer_id):
-            state = "active"
+        if row["comp"] or not self.maps.maps_of_payer(payer_id) or self.total(payer_id)[0] == 0:
+            state = "active"                             # nothing to pay: comp, no maps, or only free maps
             self.db.execute("UPDATE billing SET lapsed_at=NULL, lapse_repeat=0 WHERE payer_id=?", (payer_id,))
         elif paid_until and paid_until > now:
             state = "trial" if trial_until and trial_until > now and row["balance_isk"] <= 0 else "active"

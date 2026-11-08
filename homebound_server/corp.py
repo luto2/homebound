@@ -1,4 +1,5 @@
 """Corp maps: billed to the corporation, owned by its CEO (plan §16)."""
+from .access import Access
 from .db import Database, iso, utc_now
 from .esi import is_npc_corp
 from .maps import MANAGE_ROLES, MapError, Maps
@@ -7,9 +8,10 @@ from .maps import MANAGE_ROLES, MapError, Maps
 class Corps:
     """Corp map rules on top of :class:`homebound_server.maps.Maps`."""
 
-    def __init__(self, database: Database, maps: Maps) -> None:
-        """Use the database and the map rules."""
+    def __init__(self, database: Database, maps: Maps, access: Access | None = None) -> None:
+        """Use the database, the map rules and the access lists."""
         self.db, self.maps = database, maps
+        self.access = access or Access(database, maps)
 
     def corp_of_map(self, map_id: str) -> int | None:
         """Return the corporation a map bills to, or None for a personal map."""
@@ -22,10 +24,24 @@ class Corps:
         return self.db.value("SELECT ceo_id FROM corporations WHERE corp_id=?", (corp_id,))
 
     def remember_corp(self, corp_id: int, info: dict) -> None:
-        """Store a corp's public info (name, CEO)."""
-        self.db.execute("INSERT INTO corporations (corp_id, name, ceo_id, checked_at) VALUES (?,?,?,?) "
+        """Store a corp's public info (name, CEO, alliance: ESI leaves ``alliance_id`` out when there is none)."""
+        self.db.execute("INSERT INTO corporations (corp_id, name, ceo_id, checked_at, alliance_id) VALUES (?,?,?,?,?) "
                         "ON CONFLICT (corp_id) DO UPDATE SET name=excluded.name, ceo_id=excluded.ceo_id, "
-                        "checked_at=excluded.checked_at", (corp_id, info.get("name"), info.get("ceo_id"), iso(utc_now())))
+                        "checked_at=excluded.checked_at, alliance_id=excluded.alliance_id",
+                        (corp_id, info.get("name"), info.get("ceo_id"), iso(utc_now()), info.get("alliance_id")))
+
+    def remember_alliances(self, alliances: dict[int, int | None]) -> None:
+        """Store which alliance each corp is in (corp_id -> alliance_id or None), from the affiliation poll."""
+        for corp_id, alliance_id in alliances.items():
+            self.db.execute("INSERT INTO corporations (corp_id, alliance_id) VALUES (?,?) "
+                            "ON CONFLICT (corp_id) DO UPDATE SET alliance_id=excluded.alliance_id", (corp_id, alliance_id))
+
+    def remember_alliance(self, alliance_id: int, info: dict) -> None:
+        """Store an alliance's name and executor corp."""
+        self.db.execute("INSERT INTO alliances (alliance_id, name, executor_corp_id, checked_at) VALUES (?,?,?,?) "
+                        "ON CONFLICT (alliance_id) DO UPDATE SET name=excluded.name, "
+                        "executor_corp_id=excluded.executor_corp_id, checked_at=excluded.checked_at",
+                        (alliance_id, info.get("name"), info.get("executor_corporation_id"), iso(utc_now())))
 
     def account_in_corp(self, account_id: int, corp_id: int) -> bool:
         """Return whether one of the account's characters is in the corp."""
@@ -58,20 +74,20 @@ class Corps:
         self.db.execute("UPDATE maps SET corp_join=?, seat_limit=? WHERE id=?", (int(enabled), seat_limit, map_id))
 
     def join(self, map_id: str, account_id: int) -> str:
-        """Join a corp map as a viewer through the corp switch.
+        """Join a corp map as a viewer through the corp switch: the corp and its access list may.
 
         Returns:
             The role the account has now.
 
         Raises:
-            MapError: ``forbidden`` if the switch is off or the account isn't in the corp, ``full`` at the seat limit.
+            MapError: ``forbidden`` if the switch is off or the account isn't allowed, ``full`` at the seat limit.
         """
         the_map = self.maps.map(map_id)
         corp_id = self.corp_of_map(map_id)
         if not the_map or corp_id is None or not the_map["corp_join"]:
             raise MapError("forbidden", "This map can't be joined without an invite.")
-        if not self.account_in_corp(account_id, corp_id):
-            raise MapError("forbidden", "None of your characters is in this corporation.")
+        if not self.access.allows(map_id, account_id):
+            raise MapError("forbidden", "None of your characters is in this corporation or on the map's access list.")
         role = self.maps.role(map_id, account_id)
         if role is not None:
             return role
@@ -128,18 +144,9 @@ class Corps:
             self.maps.on_change(map_id, [])
 
     def remove_leavers(self) -> list[tuple[str, int]]:
-        """Remove members whose characters are no longer in the corp of a corp map (the CEO always stays).
+        """Remove members who no longer match their map's corp or access list (the owner, the CEO, stays).
 
         Returns:
             ``(map_id, account_id)`` of everyone removed.
         """
-        removed = []
-        for corp_id, map_ids in self.corp_map_ids().items():
-            for map_id in map_ids:
-                for member in self.db.all("SELECT account_id, role FROM members WHERE map_id=?", (map_id,)):
-                    if not self.account_in_corp(member["account_id"], corp_id):
-                        self.db.execute("DELETE FROM members WHERE map_id=? AND account_id=?",
-                                        (map_id, member["account_id"]))
-                        removed.append((map_id, member["account_id"]))
-                        self.maps.on_change(map_id, [member["account_id"]])
-        return removed
+        return self.access.remove_unallowed()

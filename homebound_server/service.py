@@ -14,6 +14,7 @@ from homebound.sync.merge import BatchRejected, MapState, check_batch
 from homebound.sync.protocol import InvalidOp, batch_from_json
 from homebound.universe.db import Universe, load_universe
 
+from .access import Access
 from .auth import Auth, AuthError, new_secret, token_hash
 from .billing import Billing, BillingError
 from .config import Config
@@ -51,8 +52,10 @@ class Service:
         self.universe = universe or (Universe(config.universe) if config.universe else load_universe())
         self.auth = Auth(self.db, self.events)
         self.maps = Maps(self.db, on_change=self._members_changed)
-        self.corps = Corps(self.db, self.maps)
-        self.billing = Billing(self.db, self.maps, config.pricing["tiers"], config.pricing["included_seats"], self.events)
+        self.access = Access(self.db, self.maps)
+        self.corps = Corps(self.db, self.maps, self.access)
+        self.billing = Billing(self.db, self.maps, config.pricing["tiers"], config.pricing["included_seats"], self.events,
+                               free_maps=config.free_maps)
         self.hub = Hub(self.db, self.maps, system_exists=lambda system_id: self.universe.by_id(system_id) is not None,
                        status_of=self.billing.status, character_names=self.character_names)
         self.hub.home_resolver = self._home_id
@@ -88,10 +91,12 @@ class Service:
         """Handle the SSO callback; returns ``(port, client_state, one-time code)``."""
         character = self.eve.login(code)
         try:
-            corp_id = self.eve.affiliations([character.char_id]).get(character.char_id)
+            corp_id, alliance_id = self.eve.affiliations([character.char_id]).get(character.char_id, (None, None))
         except Exception as error:      # noqa: BLE001 - ESI being down must not block logins
             log.warning("affiliation lookup failed: %s", error)
             corp_id = None
+        if corp_id:
+            self.corps.remember_alliances({corp_id: alliance_id})
         result = self.auth.finish_login(state, character, corp_id)
         if corp_id:
             self._refresh_corp(corp_id)
@@ -107,7 +112,8 @@ class Service:
         return {"account_id": account_id, "characters": self.auth.characters(account_id),
                 "payer_code": row["code"], "balance": round(row["balance_isk"]), "paid_until": row["paid_until"],
                 "state": self.billing.evaluate(payer_id), "price_month": total, "prices": prices,
-                "map_limit": account["map_limit"], "trial_available": self.billing.can_start_trial(account_id),
+                "map_limit": account["map_limit"], "free_maps": self.billing.free_maps_of(payer_id),
+                "trial_available": self.billing.can_start_trial(account_id),
                 "receiver_char_id": self.receiver()[0],
                 "maps": [{"id": each["id"], "name": each["name"], "role": each["role"], "seq": each["seq"],
                           "corp": self.corps.corp_of_map(each["id"]) is not None}
@@ -228,10 +234,47 @@ class Service:
         self.billing.settle(payer_id)
         return {"map_id": map_id, "seq": seq, "billing": how}
 
+    def add_access(self, map_id: str, by: int, kind: str, value: str) -> dict:
+        """Add an alliance, corp or character to a map's access list, by exact name or ID.
+
+        Returns:
+            ``{"entry", "removed"}``: the entry added and how many members lost their seat.
+
+        Raises:
+            MapError: ``invalid`` for an unknown name, plus the rules of :meth:`Access.add`.
+        """
+        self.maps.require_role(map_id, by, ("owner", "manager"))
+        labels = {"alliance": ("alliances", "alliance"), "corp": ("corporations", "corporation"),
+                  "char": ("characters", "character")}
+        if kind not in labels:
+            raise MapError("invalid", "An access entry is an alliance, corp or character.")
+        value = (value or "").strip()
+        if not value or len(value) > 100:
+            raise MapError("invalid", "Give a name or an ID.")
+        try:
+            if value.isdigit():
+                subject_id = int(value)
+                name = self.eve.names([subject_id]).get(subject_id)
+            else:
+                key, label = labels[kind]
+                found = next((row for row in self.eve.ids([value]).get(key, [])
+                              if row["name"].lower() == value.lower()), None)
+                if found is None:
+                    raise MapError("invalid", f"EVE knows no {label} called “{value}”.")
+                subject_id, name = found["id"], found["name"]
+        except MapError:
+            raise
+        except Exception as error:      # noqa: BLE001 - ESI down
+            log.warning("name lookup failed: %s", error)
+            raise MapError("unavailable", "EVE's name lookup isn't answering. Try again, or give the ID.") from error
+        removed = self.access.add(map_id, by, kind, subject_id, name)
+        return {"entry": {"kind": kind, "id": subject_id, "name": name}, "removed": len(removed)}
+
     def accept_invite(self, code: str, account_id: int) -> dict:
         """Join a map with an invite; corp maps make room, trials stay at 3 seats."""
         invite = self.db.one("SELECT map_id FROM invites WHERE code=?", ((code or "").strip().upper(),))
         if invite and self.maps.role(invite["map_id"], account_id) is None:
+            self.access.require_allowed(invite["map_id"], account_id)
             self.billing.check_new_seat(invite["map_id"])
         return self.maps.accept_invite(code, account_id, make_room=self.corps.make_room)
 
@@ -403,8 +446,9 @@ class Service:
             log.warning("no one to mail the receipt of journal %s to", entry["id"])
             return
         row = self.billing.row(payer_id)
+        has_maps = bool(self.maps.maps_of_payer(payer_id))
         subject, text = receipt(entry["amount"], sender, label, row["code"], row["balance_isk"], row["paid_until"],
-                                bool(self.maps.maps_of_payer(payer_id)), bool(row["comp"]))
+                                has_maps, bool(row["comp"]) or (has_maps and self.billing.total(payer_id)[0] == 0))
         self.mailer.queue(f"receipt:{entry['id']}", "receipt", recipient, subject, text)
 
     def _payment_unassigned(self, entry: dict, problem_kind: str, values: dict) -> None:
@@ -479,10 +523,16 @@ class Service:
     def poll_affiliations(self) -> dict:
         """Look up every character's corp: flag possible transfers, follow CEOs, remove corp leavers."""
         char_ids = [row["char_id"] for row in self.db.all("SELECT char_id FROM characters")]
-        corps = self.eve.affiliations(char_ids) if char_ids else {}
-        flagged = self.auth.flag_transfers(corps)
+        affiliations = self.eve.affiliations(char_ids) if char_ids else {}
+        flagged = self.auth.flag_transfers({char_id: corp for char_id, (corp, _) in affiliations.items()})
+        self.corps.remember_alliances(dict(affiliations.values()))
         for corp_id in self.corps.corp_map_ids():
             self._refresh_corp(corp_id)
+        for alliance_id in {owner for kind, owner in self.config.free_maps if kind == "alliance"}:
+            try:
+                self.corps.remember_alliance(alliance_id, self.eve.alliance(alliance_id))
+            except Exception as error:      # noqa: BLE001
+                log.warning("alliance lookup failed: %s", error)
         removed = self.corps.remove_leavers()
         return {"flagged": flagged, "removed": removed}
 

@@ -147,6 +147,7 @@ class Maps:
             self.db.execute("UPDATE maps SET deleted_at=? WHERE id=?", (iso(utc_now()), map_id))
             self.db.execute("DELETE FROM members WHERE map_id=?", (map_id,))
             self.db.execute("DELETE FROM invites WHERE map_id=?", (map_id,))
+            self.db.execute("DELETE FROM map_access WHERE map_id=?", (map_id,))
             for table in ("entities", "ops", "seen_batches"):
                 self.db.execute(f"DELETE FROM {table} WHERE map_id=?", (map_id,))
         self.on_change(map_id, members)

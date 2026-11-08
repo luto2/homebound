@@ -22,6 +22,7 @@ class Config:
     disk_warn_percent: int = 80                      # webhook warning when the database's disk is fuller
     universe: Path | None = None                     # universe.sqlite; None: the client's usual place
     min_app: str = "0.1.0"
+    free_maps: dict = field(default_factory=dict)     # (kind, id) -> free maps, from HB_FREE_MAPS
     pricing: dict = field(default_factory=lambda: {
         "tiers": [(100_000_000, 25_000_000), (50_000_000, 15_000_000), (25_000_000, 5_000_000)],
         "included_seats": 3})
@@ -45,4 +46,31 @@ class Config:
             disk_warn_percent=int(environment.get("HB_DISK_WARN_PERCENT", "80") or 80),
             universe=Path(environment["HB_UNIVERSE"]) if environment.get("HB_UNIVERSE") else None,
             min_app=environment.get("HB_MIN_APP", "0.1.0"),
+            free_maps=parse_free_maps(environment.get("HB_FREE_MAPS", "")),
         )
+
+
+FREE_KINDS = {"alliance": "alliance", "corp": "corp", "corporation": "corp", "char": "char", "character": "char"}
+
+
+def parse_free_maps(text: str) -> dict[tuple[str, int], int]:
+    """Parse ``HB_FREE_MAPS``: owners whose maps are free, e.g. ``alliance:99003581=3, corp:98000001=1``.
+
+    Entries are separated by commas, semicolons or whitespace. A kind is ``alliance``, ``corp`` or
+    ``char``; the number is how many of a payer's maps are free (its most expensive ones).
+
+    Raises:
+        ValueError: for an entry that doesn't fit the pattern.
+    """
+    result: dict[tuple[str, int], int] = {}
+    for entry in text.replace(";", ",").replace(",", " ").split():
+        try:
+            owner, count = entry.split("=")
+            kind, owner_id = owner.split(":")
+            kind, owner_id, count = FREE_KINDS[kind.strip().lower()], int(owner_id), int(count)
+            if owner_id <= 0 or count < 0:
+                raise ValueError
+        except (KeyError, ValueError):
+            raise ValueError(f"HB_FREE_MAPS: {entry!r} isn't <alliance|corp|char>:<id>=<maps>") from None
+        result[(kind, owner_id)] = count
+    return result

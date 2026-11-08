@@ -82,13 +82,14 @@ class Eve:
         tokens = self._token({"grant_type": "refresh_token", "refresh_token": refresh_token})
         return tokens["access_token"], tokens.get("refresh_token") or refresh_token
 
-    def affiliations(self, char_ids: list[int]) -> dict[int, int]:
-        """Return each character's corporation (public, no scope)."""
+    def affiliations(self, char_ids: list[int]) -> dict[int, tuple[int, int | None]]:
+        """Return each character's ``(corporation, alliance or None)`` (public, no scope)."""
         result = {}
         for start in range(0, len(char_ids), 1000):
             response = self.http.post(f"{ESI}/characters/affiliation/", json=char_ids[start:start + 1000])
             response.raise_for_status()
-            result |= {row["character_id"]: row["corporation_id"] for row in response.json()}
+            result |= {row["character_id"]: (row["corporation_id"], row.get("alliance_id"))
+                       for row in response.json()}
         return result
 
     def names(self, ids: list[int]) -> dict[int, str]:
@@ -100,6 +101,18 @@ class Eve:
     def corporation(self, corp_id: int) -> dict:
         """Return a corporation's public info (``name``, ``ceo_id`` …)."""
         response = self.http.get(f"{ESI}/corporations/{corp_id}/")
+        response.raise_for_status()
+        return response.json()
+
+    def alliance(self, alliance_id: int) -> dict:
+        """Return an alliance's public info (``name``, ``executor_corporation_id`` …)."""
+        response = self.http.get(f"{ESI}/alliances/{alliance_id}/")
+        response.raise_for_status()
+        return response.json()
+
+    def ids(self, names: list[str]) -> dict[str, list[dict]]:
+        """Resolve exact names: ``{"alliances": [{"id", "name"}], "corporations": […], "characters": […]}``."""
+        response = self.http.post(f"{ESI}/universe/ids/", json=names)
         response.raise_for_status()
         return response.json()
 
@@ -138,6 +151,8 @@ class FakeEve:
 
     corps: dict[int, int] = field(default_factory=dict)          # char_id -> corp_id
     corp_info: dict[int, dict] = field(default_factory=dict)     # corp_id -> {"name", "ceo_id"}
+    alliances: dict[int, int] = field(default_factory=dict)      # corp_id -> alliance_id
+    alliance_info: dict[int, dict] = field(default_factory=dict) # alliance_id -> {"name", "executor_corporation_id"}
     owner_hashes: dict[int, str] = field(default_factory=dict)   # char_id -> owner hash
     journal: list[dict] = field(default_factory=list)
     mails: list[dict] = field(default_factory=list)              # {"mail_id", "from", "subject", "body"}
@@ -168,10 +183,11 @@ class FakeEve:
         self._check()
         return "fake-token", refresh_token
 
-    def affiliations(self, char_ids: list[int]) -> dict[int, int]:
-        """Characters without a corp set are in an NPC corp."""
+    def affiliations(self, char_ids: list[int]) -> dict[int, tuple[int, int | None]]:
+        """Characters without a corp set are in an NPC corp; the corp's alliance comes from ``alliances``."""
         self._check()
-        return {char_id: self.corps.get(char_id, 1000044) for char_id in char_ids}
+        corps = {char_id: self.corps.get(char_id, 1000044) for char_id in char_ids}
+        return {char_id: (corp_id, self.alliances.get(corp_id)) for char_id, corp_id in corps.items()}
 
     def names(self, ids: list[int]) -> dict[int, str]:
         """Names from ``names`` (unknown IDs are left out, as ESI would fail)."""
@@ -181,7 +197,25 @@ class FakeEve:
     def corporation(self, corp_id: int) -> dict:
         """Return the configured corp info."""
         self._check()
-        return self.corp_info.get(corp_id, {"name": f"Corp {corp_id}", "ceo_id": 0})
+        info = self.corp_info.get(corp_id, {"name": f"Corp {corp_id}", "ceo_id": 0})
+        return info | ({"alliance_id": self.alliances[corp_id]} if corp_id in self.alliances else {})
+
+    def alliance(self, alliance_id: int) -> dict:
+        """Return the configured alliance info."""
+        self._check()
+        return self.alliance_info.get(alliance_id, {"name": f"Alliance {alliance_id}", "executor_corporation_id": 0})
+
+    def ids(self, names: list[str]) -> dict[str, list[dict]]:
+        """Resolve names from ``known_names``; the kind follows EVE's ID ranges."""
+        self._check()
+        result: dict[str, list[dict]] = {}
+        wanted = {name.lower() for name in names}
+        for entity_id, name in self.known_names.items():
+            if name.lower() in wanted:
+                key = ("corporations" if 98_000_000 <= entity_id < 99_000_000 else
+                       "alliances" if 99_000_000 <= entity_id < 100_000_000 else "characters")
+                result.setdefault(key, []).append({"id": entity_id, "name": name})
+        return result
 
     def wallet_journal(self, char_id: int, token: str) -> list[dict[str, Any]]:
         """Return the configured journal."""

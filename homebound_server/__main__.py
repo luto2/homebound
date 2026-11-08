@@ -74,6 +74,13 @@ def admin(options: argparse.Namespace) -> int:
         payer = service.maps.payer_for_account(account_of(args[0]))
         db.execute("UPDATE billing SET comp=? WHERE payer_id=?", (int(args[1] == "on"), payer))
         result = service.billing.row(payer)
+    elif command == "free-maps":       # HB_FREE_MAPS and the payers it covers now
+        result = {"config": {f"{kind}:{owner}": count for (kind, owner), count in config.free_maps.items()},
+                  "payers": [{"payer_id": row["id"], "kind": row["kind"], "subject_id": row["subject_id"],
+                              "free_maps": service.billing.free_maps_of(row["id"]),
+                              "maps": len(service.maps.maps_of_payer(row["id"]))}
+                             for row in db.all("SELECT id, kind, subject_id FROM payers")
+                             if service.billing.free_maps_of(row["id"])]}
     elif command == "map-limit":       # map-limit <account|char> <n>
         db.execute("UPDATE accounts SET map_limit=? WHERE id=?", (int(args[1]), account_of(args[0])))
         result = {"ok": True}
@@ -128,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     run = sub.add_parser("serve", help="run the server (the default)")
     run.add_argument("--host", default="127.0.0.1")
     run.add_argument("--port", type=int, default=8080)
-    tool = sub.add_parser("admin", help="admin commands: lookup, credit, credit-corp, comp, map-limit, "
+    tool = sub.add_parser("admin", help="admin commands: lookup, credit, credit-corp, comp, free-maps, map-limit, "
                                         "reset-strikes, maps, delete-map, unmatched, refunded, suspend, export, "
                                         "delete-account, new-key, receiver-link, receiver, mails, run <job>")
     tool.add_argument("command")

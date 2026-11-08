@@ -253,6 +253,191 @@ def test_prices_rank_maps_by_seats() -> None:
     assert map_price(5, 50, tiers) == 0
 
 
+def test_free_maps_are_the_top_ranked_ones() -> None:
+    """Free maps cost nothing, seats included; the rest keep the price of their rank."""
+    tiers = [(100, 25), (50, 15), (25, 5)]
+    maps = lambda *seats: [{"id": str(index), "seats": count, "created_at": str(index)} for index, count in enumerate(seats)]
+    assert monthly_total(maps(10), tiers, free=1)[0] == 0
+    assert monthly_total(maps(3, 10, 4), tiers, free=2) == (25, {"1": 0, "2": 0, "0": 25})
+    assert monthly_total(maps(3, 3), tiers, free=5)[0] == 0
+
+
+def test_free_maps_setting_is_parsed() -> None:
+    """HB_FREE_MAPS: kind:id=maps, separated by commas, semicolons or spaces; bad entries fail loudly."""
+    from homebound_server.config import parse_free_maps
+    assert parse_free_maps("") == {}
+    assert parse_free_maps("alliance:99003581=3, corp:98000001=1;character:91000001=2") == {
+        ("alliance", 99003581): 3, ("corp", 98000001): 1, ("char", 91000001): 2}
+    for bad in ("alliance:99003581", "guild:1=2", "corp:x=1", "corp:1=-1", "corp:0=1"):
+        with pytest.raises(ValueError, match="HB_FREE_MAPS"):
+            parse_free_maps(bad)
+
+
+def test_alliance_members_get_their_free_maps(harness) -> None:
+    """A listed alliance's members make free maps without a trial; past the allowance they pay; leaving ends it."""
+    harness.eve.corps[91000002] = 98000001                         # the alt is in the alliance, the main isn't
+    harness.eve.alliances[98000001] = 99000001
+    harness.service.billing.free_maps = {("alliance", 99000001): 2}
+    kira = harness.login(91000001, "Kira")
+    link = harness.api("POST", "/api/account/characters", kira).json()["link_code"]
+    harness.login(91000002, "Kira Alt", link=link)
+    account = harness.api("GET", "/api/account", kira).json()
+    assert account["free_maps"] == 2 and account["trial_available"]
+    one = harness.api("POST", "/api/maps", kira, json={"name": "One", "client_id": A, "ops": []}).json()
+    assert one["billing"] == "free"
+    for name in ("Two", "Three"):
+        harness.api("POST", "/api/maps", kira, json={"name": name, "client_id": A, "ops": []})
+    status = harness.api("GET", f"/api/maps/{one['map_id']}", kira).json()["status"]
+    assert status["state"] == "active" and status["price_month"] == 0
+    # the third map is past the allowance and wasn't made: no balance
+    account = harness.api("GET", "/api/account", kira).json()
+    assert len(account["maps"]) == 2 and account["price_month"] == 0 and account["trial_available"]
+    assert harness.service.db.value("SELECT trial_until FROM billing") is None
+    # many seats on a free map stay free
+    for char_id in range(91000010, 91000013):             # 4 seats, past the 3 included
+        code = harness.api("POST", f"/api/maps/{one['map_id']}/invites", kira, json={"role": "viewer"}).json()["code"]
+        assert harness.api("POST", f"/api/invites/{code}/accept", harness.login(char_id, f"P{char_id}")).status_code == 200
+    assert harness.api("GET", "/api/account", kira).json()["price_month"] == 0
+    # the corp leaves the alliance: the maps cost money again and the payer lapses
+    del harness.eve.alliances[98000001]
+    harness.service.poll_affiliations()
+    account = harness.api("GET", "/api/account", kira).json()
+    assert account["free_maps"] == 0 and account["price_month"] > 0 and account["state"] == "warning"
+
+
+def free_alliance(harness, maps: int = 1) -> None:
+    """Alliance 99000001 (executor: corp 98000001, CEO 91000001) gets ``maps`` free maps; corp 98000002 is in it too."""
+    eve = harness.eve
+    eve.corps |= {91000001: 98000001, 91000005: 98000002}
+    eve.corp_info |= {98000001: {"name": "Hole Dwellers", "ceo_id": 91000001},
+                      98000002: {"name": "Other Corp", "ceo_id": 91000005}}
+    eve.alliances |= {98000001: 99000001, 98000002: 99000001}
+    eve.alliance_info[99000001] = {"name": "Deep Holes", "executor_corporation_id": 98000001}
+    harness.config.free_maps = harness.service.billing.free_maps = {("alliance", 99000001): maps}
+
+
+def test_the_executors_corp_map_is_the_free_alliance_map(harness) -> None:
+    """An alliance entry frees the executor corp's corp maps; other corps of the alliance pay for theirs."""
+    free_alliance(harness)
+    ceo, other_ceo = harness.login(91000001, "Ceo"), harness.login(91000005, "Other Ceo")
+    harness.service.poll_affiliations()
+    made = harness.api("POST", "/api/maps", ceo, json={"name": "Alliance", "client_id": A, "corp": True,
+                                                       "char_id": 91000001}).json()
+    assert made["billing"] == "free"
+    billing = harness.service.billing
+    executor = harness.service.maps.payer_for_corp(98000001)
+    assert billing.evaluate(executor) == "active" and billing.total(executor)[0] == 0
+    other = harness.api("POST", "/api/maps", other_ceo, json={"name": "Ours", "client_id": A, "corp": True,
+                                                              "char_id": 91000005}).json()
+    assert other["billing"] == "trial"
+    # everyone in the alliance still has their own free personal map
+    assert harness.api("GET", "/api/account", other_ceo).json()["free_maps"] == 1
+    # the executor role moves: the free corp map moves with it
+    harness.eve.alliance_info[99000001]["executor_corporation_id"] = 98000002
+    harness.service.poll_affiliations()
+    assert billing.free_maps_of(executor) == 0
+    assert billing.free_maps_of(harness.service.maps.payer_for_corp(98000002)) == 1
+
+
+def test_corp_and_character_entries_and_the_best_one_wins(harness) -> None:
+    """A listed corp frees its corp maps and its members' maps; with several matches the highest count wins."""
+    harness.eve.corps[91000001] = 98000001
+    billing = harness.service.billing
+    harness.login(91000001, "Kira")
+    corp_payer = harness.service.maps.payer_for_corp(98000001)
+    personal = harness.service.maps.payer_for_account(harness.service.account_id_of(91000001))
+    billing.free_maps = {("corp", 98000001): 3}
+    assert billing.free_maps_of(corp_payer) == 3 and billing.free_maps_of(personal) == 3
+    billing.free_maps = {("char", 91000001): 1, ("corp", 98000001): 4}
+    assert billing.free_maps_of(corp_payer) == 4 and billing.free_maps_of(personal) == 4
+    billing.free_maps = {("char", 91000001): 2}
+    assert billing.free_maps_of(corp_payer) == 0 and billing.free_maps_of(personal) == 2
+
+
+# ---------------------------------------------------------------- access lists
+
+def test_an_access_list_makes_leaked_invite_codes_useless(harness) -> None:
+    """With an alliance on the list, only its members can use an invite; the code isn't used up by others."""
+    map_id, kira, bob = setup_map(harness)
+    harness.eve.corps |= {91000001: 98000001, 91000003: 98000002}
+    harness.eve.alliances |= {98000002: 99000001}
+    harness.eve.known_names |= {99000001: "Deep Holes"}
+    outsider, ally = harness.login(91000004, "Outsider"), harness.login(91000003, "Ally")
+    added = harness.api("POST", f"/api/maps/{map_id}/access", kira, json={"kind": "alliance", "value": "deep holes"})
+    assert added.json() == {"entry": {"kind": "alliance", "id": 99000001, "name": "Deep Holes"}, "removed": 1}
+    assert harness.service.maps.role(map_id, harness.service.account_id_of(91000002)) is None   # Bob didn't match
+    details = harness.api("GET", f"/api/maps/{map_id}", kira).json()
+    assert details["restricted"] and details["access"] == [{"kind": "alliance", "id": 99000001, "name": "Deep Holes"}]
+    code = harness.api("POST", f"/api/maps/{map_id}/invites", kira, json={"role": "viewer"}).json()["code"]
+    refused = harness.api("POST", f"/api/invites/{code}/accept", outsider)
+    assert refused.status_code == 403 and refused.json()["error"] == "forbidden"
+    assert harness.api("POST", f"/api/invites/{code}/accept", ally).json()["role"] == "viewer"
+    # a character entry by ID lets the outsider on; taking it off removes them again
+    harness.api("POST", f"/api/maps/{map_id}/access", kira, json={"kind": "char", "value": "91000004"})
+    code = harness.api("POST", f"/api/maps/{map_id}/invites", kira, json={"role": "viewer"}).json()["code"]
+    assert harness.api("POST", f"/api/invites/{code}/accept", outsider).status_code == 200
+    assert harness.api("DELETE", f"/api/maps/{map_id}/access/char/91000004", kira).json() == {"removed": 1}
+    # the ally's corp leaves the alliance: the hourly poll takes them off; the owner always stays
+    del harness.eve.alliances[98000002]
+    removed = harness.service.poll_affiliations()["removed"]
+    assert removed == [(map_id, harness.service.account_id_of(91000003))]
+    assert [member["role"] for member in harness.service.maps.members(map_id)] == ["owner"]
+
+
+def test_access_list_rules(harness) -> None:
+    """Only the owner and managers edit it; unknown names and bad kinds are refused; ESI down is a 503."""
+    map_id, kira, bob = setup_map(harness)
+    assert harness.api("POST", f"/api/maps/{map_id}/access", bob,
+                       json={"kind": "corp", "value": "98000001"}).json()["error"] == "forbidden"
+    unknown = harness.api("POST", f"/api/maps/{map_id}/access", kira, json={"kind": "corp", "value": "No Such Corp"})
+    assert unknown.json()["error"] == "invalid" and "No Such Corp" in unknown.json()["detail"]
+    assert harness.api("POST", f"/api/maps/{map_id}/access", kira,
+                       json={"kind": "guild", "value": "1"}).json()["error"] == "invalid"
+    harness.eve.fail = True
+    assert harness.api("POST", f"/api/maps/{map_id}/access", kira,
+                       json={"kind": "corp", "value": "Some Corp"}).status_code == 503
+    harness.eve.fail = False
+    assert not harness.api("GET", f"/api/maps/{map_id}", kira).json()["restricted"]
+
+
+def test_a_corp_map_lets_its_alliance_on_through_the_access_list(harness) -> None:
+    """The executor's corp map adds the alliance: members of other corps can join and stay."""
+    free_alliance(harness)
+    ceo, other = harness.login(91000001, "Ceo"), harness.login(91000005, "Other Ceo")
+    harness.service.poll_affiliations()
+    map_id = harness.make_map(ceo, name="Alliance", corp=True, char_id=91000001)
+    code = harness.api("POST", f"/api/maps/{map_id}/invites", ceo, json={"role": "editor"}).json()["code"]
+    assert harness.api("POST", f"/api/invites/{code}/accept", other).json()["error"] == "forbidden"
+    harness.api("POST", f"/api/maps/{map_id}/access", ceo, json={"kind": "alliance", "value": "99000001"})
+    assert harness.api("POST", f"/api/invites/{code}/accept", other).json()["role"] == "editor"
+    harness.service.poll_affiliations()
+    assert len(harness.service.maps.members(map_id)) == 2
+    # the self-join switch follows the list too
+    harness.api("POST", f"/api/maps/{map_id}/corp", ceo, json={"corp_join": True})
+    third = harness.login(91000006, "Nobody")
+    assert harness.api("POST", f"/api/maps/{map_id}/corp-join", third).status_code == 403
+    harness.eve.corps[91000006] = 98000002
+    harness.service.poll_affiliations()
+    assert harness.api("POST", f"/api/maps/{map_id}/corp-join", third).json()["role"] == "viewer"
+
+
+def test_old_databases_get_the_alliance_column(tmp_path) -> None:
+    """A database made before corporations.alliance_id gets the column when opened."""
+    import sqlite3
+
+    from homebound_server.db import Database
+    path = tmp_path / "old.sqlite"
+    old = sqlite3.connect(path)
+    old.execute("CREATE TABLE corporations (corp_id INTEGER PRIMARY KEY, name TEXT, ceo_id INTEGER, checked_at TEXT)")
+    old.execute("INSERT INTO corporations VALUES (98000001, 'Hole Dwellers', 91000001, NULL)")
+    old.commit()
+    old.close()
+    database = Database(path)
+    assert database.value("SELECT alliance_id FROM corporations") is None
+    assert database.value("SELECT name FROM corporations") == "Hole Dwellers"
+    database.close()
+
+
 def test_a_first_map_needs_money_or_the_one_trial(harness) -> None:
     """Without balance the first map starts the trial; a second map or alt trial is refused."""
     kira = harness.login(91000001, "Kira")

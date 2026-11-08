@@ -18,6 +18,7 @@ from .dialogs import BaseDialog, PromptDialog, danger_button
 from .sync_manager import SyncManager
 
 ROLE_LABELS = {"owner": "Owner", "manager": "Manager", "editor": "Editor", "viewer": "Viewer"}
+ACCESS_LABELS = {"alliance": "Alliance", "corp": "Corporation", "char": "Character"}
 
 
 def isk(amount: float | int | None) -> str:
@@ -273,6 +274,77 @@ class MembersDialog(BaseDialog):
             self.extra_layout.addWidget(help_label(
                 "Corp map: corp members may join as viewer " + ("(on, " if details["map"]["corp_join"] else "(off, ")
                 + f"seat limit {details['map'].get('seat_limit') or '–'})."))
+        self._access_section(details, mine in ("owner", "manager"))
+
+    def _access_section(self, details: dict, can_manage: bool) -> None:
+        """Who may join: the access list, with remove buttons and an add row for the owner and managers."""
+        corp = details["status"].get("payer_kind") == "corp"
+        self.extra_layout.addWidget(QLabel("<b>Who may join</b>"))
+        if not details.get("access"):
+            self.extra_layout.addWidget(help_label(
+                "Only members of the map's corporation, plus anyone you add here." if corp else
+                "Anyone with an invite code. Add an alliance, corporation or character to limit it to them."))
+        elif corp:
+            self.extra_layout.addWidget(help_label("The map's corporation, and:"))
+        for entry in details.get("access", []):
+            row = QWidget()
+            layout = QHBoxLayout(row)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.addWidget(QLabel(f"{ACCESS_LABELS[entry['kind']]}: {entry.get('name') or entry['id']}"), 1)
+            if can_manage:
+                remove = QToolButton()
+                remove.setText("✕")
+                remove.setToolTip("Take off the list")
+                remove.clicked.connect(lambda _checked=False, entry=entry: self._remove_access(entry))
+                layout.addWidget(remove)
+            self.extra_layout.addWidget(row)
+        if not can_manage:
+            return
+        row = QWidget()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.access_kind = QComboBox()
+        for kind, label in ACCESS_LABELS.items():
+            self.access_kind.addItem(label, kind)
+        layout.addWidget(self.access_kind)
+        self.access_name = QLineEdit()
+        self.access_name.setPlaceholderText("Exact name or ID")
+        self.access_name.returnPressed.connect(self._add_access)
+        layout.addWidget(self.access_name, 1)
+        add = QPushButton("Add")
+        add.clicked.connect(self._add_access)
+        layout.addWidget(add)
+        self.extra_layout.addWidget(row)
+        self.extra_layout.addWidget(help_label(
+            "Invite codes only work for listed alliances, corporations and characters, so a code passed on to "
+            "someone else is useless. Members who don't match lose their seat (the owner always stays)."))
+
+    def _add_access(self) -> None:
+        """Add the typed alliance, corp or character."""
+        value = self.access_name.text().strip()
+        if not value:
+            return
+        try:
+            result = self.sync.api.add_access(self.map_id, self.access_kind.currentData(), value)
+        except ApiError as error:
+            show_error(self.error, error)
+            return
+        self.refresh()
+        if result.get("removed"):
+            self.error.setText(f"{result['removed']} member(s) didn't match and lost their seat.")
+            self.error.show()
+
+    def _remove_access(self, entry: dict) -> None:
+        """Take an entry off the list."""
+        try:
+            removed = self.sync.api.remove_access(self.map_id, entry["kind"], entry["id"])
+        except ApiError as error:
+            show_error(self.error, error)
+            return
+        self.refresh()
+        if removed:
+            self.error.setText(f"{removed} member(s) didn't match and lost their seat.")
+            self.error.show()
 
     def _set_role(self, account_id: int, role: str) -> None:
         """Change a role."""
@@ -353,7 +425,8 @@ class AccountDialog(BaseDialog):
         receiver = account.get("receiver_char_id")
         layout.addWidget(help_label(
             f"{isk(account['balance'])} · {isk(account['price_month'])} a month · paid until "
-            f"{short_date(account['paid_until']) or '–'} · state: {account['state']}"))
+            f"{short_date(account['paid_until']) or '–'} · state: {account['state']}"
+            + (f" · {account['free_maps']} free map(s)" if account.get("free_maps") else "")))
         layout.addWidget(help_label(
             f"To pay, give ISK in EVE to the Homebound receiver character{f' (ID {receiver})' if receiver else ''} "
             f"from one of your characters. From another character, put your code “{account['payer_code']}” in the "

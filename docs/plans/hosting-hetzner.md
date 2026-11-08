@@ -115,6 +115,7 @@ HB_RECEIVER_CHAR_ID=2124836346   # Homebound Billing; the receiver link refuses 
 HB_DISCORD_WEBHOOK=https://discord.com/api/webhooks/…   # admin notifications (cloud-sync-plan §17)
 HB_MUTE_BILLING=0           # 1: no posts for billing state changes
 HB_DISK_WARN_PERCENT=80
+HB_FREE_MAPS=alliance:99000001=1,corp:98000001=1   # free maps per owner (alliance|corp|char); alliance: members + executor corp
 HB_HEALTHCHECK_URL=https://hc-ping.com/…   # pinged after each successful wallet poll
 LITESTREAM_ACCESS_KEY_ID=…       # object storage access key
 LITESTREAM_SECRET_ACCESS_KEY=…   # object storage secret key

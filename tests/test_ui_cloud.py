@@ -7,6 +7,7 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 from conftest import HOME, pick_system
+from homebound.sync.api import ApiError
 from homebound.sync.token import TokenStore
 from homebound.ui.cloud import CloudMenu, InviteDialog, isk
 from homebound.ui.sync_manager import SyncManager
@@ -197,6 +198,28 @@ def test_cloud_menu_offers_what_fits(cloud) -> None:
     dialog = InviteDialog(window, kira, kira.active_map_id, "owner")
     dialog._make()
     assert dialog.code.text().startswith("INV-")
+
+
+def test_members_dialog_edits_the_access_list(cloud) -> None:
+    """The owner adds a character by name, sees it listed, and the invite stops working for others."""
+    harness, kira, bob, code, statuses = cloud
+    from PySide6.QtWidgets import QLabel, QMainWindow
+    from homebound.ui.cloud import MembersDialog
+    harness.eve.known_names[91000009] = "Trusted Pilot"
+    window = QMainWindow()
+    dialog = MembersDialog(window, kira, kira.active_map_id)
+    texts = lambda: [label.text() for label in dialog.extra.findChildren(QLabel)]
+    assert any(text.startswith("Anyone with an invite code") for text in texts())
+    dialog.access_kind.setCurrentIndex(dialog.access_kind.findData("char"))
+    dialog.access_name.setText("Trusted Pilot")
+    dialog._add_access()
+    assert spin(lambda: "Character: Trusted Pilot" in texts())
+    with pytest.raises(ApiError) as refused:          # Bob isn't listed: the code he was sent is useless
+        bob.api.accept(code)
+    assert refused.value.code == "forbidden"
+    dialog._remove_access({"kind": "char", "id": 91000009})
+    assert spin(lambda: any(text.startswith("Anyone with an invite code") for text in texts()))
+    assert bob.api.accept(code)["role"] == "editor"
 
 
 def test_isk_formatting() -> None:

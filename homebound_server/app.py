@@ -96,7 +96,7 @@ def create_app(service: Service) -> Starlette:
                 status = {"unauthorized": 401, "relogin_due": 401, "invalid": 400}.get(problem.code, 403)
                 return error(problem.code, str(problem), status)
             except (MapError, BillingError) as problem:
-                status = {"not_member": 403, "forbidden": 403, "map_deleted": 404}.get(problem.code, 400)
+                status = {"not_member": 403, "forbidden": 403, "map_deleted": 404, "unavailable": 503}.get(problem.code, 400)
                 return error(problem.code, problem.detail, status)
             except (ValueError, KeyError, TypeError) as problem:
                 return error("invalid", str(problem))
@@ -226,6 +226,7 @@ def create_app(service: Service) -> Starlette:
         service.maps.require_role(map_id, current["account_id"], ("owner", "manager", "editor", "viewer"))
         the_map = service.maps.map(map_id)
         return {"map": {key: the_map[key] for key in ("id", "name", "created_at", "seq", "corp_join", "seat_limit")},
+                "access": service.access.entries(map_id), "restricted": service.access.is_restricted(map_id),
                 "members": service.maps.members(map_id), "role": service.maps.role(map_id, current["account_id"]),
                 "status": service.billing.status(map_id, current["account_id"]),
                 "invites": service.maps.invites(map_id) if service.maps.role(map_id, current["account_id"])
@@ -263,6 +264,15 @@ def create_app(service: Service) -> Starlette:
         service.corps.set_join(request.path_params["map_id"], current["account_id"], bool(body.get("corp_join")),
                                body.get("seat_limit"))
         return {"ok": True}
+
+    def access_add(request, current, body):
+        return service.add_access(request.path_params["map_id"], current["account_id"], str(body.get("kind", "")),
+                                  str(body.get("value", "")))
+
+    def access_delete(request, current, body):
+        removed = service.access.remove(request.path_params["map_id"], current["account_id"],
+                                        request.path_params["kind"], int(request.path_params["subject"]))
+        return {"removed": len(removed)}
 
     def corp_join(request, current, body):
         return {"role": service.corps.join(request.path_params["map_id"], current["account_id"])}
@@ -398,6 +408,8 @@ def create_app(service: Service) -> Starlette:
         Route("/api/maps/{map_id}/members/{account:int}", api(member_delete), methods=["DELETE"]),
         Route("/api/maps/{map_id}/corp", api(corp_settings), methods=["POST"]),
         Route("/api/maps/{map_id}/corp-join", api(corp_join), methods=["POST"]),
+        Route("/api/maps/{map_id}/access", api(access_add), methods=["POST"]),
+        Route("/api/maps/{map_id}/access/{kind}/{subject:int}", api(access_delete), methods=["DELETE"]),
         Route("/api/invites/{code}/accept", api(invite_accept), methods=["POST"]),
         Route("/api/billing/quote", api(billing_quote)),
         Route("/api/health", health),

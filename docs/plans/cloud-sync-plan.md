@@ -500,6 +500,18 @@ Decisions taken while building, where the design was open or left a gap:
 - **Trial:** a money-less trial covers one map with 3 seats. A second map, or a 4th member joining, is refused with `trial_limit` until there is a balance. A balance must cover at least one day at the new price before a paid map is made.
 - **Balance** never goes below zero: days without money are not owed. `paid_until` stays at the moment the money ran out.
 - **API paths:** account and map deletion are `POST /api/account/delete` (body `{"confirm": "DELETE"}`) and `POST /api/maps/{id}/delete`. Corp settings are `POST /api/maps/{id}/corp` and self-join is `POST /api/maps/{id}/corp-join`.
+- **Free maps for listed owners:** `HB_FREE_MAPS` (e.g. `alliance:99000001=1,corp:98000001=2,char:91000001=1`) gives free maps, seats included.
+  - A person gets the count of any entry that matches one of their linked characters (its alliance, corp or the character itself).
+  - A corp payer gets its own `corp:` entry, and an `alliance:` entry only while it is that alliance's **executor**. The executor's corp map is the "alliance map", and other corps of the alliance pay for their corp maps as usual. So `alliance:X=1` means one free personal map for every member, plus one free corp map for the executor corp.
+  - When several entries match, the highest count wins. The free maps are the top-ranked ones, so any further map is billed at its own rank's price: with 2 free maps, a third one costs the map-3 price.
+  - A payer whose maps are all free stays `active` without a balance and doesn't use up the trial. The map limit still applies.
+  - Alliances come from the hourly affiliation poll (`corporations.alliance_id`). Executors come from `/alliances/{id}/`, polled hourly for the alliances named in the setting (table `alliances`). Leaving the alliance, or losing the executor role, ends the free maps within about an hour, and the normal lapse rules take over.
+  - `admin free-maps` lists the configured entries and the payers they cover now.
+- **Access lists** (`map_access`): owners and managers can add alliances, corps and characters to a map, by exact name (ESI `/universe/ids/`) or ID. Only accounts with a matching character can accept an invite or use the self-join switch, so a leaked invite code is useless to anyone else. A refused invite is not used up.
+  - A corp map always allows its own corp, plus its list. This is how the rest of an alliance gets onto the executor's corp map.
+  - A personal map with an empty list stays open to anyone with an invite. Its first entry closes it.
+  - Members who stop matching are removed, both when the list changes and by the hourly affiliation poll. The owner always stays. This replaces the old "corp leavers" rule.
+  - API: `POST /api/maps/{id}/access` (`{"kind": "alliance|corp|char", "value": "<name or id>"}`) and `DELETE /api/maps/{id}/access/{kind}/{id}`. `GET /api/maps/{id}` returns `access` and `restricted`. In the app, this is the "Who may join" section of the Members dialog.
 - **SSO:** the access token's claims are read without checking the JWT signature again, because the token comes straight from CCP's token endpoint in exchange for the client secret. This hasn't been tried against real EVE SSO yet; dev mode and the tests use the fake.
 
 Not done yet:

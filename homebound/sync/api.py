@@ -137,6 +137,17 @@ class SyncApi:
         """Corp maps: the "corp members may join as viewer" switch and the seat limit."""
         self.call("POST", f"/api/maps/{map_id}/corp", json={"corp_join": corp_join, "seat_limit": seat_limit})
 
+    def add_access(self, map_id: str, kind: str, value: str) -> dict:
+        """Let an alliance, corp or character (``kind``: alliance, corp, char) on, by exact name or ID.
+
+        Returns ``{"entry", "removed"}``: members who don't match lose their seat.
+        """
+        return self.call("POST", f"/api/maps/{map_id}/access", json={"kind": kind, "value": value})
+
+    def remove_access(self, map_id: str, kind: str, subject_id: int) -> int:
+        """Take an entry off the access list; returns how many members lost their seat."""
+        return self.call("DELETE", f"/api/maps/{map_id}/access/{kind}/{subject_id}")["removed"]
+
     def corp_join(self, map_id: str) -> str:
         """Join a corp map as a viewer through the corp switch."""
         return self.call("POST", f"/api/maps/{map_id}/corp-join")["role"]
