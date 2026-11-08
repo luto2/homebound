@@ -1,0 +1,33 @@
+#!/bin/sh
+# Restore the newest backup from object storage into a temp folder and check it (hosting-hetzner.md §7).
+# Install to /usr/local/bin/hb-restore-test; run daily by homebound-restore-test.timer.
+# Pings HB_RESTORE_HEALTHCHECK_URL (healthchecks.io): /0 when the restore is good, /1 when not.
+set -u
+. /etc/homebound/env 2>/dev/null
+export LITESTREAM_ACCESS_KEY_ID LITESTREAM_SECRET_ACCESS_KEY HB_BACKUP_ENDPOINT HB_BACKUP_REGION HB_BACKUP_AGE_IDENTITY HB_BACKUP_AGE_RECIPIENT
+
+check() {
+    tmp=$(mktemp -d) || return 1
+    trap 'rm -rf "$tmp"' EXIT
+    litestream restore -config /etc/litestream.yml -o "$tmp/sync.db" /var/lib/homebound/sync.db || return 1
+    integrity=$(sqlite3 "$tmp/sync.db" "PRAGMA integrity_check;") || return 1
+    [ "$integrity" = "ok" ] || { echo "integrity check: $integrity"; return 1; }
+    maps=$(sqlite3 "$tmp/sync.db" "SELECT count(*) FROM maps WHERE deleted_at IS NULL;") || return 1
+    # fresh enough? the backup must have the wallet poll the live database had 2 hours ago
+    live=$(sqlite3 /var/lib/homebound/sync.db "SELECT value FROM meta WHERE key='wallet_polled_at';")
+    copy=$(sqlite3 "$tmp/sync.db" "SELECT value FROM meta WHERE key='wallet_polled_at';")
+    if [ -n "$live" ] && [ -z "$copy" ]; then echo "backup has no wallet poll, live has $live"; return 1; fi
+    if [ -n "$live" ]; then
+        lag=$(( $(date -d "$live" +%s) - $(date -d "$copy" +%s) ))
+        [ "$lag" -le 7200 ] || { echo "backup is ${lag}s behind the live database"; return 1; }
+    fi
+    echo "restore ok: integrity ok, $maps maps, wallet poll $copy"
+}
+
+output=$(check 2>&1)
+status=$?
+echo "$output"
+if [ -n "${HB_RESTORE_HEALTHCHECK_URL:-}" ]; then
+    curl -fsS -m 10 --retry 3 --data-raw "$output" "$HB_RESTORE_HEALTHCHECK_URL/$status" >/dev/null || true
+fi
+exit $status

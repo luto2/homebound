@@ -15,11 +15,16 @@ def caption(text: str) -> QLabel:
     return label
 
 
-def help_label(text: str = "", role: str = "help") -> QLabel:
-    """Return a word-wrapped help label with a theme role (``help``, ``help-ok``, ``help-warn``, ``help-err``)."""
+def help_label(text: str = "", role: str = "help", selectable: bool = False) -> QLabel:
+    """Return a word-wrapped help label with a theme role (``help``, ``help-ok``, ``help-warn``, ``help-err``).
+
+    ``selectable``: the text can be selected with the mouse (for codes to copy).
+    """
     label = QLabel(text)
     label.setProperty("role", role)
     label.setWordWrap(True)
+    if selectable:
+        label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
     return label
 
 

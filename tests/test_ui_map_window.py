@@ -185,6 +185,16 @@ def test_map_menu_lists_maps_and_commands(window) -> None:
     assert not delete.menu().isEnabled()
 
 
+def test_map_menu_marks_cloud_maps(window) -> None:
+    """A cloud map's entry starts with the cloud mark; a local map's doesn't."""
+    settings = window.state.settings
+    settings.maps["Shared chain"] = {"file": "shared.sqlite", "home_system": HOME.name, "cloud": "m-123"}
+    texts = [action.text() for action in window._fill_map_menu().actions()]
+    assert any(text.startswith("☁ Shared chain") for text in texts)
+    local = next(text for text in texts if settings.active_map in text and "·" in text)
+    assert not local.startswith("☁")
+
+
 def test_delete_map_menu_switch_note_only_with_other_maps(window) -> None:
     """The "X is open: switch first" row appears in the delete submenu only when other maps are listed."""
     settings = window.state.settings

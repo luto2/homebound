@@ -70,6 +70,8 @@ class AppState(QObject):
         self.tracker = Tracker(self.store, universe, self.namer, settings.auto_name_when_certain)
         self.selected: int = 0
         self.followed: int | None = None  # character whose client is focused
+        # other members' shared characters on the open cloud map: char id -> {"name", "system_id", "afk"}
+        self.remote_presence: dict[int, dict] = {}
         self.watcher = LogWatcher(settings.log_directory)
         self.watcher.systemChanged.connect(self.on_system_change)
         self.watcher.charactersChanged.connect(self.charactersChanged)
@@ -87,15 +89,30 @@ class AppState(QObject):
         self._constructed = True
 
     def _ensure_home(self) -> bool:
-        """Put the home system on the map if it is set and missing.
+        """Put the home system on the map if it is set and missing, and keep the map's own settings in step.
+
+        Home and naming scheme are stored in the map file too (``map_settings``), so they travel with
+        the map (cloud sync, backups).
 
         Returns:
-            True if it was added.
+            True if home was added.
         """
+        self.store_map_settings()
         if self.home_id and not self.store.has_system(self.home_id):
             self.store.add_system(self.home_id)
             return True
         return False
+
+    def store_map_settings(self) -> bool:
+        """Write the active map's home and naming scheme from the settings into the map file.
+
+        Returns:
+            True if anything changed.
+        """
+        with self.store.batch():
+            changed = self.store.set_map_setting("home_system", self.settings.home_system)
+            changed |= self.store.set_map_setting("naming_scheme", self.settings.naming_scheme)
+        return changed
 
     def _open_store(self) -> Store:
         """Open the active map file, backing it up first if its schema is about to be migrated."""
@@ -440,9 +457,19 @@ class AppState(QObject):
         return None
 
     def characters_in(self, system_id: int) -> list[tuple[int, str, int]]:
-        """Return the online characters in a system as ``(character_id, name, marker slot)``."""
-        return [(character_id, name, slot) for character_id, name, location, online, slot in self.character_rows()
+        """Return the online characters in a system as ``(character_id, name, marker slot)``.
+
+        On a cloud map, other members' shared characters are included; an AFK one is marked.
+        """
+        here = [(character_id, name, slot) for character_id, name, location, online, slot in self.character_rows()
                 if location == system_id and online]
+        mine = {character_id for character_id, *_ in here}
+        for character_id, entry in self.remote_presence.items():
+            if entry.get("system_id") == system_id and character_id not in mine:
+                name = entry.get("name") or str(character_id)
+                here.append((character_id, f"{name} (AFK)" if entry.get("afk") else name,
+                             self.settings.slot_for(character_id)))
+        return here
 
     def character_by_name(self, name: str) -> int | None:
         """Return the ID of a character by name (case-insensitive), or None."""

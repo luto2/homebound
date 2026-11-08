@@ -5,17 +5,11 @@
 
 **Angaben gemäß § 5 DDG**
 
-[Vorname Nachname]
-[Straße Hausnummer]
-[PLZ Ort]
+Tobias Luther
 Deutschland
 
 **Kontakt**
-E-Mail: [E-Mail-Adresse]
-[optional, aber empfohlen für eine „schnelle elektronische Kontaktaufnahme": Kontaktformular oder Telefon]
-
-**Verantwortlich für den Inhalt nach § 18 Abs. 2 MStV**
-[Vorname Nachname], Anschrift wie oben
+E-Mail: luther-tobias@gmx.de 
 
 ## Hinweis zum Dienst
 
@@ -36,4 +30,4 @@ Ich bin nicht bereit und nicht verpflichtet, an Streitbeilegungsverfahren vor ei
 ---
 
 ### English summary
-Homebound is an unofficial, privately run tool for EVE Online, operated by [name], [address], contact: [email]. It only accepts in-game ISK, never real money. It is not affiliated with Fenris Creations.
+Homebound is an unofficial, privately run tool for EVE Online, operated by Tobias Luther, contact: luther-tobias@gmx.de . It only accepts in-game ISK, never real money. It is not affiliated with Fenris Creations.

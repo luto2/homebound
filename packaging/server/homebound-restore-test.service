@@ -1,0 +1,10 @@
+[Unit]
+Description=Homebound backup restore test
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=homebound
+ExecStart=/usr/local/bin/hb-restore-test
+PrivateTmp=true

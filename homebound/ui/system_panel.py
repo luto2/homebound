@@ -144,7 +144,7 @@ class SystemPanel(QWidget):
     """Details and signatures of the selected system."""
 
     toast = Signal(str, str)              # kind, text
-    undoable = Signal(str, str, object)   # title, detail, store snapshot from before
+    undoable = Signal(str, str, object)   # title, detail, the Store action to undo
 
     def __init__(self, state: AppState) -> None:
         """Build the panel and follow the selection of ``state``."""
@@ -454,23 +454,23 @@ class SystemPanel(QWidget):
         if not signature_ids:
             return 0
         state = self.state
-        snapshot = state.store.snapshot()
         count = len(signature_ids)
         shown = ", ".join(signature_ids[:3]) + (f" and {count - 3} more" if count > 3 else "")
         title = f"Deleted {plural(count, what + 'sig')}" if count > 1 or what else f"Deleted {signature_ids[0]}"
         detail = f"{shown} in {state.namer.display(self.system_id)}"
         removed = 0
-        for connection in state.store.connections_of_system(self.system_id):
-            if connection.signature_on(self.system_id) in signature_ids:
-                removed += state.store.remove_connection(connection.id)
-        if removed:
-            state.store.clear_broken_parents()
-        deleted = state.store.delete_signatures(self.system_id, signature_ids)
+        with state.store.batch() as action:
+            for connection in state.store.connections_of_system(self.system_id):
+                if connection.signature_on(self.system_id) in signature_ids:
+                    removed += state.store.remove_connection(connection.id)
+            if removed:
+                state.store.clear_broken_parents()
+            deleted = state.store.delete_signatures(self.system_id, signature_ids)
         self.refresh()
         state.systemUpdated.emit(self.system_id)
         if removed:
             state.mapChanged.emit()
-        self.undoable.emit(title, detail, snapshot)
+        self.undoable.emit(title, detail, action)
         return deleted
 
     def _save_name(self) -> None:

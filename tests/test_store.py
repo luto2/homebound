@@ -1,4 +1,4 @@
-"""Map store: rows, validation, lifetime clock, migrations, undo snapshots and map stats."""
+"""Map store: rows, validation, lifetime clock, migrations, batches and undo, and map stats."""
 import sqlite3
 
 import pytest
@@ -194,26 +194,90 @@ def test_clear_broken_parents(store) -> None:
     assert store.system(c5.id).parent_id == HOME.id
 
 
-def test_snapshot_restore_undoes_a_removal(store) -> None:
-    """Restoring puts back removed systems and connections and keeps what was added since."""
+def test_undo_reverses_a_removal_and_keeps_later_edits(store) -> None:
+    """Undo puts back removed systems, connections and sigs, and leaves what was added since."""
     c5, c3 = pick_system("C5", exclude=(HOME.id,)), pick_system("C3")
     store.add_system(c5.id, parent_id=HOME.id, hole_index=1)
     store.add_system(c3.id, parent_id=c5.id, hole_index=2)
     store.add_connection(HOME.id, c5.id)
     store.add_connection(c5.id, c3.id)
     store.upsert_signature(Signature(c5.id, "ABC-123"))
-    snapshot = store.snapshot()
-    store.remove_system(c5.id)           # cascades both connections and the sig, orphans c3
+    with store.batch() as action:
+        store.remove_system(c5.id)       # removes both connections and the sig, orphans c3
     assert store.connections() == [] and store.system(c3.id).parent_id is None
+    assert {change.entity for change in action.changes if change.deleted} == {"system", "connection", "signature"}
     store.add_system(JITA)
-    assert store.restore(snapshot) > 0
+    assert store.undo(action)
     assert store.has_system(c5.id) and store.has_system(JITA)
     assert store.system(c3.id).parent_id == c5.id
     assert len(store.connections()) == 2 and store.signature(c5.id, "ABC-123")
-    with pytest.raises(ValueError):
-        store.restore({"characters": []})
     with pytest.raises(TypeError):
-        store.restore([])
+        store.undo([])
+
+
+def test_undo_leaves_fields_changed_since_alone(store) -> None:
+    """A field edited after the action keeps the newer value; the others go back."""
+    store.add_system(JITA, notes="old", custom_name="A")
+    with store.batch() as action:
+        store.update_system(JITA, notes="new", custom_name="B")
+    store.update_system(JITA, notes="newer")
+    store.undo(action)
+    assert (store.system(JITA).notes, store.system(JITA).custom_name) == ("newer", "A")
+
+
+def test_undo_of_an_add_removes_it_only_if_still_there(store) -> None:
+    """Undoing an add removes the entity; one removed since stays removed."""
+    with store.batch() as action:
+        store.add_system(JITA)
+        store.add_connection(HOME.id, JITA)
+    store.undo(action)
+    assert not store.has_system(JITA) and store.connections() == []
+    assert not store.undo(action)        # nothing left to reverse
+
+
+def test_a_batch_is_one_action_and_rolls_back_on_error(store) -> None:
+    """Writes in a batch reach the listeners once; an error undoes them all and reports nothing."""
+    seen = []
+    store.listeners.append(seen.append)
+    revision = store.revision
+    with store.batch():
+        store.add_system(JITA)
+        store.update_system(JITA, notes="x")
+        store.add_connection(HOME.id, JITA)
+    assert len(seen) == 1 and [change.entity for change in seen[0].changes] == ["system", "connection"]
+    assert seen[0].changes[0].created and store.revision == revision + 1
+    with pytest.raises(RuntimeError):
+        with store.batch():
+            store.update_system(JITA, notes="lost")
+            raise RuntimeError
+    assert store.system(JITA).notes == "x" and len(seen) == 1
+    store.update_system(JITA, notes="x")       # no real change: no action
+    assert len(seen) == 1
+    with pytest.raises(ValueError):
+        with store.batch(origin="elsewhere"):
+            pass
+
+
+def test_map_settings_are_stored_in_the_map(store) -> None:
+    """Home and scheme live in the map file and are actions like any other change."""
+    assert store.map_setting("home_system") is None
+    with store.batch() as action:
+        assert store.set_map_setting("home_system", "J161940")
+    assert store.map_setting("home_system") == "J161940" and action.changes[0].entity == "setting"
+    assert store.set_map_setting("home_system", "J161940") is False
+    with pytest.raises(ValueError):
+        store.set_map_setting("colour", "red")
+
+
+def test_layout_override_moves_a_node_only_locally(store) -> None:
+    """On a cloud map, dragging writes a local override; the shared position is kept and can come back."""
+    store.add_system(JITA, x=1.0, y=2.0)
+    store.layout_local = True
+    seen = []
+    store.listeners.append(seen.append)
+    store.update_system(JITA, x=50.0)
+    assert (store.system(JITA).x, store.system(JITA).y) == (50.0, 2.0) and seen == []
+    assert store.reset_layout() == 1 and store.system(JITA).x == 1.0
 
 
 def test_old_map_files_are_migrated(tmp_path) -> None:

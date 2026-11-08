@@ -488,3 +488,45 @@ def test_removed_in_matches_when_expire_drops_the_connection(simulation) -> None
     assert removed_in(connection, UNIVERSE) in ("29 min", "30 min")
     assert simulation.tracker.expire(limit - timedelta(minutes=1)) == 0
     assert simulation.tracker.expire(limit + timedelta(minutes=1)) == 1
+
+
+def record_actions(store: Store) -> list:
+    """Collect every finished store action from now on."""
+    actions: list = []
+    store.listeners.append(actions.append)
+    return actions
+
+
+def test_a_wormhole_jump_is_one_undoable_action(simulation) -> None:
+    """The jump's system and connection arrive as one action, and one undo takes both back."""
+    simulation.jump(HOME.name, first=True)
+    actions = record_actions(simulation.store)
+    c5 = pick_system("C5", exclude={HOME.id})
+    simulation.jump(c5.name)
+    assert len(actions) == 1
+    assert {change.entity for change in actions[0].changes} >= {"system", "connection"}
+    simulation.store.undo(actions[0])
+    assert not simulation.store.has_system(c5.id) and simulation.store.connections() == []
+
+
+def test_add_wormhole_is_one_undoable_action(simulation) -> None:
+    """Adding a wormhole by hand is a single action."""
+    c3 = pick_system("C3")
+    actions = record_actions(simulation.store)
+    simulation.tracker.add_wormhole(HOME.id, c3.id, manual=True)
+    assert len(actions) == 1
+    simulation.store.undo(actions[0])
+    assert not simulation.store.has_system(c3.id) and simulation.store.connections() == []
+
+
+def test_expiry_is_one_undoable_action(simulation) -> None:
+    """Expiring a connection and its orphaned system is one action; undo brings both back."""
+    c5 = pick_system("C5", exclude={HOME.id})
+    simulation.tracker.apply_naming(simulation.naming_request(simulation.jump(c5.name)), is_static=True)
+    simulation.jump(HOME.name)
+    connection = simulation.store.connection(HOME.id, c5.id)
+    actions = record_actions(simulation.store)
+    assert simulation.tracker.expire(datetime.fromisoformat(connection.created_at) + timedelta(days=3)) == 1
+    assert len(actions) == 1
+    simulation.store.undo(actions[0])
+    assert simulation.store.has_system(c5.id) and simulation.store.connection(HOME.id, c5.id) is not None

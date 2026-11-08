@@ -55,17 +55,21 @@ def main() -> int:
     from .ui.focus import FocusTracker
     from .ui.map_window import MapWindow
     from .ui.state import AppState
+    from .ui.sync_manager import SyncManager
 
     settings = Settings.load()
     state = AppState(universe, settings, auto_backup=True)
     focus = FocusTracker()
-    window = MapWindow(state, focus)
+    sync = SyncManager(state)
+    window = MapWindow(state, focus, sync)
     state.start()
     focus.start()
+    sync.start()
     window.show()
     if not settings.log_directory:
         window.open_settings(0)
     exit_code = application.exec()
+    sync.stop()
     state.stop()
     return exit_code
 

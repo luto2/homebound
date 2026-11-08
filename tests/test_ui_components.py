@@ -53,6 +53,28 @@ def state(qt_application, monkeypatch, tmp_path) -> Iterator[AppState]:
 
 # ---------------------------------------------------------------- state
 
+def test_map_settings_follow_the_app_settings(state) -> None:
+    """Opening a map writes home and naming scheme into it; a settings change is written on the next call."""
+    assert state.store.map_setting("home_system") == state.settings.home_system == HOME.name
+    assert state.store.map_setting("naming_scheme") == state.settings.naming_scheme
+    other = pick_system("C3", exclude=(HOME.id,)).name
+    state.settings.home_system = other
+    assert state.store_map_settings() is True
+    assert state.store.map_setting("home_system") == other
+    assert state.store_map_settings() is False                # nothing changed the second time
+
+
+def test_remote_members_show_in_systems_and_afk_is_marked(state) -> None:
+    """Shared characters of other members are listed; AFK gets a mark; a character already listed isn't doubled."""
+    system = HOME.id
+    state.character_rows = lambda: [(91000001, "Kira", system, True, 1)]
+    state.remote_presence = {91000001: {"name": "Kira", "system_id": system, "afk": False},
+                             91000002: {"name": "Bob", "system_id": system, "afk": True},
+                             91000003: {"name": "Elsewhere", "system_id": system + 1, "afk": False}}
+    names = [name for _, name, _ in state.characters_in(system)]
+    assert names == ["Kira", "Bob (AFK)"]
+
+
 def test_state_construction(state, tmp_path) -> None:
     """The state opens the active map, puts home on it and starts nothing."""
     assert state.home_id == HOME.id and state.store.has_system(HOME.id)

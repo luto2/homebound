@@ -329,9 +329,9 @@ class FakeWindow:
 
     instances: list = []
 
-    def __init__(self, state, focus) -> None:
+    def __init__(self, state, focus, sync=None) -> None:
         """Remember the collaborators."""
-        self.state, self.focus, self.shown, self.settings_opened = state, focus, False, None
+        self.state, self.focus, self.sync, self.shown, self.settings_opened = state, focus, sync, False, None
         FakeWindow.instances.append(self)
 
     def show(self) -> None:
@@ -350,6 +350,22 @@ class FakeState:
         """Remember the arguments."""
         self.universe, self.settings, self.started, self.stopped = universe, settings, False, False
         self.auto_backup = auto_backup
+
+    def start(self) -> None:
+        """Record the call."""
+        self.started = True
+
+    def stop(self) -> None:
+        """Record the call."""
+        self.stopped = True
+
+
+class FakeSync:
+    """Stands in for SyncManager."""
+
+    def __init__(self, state) -> None:
+        """Remember the state."""
+        self.state, self.started, self.stopped = state, False, False
 
     def start(self) -> None:
         """Record the call."""
@@ -387,11 +403,13 @@ def fake_app(qt_application, monkeypatch) -> type:
     import homebound.ui.focus
     import homebound.ui.map_window
     import homebound.ui.state
+    import homebound.ui.sync_manager
     FakeWindow.instances.clear()
     monkeypatch.setattr(QApplication, "exec", lambda *arguments: 0)
     monkeypatch.setattr(homebound.ui.map_window, "MapWindow", FakeWindow)
     monkeypatch.setattr(homebound.ui.state, "AppState", FakeState)
     monkeypatch.setattr(homebound.ui.focus, "FocusTracker", FakeFocus)
+    monkeypatch.setattr(homebound.ui.sync_manager, "SyncManager", FakeSync)
     monkeypatch.setattr("homebound.universe.db.open_universe", lambda: "universe")
     monkeypatch.setattr(entry_point.sys, "argv", ["homebound"])
     return homebound.settings.Settings
@@ -406,6 +424,8 @@ def test_main_normal_path(fake_app, monkeypatch, log_directory, settings_page) -
     window = FakeWindow.instances[0]
     assert window.shown and window.focus.started and window.state.started and window.state.stopped
     assert window.state.universe == "universe"
+    assert isinstance(window.sync, FakeSync) and window.sync.state is window.state
+    assert window.sync.started and window.sync.stopped
     assert window.settings_opened == settings_page
 
 

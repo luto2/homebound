@@ -132,6 +132,12 @@ def merge_signatures(store: Store, system_id: int, parsed: list[ParsedSignature]
     require_type(parsed, list, "parsed")
     for row in parsed:
         require_type(row, ParsedSignature, "parsed item")
+    with store.batch():   # one paste is one action: one Undo step, one sync batch
+        return _merge(store, system_id, parsed)
+
+
+def _merge(store: Store, system_id: int, parsed: list) -> "MergeResult":
+    """Write a parsed paste into the map (the body of :func:`merge_signatures`)."""
     existing = {signature.signature_id: signature for signature in store.signatures(system_id)}
     kinds = {row.kind for row in parsed}
     now = utc_now_iso()

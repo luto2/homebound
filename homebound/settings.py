@@ -72,6 +72,10 @@ class Settings:
     route_use_eol: bool = True            # route through holes at < 4h / < 1h
     route_use_mass_critical: bool = False
     route_ship_size: str = "M"            # skip holes smaller than this (S/M/L/XL)
+    # Cloud sync (docs/plans/cloud-sync-plan.md). A cloud map's entry in ``maps`` has "cloud": "<map id>".
+    sync_server: str = "https://homebound.luthopian.de"
+    sync_client_id: str = ""              # random per install, the LWW tie-breaker; made on first use
+    sync_presence: dict = field(default_factory=dict)   # cloud map id -> character IDs whose location is shared
     # Separate maps, each its own SQLite file with its own home and naming scheme.
     # home_system / naming_scheme above always hold the active map's values.
     maps: dict = field(default_factory=dict)            # name -> {"file", "home_system", "naming_scheme"}

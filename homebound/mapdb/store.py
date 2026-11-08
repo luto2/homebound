@@ -1,13 +1,15 @@
 """SQLite persistence for one map: systems, connections, signatures, characters and the zKill cache."""
 import sqlite3
-from dataclasses import dataclass, fields
+import uuid
+from contextlib import contextmanager
+from dataclasses import dataclass, field as dataclass_field, fields
 from datetime import datetime, timedelta, timezone
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-from ..validation import require_integer, require_text, require_type
+from ..validation import require_choice, require_integer, require_text, require_type
 
 # Wormhole lifetime state, stored in the `lifetime` column of connections and signatures.
 # lifetime_set_at is when the current state was set; the hole is gone LIFETIME_REMAINING after that.
@@ -140,9 +142,77 @@ class ZkillStats:
     fetched_at: str
 
 
+# The entities a map action changes, and how each is keyed: system -> id, connection -> (low id, high id),
+# signature -> (system id, signature id), setting -> key. Characters, zKill and key_value are local only.
+ENTITIES = ("system", "connection", "signature", "setting")
+# each entity's table and the WHERE clause that finds one row by its key
+ENTITY_TABLES = {"system": "systems", "connection": "connections", "signature": "signatures",
+                 "setting": "map_settings"}
+ENTITY_WHERE = {"system": "id=?", "connection": "system_a=? AND system_b=?",
+                "signature": "system_id=? AND signature_id=?", "setting": "key=?"}
+
+
+def key_values(key: Any) -> list:
+    """Return an entity key as the parameters of its ``ENTITY_WHERE`` clause."""
+    return list(key) if isinstance(key, tuple) else [key]
+# Columns that change on every write and say nothing about the map itself.
+VOLATILE_COLUMNS = {"updated_at"}
+
+
+@dataclass
+class Change:
+    """One entity as it was before an action and as the action left it (None: absent)."""
+
+    entity: str
+    key: Any
+    before: dict | None
+    after: dict | None
+
+    @property
+    def created(self) -> bool:
+        """Whether the action added the entity."""
+        return self.before is None and self.after is not None
+
+    @property
+    def deleted(self) -> bool:
+        """Whether the action removed the entity."""
+        return self.before is not None and self.after is None
+
+    def changed_columns(self) -> list[str]:
+        """Return the columns whose value differs between before and after (all of them on create/delete)."""
+        before, after = self.before or {}, self.after or {}
+        return [column for column in dict.fromkeys([*before, *after])
+                if column not in VOLATILE_COLUMNS and before.get(column) != after.get(column)]
+
+
+@dataclass
+class Action:
+    """The changes of one user action (one Store batch), in the order they were first made.
+
+    ``origin`` is ``"local"`` for the user's own edits and ``"remote"`` for changes applied from the
+    sync server, which must not be sent back or undone.
+    """
+
+    changes: list[Change] = dataclass_field(default_factory=list)
+    origin: str = "local"
+    id: str = dataclass_field(default_factory=lambda: uuid.uuid4().hex)
+
+    def __bool__(self) -> bool:
+        """An action is truthy when it changed anything."""
+        return bool(self.changes)
+
+
 SIGNATURE_COLUMNS = [field.name for field in fields(Signature)]
 SYSTEM_COLUMNS = [field.name for field in fields(MapSystem)]
 CONNECTION_COLUMNS = [field.name for field in fields(Connection)]
+# Systems as the app sees them: a local layout override (cloud maps) replaces the shared position.
+SYSTEMS_SELECT = ("SELECT " + ", ".join("coalesce(o.x, s.x) AS x" if column == "x" else
+                                       "coalesce(o.y, s.y) AS y" if column == "y" else f"s.{_quoted_name}"
+                                       for column in [field.name for field in fields(MapSystem)]
+                                       for _quoted_name in [f'"{column}"'])
+                  + " FROM systems s LEFT JOIN layout_override o ON o.system_id = s.id")
+# Settings that belong to the map itself and sync with it.
+MAP_SETTING_KEYS = ("home_system", "naming_scheme")
 
 # Columns renamed when abbreviations were spelled out: (table, old name, new name).
 COLUMN_RENAMES = [
@@ -258,9 +328,14 @@ def needs_migration(path: Path | str) -> bool:
 
 
 class Store:
-    """One map file: open it, migrate it to the current schema, and read and write its rows."""
+    """One map file: open it, migrate it to the current schema, and read and write its rows.
 
-    SNAPSHOT_KEYS = {"systems": ("id",), "connections": ("id",), "signatures": ("system_id", "signature_id")}
+    Every write to the map itself (systems, connections, signatures, map settings) runs inside a
+    batch (:meth:`batch`). A batch is one database transaction and one :class:`Action`: the changes
+    it made, entity by entity, with the row before and after. Listeners get each finished action,
+    which is how Undo and cloud sync see what changed. A write outside an explicit batch is a batch of
+    its own.
+    """
 
     def __init__(self, path: Path | str, before_migration: Callable[[Path], object] | None = None) -> None:
         """Open (and create if needed) the map file.
@@ -283,6 +358,12 @@ class Store:
         self.database.row_factory = sqlite3.Row
         self._migrate()
         self.database.executescript(files("homebound.mapdb").joinpath("schema.sql").read_text())
+        self.listeners: list[Callable[[Action], object]] = []   # called with every finished action
+        self.revision = 0                 # goes up with every action that changed something
+        self._depth = 0                   # nesting of batch()
+        self._pending: dict[tuple[str, Any], Change] = {}
+        self._action: Action | None = None
+        self.layout_local = False         # True on a cloud map: dragging a node only moves it here
 
     def _columns(self, table: str) -> set[str]:
         """Return the column names a table has now (empty if the table doesn't exist)."""
@@ -332,61 +413,153 @@ class Store:
         """Close the store when the ``with`` block ends."""
         self.close()
 
-    # ------------------------------------------------------------ undo
-    def snapshot(self) -> dict[str, list[dict]]:
-        """Copy the map rows before a destructive action, for one level of Undo (spec: ConfirmDialog).
+    # ------------------------------------------------------------ batches
+    @contextmanager
+    def batch(self, origin: str = "local") -> Iterator[Action]:
+        """Group writes into one transaction and one :class:`Action`.
 
-        Returns:
-            ``{table: [row as dict, ...]}`` for systems, connections and signatures.
-        """
-        return {table: [dict(row) for row in self.database.execute(f"SELECT * FROM {table}")]
-                for table in self.SNAPSHOT_KEYS}
-
-    def restore(self, snapshot: dict[str, list[dict]]) -> int:
-        """Put back every snapshot row, systems first so the foreign keys hold.
-
-        Rows added since the snapshot stay; rows that still exist get their old values back. Rows
-        are updated in place, so no cascades fire.
+        Batches nest: only the outermost one commits and tells the listeners. If the block raises,
+        everything it wrote is rolled back and no action is reported.
 
         Args:
-            snapshot: What :meth:`snapshot` returned.
+            origin: ``"local"`` for the user's own edits, ``"remote"`` for changes from the sync
+                server. Only the outermost batch's origin counts.
+
+        Yields:
+            The action. Its ``changes`` are filled in when the outermost batch ends.
+        """
+        require_choice(origin, ("local", "remote"), "origin")
+        if self._depth:
+            self._depth += 1
+            try:
+                yield self._action
+            finally:
+                self._depth -= 1
+            return
+        self._depth, self._pending, self._action = 1, {}, Action(origin=origin)
+        action = self._action
+        try:
+            yield action
+            action.changes = self._finish_changes()
+            self.database.commit()
+        except BaseException:
+            self.database.rollback()
+            action.changes = []
+            raise
+        finally:
+            self._depth, self._pending, self._action = 0, {}, None
+        if action.changes:
+            self.revision += 1
+            for listener in list(self.listeners):
+                listener(action)
+
+    def _finish_changes(self) -> list[Change]:
+        """Read the after state of everything the batch touched and drop what ended unchanged."""
+        finished = []
+        for change in self._pending.values():
+            change.after = self._row(change.entity, change.key)
+            if change.changed_columns():
+                finished.append(change)
+        return finished
+
+    def _touch(self, entity: str, key: Any) -> None:
+        """Remember an entity's row before the open batch first changes it."""
+        if (entity, key) not in self._pending:
+            self._pending[(entity, key)] = Change(entity, key, self._row(entity, key), None)
+
+    def _row(self, entity: str, key: Any) -> dict | None:
+        """Return the stored row of an entity as a dict, or None if it doesn't exist."""
+        row = self.database.execute(f"SELECT * FROM {ENTITY_TABLES[entity]} WHERE {ENTITY_WHERE[entity]}",
+                                    key_values(key)).fetchone()
+        return dict(row) if row else None
+
+    def _commit(self) -> None:
+        """Commit a local-only write (characters, zKill, key_value) unless a batch is open."""
+        if not self._depth:
+            self.database.commit()
+
+    # ------------------------------------------------------------ undo
+    def undo(self, action: Action) -> Action:
+        """Reverse one action with inverse changes, as a new local action.
+
+        Only what the action itself did is reversed: a field someone (or something) has changed
+        since is left alone, an entity the action added is removed only if it is still there, and
+        an entity it removed comes back only if nobody added it again.
+
+        Args:
+            action: An action from :meth:`batch`.
 
         Returns:
-            The number of rows written.
+            The undo action (empty if there was nothing left to reverse).
 
         Raises:
-            TypeError: If ``snapshot`` is not a dict.
-            ValueError: If it names a table that isn't part of a snapshot.
+            TypeError: If ``action`` is not an :class:`Action`.
         """
-        require_type(snapshot, dict, "snapshot")
-        _check_columns(snapshot, list(self.SNAPSHOT_KEYS), "snapshot")
-        written = 0
-        self.database.execute("PRAGMA defer_foreign_keys = ON")   # parents may come back after children
-        with self.database:
-            for table, keys in self.SNAPSHOT_KEYS.items():
-                for row in snapshot.get(table, []):
-                    columns = [column for column in row if column not in keys]
-                    cursor = self.database.execute(
-                        f"UPDATE {table} SET {', '.join(f'{_quoted(column)}=?' for column in columns)} WHERE "
-                        + " AND ".join(f"{_quoted(key)}=?" for key in keys),
-                        [row[column] for column in columns] + [row[key] for key in keys])
-                    if cursor.rowcount == 0:
-                        cursor = self.database.execute(
-                            f"INSERT OR IGNORE INTO {table} ({', '.join(map(_quoted, row))}) "
-                            f"VALUES ({', '.join('?' * len(row))})", list(row.values()))
-                    written += cursor.rowcount
-        return written
+        require_type(action, Action, "action")
+        with self.batch() as undo:
+            for change in reversed(action.changes):
+                current = self._row(change.entity, change.key)
+                if change.created:
+                    if current is not None:
+                        self._delete_entity(change.entity, change.key)
+                elif change.deleted:
+                    if current is None:
+                        self._insert_row(change.entity, change.key, change.before)
+                elif current is not None:
+                    restore = {column: change.before.get(column) for column in change.changed_columns()
+                               if current.get(column) == change.after.get(column) and column != "id"}
+                    if restore:
+                        self._update_row(change.entity, change.key, restore)
+        return undo
+
+    def _delete_entity(self, entity: str, key: Any) -> None:
+        """Remove an entity with its dependants (systems), or just the row."""
+        if entity == "system":
+            self.remove_system(key)
+        elif entity == "connection":
+            self._touch("connection", key)
+            self.database.execute("DELETE FROM connections WHERE system_a=? AND system_b=?", key)
+        elif entity == "signature":
+            self.delete_signatures(key[0], [key[1]])
+        else:
+            self._touch("setting", key)
+            self.database.execute("DELETE FROM map_settings WHERE key=?", (key,))
+
+    def _insert_row(self, entity: str, key: Any, row: dict) -> None:
+        """Put a whole row back (it doesn't exist now)."""
+        self._touch(entity, key)
+        table = ENTITY_TABLES[entity]
+        row = dict(row)
+        if entity == "system" and row.get("parent_id") and not self.has_system(row["parent_id"]):
+            row["parent_id"] = row["hole_index"] = None   # the parent is gone since: put it back unplaced
+        if entity == "connection" and not (self.has_system(key[0]) and self.has_system(key[1])):
+            return
+        if entity == "signature" and not self.has_system(key[0]):
+            return
+        if entity == "connection" and self.database.execute("SELECT 1 FROM connections WHERE id=?",
+                                                            (row.get("id"),)).fetchone():
+            row.pop("id")
+        self.database.execute(f"INSERT INTO {table} ({','.join(map(_quoted, row))}) VALUES ({','.join('?' * len(row))})",
+                              list(row.values()))
+
+    def _update_row(self, entity: str, key: Any, values: dict) -> None:
+        """Set columns of an existing entity's row."""
+        self._touch(entity, key)
+        table, where = ENTITY_TABLES[entity], ENTITY_WHERE[entity]
+        keys = key_values(key)
+        self.database.execute(f"UPDATE {table} SET {', '.join(f'{_quoted(column)}=?' for column in values)} "
+                              f"WHERE {where}", [*values.values(), *keys])
 
     # ------------------------------------------------------------ systems
     def system(self, system_id: int) -> MapSystem | None:
-        """Return a mapped system, or None if it isn't on the map."""
+        """Return a mapped system, or None if it isn't on the map (a local layout override applies)."""
         _check_system_id(system_id)
-        return _from_row(MapSystem, self.database.execute("SELECT * FROM systems WHERE id=?",
+        return _from_row(MapSystem, self.database.execute(f"{SYSTEMS_SELECT} WHERE s.id=?",
                                                           (system_id,)).fetchone())
 
     def systems(self) -> list[MapSystem]:
-        """Return every system on the map."""
-        return [_from_row(MapSystem, row) for row in self.database.execute("SELECT * FROM systems")]
+        """Return every system on the map (local layout overrides apply)."""
+        return [_from_row(MapSystem, row) for row in self.database.execute(SYSTEMS_SELECT)]
 
     def has_system(self, system_id: int) -> bool:
         """Return whether a system is on the map."""
@@ -408,16 +581,21 @@ class Store:
         """
         _check_system_id(system_id)
         _check_columns(values, SYSTEM_COLUMNS, "systems")
-        new_system = MapSystem(system_id, added_at=utc_now_iso(), **values)
-        self.database.execute(
-            f"INSERT OR IGNORE INTO systems ({','.join(map(_quoted, SYSTEM_COLUMNS))}) "
-            f"VALUES ({','.join('?' * len(SYSTEM_COLUMNS))})",
-            [getattr(new_system, column) for column in SYSTEM_COLUMNS])
-        self.database.commit()
+        new_system = MapSystem(system_id, **({"added_at": utc_now_iso()} | values))
+        with self.batch():
+            if not self.has_system(system_id):
+                self._touch("system", system_id)
+                self.database.execute(
+                    f"INSERT INTO systems ({','.join(map(_quoted, SYSTEM_COLUMNS))}) "
+                    f"VALUES ({','.join('?' * len(SYSTEM_COLUMNS))})",
+                    [getattr(new_system, column) for column in SYSTEM_COLUMNS])
         return self.system(system_id)
 
     def update_system(self, system_id: int, **changes: Any) -> bool:
         """Change columns of a mapped system.
+
+        On a cloud map (``layout_local``) a new ``x``/``y`` only moves the node on this computer: it
+        goes into ``layout_override`` and doesn't change the shared position.
 
         Args:
             system_id: The system to change.
@@ -433,29 +611,57 @@ class Store:
         _check_columns(changes, SYSTEM_COLUMNS[1:], "systems")
         if not changes:
             return False
-        cursor = self.database.execute(
-            f"UPDATE systems SET {', '.join(f'{_quoted(key)}=?' for key in changes)} WHERE id=?",
-            [*changes.values(), system_id])
-        self.database.commit()
-        return cursor.rowcount > 0
+        if not self.has_system(system_id):
+            return False
+        if self.layout_local and {"x", "y"} & set(changes):
+            current = self.system(system_id)
+            self.database.execute("INSERT OR REPLACE INTO layout_override (system_id, x, y) VALUES (?,?,?)",
+                                  (system_id, changes.pop("x", current.x), changes.pop("y", current.y)))
+            self._commit()
+            if not changes:
+                return True
+        with self.batch():
+            self._update_row("system", system_id, changes)
+        return True
+
+    def reset_layout(self) -> int:
+        """Drop every local layout override, so the nodes go back to the shared positions.
+
+        Returns:
+            The number of overrides removed.
+        """
+        removed = self.database.execute("DELETE FROM layout_override").rowcount
+        self._commit()
+        return removed
 
     def remove_system(self, system_id: int) -> bool:
-        """Take a system off the map; its children lose their parent, its connections go too.
+        """Take a system off the map with its signatures and connections; its children lose their parent.
+
+        The dependants are removed one by one, not by ``ON DELETE CASCADE``, so the action lists
+        every one of them (sync sends a tombstone for each).
 
         Returns:
             True if the system was on the map.
         """
         _check_system_id(system_id)
-        self.database.execute("UPDATE systems SET parent_id=NULL, hole_index=NULL WHERE parent_id=?", (system_id,))
-        cursor = self.database.execute("DELETE FROM systems WHERE id=?", (system_id,))
-        self.database.commit()
-        return cursor.rowcount > 0
+        if not self.has_system(system_id):
+            return False
+        with self.batch():
+            self.delete_signatures(system_id, [signature.signature_id for signature in self.signatures(system_id)])
+            for connection in self.connections_of_system(system_id):
+                self.remove_connection(connection.id)
+            for child in self.children(system_id):
+                self._update_row("system", child.id, {"parent_id": None, "hole_index": None})
+            self._touch("system", system_id)
+            self.database.execute("DELETE FROM layout_override WHERE system_id=?", (system_id,))
+            self.database.execute("DELETE FROM systems WHERE id=?", (system_id,))
+        return True
 
     def children(self, system_id: int) -> list[MapSystem]:
         """Return the systems whose parent is ``system_id``, ordered by hole index."""
         _check_system_id(system_id)
         return [_from_row(MapSystem, row) for row in self.database.execute(
-            "SELECT * FROM systems WHERE parent_id=? ORDER BY hole_index", (system_id,))]
+            f"{SYSTEMS_SELECT} WHERE s.parent_id=? ORDER BY s.hole_index", (system_id,))]
 
     # ------------------------------------------------------------ connections
     def connections(self) -> list[Connection]:
@@ -508,12 +714,20 @@ class Store:
         if system_a > system_b:   # keep signature_a/signature_b aligned with the sorted ids
             values["signature_a"], values["signature_b"] = values.pop("signature_b", None), values.pop("signature_a", None)
         now = utc_now_iso()
+        low, high = min(system_a, system_b), max(system_a, system_b)
         columns = ["system_a", "system_b", "created_at", "updated_at", *values]
-        self.database.execute(
-            f"INSERT INTO connections ({','.join(map(_quoted, columns))}) VALUES ({','.join('?' * len(columns))})",
-            [min(system_a, system_b), max(system_a, system_b), now, now, *values.values()])
-        self.database.commit()
+        with self.batch():
+            self._touch("connection", (low, high))
+            self.database.execute(
+                f"INSERT INTO connections ({','.join(map(_quoted, columns))}) VALUES ({','.join('?' * len(columns))})",
+                [low, high, now, now, *values.values()])
         return self.connection(system_a, system_b)
+
+    def _connection_key(self, connection_id: int) -> tuple[int, int] | None:
+        """Return the ``(system_a, system_b)`` key of a connection row, or None."""
+        row = self.database.execute("SELECT system_a, system_b FROM connections WHERE id=?",
+                                    (connection_id,)).fetchone()
+        return (row[0], row[1]) if row else None
 
     def update_connection(self, connection_id: int, **changes: Any) -> bool:
         """Change columns of a connection.
@@ -534,6 +748,9 @@ class Store:
         require_integer(connection_id, "connection_id", minimum=1)
         _check_columns(changes, CONNECTION_COLUMNS[3:], "connections")
         self._check_wormhole_values(changes)
+        key = self._connection_key(connection_id)
+        if key is None:
+            return False
         changes["updated_at"] = utc_now_iso()
         if "lifetime_set_at" not in changes and "lifetime" in changes:
             current = self.connection_by_id(connection_id)
@@ -541,11 +758,9 @@ class Store:
                 changes["lifetime_set_at"] = None
             elif current and current.lifetime != changes["lifetime"]:
                 changes["lifetime_set_at"] = utc_now_iso()
-        cursor = self.database.execute(
-            f"UPDATE connections SET {', '.join(f'{_quoted(key)}=?' for key in changes)} WHERE id=?",
-            [*changes.values(), connection_id])
-        self.database.commit()
-        return cursor.rowcount > 0
+        with self.batch():
+            self._update_row("connection", key, changes)
+        return True
 
     @staticmethod
     def _check_wormhole_values(changes: dict) -> None:
@@ -589,9 +804,13 @@ class Store:
             True if it existed.
         """
         require_integer(connection_id, "connection_id", minimum=1)
-        cursor = self.database.execute("DELETE FROM connections WHERE id=?", (connection_id,))
-        self.database.commit()
-        return cursor.rowcount > 0
+        key = self._connection_key(connection_id)
+        if key is None:
+            return False
+        with self.batch():
+            self._touch("connection", key)
+            self.database.execute("DELETE FROM connections WHERE id=?", (connection_id,))
+        return True
 
     def clear_broken_parents(self) -> int:
         """Detach systems whose parent link no longer has a connection (keeps the tree layout honest).
@@ -601,8 +820,9 @@ class Store:
         """
         broken = [system.id for system in self.systems()
                   if system.parent_id and not self.connection(system.parent_id, system.id)]
-        for system_id in broken:
-            self.update_system(system_id, parent_id=None, hole_index=None)
+        with self.batch():
+            for system_id in broken:
+                self.update_system(system_id, parent_id=None, hole_index=None)
         return len(broken)
 
     # ------------------------------------------------------------ signatures
@@ -638,15 +858,16 @@ class Store:
         now = utc_now_iso()
         values = {column: getattr(signature, column) for column in SIGNATURE_COLUMNS} | {
             "created_at": signature.created_at or now, "updated_at": now,
-        "seen_at": signature.seen_at or signature.created_at or now}
+            "seen_at": signature.seen_at or signature.created_at or now}
         keep = ("system_id", "signature_id", "created_at")
-        self.database.execute(f"""
-            INSERT INTO signatures ({','.join(map(_quoted, SIGNATURE_COLUMNS))})
-            VALUES ({','.join('?' * len(SIGNATURE_COLUMNS))})
-            ON CONFLICT (system_id, signature_id) DO UPDATE SET
-                {', '.join(f'{_quoted(column)}=excluded.{_quoted(column)}' for column in SIGNATURE_COLUMNS if column not in keep)}
-        """, list(values.values()))
-        self.database.commit()
+        with self.batch():
+            self._touch("signature", (signature.system_id, signature.signature_id))
+            self.database.execute(f"""
+                INSERT INTO signatures ({','.join(map(_quoted, SIGNATURE_COLUMNS))})
+                VALUES ({','.join('?' * len(SIGNATURE_COLUMNS))})
+                ON CONFLICT (system_id, signature_id) DO UPDATE SET
+                    {', '.join(f'{_quoted(column)}=excluded.{_quoted(column)}' for column in SIGNATURE_COLUMNS if column not in keep)}
+            """, list(values.values()))
         return self.signature(signature.system_id, signature.signature_id)
 
     def update_signature(self, system_id: int, signature_id: str, **changes: Any) -> bool:
@@ -662,18 +883,18 @@ class Store:
         require_text(signature_id, "signature_id")
         _check_columns(changes, SIGNATURE_COLUMNS[2:], "signatures")
         self._check_wormhole_values(changes)
+        current = self.signature(system_id, signature_id)
+        if current is None:
+            return False
         changes["updated_at"] = utc_now_iso()
         if "lifetime_set_at" not in changes and "lifetime" in changes:
-            current = self.signature(system_id, signature_id)
             if not changes["lifetime"]:
                 changes["lifetime_set_at"] = None
-            elif current and current.lifetime != changes["lifetime"]:
+            elif current.lifetime != changes["lifetime"]:
                 changes["lifetime_set_at"] = utc_now_iso()
-        cursor = self.database.execute(
-            f"UPDATE signatures SET {', '.join(f'{_quoted(key)}=?' for key in changes)} "
-            "WHERE system_id=? AND signature_id=?", [*changes.values(), system_id, signature_id])
-        self.database.commit()
-        return cursor.rowcount > 0
+        with self.batch():
+            self._update_row("signature", (system_id, signature_id), changes)
+        return True
 
     def delete_signatures(self, system_id: int, signature_ids: list[str]) -> int:
         """Delete signatures of one system.
@@ -685,11 +906,41 @@ class Store:
         require_type(signature_ids, (list, tuple, set), "signature_ids")
         for signature_id in signature_ids:
             require_text(signature_id, "signature_ids item")
-        before = self.database.total_changes
-        self.database.executemany("DELETE FROM signatures WHERE system_id=? AND signature_id=?",
-                                  [(system_id, signature_id) for signature_id in signature_ids])
-        self.database.commit()
-        return self.database.total_changes - before
+        deleted = 0
+        with self.batch():
+            for signature_id in signature_ids:
+                if self.signature(system_id, signature_id) is None:
+                    continue
+                self._touch("signature", (system_id, signature_id))
+                self.database.execute("DELETE FROM signatures WHERE system_id=? AND signature_id=?",
+                                      (system_id, signature_id))
+                deleted += 1
+        return deleted
+
+    # ------------------------------------------------------------ map settings (home, naming scheme)
+    def map_setting(self, key: str, default: str | None = None) -> str | None:
+        """Return a setting that belongs to the map itself (and syncs), or ``default``."""
+        require_text(key, "key")
+        row = self.database.execute("SELECT value FROM map_settings WHERE key=?", (key,)).fetchone()
+        return row["value"] if row else default
+
+    def set_map_setting(self, key: str, value: str) -> bool:
+        """Store a setting of the map itself, e.g. ``home_system`` or ``naming_scheme``.
+
+        Returns:
+            True if the value changed.
+
+        Raises:
+            ValueError: If ``key`` is not a map setting.
+        """
+        require_choice(key, MAP_SETTING_KEYS, "key")
+        require_text(value, "value", allow_empty=True)
+        if self.map_setting(key) == value:
+            return False
+        with self.batch():
+            self._touch("setting", key)
+            self.database.execute("INSERT OR REPLACE INTO map_settings (key, value) VALUES (?,?)", (key, value))
+        return True
 
     # ------------------------------------------------------------ characters
     def set_character(self, character_id: int, name: str, system_id: int | None, seen_at: str) -> int | None:
@@ -715,7 +966,7 @@ class Store:
                ON CONFLICT (id) DO UPDATE SET name=excluded.name, system_id=excluded.system_id,
                previous_system_id=excluded.previous_system_id, seen_at=excluded.seen_at""",
             (character_id, name, system_id, previous, seen_at))
-        self.database.commit()
+        self._commit()
         return previous
 
     def characters(self) -> list[sqlite3.Row]:
@@ -742,18 +993,18 @@ class Store:
             " VALUES (?,?,?,?,?,?)",
             (stats.system_id, stats.kills_1h, stats.kills_24h, stats.pod_kills_1h, stats.last_kill_at,
              stats.fetched_at))
-        self.database.commit()
+        self._commit()
         return stats
 
     # ------------------------------------------------------------ key/value settings of this map
     def get_value(self, key: str, default: str | None = None) -> str | None:
-        """Return a per-map setting, or ``default`` if it isn't set."""
+        """Return a per-map UI setting (local only), or ``default`` if it isn't set."""
         require_text(key, "key")
         row = self.database.execute("SELECT value FROM key_value WHERE key=?", (key,)).fetchone()
         return row["value"] if row else default
 
     def put_value(self, key: str, value: str) -> str:
-        """Store a per-map setting.
+        """Store a per-map UI setting (local only, never synced).
 
         Returns:
             The value as stored.
@@ -761,7 +1012,7 @@ class Store:
         require_text(key, "key")
         require_text(value, "value", allow_empty=True)
         self.database.execute("INSERT OR REPLACE INTO key_value VALUES (?,?)", (key, value))
-        self.database.commit()
+        self._commit()
         return value
 
 

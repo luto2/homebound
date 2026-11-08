@@ -291,11 +291,11 @@ def test_saving_name_owner_and_notes(state, panel, qt_application) -> None:
 def test_saving_without_a_system_does_nothing(state, qt_application) -> None:
     """With the empty state nothing is written."""
     panel = SystemPanel(state)
-    before = state.store.snapshot()
+    revision = state.store.revision
     panel._save_name()
     panel._save_owner()
     panel._save_notes()
-    assert state.store.snapshot() == before
+    assert state.store.revision == revision
 
 
 # ---------------------------------------------------------------- paste
@@ -478,16 +478,16 @@ def test_keep_missing_clears_the_flag(state, panel) -> None:
 
 
 def test_delete_missing_is_undoable(state, panel) -> None:
-    """Deleting the missing rows offers an Undo with the snapshot from before."""
+    """Deleting the missing rows offers an Undo of just that action."""
     flag_missing(state)
     missing = [signature.signature_id for signature in state.store.signatures(HOME.id)
                if signature.state == "missing"]
     undo = collect(panel.undoable)
     assert panel.delete_missing() == len(missing) == 1
-    title, detail, snapshot = undo[0]
+    title, detail, action = undo[0]
     assert title == "Deleted 1 missing sig" and missing[0] in detail
     assert len(state.store.signatures(HOME.id)) == 3
-    state.store.restore(snapshot)
+    state.store.undo(action)
     assert len(state.store.signatures(HOME.id)) == 4
 
 

@@ -296,6 +296,34 @@ def next_level_index(store: Store, root_id: int, path_prefix: list[int]) -> int:
     return len(level)
 
 
+def level_positions(store: Store) -> dict[int, int]:
+    """Return every placed system's position at its depth in its chain, derived from the map.
+
+    Systems with the same root, the same first hop and the same depth are ordered by when they were
+    added to the map, then by ID, so every replica of a cloud map names them the same way (nothing
+    is stored). The root itself isn't in the result.
+
+    Returns:
+        System ID -> 0-based position.
+    """
+    systems = {system.id: system for system in store.systems()}
+    groups: dict[tuple[int, int, int], list] = {}
+    for system in systems.values():
+        path, seen, current = [], set(), system
+        while current is not None and current.parent_id is not None and current.id not in seen:
+            seen.add(current.id)
+            path.append(current.hole_index or 0)
+            current = systems.get(current.parent_id)
+        if not path or current is None:
+            continue
+        groups.setdefault((current.id, path[-1], len(path)), []).append(system)
+    positions = {}
+    for members in groups.values():
+        for position, system in enumerate(sorted(members, key=lambda member: (member.added_at or "", member.id))):
+            positions[system.id] = position
+    return positions
+
+
 # ---------------------------------------------------------------- display
 
 @dataclass
@@ -306,6 +334,14 @@ class Namer:
     universe: Universe
     scheme_key: str = "numeric"
     home_id: int | None = None
+    _levels: tuple[int, int, dict] | None = None   # (id(store), store revision, positions)
+
+    def level_index(self, system_id: int) -> int | None:
+        """Return the derived position of a system at its depth (see :func:`level_positions`)."""
+        cache = self._levels
+        if cache is None or cache[0] != id(self.store) or cache[1] != self.store.revision:
+            cache = self._levels = (id(self.store), self.store.revision, level_positions(self.store))
+        return cache[2].get(system_id)
 
     @property
     def scheme(self) -> Scheme:
@@ -332,7 +368,7 @@ class Namer:
                 return HOME_NAME
             system = self.universe.by_id(system_id)
             return system.name if system else str(system_id)
-        label = self.scheme.name(path, mapped.level_index if mapped else None,
+        label = self.scheme.name(path, self.level_index(system_id) if mapped else None,
                                  static_slot_count(self.universe, root))
         return label if root == self.home_id or self.home_id is None else "~" + label
 

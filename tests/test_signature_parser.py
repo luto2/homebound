@@ -90,3 +90,13 @@ def test_merge_validation(store) -> None:
         merge_signatures(store, HOME.id, [("ABC-123",)])
     with pytest.raises(ValueError):
         merge_signatures(store, 0, [])
+
+
+def test_a_paste_is_one_undoable_action(store) -> None:
+    """Every signature of one paste arrives as one action; one undo removes them all."""
+    actions: list = []
+    store.listeners.append(actions.append)
+    merge_signatures(store, HOME.id, parse_scanner_text(SCAN))
+    assert len(actions) == 1 and len(store.signatures(HOME.id)) > 1
+    store.undo(actions[0])
+    assert store.signatures(HOME.id) == []

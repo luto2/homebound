@@ -7,10 +7,13 @@ from homebound.ui.widgets import RadioCard, caption, help_label
 
 
 def test_caption_and_help_label(qt_application) -> None:
-    """Captions are upper case with the caption role; help labels wrap."""
+    """Captions are upper case with the caption role; help labels wrap and can be made selectable."""
     label = caption("abc")
     assert label.text() == "ABC" and label.property("role") == "caption"
     assert help_label("x", "help-ok").wordWrap() and help_label().property("role") == "help"
+    selectable = Qt.TextInteractionFlag.TextSelectableByMouse
+    assert help_label("HB-7Q2K", selectable=True).textInteractionFlags() & selectable
+    assert not help_label("x").textInteractionFlags() & selectable
 
 
 def test_radio_card_click_checks_and_marks_selected(qt_application) -> None:

@@ -4,7 +4,7 @@ import pytest
 from conftest import HOME, UNIVERSE, MapSimulation, pick_system
 from homebound.mapdb.store import Signature, Store
 from homebound.mapping.naming import (SCHEMES, ChainDepthPositionScheme, Namer, Scheme, chain_letter, guess_static,
-                                      hole_digit, hole_path, is_static_signature, letters_for_number,
+                                      hole_digit, hole_path, is_static_signature, letters_for_number, level_positions,
                                       next_hole_index, next_level_index, scheme_for_key, signature_destination,
                                       static_slot_count, static_slot_for_class)
 
@@ -43,6 +43,21 @@ def test_next_level_index_counts_the_same_depth_in_the_same_chain() -> None:
     assert next_level_index(store, 1, [3]) == 0
     assert next_level_index(store, 8, [1, 1]) == 0
     assert next_level_index(store, 1, []) == 0
+
+
+def test_level_positions_are_derived_from_when_systems_were_added() -> None:
+    """Order at a depth comes from (added_at, id), not from a stored counter, so every copy agrees."""
+    store = Store(":memory:")
+    store.add_system(1)
+    store.add_system(4, parent_id=1, hole_index=1, added_at="2026-01-01T00:00:03+00:00")
+    store.add_system(2, parent_id=4, hole_index=2, added_at="2026-01-01T00:00:02+00:00")
+    store.add_system(3, parent_id=4, hole_index=3, added_at="2026-01-01T00:00:02+00:00")
+    store.add_system(5, parent_id=4, hole_index=4, added_at="2026-01-01T00:00:01+00:00")
+    assert level_positions(store) == {4: 0, 5: 0, 2: 1, 3: 2}
+    store.remove_system(5)
+    assert level_positions(store) == {4: 0, 2: 0, 3: 1}
+    namer = Namer(store, UNIVERSE)
+    assert namer.level_index(3) == 1 and namer.level_index(1) is None
 
 
 def test_next_level_index_reads_only_the_chain_behind_the_first_hop() -> None:
