@@ -42,7 +42,10 @@ def test_login_creates_an_account_and_a_session(harness) -> None:
     account = harness.api("GET", "/api/account", token).json()
     assert account["characters"][0]["name"] == "Kira" and account["payer_code"].startswith("HB-")
     assert harness.api("GET", "/api/account", "nope").status_code == 401
-    assert harness.client.post("/api/login/exchange", json={"code": "used", "state": "client-state"}).status_code == 401
+    code = harness.login_code(91000002, "Bob")
+    exchange = {"code": code, "state": "client-state", "device": "test"}
+    assert harness.client.post("/api/login/exchange", json=exchange).json()["token"]
+    assert harness.client.post("/api/login/exchange", json=exchange).status_code == 401     # used up
 
 
 def test_login_without_a_port_shows_a_code(harness) -> None:

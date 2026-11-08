@@ -24,6 +24,12 @@ class Harness:
 
     def login(self, char_id: int, name: str, link: str | None = None, device: str = "test") -> str:
         """Run the whole loopback login for a character and return the session token."""
+        code = self.login_code(char_id, name, link)
+        return self.client.post("/api/login/exchange", json={"code": code, "state": "client-state",
+                                                             "device": device}).json()["token"]
+
+    def login_code(self, char_id: int, name: str, link: str | None = None) -> str:
+        """Run the browser half of the loopback login and return the one-time code the app gets."""
         query = {"port": "5000", "state": "client-state"} | ({"link": link} if link else {})
         to_eve = self.client.get("/login", params=query, follow_redirects=False)
         assert to_eve.status_code == 302, to_eve.text
@@ -36,9 +42,7 @@ class Harness:
         assert (target.hostname, target.port, target.path) == ("127.0.0.1", 5000, "/cb")
         params = parse_qs(target.query)
         assert params["state"] == ["client-state"]
-        token = self.client.post("/api/login/exchange", json={"code": params["code"][0], "state": "client-state",
-                                                              "device": device}).json()["token"]
-        return token
+        return params["code"][0]
 
     def api(self, method: str, path: str, token: str, **kwargs):
         """Call the API with a session token."""

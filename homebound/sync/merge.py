@@ -11,12 +11,11 @@ to systems that don't exist, cycles and taken ``(parent_id, hole_index)`` slots 
 to reach the server wins, plan §3 "Structural fields").
 """
 import copy
-import json
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
-from .protocol import CREATED_FIELD, Op
+from .protocol import CREATED_FIELD, Op, key_text
 
 PLACEMENT = "placement"
 
@@ -279,6 +278,6 @@ def stamp_server_times(state: MapState, ops: list[Op], now_iso: str) -> tuple[li
                 values["lifetime_set_at"] = current.fields.get("lifetime_set_at")
         if values:
             op = op.with_fields(**values)
-            stamped[f"{op.entity}:{json.dumps(list(op.key) if isinstance(op.key, tuple) else op.key)}"] = values
+            stamped[f"{op.entity}:{key_text(op.key)}"] = values
         stamped_ops.append(op)
     return stamped_ops, stamped
