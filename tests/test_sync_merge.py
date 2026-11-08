@@ -290,3 +290,20 @@ def test_server_stamps_creation_and_lifetime_times() -> None:
     eol, _ = stamp_server_times(state, [op("connection", [1, 2], 3, fields={"lifetime": 1})], "T1")
     stable, _ = stamp_server_times(state, [op("connection", [1, 2], 3, fields={"lifetime": 0})], "T1")
     assert eol[0].fields["lifetime_set_at"] == "T1" and stable[0].fields["lifetime_set_at"] is None
+
+
+@pytest.mark.parametrize("scheme", ["numeric", "a2a", "letter_numeric"])
+def test_every_naming_scheme_of_the_app_is_a_valid_setting(scheme) -> None:
+    """The server accepts each scheme the settings offer (a typo here once rejected "a2a")."""
+    from homebound.mapping.naming import SCHEMES
+    assert scheme in SCHEMES
+    op = op_from_json({"e": "setting", "k": "naming_scheme", "f": {"value": scheme}, "hlc": format_hlc(1, 0),
+                       "c": "aaaaaaaa"})
+    assert op.fields["value"] == scheme
+
+
+def test_an_unknown_naming_scheme_is_refused() -> None:
+    """A scheme the app doesn't have is an invalid op."""
+    with pytest.raises(InvalidOp):
+        op_from_json({"e": "setting", "k": "naming_scheme", "f": {"value": "chain_depth_position"},
+                      "hlc": format_hlc(1, 0), "c": "aaaaaaaa"})

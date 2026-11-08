@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..mapdb.store import MAP_SETTING_KEYS, MASS_STATES, Action, Change
+from ..mapping.naming import SCHEMES
 from ..mapping.signature_parser import GROUP_ORDER
 from ..universe.db import SIZES
 from .hlc import is_hlc
@@ -33,7 +34,7 @@ MAX_BATCH_OPS = 500
 MAX_MESSAGE_BYTES = 256 * 1024
 MAX_ENTITIES_PER_MAP = 20_000
 SIGNATURE_GROUPS = tuple(GROUP_ORDER)   # the groups the scanner parser knows, ice included
-NAMING_SCHEMES = ("numeric", "letter_numeric", "chain_depth_position")
+NAMING_SCHEMES = tuple(SCHEMES)           # the naming schemes the app has
 
 
 class InvalidOp(ValueError):

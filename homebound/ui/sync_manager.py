@@ -13,6 +13,7 @@ from collections.abc import Iterator
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from ..mapdb.store import MAP_SETTING_KEYS, Action, Store
+from .. import app_version
 from .. import settings as settings_module
 from ..settings import Settings
 from ..sync.api import ApiError, SyncApi
@@ -24,7 +25,6 @@ from ..sync.token import TokenStore
 
 log = logging.getLogger("homebound.sync")
 PING_MS = 30_000
-APP_VERSION = "0.1.0"
 
 
 def cloud_id(entry: dict) -> str | None:
@@ -59,7 +59,7 @@ class SyncManager(QObject):
         self.worker = None
         self.socket_state = "stopped"
         self.engine = SyncEngine(settings.sync_client_id, self._send, self._open_replica, self.cloud_map_ids,
-                                 HybridClock(), APP_VERSION)
+                                 HybridClock(), app_version())
         self.engine.on_changed = self._remote_changed
         self.engine.on_info = self._info
         self.engine.on_notice = self.notice.emit
