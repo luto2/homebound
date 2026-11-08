@@ -483,7 +483,7 @@ The healthchecks.io checks in `hosting-hetzner.md` §9 stay as a second channel 
 
 ## 20. Open questions
 
-- Legal placeholders (name, address, email, dates). These get filled in at the end.
+- Legal placeholders (name, email, dates; no postal address, by decision). These get filled in at the end.
 
 ## 21. Implementation notes (2026-11-08)
 

@@ -215,7 +215,7 @@ HB_RESTORE_HEALTHCHECK_URL=https://hc-ping.com/…   # the daily restore test re
 
 ## 14. Open items
 
-- Fill in the Impressum contact details (name, postal address, email).
+- Fill in the Impressum contact details (name, email). No postal address: the operator's decision (2026-11-08), as payment is in-game ISK only.
 - Have the legal drafts checked before going public (e.g. with a generator such as e-recht24 or by a lawyer). They are not legal advice.
 
 ## 15. First-time setup, step by step

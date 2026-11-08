@@ -5,7 +5,7 @@
 
 ## 1. Verantwortlicher
 
-[Vorname Nachname], [Anschrift], E-Mail: [E-Mail-Adresse] (siehe [Impressum](/impressum)).
+[Vorname Nachname], E-Mail: [E-Mail-Adresse] (siehe [Impressum](/impressum)).
 Ein Datenschutzbeauftragter ist nicht bestellt und nicht erforderlich.
 
 ## 2. Grundsatz
