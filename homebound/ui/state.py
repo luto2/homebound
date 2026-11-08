@@ -70,6 +70,8 @@ class AppState(QObject):
         self.tracker = Tracker(self.store, universe, self.namer, settings.auto_name_when_certain)
         self.selected: int = 0
         self.followed: int | None = None  # character whose client is focused
+        # other members' shared characters on the open cloud map: char id -> {"name", "system_id", "afk"}
+        self.remote_presence: dict[int, dict] = {}
         self.watcher = LogWatcher(settings.log_directory)
         self.watcher.systemChanged.connect(self.on_system_change)
         self.watcher.charactersChanged.connect(self.charactersChanged)
@@ -455,9 +457,19 @@ class AppState(QObject):
         return None
 
     def characters_in(self, system_id: int) -> list[tuple[int, str, int]]:
-        """Return the online characters in a system as ``(character_id, name, marker slot)``."""
-        return [(character_id, name, slot) for character_id, name, location, online, slot in self.character_rows()
+        """Return the online characters in a system as ``(character_id, name, marker slot)``.
+
+        On a cloud map, other members' shared characters are included; an AFK one is marked.
+        """
+        here = [(character_id, name, slot) for character_id, name, location, online, slot in self.character_rows()
                 if location == system_id and online]
+        mine = {character_id for character_id, *_ in here}
+        for character_id, entry in self.remote_presence.items():
+            if entry.get("system_id") == system_id and character_id not in mine:
+                name = entry.get("name") or str(character_id)
+                here.append((character_id, f"{name} (AFK)" if entry.get("afk") else name,
+                             self.settings.slot_for(character_id)))
+        return here
 
     def character_by_name(self, name: str) -> int | None:
         """Return the ID of a character by name (case-insensitive), or None."""

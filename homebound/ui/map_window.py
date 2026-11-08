@@ -33,7 +33,7 @@ from .system_panel import SystemPanel
 from .toast import ToastHost
 
 MODES = [("off", "Off"), ("follow", "Follow"), ("pinned_eve", "Pinned"), ("pinned_always", "Always")]
-STATUS_SOURCES = ("logs", "zkill", "scout", "kwin", "backup")
+STATUS_SOURCES = ("logs", "zkill", "scout", "kwin", "sync", "backup")
 STATUS_LEVELS = {"ok": ("✓", "success"), "warn": ("▲", "warning"), "err": ("✕", "danger")}
 PIN_FIRST_HINT = "Pin a character first (right-click it in the Characters list)"
 
@@ -230,15 +230,16 @@ class Legend(QWidget):
 class MapWindow(QMainWindow):
     """The main window: toolbar, map, character and system docks, status bar, tray and overlay."""
 
-    def __init__(self, state, focus) -> None:
+    def __init__(self, state, focus, sync=None) -> None:
         """Build the window and wire it to the application state.
 
         Args:
             state: The AppState.
             focus: The focus tracker (feeds the KWin status and the overlay).
+            sync: The SyncManager, or None to run without cloud sync (tests).
         """
         super().__init__()
-        self.state, self.focus = state, focus
+        self.state, self.focus, self.sync = state, focus, sync
         self.setWindowTitle("Homebound")
         self.setWindowIcon(QIcon(app_mark(64)))
         self.resize(1600, 1000)
@@ -381,6 +382,11 @@ class MapWindow(QMainWindow):
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         toolbar.addWidget(spacer)
+        if self.sync is not None:
+            from .cloud import CloudMenu
+            self.cloud_menu = CloudMenu(self, self.sync, lambda kind, text: self.toasts.show(kind, text))
+            toolbar.addWidget(self.cloud_menu.button)
+            self.sync.notice.connect(lambda level, text: self.toasts.show(level, text))
         fit_button = QPushButton("Fit chain")
         fit_button.clicked.connect(self.fit_chain)
         toolbar.addWidget(fit_button)
@@ -535,7 +541,8 @@ class MapWindow(QMainWindow):
             stats = map_stats(settings.map_path(name))
             last = age_text(stats["last"])
             last = "now" if last in ("", "0m") and stats["last"] else (last or "–")
-            menus.item(menu, f"{name}  ·  {home}\t{stats['systems']} sys · {last}",
+            cloud = "☁ " if info.get("cloud") else ""
+            menus.item(menu, f"{cloud}{name}  ·  {home}\t{stats['systems']} sys · {last}",
                        lambda name=name: self.switch_map(name), checked=name == settings.active_map, group=group)
         menu.addSeparator()
         menus.item(menu, "New map …", self.new_map)
