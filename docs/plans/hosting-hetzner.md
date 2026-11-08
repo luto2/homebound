@@ -46,9 +46,9 @@ Everything runs on one machine, with one app process and one database file. Ther
 3. **EVE third-party application** at developers.eveonline.com:
    - Name: Homebound.
    - Callback URL: `https://homebound.luthopian.de/sso/callback`. This is the only callback EVE needs. The desktop app's random loopback port sits behind it (cloud-sync-plan §6).
-   - Scopes registered: `esi-wallet.read_character_wallet.v1` and `esi-mail.read_mail.v1`. Login itself requests **no scopes**. Only the one-time admin link of the receiving character requests the wallet and mail scopes.
+   - Scopes registered: `esi-wallet.read_character_wallet.v1`, `esi-mail.read_mail.v1` and `esi-mail.send_mail.v1`. Login itself requests **no scopes**. Only the one-time admin link of the receiving character requests the wallet and mail scopes. It reads payments and map-limit requests, and it sends each payer a receipt, or a mail saying why the ISK couldn't be assigned.
    - The client ID and secret go in the server's secrets file (§6). They are never committed to git.
-4. **Receiving character** (the name is still open, see cloud-sync-plan §20), along the lines of **"Homebound Admin"**. Check that the name is free and allowed: the EVE naming policy can reject names that look like staff or admin accounts, so keep "Homebound Billing" or "Homebound Mapper" as fallbacks. The admin links it once through `/admin/link-wallet`.
+4. **Receiving character:** **Homebound Billing**, character ID `2124836346` (created 2026-11-08). The admin links it once: `homebound-server admin receiver-link` prints a one-time link to `/admin/link-wallet` (valid 30 minutes). Open it, sign in as the receiving character, and the server stores its refresh token in the database. `admin receiver` shows the result. `HB_RECEIVER_REFRESH_TOKEN` is only a fallback.
 5. **Backblaze B2** account (region **EU Central**) with a bucket called `homebound-backup`. It needs an application key limited to that bucket, with no delete permission if possible. Lifecycle setting: keep 30 days of versions.
 6. **DNS** at the luthopian.de registrar: an `A` and an `AAAA` record for `homebound` pointing at the VPS, with a low TTL until the setup is stable.
 7. **healthchecks.io** check called `homebound-wallet-poller`.
@@ -82,7 +82,8 @@ Everything runs on one machine, with one app process and one database file. Ther
 
 **systemd units:**
 - `homebound-sync.service`:
-  - runs `uv run uvicorn homebound_server.app:app --host 127.0.0.1 --port 8080`
+  - runs `uv run homebound-server serve --host 127.0.0.1 --port 8080`, with `HB_DB`, `HB_BASE_URL=https://homebound.luthopian.de`, `HB_SSO_CLIENT_ID`, `HB_SSO_CLIENT_SECRET` and `HB_RECEIVER_CHAR_ID` from the secrets file
+  - the port is only local. The public side is 443, shared with any other site on the VPS: the reverse proxy routes by hostname. If 8080 is taken, any free local port works, as long as the proxy points there.
   - `User=homebound` and `Restart=on-failure`
   - hardening: `ProtectSystem=strict`, `ReadWritePaths=/var/lib/homebound`, `PrivateTmp`, `NoNewPrivileges`, `MemoryMax=512M`
 - `litestream.service`: replicates `sync.db` to B2.
@@ -105,23 +106,24 @@ homebound.luthopian.de {
 ## 6. Configuration and secrets (`/etc/homebound/env`)
 
 ```
-HB_PUBLIC_URL=https://homebound.luthopian.de
+HB_BASE_URL=https://homebound.luthopian.de   # must match the EVE app's callback host
 HB_DB=/var/lib/homebound/sync.db
-EVE_CLIENT_ID=…
-EVE_CLIENT_SECRET=…
-HB_SESSION_KEY=…            # 32 random bytes, used to sign session tokens
-HB_TOKEN_ENC_KEY=…          # encrypts the wallet character's refresh token at rest in the DB
-HB_ADMIN_CHAR_IDS=…         # character IDs allowed to use /admin
-HB_RECEIVER_CHAR_ID=…       # receiving character; luto5 during development
-HB_HEALTHCHECK_URL=https://hc-ping.com/…
+HB_SSO_CLIENT_ID=…
+HB_SSO_CLIENT_SECRET=…
+HB_TOKEN_ENC_KEY=…          # encrypts the receiver's refresh token in the DB; make one with `admin new-key`
+HB_RECEIVER_CHAR_ID=2124836346   # Homebound Billing; the receiver link refuses any other character
 HB_DISCORD_WEBHOOK=https://discord.com/api/webhooks/…   # admin notifications (cloud-sync-plan §17)
+HB_MUTE_BILLING=0           # 1: no posts for billing state changes
+HB_DISK_WARN_PERCENT=80
+HB_HEALTHCHECK_URL=https://hc-ping.com/…   # pinged after each successful wallet poll
 LITESTREAM_ACCESS_KEY_ID=…
 LITESTREAM_SECRET_ACCESS_KEY=…
 ```
 
 - Secrets live only here and in your password manager.
-- The wallet refresh token is stored encrypted with `HB_TOKEN_ENC_KEY`, so a leaked DB backup can't read the wallet.
-- **Rotation:** if the EVE secret or the session key leaks, rotate it. Rotating the session key logs everyone out, and they log in again with SSO.
+- The wallet refresh token is stored encrypted with `HB_TOKEN_ENC_KEY` (Fernet), so a leaked DB backup can't read the wallet. Outside dev mode the receiver link refuses to run without the key. Losing the key only means linking the receiver again.
+- Session tokens are random and only their hashes are stored, so no signing key is needed. `/admin/link-wallet` needs a one-time key from `homebound-server admin receiver-link`, so only someone with a shell on the server can start it; there is no `HB_ADMIN_CHAR_IDS`.
+- **Rotation:** if the EVE secret leaks, regenerate it in the EVE developer portal. If `HB_TOKEN_ENC_KEY` leaks, set a new one and run the receiver link again. To log everyone out, delete the rows of the `sessions` table; people log in again with SSO.
 
 ## 7. Backups and restore
 
@@ -173,7 +175,7 @@ LITESTREAM_SECRET_ACCESS_KEY=…
 - [ ] SSO JWT checked against the EVE SSO JWKS (issuer, audience, expiry)
 - [ ] Session tokens signed, with expiry and a revocation list (logout, member removed)
 - [ ] Every `push` checks role and map state (viewer, lapsed, read-only)
-- [ ] The wallet refresh token encrypted at rest, and `/admin` limited to `HB_ADMIN_CHAR_IDS`
+- [ ] `HB_TOKEN_ENC_KEY` set, and `admin receiver` shows the receiver linked
 - [ ] Backups encrypted (B2 server-side encryption plus a bucket-scoped key), and the restore tested
 - [ ] `unattended-upgrades` active
 
@@ -200,7 +202,7 @@ LITESTREAM_SECRET_ACCESS_KEY=…
 - **VPS:** x86, the current smallest shared-vCPU plan.
 - **Domain:** subdomain `homebound.luthopian.de`.
 - **Off-site backup:** Backblaze B2, EU Central region.
-- **Receiving character:** "Homebound Admin" or similar. The final name depends on in-game availability.
+- **Receiving character:** Homebound Billing (ID `2124836346`).
 - **Legal pages:** drafted now in [`legal/`](legal/) (WIP).
 
 ## 14. Open items

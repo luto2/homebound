@@ -473,5 +473,240 @@ def test_health_and_webhook_outbox(harness) -> None:
 
     harness.service.events.webhook = "https://discord.example/webhook"
     fake = Fake()
-    assert harness.service.events.flush(fake) == 1 and "disk 81%" in fake.sent[0]["content"]
+    assert harness.service.events.flush(fake) == 1 and "disk 81%" in fake.sent[0]["embeds"][0]["description"]
     assert harness.service.events.flush(fake) == 0
+
+
+def test_payments_get_a_receipt_and_unassigned_ones_a_problem_mail(harness) -> None:
+    """The receiving character mails each sender once: a receipt, or why the ISK couldn't be assigned."""
+    kira = harness.login(91000001, "Kira")
+    code = harness.api("GET", "/api/account", kira).json()["payer_code"]
+    harness.eve.corp_info[98000001] = {"name": "Hole Dwellers", "ceo_id": 91000077}
+    harness.eve.journal = [
+        {"id": 1, "ref_type": "player_donation", "first_party_id": 91000001, "amount": 100e6, "reason": ""},
+        {"id": 2, "ref_type": "player_donation", "first_party_id": 99999999, "amount": 50e6, "reason": "HB-ZZZZ"},
+        {"id": 3, "ref_type": "player_donation", "first_party_id": 99999998, "amount": 10e6, "reason": "hi"},
+        {"id": 4, "ref_type": "corporation_account_withdrawal", "first_party_id": 98000001, "amount": 5e6},
+    ]
+    harness.service.poll_wallet()
+    sent = {mail["to"]: mail for mail in harness.eve.sent}
+    assert set(sent) == {91000001, 99999999, 99999998, 91000077}
+    assert all(mail["from"] == 95000001 for mail in harness.eve.sent)
+    assert sent[91000001]["subject"] == "Homebound: payment received"
+    assert "100,000,000 ISK" in sent[91000001]["body"] and code in sent[91000001]["body"]
+    assert "nothing is charged" in sent[91000001]["body"]                 # no maps yet
+    assert "HB-ZZZZ" in sent[99999999]["body"] and "could not be assigned" in sent[99999999]["subject"]
+    assert "isn't linked" in sent[99999998]["body"]
+    assert "Hole Dwellers" in sent[91000077]["body"]                      # corp payments go to the CEO
+    harness.eve.journal.append({"id": 5, "ref_type": "player_donation", "first_party_id": 91000001, "amount": 1e6})
+    harness.service.poll_wallet()
+    assert len(harness.eve.sent) == 5                                      # one mail per payment, ever
+
+
+def test_receipts_say_how_long_the_maps_are_paid(harness) -> None:
+    """With a map, the receipt has the new paid-until date."""
+    map_id, kira, bob = setup_map(harness)
+    harness.eve.journal = [{"id": 7, "ref_type": "player_donation", "first_party_id": 91000001, "amount": 300e6}]
+    harness.service.poll_wallet()
+    assert "paid until" in harness.eve.sent[-1]["body"] and "EVE time" in harness.eve.sent[-1]["body"]
+
+
+def test_throttled_and_failing_mails_are_retried_later(harness) -> None:
+    """EVE's 520 throttle leaves the mail queued; other errors count attempts until it gives up."""
+    import httpx
+
+    from homebound_server.mailer import MAX_ATTEMPTS
+    harness.login(91000001, "Kira")
+    request = httpx.Request("POST", "https://esi")
+    harness.eve.send_error = httpx.HTTPStatusError("520", request=request, response=httpx.Response(520, request=request))
+    harness.eve.journal = [{"id": 1, "ref_type": "player_donation", "first_party_id": 91000001, "amount": 1e6}]
+    harness.service.poll_wallet()
+    assert harness.eve.sent == [] and harness.service.db.value("SELECT attempts FROM outgoing_mails") == 0
+    harness.eve.send_error = httpx.HTTPStatusError("400", request=request, response=httpx.Response(400, request=request))
+    for _ in range(MAX_ATTEMPTS + 2):
+        harness.service.send_mails()
+    assert len(harness.service.mailer.given_up()) == 1
+    harness.eve.send_error = None
+    assert harness.service.send_mails() == 0
+
+
+def test_the_receivers_own_mails_are_not_requests(harness) -> None:
+    """Sent receipts show up in the receiver's mail list; only mails from others become admin events."""
+    harness.eve.mails = [{"mail_id": 1, "from": 95000001, "subject": "Homebound: payment received"},
+                         {"mail_id": 2, "from": 91000001, "subject": "more maps please"}]
+    assert harness.service.poll_mail() == 1
+
+
+def test_the_receiver_link_stores_its_token_once(harness) -> None:
+    """The admin link signs the receiving character in with the wallet and mail scopes; it works once."""
+    from urllib.parse import parse_qs, urlparse
+    link = urlparse(harness.service.create_receiver_link())
+    to_eve = harness.client.get(f"{link.path}?{link.query}", follow_redirects=False)
+    assert to_eve.status_code == 302
+    state = parse_qs(urlparse(to_eve.headers["location"]).query)["state"][0]
+    back = harness.client.get("/dev/sso", params={"state": state, "char_id": 95000001, "name": "Homebound Billing"},
+                              follow_redirects=False)
+    done = harness.client.get(back.headers["location"])
+    assert done.status_code == 200 and "Homebound Billing" in done.text
+    assert harness.service.receiver() == (95000001, "fake-refresh-95000001")
+    again = harness.client.get(f"{link.path}?{link.query}", follow_redirects=False)
+    assert again.status_code == 403
+
+
+def test_the_receiver_link_refuses_another_character(harness) -> None:
+    """With HB_RECEIVER_CHAR_ID set, signing in with someone else stores nothing."""
+    from urllib.parse import parse_qs, urlparse
+    link = urlparse(harness.service.create_receiver_link())
+    to_eve = harness.client.get(f"{link.path}?{link.query}", follow_redirects=False)
+    state = parse_qs(urlparse(to_eve.headers["location"]).query)["state"][0]
+    back = harness.client.get("/dev/sso", params={"state": state, "char_id": 91000001, "name": "Kira"},
+                              follow_redirects=False)
+    assert harness.client.get(back.headers["location"]).status_code == 403
+    assert harness.service.receiver() == (95000001, "")
+
+
+class FakeWebhook:
+    """Collects what would be posted to Discord."""
+
+    def __init__(self) -> None:
+        """Nothing posted yet."""
+        self.sent: list[dict] = []
+
+    def post(self, url, json):
+        """Keep the message and answer like Discord."""
+        import httpx
+        self.sent.append(json["embeds"][0])
+        return httpx.Response(204, request=httpx.Request("POST", url))
+
+
+def posted(harness: Harness) -> list[dict]:
+    """Flush the outbox to a fake webhook and return the embeds."""
+    harness.service.events.webhook = "https://discord.example/webhook"
+    hook = FakeWebhook()
+    harness.service.events.flush(hook)
+    return hook.sent
+
+
+def test_webhook_messages_have_names_isk_and_admin_hints(harness) -> None:
+    """Unknown senders are named through ESI; accounts show their characters; amounts are ISK."""
+    kira = harness.login(91000001, "Kira")
+    account_id = harness.api("GET", "/api/account", kira).json()["account_id"]
+    harness.eve.known_names[99999998] = "Random Pilot"
+    harness.eve.journal = [{"id": 3, "ref_type": "player_donation", "first_party_id": 99999998, "amount": 10e6,
+                            "reason": "hi"}]
+    harness.service.poll_wallet()
+    harness.service.events.map_limit_request(91000001, account_id, 6, "more maps please")
+    unmatched, request = [embed for embed in posted(harness) if "Unmatched" in embed["title"] or "limit" in embed["title"]]
+    assert "10,000,000 ISK" in unmatched["description"]
+    assert "[Random Pilot](https://evewho.com/character/99999998)" in unmatched["description"]
+    assert unmatched["footer"]["text"].endswith("refunded 3") and unmatched["timestamp"]
+    fields = {field["name"]: field["value"] for field in request["fields"]}
+    assert fields["Account"] == f"a{account_id} (Kira)" and fields["Subject"] == "more maps please"
+    assert f"map-limit a{account_id}" in request["footer"]["text"]
+
+
+def test_billing_messages_can_be_muted(harness) -> None:
+    """HB_MUTE_BILLING drops billing state changes; other events still go out."""
+    harness.service.events.mute_billing = True
+    assert harness.service.events.billing_state(1, "paid", "warning") is None
+    harness.service.events.mute_billing = False
+    map_id, kira, bob = setup_map(harness)
+    payer = harness.service.db.value("SELECT payer_id FROM maps WHERE id=?", (map_id,))
+    harness.service.events.billing_state(payer, "paid", "read_only")
+    embed = posted(harness)[-1]
+    assert "read-only" in embed["description"] and "Kira" in embed["description"]
+
+
+def test_config_reads_the_new_settings(monkeypatch) -> None:
+    """The mute switch and the disk threshold come from the environment."""
+    from homebound_server.config import Config
+    monkeypatch.setenv("HB_MUTE_BILLING", "1")
+    monkeypatch.setenv("HB_DISK_WARN_PERCENT", "90")
+    config = Config.from_environment()
+    assert config.mute_billing is True and config.disk_warn_percent == 90
+
+
+def test_a_full_disk_warns_once_a_day(tmp_path) -> None:
+    """Over the threshold: one server problem, not one every 10 minutes; under it again: reset."""
+    from collections import namedtuple
+    harness = Harness(tmp_path)
+    Usage = namedtuple("Usage", "total used free")
+    full, fine = (lambda _: Usage(100 * 2**30, 85 * 2**30, 15 * 2**30)), (lambda _: Usage(100, 10, 90))
+    assert harness.service.check_disk(full) == 85
+    harness.service.check_disk(full)
+    problems = [embed for embed in posted(harness) if "problem" in embed["title"]]
+    assert len(problems) == 1 and "85% full" in problems[0]["description"]
+    harness.service.check_disk(fine)
+    harness.service.check_disk(full)
+    assert len([embed for embed in posted(harness) if "problem" in embed["title"]]) == 1   # a new warning
+
+
+def test_several_starts_in_a_few_minutes_look_like_a_restart_loop(harness) -> None:
+    """The first start is a grey note; the third within 10 minutes is a red alert."""
+    for _ in range(3):
+        harness.service.started()
+    embeds = posted(harness)
+    assert [embed["title"] for embed in embeds] == ["Homebound · Server started"] * 2 + ["Homebound · Restart loop?"]
+    assert "3 starts in 10 minutes" in embeds[-1]["description"]
+
+
+def test_a_mail_that_keeps_failing_is_reported(harness) -> None:
+    """When a receipt is given up, the admin hears about it."""
+    import httpx
+
+    from homebound_server.mailer import MAX_ATTEMPTS
+    harness.login(91000001, "Kira")
+    request = httpx.Request("POST", "https://esi")
+    harness.eve.send_error = httpx.HTTPStatusError("400", request=request, response=httpx.Response(400, request=request))
+    harness.eve.journal = [{"id": 1, "ref_type": "player_donation", "first_party_id": 91000001, "amount": 1e6}]
+    harness.service.poll_wallet()
+    for _ in range(MAX_ATTEMPTS):
+        harness.service.send_mails()
+    given_up = [embed for embed in posted(harness) if "not delivered" in embed["title"]]
+    assert len(given_up) == 1 and "[Kira]" in given_up[0]["description"]
+
+
+def link_receiver(harness: Harness, char_id: int = 95000001):
+    """Run the receiver link in the browser and return the final page."""
+    from urllib.parse import parse_qs, urlparse
+    link = urlparse(harness.service.create_receiver_link())
+    to_eve = harness.client.get(f"{link.path}?{link.query}", follow_redirects=False)
+    state = parse_qs(urlparse(to_eve.headers["location"]).query)["state"][0]
+    back = harness.client.get("/dev/sso", params={"state": state, "char_id": char_id, "name": "Homebound Billing"},
+                              follow_redirects=False)
+    return harness.client.get(back.headers["location"])
+
+
+def test_the_receiver_token_is_encrypted_in_the_database(harness) -> None:
+    """With HB_TOKEN_ENC_KEY the DB only holds ciphertext; a wrong key is a clear error."""
+    from cryptography.fernet import Fernet
+    harness.config.token_key = Fernet.generate_key().decode()
+    assert link_receiver(harness).status_code == 200
+    stored = harness.service.db.value("SELECT value FROM meta WHERE key='receiver_refresh_token'")
+    assert stored.startswith("v1:") and "fake-refresh" not in stored
+    assert harness.service.receiver() == (95000001, "fake-refresh-95000001")
+    harness.config.token_key = Fernet.generate_key().decode()
+    with pytest.raises(RuntimeError, match="doesn't match"):
+        harness.service.receiver()
+
+
+def test_production_refuses_to_link_without_a_key(harness) -> None:
+    """Outside dev mode the token is never stored in plain text."""
+    from urllib.parse import urlparse
+    harness.config.dev = False
+    link = urlparse(harness.service.create_receiver_link())
+    page = harness.client.get(f"{link.path}?{link.query}", follow_redirects=False)
+    assert page.status_code == 403 and "HB_TOKEN_ENC_KEY" in page.text
+    assert harness.service.db.value("SELECT value FROM meta WHERE key='receiver_refresh_token'") is None
+
+
+def test_the_wallet_poller_pings_the_healthcheck(harness) -> None:
+    """Each successful poll pings healthchecks.io; a failed one doesn't."""
+    pings = []
+    harness.config.healthcheck_url = "https://hc-ping.com/abc"
+    harness.service.http_get = lambda url, timeout: pings.append(url)
+    harness.service.poll_wallet()
+    harness.eve.fail = True
+    with pytest.raises(Exception):
+        harness.service.poll_wallet()
+    assert pings == ["https://hc-ping.com/abc"]

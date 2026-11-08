@@ -176,6 +176,18 @@ CREATE TABLE IF NOT EXISTS mails (                    -- EVE mails to the receiv
     mail_id INTEGER PRIMARY KEY,
     seen_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS outgoing_mails (           -- EVE mails the receiver sends (payment receipts, problems)
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    key          TEXT NOT NULL UNIQUE,                -- e.g. receipt:<journal id>, so one is never sent twice
+    kind         TEXT NOT NULL,
+    recipient_id INTEGER NOT NULL,
+    subject      TEXT NOT NULL,
+    body         TEXT NOT NULL,
+    created_at   TEXT NOT NULL,
+    sent_at      TEXT,
+    attempts     INTEGER NOT NULL DEFAULT 0,
+    last_error   TEXT
+);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 """
 

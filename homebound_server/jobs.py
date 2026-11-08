@@ -16,6 +16,8 @@ SCHEDULE = [
     ("poll_wallet", 3600, True),
     ("poll_mail", 3600, True),
     ("poll_affiliations", 3600, True),
+    ("send_mails", 120, True),
+    ("check_disk", 600, False),
     ("flush_events", 60, True),
 ]
 POLLER_SILENT_SECONDS = 2 * 3600
@@ -31,6 +33,8 @@ def run_job(service: Service, name: str):
         "poll_wallet": service.poll_wallet,
         "poll_mail": service.poll_mail,
         "poll_affiliations": service.poll_affiliations,
+        "send_mails": service.send_mails,
+        "check_disk": service.check_disk,
         "flush_events": service.events.flush,
     }[name]()
 

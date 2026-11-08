@@ -125,8 +125,29 @@ def create_app(service: Service) -> Starlette:
 <p><label>Character ID <input name="char_id" value="90000001"></label></p>
 <p><label>Name <input name="name" value="Dev Pilot"></label></p><button>Sign in</button></form>""")
 
+    async def link_wallet(request: Request) -> Response:
+        if limited(request):
+            return page("Too many logins", "<p>Please wait a minute and try again.</p>", 429)
+        try:
+            return RedirectResponse(service.start_receiver_link(request.query_params.get("key", "")), 302)
+        except AuthError as problem:
+            return page("Can't link the receiving character", f"<p>{html.escape(str(problem))}</p>", 403)
+
+    async def receiver_callback(query) -> Response:
+        try:
+            name = await asyncio.to_thread(service.finish_receiver_link, query.get("state", ""), query.get("code", ""))
+        except AuthError as problem:
+            return page("Can't link the receiving character", f"<p>{html.escape(str(problem))}</p>", 403)
+        except Exception as problem:   # noqa: BLE001 - EVE SSO answered badly
+            log.warning("receiver link failed: %s", problem)
+            return page("Can't link the receiving character", "<p>EVE's login didn't answer as expected.</p>", 502)
+        return page("Receiving character linked", f"<p>{html.escape(name)} is now the receiving character. "
+                                                  "The server reads its wallet and mail and sends payment receipts.</p>")
+
     async def sso_callback(request: Request) -> Response:
         query = request.query_params
+        if service.is_receiver_state(query.get("state", "")):
+            return await receiver_callback(query)
         try:
             port, client_state, code = await asyncio.to_thread(service.finish_sso, query.get("state", ""),
                                                                query.get("code", ""))
@@ -357,6 +378,7 @@ def create_app(service: Service) -> Starlette:
 
     routes = [
         Route("/login", login), Route("/dev/sso", dev_sso), Route("/sso/callback", sso_callback),
+        Route("/admin/link-wallet", link_wallet),
         Route("/api/login/exchange", exchange, methods=["POST"]),
         Route("/api/logout", api(logout), methods=["POST"]),
         Route("/api/sessions", api(sessions_list)),

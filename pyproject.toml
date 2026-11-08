@@ -17,6 +17,7 @@ homebound-server = "homebound_server.__main__:main"
 
 [project.optional-dependencies]
 server = [
+    "cryptography>=42",
     "starlette>=0.40",
     "uvicorn[standard]>=0.30",
 ]

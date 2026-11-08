@@ -26,6 +26,7 @@ def serve(options: argparse.Namespace) -> int:
 
     @contextlib.asynccontextmanager
     async def lifespan(_app):
+        service.started()
         task = asyncio.create_task(run_jobs(service))
         yield
         task.cancel()
@@ -97,6 +98,18 @@ def admin(options: argparse.Namespace) -> int:
     elif command == "delete-account":
         service.delete_account(account_of(args[0]))
         result = {"ok": True}
+    elif command == "new-key":         # a key for HB_TOKEN_ENC_KEY
+        from cryptography.fernet import Fernet
+        result = {"HB_TOKEN_ENC_KEY": Fernet.generate_key().decode()}
+    elif command == "receiver-link":   # one-time link that signs the receiving character in
+        result = {"link": service.create_receiver_link(), "valid_minutes": 30}
+    elif command == "receiver":
+        char_id, refresh_token = service.receiver()
+        result = {"char_id": char_id, "name": db.value("SELECT value FROM meta WHERE key='receiver_name'"),
+                  "linked_at": db.value("SELECT value FROM meta WHERE key='receiver_linked_at'"),
+                  "has_token": bool(refresh_token)}
+    elif command == "mails":           # receipt / problem mails that failed too often
+        result = service.mailer.given_up()
     elif command == "run":             # run <job>
         result = run_job(service, args[0])
     else:
@@ -117,7 +130,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--port", type=int, default=8080)
     tool = sub.add_parser("admin", help="admin commands: lookup, credit, credit-corp, comp, map-limit, "
                                         "reset-strikes, maps, delete-map, unmatched, refunded, suspend, export, "
-                                        "delete-account, run <job>")
+                                        "delete-account, new-key, receiver-link, receiver, mails, run <job>")
     tool.add_argument("command")
     tool.add_argument("args", nargs="*")
     options = parser.parse_args(argv)

@@ -59,6 +59,7 @@ class Billing:
                  events=None) -> None:
         """Use the database and map rules; ``events`` receives admin notifications."""
         self.db, self.maps, self.tiers, self.included, self.events = database, maps, tiers, included_seats, events
+        self.on_payment = self.on_unmatched = None
 
     # ------------------------------------------------------------ prices
     def payer_maps(self, payer_id: int, extra_seats: dict[str, int] | None = None,
@@ -333,8 +334,20 @@ class Billing:
                 return self.maps.payer_for_account(account_id)
         return None
 
+    def why_unmatched(self, entry: dict) -> tuple[str, dict]:
+        """Return why :meth:`match` found no payer: a key of ``mailer.PROBLEMS`` and the values its text needs."""
+        code = CODE_PATTERN.search((entry.get("reason") or "").upper())
+        if entry.get("ref_type") == CORP_WITHDRAWAL:
+            return "corp_unknown", {"corp": entry.get("first_party_id")}
+        if code:
+            return "code_unknown", {"code": code.group(0)}
+        return "char_unknown", {}
+
     def apply_journal(self, entries: list[dict]) -> dict:
         """Count new incoming donations; unmatched ones go to the admin (plan §7 "Unmatched donations").
+
+        ``on_payment(entry, payer_id)`` and ``on_unmatched(entry, problem, values)``, when set, are called
+        for each one (the service sends the receipt mails from them).
 
         Returns:
             ``{"applied": n, "unmatched": n}``.
@@ -354,12 +367,17 @@ class Billing:
                                 (journal_id, first, entry["amount"], entry.get("reason"), iso(utc_now())))
                 unmatched += 1
                 if self.events is not None:
-                    self.events.unmatched_donation(first, entry["amount"], entry.get("reason") or "")
+                    self.events.unmatched_donation(first, entry["amount"], entry.get("reason") or "", journal_id,
+                                                  corp=entry.get("ref_type") == CORP_WITHDRAWAL)
+                if self.on_unmatched is not None:
+                    self.on_unmatched(entry, *self.why_unmatched(entry))
                 continue
             is_corp = entry.get("ref_type") == CORP_WITHDRAWAL
             self.credit(payer_id, entry["amount"], journal_id, None if is_corp else first,
                         first if is_corp else None, entry["ref_type"], entry.get("reason") or "")
             applied += 1
+            if self.on_payment is not None:
+                self.on_payment(entry, payer_id)
         return {"applied": applied, "unmatched": unmatched}
 
     def sweep(self, now: datetime | None = None) -> list[str]:

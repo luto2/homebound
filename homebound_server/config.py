@@ -15,7 +15,11 @@ class Config:
     sso_client_secret: str = ""
     receiver_char_id: int = 0                        # the character that receives the ISK (HB_RECEIVER_CHAR_ID)
     receiver_refresh_token: str = ""                 # its SSO refresh token (wallet + mail scopes), from the admin link
+    token_key: str = ""                              # Fernet key that encrypts that token in the DB (HB_TOKEN_ENC_KEY)
+    healthcheck_url: str = ""                        # pinged after each successful wallet poll (HB_HEALTHCHECK_URL)
     discord_webhook: str = ""
+    mute_billing: bool = False                       # no webhook posts for billing state changes (HB_MUTE_BILLING=1)
+    disk_warn_percent: int = 80                      # webhook warning when the database's disk is fuller
     universe: Path | None = None                     # universe.sqlite; None: the client's usual place
     min_app: str = "0.1.0"
     pricing: dict = field(default_factory=lambda: {
@@ -34,7 +38,11 @@ class Config:
             sso_client_secret=environment.get("HB_SSO_CLIENT_SECRET", ""),
             receiver_char_id=int(environment.get("HB_RECEIVER_CHAR_ID", "0") or 0),
             receiver_refresh_token=environment.get("HB_RECEIVER_REFRESH_TOKEN", ""),
+            token_key=environment.get("HB_TOKEN_ENC_KEY", ""),
+            healthcheck_url=environment.get("HB_HEALTHCHECK_URL", ""),
             discord_webhook=environment.get("HB_DISCORD_WEBHOOK", ""),
+            mute_billing=environment.get("HB_MUTE_BILLING") == "1",
+            disk_warn_percent=int(environment.get("HB_DISK_WARN_PERCENT", "80") or 80),
             universe=Path(environment["HB_UNIVERSE"]) if environment.get("HB_UNIVERSE") else None,
             min_app=environment.get("HB_MIN_APP", "0.1.0"),
         )

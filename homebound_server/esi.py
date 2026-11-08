@@ -15,6 +15,9 @@ SSO_TOKEN = "https://login.eveonline.com/v2/oauth/token"
 ESI = "https://esi.evetech.net/latest"
 USER_AGENT = "homebound-server (+https://github.com/luto2/homebound)"
 NPC_CORP_IDS = range(1_000_000, 2_000_000)       # NPC corporations have IDs in this range
+# what the receiving character's one-time admin link asks for: read payments, read map-limit
+# requests, send receipts
+RECEIVER_SCOPES = ("esi-wallet.read_character_wallet.v1", "esi-mail.read_mail.v1", "esi-mail.send_mail.v1")
 
 
 def is_npc_corp(corp_id: int | None) -> bool:
@@ -29,6 +32,8 @@ class SsoCharacter:
     char_id: int
     name: str
     owner_hash: str
+    scopes: tuple[str, ...] = ()
+    refresh_token: str = ""
 
 
 def _jwt_payload(token: str) -> dict:
@@ -61,13 +66,20 @@ class Eve:
         return response.json()
 
     def login(self, code: str) -> SsoCharacter:
-        """Trade the SSO callback code for the character it proves."""
-        claims = _jwt_payload(self._token({"grant_type": "authorization_code", "code": code})["access_token"])
-        return SsoCharacter(int(claims["sub"].split(":")[-1]), claims["name"], claims["owner"])
+        """Trade the SSO callback code for the character it proves (with its scopes and refresh token)."""
+        tokens = self._token({"grant_type": "authorization_code", "code": code})
+        claims = _jwt_payload(tokens["access_token"])
+        scopes = claims.get("scp") or ()
+        return SsoCharacter(int(claims["sub"].split(":")[-1]), claims["name"], claims["owner"],
+                            (scopes,) if isinstance(scopes, str) else tuple(scopes), tokens.get("refresh_token", ""))
 
-    def access_token(self, refresh_token: str) -> str:
-        """Return a fresh access token for the receiving character."""
-        return self._token({"grant_type": "refresh_token", "refresh_token": refresh_token})["access_token"]
+    def refresh(self, refresh_token: str) -> tuple[str, str]:
+        """Return a fresh access token for the receiving character, and the refresh token to keep.
+
+        EVE may hand out a new refresh token here; the old one then stops working at some point.
+        """
+        tokens = self._token({"grant_type": "refresh_token", "refresh_token": refresh_token})
+        return tokens["access_token"], tokens.get("refresh_token") or refresh_token
 
     def affiliations(self, char_ids: list[int]) -> dict[int, int]:
         """Return each character's corporation (public, no scope)."""
@@ -77,6 +89,12 @@ class Eve:
             response.raise_for_status()
             result |= {row["character_id"]: row["corporation_id"] for row in response.json()}
         return result
+
+    def names(self, ids: list[int]) -> dict[int, str]:
+        """Return the names of characters, corps and alliances by ID (public, no scope)."""
+        response = self.http.post(f"{ESI}/universe/names/", json=ids)
+        response.raise_for_status()
+        return {row["id"]: row["name"] for row in response.json()}
 
     def corporation(self, corp_id: int) -> dict:
         """Return a corporation's public info (``name``, ``ceo_id`` …)."""
@@ -104,6 +122,14 @@ class Eve:
         response.raise_for_status()
         return response.json()
 
+    def send_mail(self, char_id: int, token: str, recipient_id: int, subject: str, body: str) -> int:
+        """Send an EVE mail from the receiving character to one character; returns the mail ID."""
+        response = self.http.post(f"{ESI}/characters/{char_id}/mail/", headers={"Authorization": f"Bearer {token}"},
+                                  json={"approved_cost": 0, "subject": subject, "body": body,
+                                        "recipients": [{"recipient_id": recipient_id, "recipient_type": "character"}]})
+        response.raise_for_status()
+        return response.json()
+
 
 @dataclass
 class FakeEve:
@@ -114,6 +140,9 @@ class FakeEve:
     owner_hashes: dict[int, str] = field(default_factory=dict)   # char_id -> owner hash
     journal: list[dict] = field(default_factory=list)
     mails: list[dict] = field(default_factory=list)              # {"mail_id", "from", "subject", "body"}
+    sent: list[dict] = field(default_factory=list)               # mails sent: {"to", "subject", "body"}
+    send_error: Exception | None = None                          # send_mail raises this
+    known_names: dict[int, str] = field(default_factory=dict)    # what names() answers
     fail: bool = False                                           # every ESI call raises
 
     callback = ""
@@ -123,24 +152,30 @@ class FakeEve:
         return f"/dev/sso?state={state}"
 
     def login(self, code: str) -> SsoCharacter:
-        """Fake codes are ``fake:<char_id>:<name>``."""
+        """Fake codes are ``fake:<char_id>:<name>``; they grant the receiver scopes."""
         _, char_id, name = code.split(":", 2)
-        return SsoCharacter(int(char_id), name, self.owner_hashes.get(int(char_id), f"hash-{char_id}"))
+        return SsoCharacter(int(char_id), name, self.owner_hashes.get(int(char_id), f"hash-{char_id}"),
+                            RECEIVER_SCOPES, f"fake-refresh-{char_id}")
 
     def _check(self) -> None:
         """Raise when the fake is told to fail."""
         if self.fail:
             raise httpx.ConnectError("fake ESI is down")
 
-    def access_token(self, refresh_token: str) -> str:
-        """Any refresh token works."""
+    def refresh(self, refresh_token: str) -> tuple[str, str]:
+        """Any refresh token works and stays the same."""
         self._check()
-        return "fake-token"
+        return "fake-token", refresh_token
 
     def affiliations(self, char_ids: list[int]) -> dict[int, int]:
         """Characters without a corp set are in an NPC corp."""
         self._check()
         return {char_id: self.corps.get(char_id, 1000044) for char_id in char_ids}
+
+    def names(self, ids: list[int]) -> dict[int, str]:
+        """Names from ``names`` (unknown IDs are left out, as ESI would fail)."""
+        self._check()
+        return {entity_id: self.known_names[entity_id] for entity_id in ids if entity_id in self.known_names}
 
     def corporation(self, corp_id: int) -> dict:
         """Return the configured corp info."""
@@ -161,3 +196,11 @@ class FakeEve:
         """Return a configured mail."""
         self._check()
         return next(mail for mail in self.mails if mail["mail_id"] == mail_id)
+
+    def send_mail(self, char_id: int, token: str, recipient_id: int, subject: str, body: str) -> int:
+        """Record the mail (or raise ``send_error``)."""
+        self._check()
+        if self.send_error is not None:
+            raise self.send_error
+        self.sent.append({"from": char_id, "to": recipient_id, "subject": subject, "body": body})
+        return len(self.sent)

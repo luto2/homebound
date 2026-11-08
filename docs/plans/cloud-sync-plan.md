@@ -204,8 +204,9 @@ A character sold through the character bazaar must not keep its old owner's acce
 ## 7. ISK payments
 
 ### Receiver
-- A dedicated **character named after the mapper** receives the ISK, so payments are obviously related to it. The name is still to be picked.
-- The server admin links that character once, with scope `esi-wallet.read_character_wallet.v1`.
+- A dedicated character, **Homebound Billing** (character ID `2124836346`), receives the ISK, so payments are obviously related to the mapper.
+- The server admin links that character once, with the scopes `esi-wallet.read_character_wallet.v1`, `esi-mail.read_mail.v1` and `esi-mail.send_mail.v1` (`homebound-server admin receiver-link`).
+- **Receipts:** after each counted payment, the receiving character sends the payer an EVE mail with the amount, the account code, the new balance and the paid-until date. A payment that can't be assigned gets a mail too: what went wrong (unknown code, unlinked character, corp without corp maps) and what to do. Corp payments are mailed to the corp's CEO. Mails go through an outbox (`outgoing_mails`), one per journal entry ever, a few per run because EVE throttles mail sending.
 
 ### Prices (per 30 days)
 
@@ -453,7 +454,13 @@ The server posts to the admin's personal Discord webhook (`HB_DISCORD_WEBHOOK` i
 | Trial refused | a character that already had a trial tried to start one on another account: character, both accounts |
 | Unmatched donation | character, amount, reason text, how many unmatched donations that character sent before (total / 30 days) |
 | Server problem | wallet poller failed or has been silent for more than 2 h, ESI errors, a failed backup or restore test, disk over 80%, crash and restart loops |
-| Billing state changes (optional, can be muted) | a map going to warning, read-only or deleted |
+| Billing state changes (optional, muted with `HB_MUTE_BILLING=1`) | a map going to warning, read-only or deleted |
+| EVE mail not delivered | a receipt or problem mail that failed 5 times: recipient, subject, last error |
+| Server started | each start of the server process; 3 starts within 10 minutes turn into a red "Restart loop?" alert |
+| Receiving character linked | the admin link was completed |
+| Character transferred | a sold character was taken off its old account |
+
+Messages are Discord embeds. Characters and corps are shown by name (from the database, else ESI `/universe/names/`) with an EveWho link, accounts as `a12 (Kira, Kira Alt)`, the form the admin CLI takes. Where there is an admin action, the footer has the command (`admin refunded <journal id>`, `admin map-limit a12 <n>`). The disk is checked every 10 minutes against `HB_DISK_WARN_PERCENT` (default 80), with at most one warning a day while it stays full.
 
 The healthchecks.io checks in `hosting-hetzner.md` §9 stay as a second channel in case the server itself is down. An outbound webhook can't report that.
 
@@ -476,7 +483,6 @@ The healthchecks.io checks in `hosting-hetzner.md` §9 stay as a second channel 
 
 ## 20. Open questions
 
-- **Receiving character name:** placeholder `<RECEIVER>` until shortly before launch, when the real character is created. For development and live ESI tests, **`luto5`** stands in. It is configured as `HB_RECEIVER_CHAR_ID`, never hard-coded.
 - Legal placeholders (name, address, email, dates). These get filled in at the end.
 
 ## 21. Implementation notes (2026-11-08)
