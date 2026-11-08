@@ -150,6 +150,11 @@ ENTITY_TABLES = {"system": "systems", "connection": "connections", "signature": 
                  "setting": "map_settings"}
 ENTITY_WHERE = {"system": "id=?", "connection": "system_a=? AND system_b=?",
                 "signature": "system_id=? AND signature_id=?", "setting": "key=?"}
+
+
+def key_values(key: Any) -> list:
+    """Return an entity key as the parameters of its ``ENTITY_WHERE`` clause."""
+    return list(key) if isinstance(key, tuple) else [key]
 # Columns that change on every write and say nothing about the map itself.
 VOLATILE_COLUMNS = {"updated_at"}
 
@@ -464,15 +469,8 @@ class Store:
 
     def _row(self, entity: str, key: Any) -> dict | None:
         """Return the stored row of an entity as a dict, or None if it doesn't exist."""
-        if entity == "system":
-            row = self.database.execute("SELECT * FROM systems WHERE id=?", (key,)).fetchone()
-        elif entity == "connection":
-            row = self.database.execute("SELECT * FROM connections WHERE system_a=? AND system_b=?", key).fetchone()
-        elif entity == "signature":
-            row = self.database.execute("SELECT * FROM signatures WHERE system_id=? AND signature_id=?",
-                                        key).fetchone()
-        else:
-            row = self.database.execute("SELECT * FROM map_settings WHERE key=?", (key,)).fetchone()
+        row = self.database.execute(f"SELECT * FROM {ENTITY_TABLES[entity]} WHERE {ENTITY_WHERE[entity]}",
+                                    key_values(key)).fetchone()
         return dict(row) if row else None
 
     def _commit(self) -> None:
@@ -548,7 +546,7 @@ class Store:
         """Set columns of an existing entity's row."""
         self._touch(entity, key)
         table, where = ENTITY_TABLES[entity], ENTITY_WHERE[entity]
-        keys = list(key) if isinstance(key, tuple) else [key]
+        keys = key_values(key)
         self.database.execute(f"UPDATE {table} SET {', '.join(f'{_quoted(column)}=?' for column in values)} "
                               f"WHERE {where}", [*values.values(), *keys])
 

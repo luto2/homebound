@@ -14,7 +14,7 @@ import json
 import uuid
 from typing import Any
 
-from ..mapdb.store import ENTITY_TABLES, ENTITY_WHERE, Action, Store, utc_now_iso
+from ..mapdb.store import ENTITY_TABLES, ENTITY_WHERE, Action, Store, key_values, utc_now_iso
 from .hlc import HybridClock
 from .merge import Effect, EntityState, MapState, apply_op
 from .protocol import FIELDS, LAYOUT_FIELDS, Op, full_ops_for_rows, key_from_json, key_to_json, op_from_json, ops_from_action
@@ -304,8 +304,7 @@ class LocalReplica:
                 self.database.execute("DELETE FROM signatures WHERE system_id=?", (key,))
                 self.database.execute("DELETE FROM connections WHERE system_a=? OR system_b=?", (key, key))
                 self.database.execute("DELETE FROM layout_override WHERE system_id=?", (key,))
-            where = ENTITY_WHERE[entity]
-            self.database.execute(f"DELETE FROM {ENTITY_TABLES[entity]} WHERE {where}", list(key) if isinstance(key, tuple) else [key])
+            self.database.execute(f"DELETE FROM {ENTITY_TABLES[entity]} WHERE {ENTITY_WHERE[entity]}", key_values(key))
             return
         if entity == "connection" and not (store.has_system(key[0]) and store.has_system(key[1])):
             return
