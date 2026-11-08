@@ -120,6 +120,8 @@ LITESTREAM_ACCESS_KEY_ID=…       # object storage access key
 LITESTREAM_SECRET_ACCESS_KEY=…   # object storage secret key
 HB_BACKUP_ENDPOINT=hel1.your-objectstorage.com   # the bucket's location endpoint, without https://
 HB_BACKUP_REGION=hel1            # the location code: fsn1, nbg1 or hel1
+HB_BACKUP_AGE_RECIPIENT=age1…    # public key: backups are encrypted to it before upload
+HB_BACKUP_AGE_IDENTITY=AGE-SECRET-KEY-1…   # private key: needed to restore. Also in the password manager!
 HB_RESTORE_HEALTHCHECK_URL=https://hc-ping.com/…   # the daily restore test reports here
 ```
 
@@ -131,7 +133,7 @@ HB_RESTORE_HEALTHCHECK_URL=https://hc-ping.com/…   # the daily restore test re
 ## 7. Backups and restore
 
 **Litestream** copies every change of `sync.db` to Hetzner Object Storage (setup: §15 step 10). The files are in `packaging/server/`:
-- `litestream.yml` (to `/etc/litestream.yml`): replica `s3://homebound-backup/sync.db` on the storage endpoint, sync every 10 s, a snapshot every 24 h, 30 days kept with every change in between (point-in-time restore).
+- `litestream.yml` (to `/etc/litestream.yml`): replica `s3://homebound-backup/sync.db.age` on the storage endpoint, **encrypted with age** before upload, sync every 10 s, a snapshot every 24 h, 30 days kept with every change in between (point-in-time restore).
 - `litestream-override.conf`: Litestream runs as the `homebound` user with the credentials from `/etc/homebound/env`.
 - At most about 10 s of edits can be lost. Clients still have their own local copies anyway.
 - The bucket lives in a different Hetzner location from the VPS, so one data center outage can't take both.
@@ -182,7 +184,7 @@ HB_RESTORE_HEALTHCHECK_URL=https://hc-ping.com/…   # the daily restore test re
 - [ ] Session tokens signed, with expiry and a revocation list (logout, member removed)
 - [ ] Every `push` checks role and map state (viewer, lapsed, read-only)
 - [ ] `HB_TOKEN_ENC_KEY` set, and `admin receiver` shows the receiver linked
-- [ ] Backups encrypted (still open: Litestream's own age encryption, so the storage provider only sees ciphertext), and the restore tested
+- [ ] Backups encrypted with age (`HB_BACKUP_AGE_*` set, the private key in the password manager), and the restore tested
 - [ ] `unattended-upgrades` active
 
 ## 11. Legal and policy (to check before going public)
@@ -371,7 +373,16 @@ systemctl enable --now litestream homebound-restore-test.timer
 journalctl -u litestream -f      # "initialized db", then "snapshot written" and "wal segment written"
 ```
 
+**Encryption (age):** Litestream encrypts every file before upload, so the storage provider only sees ciphertext.
+```bash
+apt install age
+age-keygen       # prints "# public key: age1…" and the private key "AGE-SECRET-KEY-1…"
+```
+- Put both in `/etc/homebound/env` as `HB_BACKUP_AGE_RECIPIENT` (the `age1…` public key) and `HB_BACKUP_AGE_IDENTITY` (the `AGE-SECRET-KEY-1…` line). Save the private key in the password manager too: **without it no backup can be restored**, also not by you.
+- Don't print the key to a file on the server; copy it from the terminal.
+- **Litestream 0.3.x only.** Litestream 0.5 dropped age encryption, so stay on 0.3.13 until there's a plan for that.
+
 **Check it:**
-1. In the bucket's file list, `homebound-backup/sync.db/` has `generations/…` with a snapshot and WAL files after a minute.
+1. In the bucket's file list, `homebound-backup/sync.db.age/` has `generations/…` with a snapshot and WAL files after a minute.
 2. `sudo -u homebound hb-restore-test` prints `restore ok: integrity ok, N maps, …`.
 3. On healthchecks.io, the check `homebound-restore-test` (period 1 day, grace 2 h) turns green.

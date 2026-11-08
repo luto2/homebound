@@ -74,7 +74,7 @@ Für alle Anfragen genügt eine E-Mail an [E-Mail-Adresse]. Bitte gib dabei dein
 
 - Alle Verbindungen sind per TLS verschlüsselt.
 - Der Server ist nur per SSH-Schlüssel erreichbar.
-- Backups sind verschlüsselt. [erst wahr, wenn die age-Verschlüsselung in Litestream eingerichtet ist; vor Veröffentlichung prüfen]
+- Backups werden vor dem Hochladen verschlüsselt; der Speicheranbieter sieht nur verschlüsselte Daten.
 - Das Wallet-Token des Empfangscharakters ist zusätzlich verschlüsselt gespeichert.
 
 ## 10. Änderungen
