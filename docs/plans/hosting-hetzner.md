@@ -1,7 +1,7 @@
 # Homebound Sync Server: Hetzner hosting spec
 
-> **STATUS: WIP. This is a spec only. Do not set it up yet.**
-> It belongs with [`cloud-sync-plan.md`](cloud-sync-plan.md). Open items are in §14.
+> **STATUS: the server is built (branch `cloud-sync`). §15 has the setup steps, command by command.**
+> It belongs with [`cloud-sync-plan.md`](cloud-sync-plan.md). Open items are in §14. Backups (§7) are not set up yet.
 
 ## 1. What runs where
 
@@ -82,7 +82,7 @@ Everything runs on one machine, with one app process and one database file. Ther
 
 **systemd units:**
 - `homebound-sync.service`:
-  - runs `uv run homebound-server serve --host 127.0.0.1 --port 8080`, with `HB_DB`, `HB_BASE_URL=https://homebound.luthopian.de`, `HB_SSO_CLIENT_ID`, `HB_SSO_CLIENT_SECRET` and `HB_RECEIVER_CHAR_ID` from the secrets file
+  - runs `/opt/homebound/.venv/bin/homebound-server serve --host 127.0.0.1 --port 8080` (the venv directly, so uv isn't needed at runtime), with `HB_DB`, `HB_BASE_URL=https://homebound.luthopian.de`, `HB_SSO_CLIENT_ID`, `HB_SSO_CLIENT_SECRET` and `HB_RECEIVER_CHAR_ID` from the secrets file
   - the port is only local. The public side is 443, shared with any other site on the VPS: the reverse proxy routes by hostname. If 8080 is taken, any free local port works, as long as the proxy points there.
   - `User=homebound` and `Restart=on-failure`
   - hardening: `ProtectSystem=strict`, `ReadWritePaths=/var/lib/homebound`, `PrivateTmp`, `NoNewPrivileges`, `MemoryMax=512M`
@@ -151,9 +151,9 @@ LITESTREAM_SECRET_ACCESS_KEY=…
 - The server code lives in the same repo, as `homebound_server/` plus the shared `homebound/sync/protocol.py`, so that client and server use the same merge code.
 - Deploy is a small script, `deploy.sh`, run over SSH:
   1. `git -C /opt/homebound pull --ff-only`
-  2. `uv sync --frozen`
-  3. run DB migrations (numbered SQL files, applied at startup and recorded in a `schema_version` table)
-  4. `systemctl restart homebound-sync`
+  2. `UV_PYTHON_PREFERENCE=only-system uv sync --extra server --no-dev --frozen`
+  3. `systemctl restart homebound-sync`
+- Schema changes: so far the server only adds tables (`CREATE TABLE IF NOT EXISTS` at startup). Numbered migrations recorded in a `schema_version` table are still to be built, before the first change to an existing table.
 - Restarts drop the WebSockets for a few seconds. Clients reconnect with backoff and resend their outbox, so no data is lost.
 - **Protocol versioning:**
   - `hello` carries `protocol_version`.
@@ -209,3 +209,138 @@ LITESTREAM_SECRET_ACCESS_KEY=…
 
 - Fill in the Impressum contact details (name, postal address, email).
 - Have the legal drafts checked before going public (e.g. with a generator such as e-recht24 or by a lawyer). They are not legal advice.
+
+## 15. First-time setup, step by step
+
+Debian or Ubuntu, as root (or with sudo). The reverse proxy that already runs on the VPS (for the auth service) handles TLS; Homebound only listens on `127.0.0.1`. These steps haven't been run on the real VPS yet, so correct this section where it differs.
+
+### 1. DNS
+An `A` record (and `AAAA` with IPv6) for `homebound.luthopian.de` pointing to the VPS. No port and no new firewall rule: it uses the 443 that is already open.
+
+### 2. User, packages, code
+```bash
+apt install git sqlite3 python3 python3-venv
+curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+
+useradd --system --home /var/lib/homebound --create-home --shell /usr/sbin/nologin homebound
+git clone -b cloud-sync https://github.com/luto2/homebound.git /opt/homebound
+cd /opt/homebound
+UV_PYTHON_PREFERENCE=only-system uv sync --extra server --no-dev --frozen
+```
+- `only-system` makes the venv use Debian's Python (3.12 or newer is needed). Otherwise uv installs its own Python under `/root`, which the `homebound` user can't read.
+
+### 3. Universe data
+The server checks system IDs against EVE's static data. Build it once (it downloads the sources; no display needed):
+```bash
+cd /opt/homebound && .venv/bin/homebound --build-static
+ls -l data/universe.sqlite
+```
+Run it again after EVE patches that add or change systems, then restart the service.
+
+### 4. Secrets
+Make the key that encrypts the receiving character's refresh token:
+```bash
+/opt/homebound/.venv/bin/homebound-server --dev admin new-key
+```
+- `--dev` only keeps this command from reaching EVE. The key it prints is a normal key.
+- Keep a copy in your password manager. If it's lost, set a new one and link the receiver again; old database backups then can't be used for the wallet.
+
+Then write `/etc/homebound/env` (all settings: §6):
+```bash
+mkdir -p /etc/homebound
+cat > /etc/homebound/env <<'EOF'
+HB_BASE_URL=https://homebound.luthopian.de
+HB_DB=/var/lib/homebound/sync.db
+HB_UNIVERSE=/opt/homebound/data/universe.sqlite
+HB_SSO_CLIENT_ID=<from developers.eveonline.com>
+HB_SSO_CLIENT_SECRET=<from developers.eveonline.com>
+HB_TOKEN_ENC_KEY=<output of new-key>
+HB_RECEIVER_CHAR_ID=2124836346
+HB_DISCORD_WEBHOOK=<Discord: channel settings > Integrations > Webhooks>
+HB_HEALTHCHECK_URL=<optional: healthchecks.io ping URL>
+EOF
+chown root:homebound /etc/homebound/env && chmod 640 /etc/homebound/env
+```
+
+### 5. Service
+```bash
+cat > /etc/systemd/system/homebound-sync.service <<'EOF'
+[Unit]
+Description=Homebound sync server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=homebound
+EnvironmentFile=/etc/homebound/env
+WorkingDirectory=/var/lib/homebound
+ExecStart=/opt/homebound/.venv/bin/homebound-server serve --host 127.0.0.1 --port 8080
+Restart=on-failure
+RestartSec=5
+ProtectSystem=strict
+ReadWritePaths=/var/lib/homebound
+PrivateTmp=true
+NoNewPrivileges=true
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload && systemctl enable --now homebound-sync
+journalctl -u homebound-sync -f        # "Uvicorn running on http://127.0.0.1:8080"
+curl -s localhost:8080/api/health
+```
+- If 8080 is taken, change `--port` here and in the proxy.
+- **One process only:** live sync keeps its state in memory. No `--workers`, no second instance.
+
+### 6. Reverse proxy
+Add the subdomain to the existing proxy. It needs the WebSocket upgrade headers (for `/ws`) and a long read timeout. nginx:
+```nginx
+server {
+    server_name homebound.luthopian.de;
+    listen 443 ssl;          # plus the certificate lines
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 1h;
+    }
+}
+```
+Caddy: `homebound.luthopian.de { reverse_proxy 127.0.0.1:8080 }`. Then check from outside: `curl -s https://homebound.luthopian.de/api/health`.
+
+### 7. Admin helper and the receiver link
+Admin commands need the service's environment and user:
+```bash
+cat > /usr/local/bin/hb-admin <<'EOF'
+#!/bin/sh
+exec sudo -u homebound sh -c 'set -a; . /etc/homebound/env; cd /var/lib/homebound; exec /opt/homebound/.venv/bin/homebound-server admin "$@"' hb-admin "$@"
+EOF
+chmod 755 /usr/local/bin/hb-admin
+```
+1. `hb-admin receiver-link`, then open the printed link within 30 minutes.
+2. Sign in as Homebound Billing and approve the three scopes (wallet read, mail read, mail send).
+3. `hb-admin receiver` should show `"has_token": true`.
+4. Within a minute, Discord gets "Receiving character linked". That also proves the webhook works.
+
+### 8. End-to-end test
+1. Start the app (branch build; it points at `https://homebound.luthopian.de` by default) and sign in under **Cloud > Sign in**.
+2. Give a small amount, such as 1M ISK, from that character to Homebound Billing.
+3. `hb-admin run poll_wallet`, then `hb-admin run send_mails` (or wait up to an hour). A receipt mail arrives in-game, and `hb-admin lookup "<your character>"` shows the balance.
+4. Give 1M from a character that isn't linked: a problem mail in-game and an "Unmatched donation" in Discord. Refund it, then `hb-admin refunded <journal id>`.
+
+### 9. Updates
+```bash
+cd /opt/homebound && git pull --ff-only && UV_PYTHON_PREFERENCE=only-system uv sync --extra server --no-dev --frozen
+systemctl restart homebound-sync
+```
+
+### Until backups exist
+§7 (Litestream to B2) isn't set up yet. Meanwhile, a nightly copy from a cron job or systemd timer:
+```bash
+sqlite3 /var/lib/homebound/sync.db ".backup /var/backups/homebound-$(date +%F).db"
+```
