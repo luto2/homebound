@@ -6,23 +6,57 @@ Runs on Linux and Windows.
 
 ## Install on Linux
 
-1. Download `Homebound-<version>-x86_64.AppImage` from the [latest release](https://github.com/luto2/homebound/releases/latest).
-2. Make it executable and start it:
+Paste the block for your distribution into a terminal (bash, zsh or fish). It installs the two libraries the AppImage needs, downloads the latest release to `~/.local/bin/homebound` and adds Homebound to your app menu. Run the same block again to update.
 
-   ```sh
-   chmod +x Homebound-*-x86_64.AppImage
-   ./Homebound-*-x86_64.AppImage
-   ```
+**Debian, Ubuntu, Mint, Pop!_OS**
 
-3. If it doesn't start, Qt is missing `libxcb-cursor`, which Plasma systems already have:
+```sh
+sudo apt install -y curl fuse3 libxcb-cursor0 && \
+mkdir -p ~/.local/bin ~/.local/share/applications ~/.local/share/icons/hicolor/256x256/apps && \
+curl -fsSL https://api.github.com/repos/luto2/homebound/releases/latest | grep -o 'https://[^"]*x86_64\.AppImage' | head -n1 | xargs curl -fL -o ~/.local/bin/homebound && \
+chmod +x ~/.local/bin/homebound && \
+curl -fsSL -o ~/.local/share/icons/hicolor/256x256/apps/homebound.png https://raw.githubusercontent.com/luto2/homebound/master/packaging/icons/homebound.png && \
+curl -fsSL https://raw.githubusercontent.com/luto2/homebound/master/packaging/linux/homebound.desktop | sed "s|^Exec=.*|Exec=$HOME/.local/bin/homebound|" > ~/.local/share/applications/homebound.desktop && \
+echo "Homebound installed. Start it from the app menu or with ~/.local/bin/homebound"
+```
 
-   ```sh
-   sudo apt install libxcb-cursor0      # Debian, Ubuntu, Mint
-   sudo dnf install xcb-util-cursor     # Fedora
-   sudo pacman -S xcb-util-cursor       # Arch, CachyOS, Manjaro
-   ```
+**Fedora**
 
-On Arch you can build a native package instead: download the `PKGBUILD` from the same release into an empty folder and run `makepkg -si` there.
+```sh
+sudo dnf install -y curl fuse3 xcb-util-cursor && \
+mkdir -p ~/.local/bin ~/.local/share/applications ~/.local/share/icons/hicolor/256x256/apps && \
+curl -fsSL https://api.github.com/repos/luto2/homebound/releases/latest | grep -o 'https://[^"]*x86_64\.AppImage' | head -n1 | xargs curl -fL -o ~/.local/bin/homebound && \
+chmod +x ~/.local/bin/homebound && \
+curl -fsSL -o ~/.local/share/icons/hicolor/256x256/apps/homebound.png https://raw.githubusercontent.com/luto2/homebound/master/packaging/icons/homebound.png && \
+curl -fsSL https://raw.githubusercontent.com/luto2/homebound/master/packaging/linux/homebound.desktop | sed "s|^Exec=.*|Exec=$HOME/.local/bin/homebound|" > ~/.local/share/applications/homebound.desktop && \
+echo "Homebound installed. Start it from the app menu or with ~/.local/bin/homebound"
+```
+
+**Arch, CachyOS, Manjaro, EndeavourOS**
+
+```sh
+sudo pacman -S --needed --noconfirm curl fuse3 xcb-util-cursor && \
+mkdir -p ~/.local/bin ~/.local/share/applications ~/.local/share/icons/hicolor/256x256/apps && \
+curl -fsSL https://api.github.com/repos/luto2/homebound/releases/latest | grep -o 'https://[^"]*x86_64\.AppImage' | head -n1 | xargs curl -fL -o ~/.local/bin/homebound && \
+chmod +x ~/.local/bin/homebound && \
+curl -fsSL -o ~/.local/share/icons/hicolor/256x256/apps/homebound.png https://raw.githubusercontent.com/luto2/homebound/master/packaging/icons/homebound.png && \
+curl -fsSL https://raw.githubusercontent.com/luto2/homebound/master/packaging/linux/homebound.desktop | sed "s|^Exec=.*|Exec=$HOME/.local/bin/homebound|" > ~/.local/share/applications/homebound.desktop && \
+echo "Homebound installed. Start it from the app menu or with ~/.local/bin/homebound"
+```
+
+**openSUSE**
+
+```sh
+sudo zypper install -y curl fuse3 libxcb-cursor0 && \
+mkdir -p ~/.local/bin ~/.local/share/applications ~/.local/share/icons/hicolor/256x256/apps && \
+curl -fsSL https://api.github.com/repos/luto2/homebound/releases/latest | grep -o 'https://[^"]*x86_64\.AppImage' | head -n1 | xargs curl -fL -o ~/.local/bin/homebound && \
+chmod +x ~/.local/bin/homebound && \
+curl -fsSL -o ~/.local/share/icons/hicolor/256x256/apps/homebound.png https://raw.githubusercontent.com/luto2/homebound/master/packaging/icons/homebound.png && \
+curl -fsSL https://raw.githubusercontent.com/luto2/homebound/master/packaging/linux/homebound.desktop | sed "s|^Exec=.*|Exec=$HOME/.local/bin/homebound|" > ~/.local/share/applications/homebound.desktop && \
+echo "Homebound installed. Start it from the app menu or with ~/.local/bin/homebound"
+```
+
+To uninstall: `rm ~/.local/bin/homebound ~/.local/share/applications/homebound.desktop ~/.local/share/icons/hicolor/256x256/apps/homebound.png`. Your maps stay in `~/.local/share/homebound/`.
 
 On first start Homebound offers to download the EVE game data (about 100 MB), then opens Settings on the log folder. [Getting started](#getting-started) has the rest.
 
@@ -47,7 +81,7 @@ On first start Homebound offers to download the EVE game data (about 100 MB), th
 
 Releases on GitHub have ready-made packages:
 
-- **Linux**: `Homebound-<version>-x86_64.AppImage`, plus a `PKGBUILD` for Arch. See [Install on Linux](#install-on-linux).
+- **Linux**: `Homebound-<version>-x86_64.AppImage`. [Install on Linux](#install-on-linux) has a copy-paste command per distribution.
 - **Windows**: `Homebound-<version>-windows-setup.exe` installs for your user only (no admin rights), with a Start menu entry and optional autostart. `Homebound-<version>-windows-portable.zip` is the same program to unpack anywhere. The builds aren't signed yet, so SmartScreen warns on the first start: *More info → Run anyway*.
 
 The packages contain no EVE game data. On first start Homebound offers to download the EVE static data export and the community wormhole data (about 100 MB) and builds its universe data from them, which takes a minute or so.
