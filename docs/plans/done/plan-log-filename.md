@@ -1,6 +1,6 @@
 # Plan: one badly named log file stops all tracking (E6)
 
-Status: not started. TODO "To do" item 4.
+Status: implemented (2026-11-10, commit `841647f`). Deviations: none.
 
 Depends on: nothing.
 

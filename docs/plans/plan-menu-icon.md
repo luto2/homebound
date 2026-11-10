@@ -1,7 +1,6 @@
 # Plan: app menu icon after the README install
 
-Status: not started. Owner task "image for app menu" (`TODO.md`, human-added task 2), same bug as
-`TODO.md` "To do" item 14.
+Status: partly implemented (2026-11-10, commit `e6b86d3`): 48 px and SVG icons, cache refresh and uninstall line in the README. Not tested on a desktop; the investigation steps below are still open, and the fish syntax of the install lines wasn't checked.
 
 Depends on: nothing. Touches `README.md` (install commands), `packaging/linux/homebound.desktop` and
 possibly `packaging/linux/AppRun` / `build_appimage.sh`.

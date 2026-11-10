@@ -1,7 +1,6 @@
 # Plan: signature groups that won't collapse
 
-Status: not started. Owner task 10 in `TODO.md` (human-added): "some sig types dont like getting
-collapsed".
+Status: implemented (2026-11-10, commit `3ee53e2`). Deviations: none; the cause was confirmed by the tests failing on the old code. Open decision 1 (auto-clearing "new") left open.
 
 Depends on: nothing. One commit: `ui/signature_table.py` and its tests.
 

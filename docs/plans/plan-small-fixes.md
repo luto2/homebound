@@ -1,7 +1,6 @@
 # Plan: small fixes from the TODO "Small items" list
 
-Status: proposed. Audit items: `TODO.md` "To do", "Small items", findings E10 to E13a, E15 to E17, E20, E21 and
-section 5 in `docs/findings/findings.md`.
+Status: partly implemented (2026-11-10, commit `3d65485`, one commit instead of five). Skipped: unused-code removals, `TRADE_HUBS`, the mockup and spec section (needs an owner decision on the tray shortcut hint), E21, and the `kwin_available` part of E10 (the code checks only `kpackagetool6`, not four tools as written here).
 
 Depends on: nothing. Five commits, in this order. Each stands alone, and commit 1 is the only one that changes
 what the store accepts. Total effort about 3 hours, most of it in commits 3 and 4.

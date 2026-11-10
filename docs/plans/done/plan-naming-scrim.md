@@ -1,6 +1,6 @@
 # Plan: naming dialog must not leave the scrim up (E11)
 
-Status: not started. Source: TODO.md "To do" item 11, `docs/findings/findings.md` E11.
+Status: implemented (2026-11-10, commit `b409dbe`). Deviations: none.
 
 Depends on: nothing.
 

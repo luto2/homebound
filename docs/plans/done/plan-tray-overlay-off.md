@@ -1,7 +1,6 @@
 # Plan: "Off" in the tray's overlay mode list
 
-Status: not started. Owner task "taskbar rightclick doesnt have the overlay off option just the other 3"
-(`TODO.md`, human-added task 4).
+Status: implemented (2026-11-10, commit `82d0d14`). Deviations: TrayMenu mockups lost the "Show overlay Ctrl+Shift+O" hint with the item; `plan-overlay-shortcut.md` may want it back.
 
 Depends on: nothing. One commit: `homebound/ui/map_window.py`, its tests and the TrayMenu spec.
 
@@ -21,7 +20,7 @@ mode offer different choices.
    iterated in `MODES` order.
 2. Drop the "Show overlay" check item. With Off in the group it says the same thing twice. Keep
    `last_overlay_mode` and `_toggle_overlay`: the planned global shortcut
-   ([`plan-overlay-shortcut.md`](plan-overlay-shortcut.md)) and the tray icon's dimmed state still use
+   ([`plan-overlay-shortcut.md`](../plan-overlay-shortcut.md)) and the tray icon's dimmed state still use
    them.
 3. `_sync_tray`: check the action of the current mode, including `off`; disable "Unlock overlay" while
    the mode is off (as now).

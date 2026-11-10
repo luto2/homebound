@@ -1,6 +1,6 @@
 # Plan: a bad settings.json must not crash the start or eat the map list
 
-Status: planned (2026-11-06). Audit item 10 in `TODO.md` (E1, E2 in `docs/findings/findings.md`, which isn't committed).
+Status: implemented (2026-11-10, commit `334aa2c`). Deviations: a kept map entry's wrong `home_system` or `naming_scheme` is reset to its default (the plan's tests require it, its text said entries are never edited).
 
 Depends on: nothing. Overlaps with the corrupt-map recovery item (TODO 1), see "Overlaps".
 

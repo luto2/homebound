@@ -14,12 +14,12 @@ a small change whose file and fix are named.
 
 1. Show what zKill activity happened, not just how much. Plan: `docs/plans/plan-zkill-details.md`.
    Effort: 3/5 · Sonnet. The API already returns full killmails; the work is parsing, caching and a popup.
-2. Image for the app menu. Same as "To do" 14. Plan: `docs/plans/plan-menu-icon.md`.
+2. **Icons and cache refresh done 2026-11-10 (`e6b86d3`); cause and desktop test still open.** Image for the app menu. Same as "To do" 14. Plan: `docs/plans/plan-menu-icon.md`.
    Effort: 1/5 · Haiku for the code. Most of it is testing on Plasma by hand.
 3. Linux SSL error when building the SDE. Same as "To do" 13. Plan: `docs/plans/plan-appimage-ssl.md`.
    Effort: 2/5 · Sonnet. Small, but three HTTP stacks and the AppImage build; a slip fails silently.
-4. The tray icon's right-click menu doesn't have the overlay Off option, just the other 3. Plan:
-   `docs/plans/plan-tray-overlay-off.md`.
+4. **Done 2026-11-10 (`82d0d14`).** The tray icon's right-click menu doesn't have the overlay Off option, just the other 3. Plan:
+   `docs/plans/done/plan-tray-overlay-off.md`.
    Effort: 1/5 · Haiku. One menu built from `MODES`.
 5. Add systems without a connection, to see if a chain connects to them. Open question: monetization,
    and how to stop people mapping from those systems as well. Could be a separate feature that doesn't
@@ -41,12 +41,12 @@ a small change whose file and fix are named.
 9. Rework/add a structure list; combat-scanned structures go in there automatically. Plan:
    `docs/plans/plan-structure-list.md` (after 8).
    Effort: 4/5 · Opus for the table and sync entity, Sonnet for the list widget and timer tab.
-10. Some sig types don't like getting collapsed. Likely cause: a group with any "new" or "missing" row
+10. **Done 2026-11-10 (`3ee53e2`).** Some sig types don't like getting collapsed. Likely cause: a group with any "new" or "missing" row
     refuses to collapse, and despawned anomalies stay "missing" for good. Plan:
-    `docs/plans/plan-sig-group-collapse.md`.
+    `docs/plans/done/plan-sig-group-collapse.md`.
     Effort: 2/5 · Haiku if the repro matches the likely cause, else Sonnet (it turns into debugging).
-11. The wormhole name copy button should also copy the sig ID, and the class if one is known, as
-    "<number> <sig> <class>". Plan: `docs/plans/plan-copy-bookmark-text.md`.
+11. **Done 2026-11-10 (`915fc63`).** The wormhole name copy button should also copy the sig ID, and the class if one is known, as
+    "<number> <sig> <class>". Plan: `docs/plans/done/plan-copy-bookmark-text.md`.
     Effort: 1/5 · Haiku. `SignatureModel.bookmark_for` plus the class from `lead_class`.
 12. Option to mark a sig or WH as the return wormhole right away, and set its WH type from the other
     side and the classes. "Return" means back to the system you jumped in from, not towards home. Plan:
@@ -96,7 +96,7 @@ is. The Effort line uses the same scale and models as the human-added tasks.
    find which view is painting and what freed its selection model. Whether the app can crash the
    same way is unknown.
    Effort: 4/5 · Opus. Cause unknown; needs native-crash debugging.
-4. **[4] One badly named log file stops all tracking (E6).** `Local_20261399_000000_1.txt` makes
+4. **Done 2026-11-10 (`841647f`).** **[4] One badly named log file stops all tracking (E6).** `Local_20261399_000000_1.txt` makes
    `LogFile.from_path` raise `ValueError` from `strptime`, and `LogScanner.poll` raises with it on
    every poll. `settings_dialog.py:223` calls it too. Return None for a bad date.
    Effort: 1/5 · Haiku.
@@ -124,12 +124,12 @@ is. The Effort line uses the same scale and models as the human-added tasks.
    `map_window.py:1139-1144` already differs on systems with a character in them. Check that
    difference is intended.
    Effort: 3/5 · Sonnet.
-10. **[3] Bad `settings.json` crashes at start (E1, E2).** Non-UTF-8 raises `UnicodeDecodeError`
+10. **Done 2026-11-10 (`334aa2c`).** **[3] Bad `settings.json` crashes at start (E1, E2).** Non-UTF-8 raises `UnicodeDecodeError`
     (`settings.py:220`), and `{"maps":{"x":1}}` or an entry without `file` raises. The docstring
     promises defaults. `overlay_mode`, `unknown_jump_default` and `naming_scheme` take any string;
     add them to `SETTING_CHOICES`.
     Effort: 1/5 · Haiku.
-11. **[3] Naming dialog can leave the scrim up (E11).** `apply_naming` raises `AttributeError` if the
+11. **Done 2026-11-10 (`b409dbe`).** **[3] Naming dialog can leave the scrim up (E11).** `apply_naming` raises `AttributeError` if the
     child is gone (`tracker.py:457`), and `map_window.py:873-887` has no `try/finally`, so the scrim
     stays up and `naming_open` stays True. It needs the connection to expire during the dialog with
     no character left in the system.
@@ -151,7 +151,7 @@ is. The Effort line uses the same scale and models as the human-added tasks.
     paths in order. Plan: `docs/plans/plan-appimage-ssl.md` (httpx already uses certifi; `websockets`
     for cloud sync is affected too).
     Effort: 2/5 · Sonnet. Same as human-added task 3.
-14. **[2] No icon in the app menu after the README install (2026-11-08).** On CachyOS (Plasma),
+14. **Partly done 2026-11-10 (`e6b86d3`), see human-added task 2.** **[2] No icon in the app menu after the README install (2026-11-08).** On CachyOS (Plasma),
     Homebound appears in the menu but has no icon. The install command writes a valid 256×256
     `homebound.png` to `~/.local/share/icons/hicolor/256x256/apps/`, and the desktop entry says
     `Icon=homebound`. Other apps' icons in that folder show up, so the location seems fine. Cause not
@@ -160,7 +160,7 @@ is. The Effort line uses the same scale and models as the human-added tasks.
     `docs/plans/plan-menu-icon.md`.
     Effort: 1/5 · Haiku for the code. Same as human-added task 2.
 
-Small items:
+Small items (partly done 2026-11-10 in `3d65485`; what was skipped is in `docs/plans/plan-small-fixes.md`):
 Effort for the small items and the graphify list: 1–2/5 · Haiku, batched in one or two sessions;
 P1 and P2 filtering (3/5) · Sonnet.
 
