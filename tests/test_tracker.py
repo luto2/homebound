@@ -162,6 +162,62 @@ def test_chain_depth_position_counts_systems_at_the_same_depth() -> None:
     assert [simulation.namer.display(sibling.id) for sibling in children] == ["A2a", "A2b"]
 
 
+def test_a2a_letters_stay_when_a_sibling_goes() -> None:
+    """Path 4: A2a, A2b, A2c; remove the second: the third is still A2c, and the next one is A2d."""
+    simulation = MapSimulation("a2a")
+    c5 = pick_system("C5", exclude={HOME.id})
+    simulation.tracker.apply_naming(simulation.naming_request(simulation.jump(c5.name)), is_static=True)
+    children = []
+    for system_class in ("C1", "C2", "C4", "C6"):
+        simulation.jump(c5.name)
+        child = pick_system(system_class, exclude={HOME.id, c5.id})
+        simulation.jump(child.name)
+        children.append(child)
+        if len(children) == 3:
+            assert [simulation.namer.display(sibling.id) for sibling in children] == ["A2a", "A2b", "A2c"]
+            simulation.store.remove_system(children[1].id)
+    assert simulation.namer.display(children[2].id) == "A2c"
+    assert simulation.namer.display(children[3].id) == "A2d"
+    assert simulation.store.system(children[2].id).label == "A2c"
+
+
+def test_a_removed_connection_added_back_keeps_the_number_and_name(simulation) -> None:
+    """Path 5: detaching keeps hole number and label; linking the same systems again gives them back."""
+    paste(simulation, "AAA-111\tCosmic Signature\tWormhole\t\t100%\t1 AU\n"
+                      "BBB-222\tCosmic Signature\tWormhole\t\t100%\t1 AU\n")
+    c3 = pick_system("C3")
+    request = simulation.naming_request(simulation.jump(c3.name))
+    simulation.tracker.apply_naming(request, is_static=False, signature_id="BBB-222")
+    assert simulation.namer.display(c3.id) == "2"
+    store = simulation.store
+    store.remove_connection(store.connection(HOME.id, c3.id).id)
+    store.clear_broken_parents()
+    detached = store.system(c3.id)
+    assert (detached.parent_id, detached.hole_index, detached.label) == (None, 2, "2")
+    assert simulation.namer.display(c3.id) == "2"
+    simulation.tracker.add_wormhole(HOME.id, c3.id, manual=True)
+    attached = store.system(c3.id)
+    assert (attached.parent_id, attached.hole_index, attached.label) == (HOME.id, 2, "2")
+    assert store.connection(HOME.id, c3.id).signature_on(HOME.id) == "BBB-222"    # the sig with its number
+
+
+def test_a_removed_parent_leaves_its_children_their_numbers(simulation) -> None:
+    """Path 5 for remove_system and its undo: the children keep hole number and name."""
+    c5 = pick_system("C5", exclude={HOME.id})
+    simulation.tracker.apply_naming(simulation.naming_request(simulation.jump(c5.name)), is_static=True)
+    child = pick_system("C2")
+    simulation.jump(child.name)
+    assert simulation.namer.display(child.id) == "11"
+    store = simulation.store
+    with store.batch() as action:
+        store.remove_system(c5.id)
+    assert (store.system(child.id).parent_id, store.system(child.id).hole_index) == (None, 1)
+    assert simulation.namer.display(child.id) == "11"
+    store.remove_system(child.id)
+    store.undo(action)                       # c5 comes back; the child is gone, nothing to put back under it
+    assert store.system(c5.id).hole_index == 1 and simulation.namer.display(c5.id) == "1"
+
+
 def test_known_space_display_has_the_real_name(simulation) -> None:
     """K-space shows the scheme label and the real name."""
     jita = UNIVERSE.by_name("Jita")

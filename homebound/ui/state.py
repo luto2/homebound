@@ -8,9 +8,9 @@ from .. import backup, routing
 from ..eve_scout import EveScoutFetcher
 from ..logs.parser import SystemChange
 from ..logs.watcher import LogWatcher
-from ..mapdb.store import LEGACY_NAMES_KEY, Store, utc_now_iso
+from ..mapdb.store import LEGACY_NAMES_KEY, Action, Store, utc_now_iso
 from ..mapping.chain import Chain, resolve_chain
-from ..mapping.naming import Namer, freeze_legacy_names
+from ..mapping.naming import Namer, freeze_legacy_names, label_unnamed_systems, needs_label
 from ..mapping.scan_status import ScanStatus, scan_status
 from ..mapping.tracker import AutoNamed, MapChanged, Moved, NamingRequest, Tracker, UnknownJump
 from ..settings import Settings
@@ -69,6 +69,7 @@ class AppState(QObject):
         self.namer = Namer(self.store, universe, settings.naming_scheme, self.home_id)
         self.tracker = Tracker(self.store, universe, self.namer, settings.auto_name_when_certain)
         self._freeze_legacy_names()
+        self._watch_names()
         self.selected: int = 0
         self.followed: int | None = None  # character whose client is focused
         # other members' shared characters on the open cloud map: char id -> {"name", "system_id", "afk"}
@@ -114,6 +115,21 @@ class AppState(QObject):
             return False
         freeze_legacy_names(self.store, self.universe, self.namer.scheme_key, self.namer.home_id)
         return True
+
+    def _watch_names(self) -> None:
+        """Give systems placed without a name one as soon as the action that placed them ends."""
+        if self._name_new_systems not in self.store.listeners:
+            self.store.listeners.append(self._name_new_systems)
+
+    def _name_new_systems(self, action: Action) -> int:
+        """Store the label of systems an action placed without one (a cloud member's, a new home's chain).
+
+        Returns:
+            The number of systems labelled.
+        """
+        if not any(needs_label(change) for change in action.changes):
+            return 0
+        return label_unnamed_systems(self.namer)
 
     def store_map_settings(self) -> bool:
         """Write the active map's home and naming scheme from the settings into the map file.
@@ -206,6 +222,7 @@ class AppState(QObject):
         self.namer.scheme_key = self.settings.naming_scheme
         self.namer.home_id = self.home_id
         self._freeze_legacy_names()
+        self._watch_names()
         self.zkill.database_path = self.database_path
         self._ensure_home()
         return self.store

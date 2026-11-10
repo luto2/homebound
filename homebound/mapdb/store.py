@@ -574,7 +574,7 @@ class Store:
         table = ENTITY_TABLES[entity]
         row = dict(row)
         if entity == "system" and row.get("parent_id") and not self.has_system(row["parent_id"]):
-            row["parent_id"] = row["hole_index"] = None   # the parent is gone since: put it back unplaced
+            row["parent_id"] = None   # the parent is gone since: put it back unplaced (number and name stay)
         if entity == "connection" and not (self.has_system(key[0]) and self.has_system(key[1])):
             return
         if entity == "signature" and not self.has_system(key[0]):
@@ -680,6 +680,8 @@ class Store:
     def remove_system(self, system_id: int) -> bool:
         """Take a system off the map with its signatures and connections; its children lose their parent.
 
+        The children keep their hole number and name.
+
         The dependants are removed one by one, not by ``ON DELETE CASCADE``, so the action lists
         every one of them (sync sends a tombstone for each).
 
@@ -694,7 +696,7 @@ class Store:
             for connection in self.connections_of_system(system_id):
                 self.remove_connection(connection.id)
             for child in self.children(system_id):
-                self._update_row("system", child.id, {"parent_id": None, "hole_index": None})
+                self._update_row("system", child.id, {"parent_id": None})   # keeps its number and name
             self._touch("system", system_id)
             self.database.execute("DELETE FROM layout_override WHERE system_id=?", (system_id,))
             self.database.execute("DELETE FROM systems WHERE id=?", (system_id,))
@@ -865,6 +867,8 @@ class Store:
     def clear_broken_parents(self) -> int:
         """Detach systems whose parent link no longer has a connection (keeps the tree layout honest).
 
+        A detached system keeps its hole number and name, so it gets them back when it is linked again.
+
         Returns:
             The number of systems detached.
         """
@@ -872,7 +876,7 @@ class Store:
                   if system.parent_id and not self.connection(system.parent_id, system.id)]
         with self.batch():
             for system_id in broken:
-                self.update_system(system_id, parent_id=None, hole_index=None)
+                self.update_system(system_id, parent_id=None)
         return len(broken)
 
     # ------------------------------------------------------------ signatures

@@ -213,7 +213,7 @@ def test_clear_broken_parents(store) -> None:
     assert store.clear_broken_parents() == 0
     store.remove_connection(removed.id)
     assert store.clear_broken_parents() == 1
-    assert (store.system(c3.id).parent_id, store.system(c3.id).hole_index) == (None, None)
+    assert (store.system(c3.id).parent_id, store.system(c3.id).hole_index) == (None, 2)   # kept for when it comes back
     assert store.system(c5.id).parent_id == HOME.id
 
 
@@ -357,6 +357,19 @@ def test_next_hole_only_goes_up(store) -> None:
     store.add_system(JITA, hole_index=7)                 # no parent: no hole of anyone
     store.update_signature(HOME.id, "ABC-123", hole_index=1)   # gone: nothing written
     assert store.system(HOME.id).next_hole == 5
+
+
+def test_undoing_a_removal_whose_parent_is_gone_keeps_the_number(store) -> None:
+    """The system comes back unplaced, but with its hole number and label for when it is linked again."""
+    c5 = pick_system("C5", exclude=(HOME.id,))
+    store.add_system(c5.id, parent_id=HOME.id, hole_index=1)
+    store.add_system(JITA, parent_id=c5.id, hole_index=3, label="13")
+    with store.batch() as removal:
+        store.remove_system(JITA)
+    store.remove_system(c5.id)
+    store.undo(removal)
+    back = store.system(JITA)
+    assert (back.parent_id, back.hole_index, back.label) == (None, 3, "13")
 
 
 def test_map_stats(tmp_path, store) -> None:

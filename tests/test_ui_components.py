@@ -17,7 +17,7 @@ from homebound.theme import painting
 from homebound.theme.tokens import OPACITY
 from homebound.logs.parser import SystemChange
 from homebound.logs.watcher import CharacterState
-from homebound.mapdb.store import ZkillStats, utc_now_iso
+from homebound.mapdb.store import Action, ZkillStats, utc_now_iso
 from homebound.mapping.tracker import AutoNamed, MapChanged, Moved, NamingRequest, UnknownJump
 from homebound.ui import menus
 from homebound.ui.character_dock import CharacterDock, CharacterDelegate
@@ -259,12 +259,24 @@ def test_apply_settings(state, tmp_path) -> None:
     changed, mapped = spy(state.settingsChanged), spy(state.mapChanged)
     state.apply_settings()
     assert state.namer.scheme_key == "a2a" and state.tracker.auto_when_certain is True
-    assert state.namer.display(child.id) == "A1a"
+    assert state.namer.display(child.id) == "1"     # names never change on their own: renaming is asked for
     assert state.zkill.enabled is True and str(state.watcher.scanner.log_directory) == str(new_logs)
     assert len(changed) == 1 and len(mapped) == 1
     scanner = state.watcher.scanner
     state.apply_settings()
     assert state.watcher.scanner is scanner  # same folder: kept
+
+
+def test_a_system_placed_from_elsewhere_gets_a_name_once(state) -> None:
+    """A placement the tracker didn't make (a cloud member's, labels don't sync yet) is named when it lands, then kept."""
+    first, second = pick_system("C2"), pick_system("C4")
+    with state.store.batch(origin="remote"):
+        state.store.add_system(first.id, parent_id=HOME.id, hole_index=3)
+        state.store.add_system(second.id, parent_id=first.id, hole_index=1)
+    assert (state.store.system(first.id).label, state.store.system(second.id).label) == ("3", "31")
+    state.store.update_system(first.id, hole_index=4)       # a later move from elsewhere doesn't rename it
+    assert state.namer.display(first.id) == "3"
+    assert state._name_new_systems(Action()) == 0
 
 
 def test_character_rows_merge_database_and_logs(state, tmp_path) -> None:

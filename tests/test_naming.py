@@ -6,7 +6,7 @@ import pytest
 from conftest import HOME, UNIVERSE, MapSimulation, pick_system
 from homebound.mapdb.store import Signature, Store
 from homebound.mapping.naming import (SCHEMES, ChainDepthPositionScheme, Namer, Scheme, chain_letter,
-                                      freeze_legacy_names, guess_static,
+                                      freeze_legacy_names, guess_static, label_unnamed_systems, number_for_letters,
                                       hole_digit, hole_path, is_static_signature, letters_for_number, level_positions,
                                       next_level_index, scheme_for_key, signature_destination,
                                       static_slot_count, static_slot_for_class, take_hole_number)
@@ -107,6 +107,40 @@ def test_chain_letters_go_in_found_order() -> None:
     assert [namer.display(child.id) for child in children] == ["A1a", "B1a", "Z1a"]
     assert [chain_letter(hole) for hole in range(1, 5)] == ["A", "B", "Z", "Y"]
     assert "static" not in SCHEMES["numeric"].description and "A = static" not in SCHEMES["a2a"].description
+
+
+def test_level_positions_are_never_given_twice() -> None:
+    """A stored a2a label holds its position: with A2a and A2c left, the next one at that depth is A2d."""
+    store = Store(":memory:")
+    store.add_system(1)
+    store.add_system(2, parent_id=1, hole_index=1)
+    store.add_system(3, parent_id=2, hole_index=1, label="A2a")
+    store.add_system(4, parent_id=2, hole_index=3, label="A2c")
+    store.add_system(5, parent_id=2, hole_index=4)
+    assert next_level_index(store, 1, [1, 9]) == 3
+    assert next_level_index(store, 1, [1, 4], exclude=5) == 3
+    assert Namer(store, UNIVERSE, "a2a").attach_label(5) == "A2d" and Namer(store, UNIVERSE).attach_label(1) is None
+    assert number_for_letters("a") == 1 and number_for_letters("aa") == 27
+    with pytest.raises(ValueError):
+        number_for_letters("a1")
+    assert SCHEMES["a2a"].place("~A2c") == "~A2" and SCHEMES["a2a"].place("Jita") == "Jita"
+    assert SCHEMES["numeric"].place("12a") == "12a"
+
+
+def test_label_unnamed_systems_names_parents_first() -> None:
+    """Placed systems without a label get one in depth order; roots and named ones are left alone."""
+    store = Store(":memory:")
+    store.add_system(HOME.id)
+    children = [system.id for system in UNIVERSE.all_systems() if system.system_class == "C2"][:3]
+    store.add_system(children[1], parent_id=HOME.id, hole_index=2, added_at="2")
+    store.add_system(children[0], parent_id=children[1], hole_index=1, added_at="1")
+    store.add_system(children[2], parent_id=HOME.id, hole_index=5, label="Kept", added_at="3")
+    namer = Namer(store, UNIVERSE, "a2a", HOME.id)
+    assert label_unnamed_systems(namer) == 2
+    assert [store.system(system_id).label for system_id in children] == ["B2a", "B1a", "Kept"]
+    assert store.system(HOME.id).label is None and label_unnamed_systems(namer) == 0
+    with pytest.raises(TypeError):
+        label_unnamed_systems(store)
 
 
 def test_letters_for_number() -> None:

@@ -13,9 +13,10 @@ always wins.
 Bookmark labels: the hole with number h in system S is "S-h"; the hole leading back towards
 home is "S-0".
 """
+import re
 from dataclasses import dataclass
 
-from ..mapdb.store import LEGACY_NAMES_KEY, MapSystem, Signature, Store
+from ..mapdb.store import LEGACY_NAMES_KEY, Change, MapSystem, Signature, Store
 from ..universe.db import Universe
 from ..validation import require_integer, require_type
 
@@ -29,6 +30,8 @@ HOME_NAME = "Home"
 # T (Pochven), X (sounds like "Eggs").
 STATIC_LETTERS = "AB"
 ROOT_LETTERS = "ZYWUSRQOMKIED"
+# A stored chain·depth·position label (``A2c``, ``~Z1b``): its trailing letters are the position.
+POSITION_LABEL = re.compile(r"^~?[A-Z?]+\d+([a-z]+)$")
 
 
 def hole_digit(hole_index: int) -> str:
@@ -75,6 +78,17 @@ def chain_letter(hole_index: int, statics: int = len(STATIC_LETTERS)) -> str:
     return ROOT_LETTERS[position % len(ROOT_LETTERS)] * (position // len(ROOT_LETTERS) + 1)
 
 
+def number_for_letters(letters: str) -> int:
+    """Return the number of spreadsheet-style letters, the inverse of :func:`letters_for_number`: a → 1, aa → 27."""
+    require_type(letters, str, "letters")
+    number = 0
+    for letter in letters.upper():
+        if not "A" <= letter <= "Z":
+            raise ValueError(f"not a letter: {letter!r}")
+        number = number * 26 + ord(letter) - ord("A") + 1
+    return number
+
+
 def letters_for_number(number: int, upper: bool = True) -> str:
     """Return spreadsheet-style letters for a number: 1 → A, 26 → Z, 27 → AA.
 
@@ -114,6 +128,15 @@ class Scheme:
         """
         raise NotImplementedError
 
+    def place(self, label: str) -> str:
+        """Return the part of a label that says where the system is, without what only orders it at its depth.
+
+        Two labels with the same place name the same spot in the chain; re-attaching a system
+        there keeps its old label. Only :class:`ChainDepthPositionScheme` has more than its place.
+        """
+        require_type(label, str, "label")
+        return label
+
     @staticmethod
     def _check(path: list[int], level_index: int | None, statics: int) -> None:
         """Validate the arguments of :meth:`name`.
@@ -147,6 +170,12 @@ class ChainDepthPositionScheme(Scheme):
         """Return chain letter + depth + position letter."""
         self._check(path, level_index, statics)
         return f"{chain_letter(path[0], statics)}{len(path)}{letters_for_number((level_index or 0) + 1, upper=False)}"
+
+    def place(self, label: str) -> str:
+        """Return the label without its position letters: ``A2c`` → ``A2``."""
+        require_type(label, str, "label")
+        match = POSITION_LABEL.match(label)
+        return label[:match.start(1)] if match else label
 
 
 class LetterNumericScheme(Scheme):
@@ -316,18 +345,24 @@ def number_signature(store: Store, system_id: int, signature_id: str) -> int | N
     return number
 
 
-def next_level_index(store: Store, root_id: int, path_prefix: list[int]) -> int:
-    """Count the systems already at this depth in this chain (same root, same first hop).
+def next_level_index(store: Store, root_id: int, path_prefix: list[int], exclude: int | None = None) -> int:
+    """Return the position a new system takes at its depth in this chain (same root, same first hop).
+
+    That is one past the systems already there, and past the highest position a stored
+    chain·depth·position label there holds: a position is never given twice, so after A2b goes the
+    next one is A2d, not a second A2c.
 
     Args:
         store: The map.
         root_id: The chain root.
         path_prefix: The hole path of the new system.
+        exclude: The new system itself, if it is placed already.
 
     Returns:
-        The 0-based position the new system takes at its depth.
+        The 0-based position.
     """
     require_type(path_prefix, list, "path_prefix")
+    require_integer(exclude, "exclude", optional=True)
     if not path_prefix:
         return 0
     # Walk down from the root instead of walking up from every system: only the subtree behind
@@ -342,7 +377,10 @@ def next_level_index(store: Store, root_id: int, path_prefix: list[int]) -> int:
                     seen.add(child.id)
                     next_level.append(child)
         level = next_level
-    return len(level)
+    members = [system for system in level if system.id != exclude]
+    held = [number_for_letters(match.group(1)) for system in members
+            if system.label and (match := POSITION_LABEL.match(system.label))]
+    return max([len(members), *held])
 
 
 def level_positions(store: Store) -> dict[int, int]:
@@ -477,6 +515,21 @@ class Namer:
         label = self.scheme.name(path, level_index)
         return label if root == self.home_id or self.home_id is None else "~" + label
 
+    def attach_label(self, system_id: int) -> str | None:
+        """Return the label a system gets now that it is attached where it is, to be stored.
+
+        The position at its depth (``a2a``) is the next one there, so it is computed once here and
+        then kept in the label.
+
+        Returns:
+            The label, or None for a system without a parent.
+        """
+        root, path = hole_path(self.store, system_id)
+        if not path:
+            return None
+        label = self.scheme.name(path, next_level_index(self.store, root, path, exclude=system_id))
+        return label if root == self.home_id or self.home_id is None else "~" + label
+
     def bookmark(self, system_id: int, hole_index: int) -> str:
         """Return the bookmark label of a hole: ``<label>-<hole index>``."""
         require_integer(hole_index, "hole_index", minimum=0)
@@ -485,6 +538,37 @@ class Namer:
     def bookmark_home(self, system_id: int) -> str:
         """Return the bookmark label of the hole leading back home: ``<label>-0``."""
         return f"{self.label(system_id)}-0"
+
+
+def needs_label(change: Change) -> bool:
+    """Return whether a store change left a placed system without a stored label."""
+    require_type(change, Change, "change")
+    after = change.after or {}
+    return change.entity == "system" and after.get("parent_id") is not None and not after.get("label")
+
+
+def label_unnamed_systems(namer: "Namer") -> int:
+    """Store a label for every placed system that has none, as if it had just been attached.
+
+    The tracker names what it attaches itself; this catches systems placed some other way: by
+    another member of a cloud map (labels don't sync yet), or hung under a new home by "Make home".
+    Parents go before their children and older systems before newer ones, so ``a2a`` positions
+    count on in the order the systems came. One batch.
+
+    Args:
+        namer: The namer of the map, with its scheme and home.
+
+    Returns:
+        The number of systems labelled.
+    """
+    require_type(namer, Namer, "namer")
+    store = namer.store
+    unnamed = [system for system in store.systems() if system.parent_id is not None and not system.label]
+    unnamed.sort(key=lambda system: (len(hole_path(store, system.id)[1]), system.added_at or "", system.id))
+    with store.batch():
+        for system in unnamed:
+            store.update_system(system.id, label=namer.attach_label(system.id))
+    return len(unnamed)
 
 
 # ---------------------------------------------------------------- maps from before stored names

@@ -280,7 +280,7 @@ class LocalReplica:
             store._touch(entity, key)
             if entity == "system":
                 for child in store.children(key):
-                    store._update_row("system", child.id, {"parent_id": None, "hole_index": None})
+                    store._update_row("system", child.id, {"parent_id": None})   # keeps its number (Store.remove_system)
                 self.database.execute("DELETE FROM signatures WHERE system_id=?", (key,))
                 self.database.execute("DELETE FROM connections WHERE system_a=? OR system_b=?", (key, key))
                 self.database.execute("DELETE FROM layout_override WHERE system_id=?", (key,))

@@ -20,7 +20,7 @@ from ..mapdb.store import LIFETIME_REMAINING, Connection, Store
 from ..universe.db import Universe
 from ..validation import require_integer, require_text, require_type
 from .naming import (Namer, StaticGuess, guess_static, hole_path, number_signature, static_slot_count,
-                     take_hole_number)
+                     take_hole_number, used_hole_indices)
 
 GRID = 62 / 3                          # map grid cell = 1/3 of the node height (token size-node-h)
 CHILD_OFFSET_X, CHILD_OFFSET_Y = 12 * GRID, 5 * GRID  # offset of a new child from its parent, in whole grid cells
@@ -315,7 +315,9 @@ class Tracker:
         """Make the child a child of the parent, through its sig if there is only one; ask if unsure.
 
         The child takes the number of that sig (its bookmark), else the parent's next number, and
-        the static flag of the guess.
+        the static flag of the guess; its name is stored with it. A system that was detached (its
+        connection went) and comes back keeps its number: through the sig that has it, or without
+        a sig while no other hole there has it. It keeps its name too when that names the same place.
 
         Returns:
             A :class:`NamingRequest` or :class:`AutoNamed` event, or nothing if there is nothing to ask.
@@ -325,12 +327,25 @@ class Tracker:
         connection = self.store.connection(parent_id, child_id)
         child_class = self.universe.by_id(child_id).system_class
         guess = guess_static(self.store, self.universe, parent_id, child_id)
-        previous = {"parent_id": child.parent_id, "hole_index": child.hole_index, "static": child.static}
+        previous = {"parent_id": child.parent_id, "hole_index": child.hole_index, "static": child.static,
+                    "label": child.label}
         candidates = self.unlinked_wormhole_signatures(parent_id, child_class)
-        taken = candidates[0] if len(candidates) == 1 else None
-        hole = (self._signature_number(parent_id, taken) if taken else None) or take_hole_number(self.store, parent_id)
+        own = child.hole_index if child.parent_id is None else None   # kept from where it was before
+        same_number = [signature_id for signature_id in candidates if own
+                       and (signature := self.store.signature(parent_id, signature_id)) and signature.hole_index == own]
+        taken = same_number[0] if same_number else (candidates[0] if len(candidates) == 1 else None)
+        if taken:
+            hole = self._signature_number(parent_id, taken) or take_hole_number(self.store, parent_id)
+        elif own and own not in used_hole_indices(self.store, parent_id):
+            hole = own
+        else:
+            hole = take_hole_number(self.store, parent_id)
         self.store.update_system(child_id, parent_id=parent_id, hole_index=hole,
                                  static=int(guess.applies and guess.guess))
+        label = self.namer.attach_label(child_id)
+        scheme = self.namer.scheme
+        if not (child.label and own == hole and scheme.place(child.label) == scheme.place(label)):
+            self.store.update_system(child_id, label=label)
         if taken:
             self.link_signature(connection.id, parent_id, taken)
             candidates = []
@@ -496,6 +511,8 @@ class Tracker:
             if self.store.connection_by_id(request.connection_id):
                 self.link_signature(request.connection_id, parent_id, signature_id)
         self.store.update_system(child_id, **changes)
+        if "hole_index" in changes:   # behind another hole now: the name that hole gives
+            self.store.update_system(child_id, label=self.namer.attach_label(child_id))
         return self.store.system(child_id).hole_index
 
     @_one_action
