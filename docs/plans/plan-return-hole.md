@@ -3,7 +3,7 @@
 Status: not started. Owner task 12 in `TODO.md` (human-added): "option to instantly mark a sig or WH as
 return wormhole and set the WH type for that WH with regard to the other side and the classes".
 
-Depends on: nothing. Ties into [`plan-stable-hole-names.md`](plan-stable-hole-names.md) (task 14): marking
+Depends on: nothing. Ties into [`plan-stable-hole-names.md`](done/plan-stable-hole-names.md) (task 14): marking
 a sig as the return hole is an explicit user action, so it may change that sig's bookmark number (see
 below), and that plan's rule 1 should list it. Touches `mapping/tracker.py`, `ui/signature_table.py`,
 `ui/system_panel.py` and their tests.

@@ -56,12 +56,12 @@ a small change whose file and fix are named.
     two nodes, but a drag then stores only the grabbed one. Plan: `docs/plans/done/plan-multi-select-move.md`.
     Effort: 2/5 · Sonnet. Qt already moves selected items together; add rubber-band selection and save all
     positions in one Store batch (one undo step, one set of sync ops).
-14. Names must never change once given, but a user reported one that did. Neither a system nor a WH sig
+14. **Done 2026-11-10 (`8495554`); the new name fields don't sync yet (needs a protocol version gate).** Names must never change once given, but a user reported one that did. Neither a system nor a WH sig
     may get a new name once it has one. No slot is reserved for the static: a hole keeps the number it
     got when pasted, even if it later turns out to be the static. Found while planning: six ways names
     change today (preview-only sig numbers, the link overwriting the sig's number, the static slot,
     derived `a2a` letters, numbers lost on detach, reused numbers).
-    Plan: `docs/plans/plan-stable-hole-names.md` (before 5.1).
+    Plan: `docs/plans/done/plan-stable-hole-names.md` (before 5.1).
     Effort: 4/5 · Opus. New synced fields (`label`, `static`, `next_hole`), a migration that keeps
     today's names, and paste-time numbering that two cloud clients must agree on.
 

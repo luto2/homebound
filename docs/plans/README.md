@@ -22,7 +22,6 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [plan-combat-scan.md](plan-combat-scan.md) | 8. Combat-scanned ships (and the paste bug behind it) | not started |
 | [plan-structure-list.md](plan-structure-list.md) | 9. Structure list, fed by combat scans | not started, after 8 |
 | [plan-return-hole.md](plan-return-hole.md) | 12. Mark a sig as the return hole, with its type | not started |
-| [plan-stable-hole-names.md](plan-stable-hole-names.md) | 14. Names never change (and a reported rename) | not started, before 5.1 |
 | [plan-overlay-shortcut.md](plan-overlay-shortcut.md) | Global shortcut to cycle the overlay mode | not started |
 | [plan-code-signing.md](plan-code-signing.md) | Windows code signing | not started |
 
@@ -71,4 +70,5 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [done/plan-damaged-backup-restore.md](done/plan-damaged-backup-restore.md) | 2026-11-10 | decision 2 (`list_backups` catch) and 3 (a "damaged" marker in the list) |
 | [done/plan-corrupt-map-lockout.md](done/plan-corrupt-map-lockout.md) | 2026-11-10 | the wording of the new warnings; decisions 2, 4, 5 as proposed |
 | [done/plan-test-segfault.md](done/plan-test-segfault.md) | 2026-11-10 | — (test-only; the app can't hit it) |
+| [done/plan-stable-hole-names.md](done/plan-stable-hole-names.md) | 2026-11-10 | syncing `label`/`static`/`next_hole` (needs a protocol version gate) |
 

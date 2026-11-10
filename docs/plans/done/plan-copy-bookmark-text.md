@@ -2,7 +2,7 @@
 
 Status: implemented (2026-11-10, commit `915fc63`). Deviations: Thera is written `TH` (the app's class label), not `Thera`; `<sig>` is the three letters.
 
-Depends on: nothing. Works with [`plan-stable-hole-names.md`](../plan-stable-hole-names.md) (task 14) in
+Depends on: nothing. Works with [`plan-stable-hole-names.md`](plan-stable-hole-names.md) (task 14) in
 either order. One commit: `ui/signature_table.py` and its tests.
 
 ## What there is now
