@@ -1,16 +1,19 @@
 """zKill summaries, the cache check and the fetcher, with a fake HTTP transport."""
+import json
 import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import httpx
 import pytest
 
 from conftest import HOME
 from homebound import zkill
-from homebound.mapdb.store import Store, ZkillStats, utc_now_iso
+from homebound.mapdb.store import KillSummary, Store, ZkillStats, utc_now_iso
 
 NOW = datetime(2026, 10, 30, 12, tzinfo=timezone.utc)
+SAMPLE = json.loads((Path(__file__).parent / "data" / "zkill_sample.json").read_text())
 
 
 def killmail(minutes_ago: int, ship_type_id: int = 587) -> dict:
@@ -256,3 +259,65 @@ def test_request_does_not_restart_a_stopped_or_unstarted_worker(fetcher) -> None
     fetcher.stop()
     fetcher.request([30000142])
     assert fetcher.thread is thread            # stopping on purpose
+
+
+def test_summarize_leaves_npc_kills_out_of_the_counts_by_default() -> None:
+    """On the recorded sample, a rat kill is not counted unless count_npc is set; pods and the last kill follow."""
+    stats = zkill.summarize(HOME.id, SAMPLE, now=NOW)
+    assert (stats.kills_1h, stats.kills_24h, stats.pod_kills_1h) == (2, 3, 1)
+    assert stats.last_kill_at == "2026-10-30T11:58:30+00:00"
+    counted = zkill.summarize(HOME.id, SAMPLE, now=NOW, count_npc=True)
+    assert (counted.kills_1h, counted.kills_24h) == (3, 4)
+    npc_only = zkill.summarize(HOME.id, [SAMPLE[1]], now=NOW)
+    assert (npc_only.kills_24h, npc_only.last_kill_at) == (0, None)
+
+
+def test_summarize_kills_lists_every_kill_newest_first() -> None:
+    """The recorded sample gives one row per killmail with ships, attacker count, value and flags."""
+    rows = zkill.summarize_kills(HOME.id, SAMPLE)
+    assert [row.killmail_id for row in rows] == [1003, 1002, 1001, 1004]
+    assert rows[2] == KillSummary(HOME.id, 1001, "2026-10-30T11:48:00+00:00", 29984, 4, 11978, 1234567890.5, 0, 0)
+    assert (rows[1].top_attacker_ship_id, rows[1].attacker_count, rows[1].npc, rows[1].solo) == (None, 1, 1, 0)
+    assert (rows[0].victim_ship_id, rows[0].solo, rows[0].value) == (670, 1, 10000.0)
+
+
+def test_summarize_kills_skips_malformed_entries() -> None:
+    """Bad times, ids, victims, attackers and zkb blocks never raise; what can't be read is left out or defaulted."""
+    good = dict(SAMPLE[0])
+    kills = [
+        "text", {}, {"killmail_time": "bad", "killmail_id": 5},
+        {"killmail_time": good["killmail_time"]},                          # no killmail_id
+        {**good, "killmail_id": True},                                      # a bool is not an id
+        {**good, "killmail_id": 7, "victim": [1], "attackers": "x", "zkb": [1]},
+        {**good, "killmail_id": 8, "attackers": [1, {"ship_type_id": [3]}, {"ship_type_id": 5}],
+         "zkb": {"totalValue": "lots", "npc": "yes"}},
+        {**good, "killmail_id": 8},                                         # duplicate id
+        {**good, "killmail_id": 9, "victim": {"ship_type_id": [1]}},
+    ]
+    rows = {row.killmail_id: row for row in zkill.summarize_kills(HOME.id, kills)}
+    assert sorted(rows) == [7, 8, 9]
+    assert (rows[7].victim_ship_id, rows[7].attacker_count, rows[7].top_attacker_ship_id, rows[7].value,
+            rows[7].npc) == (None, 0, None, 0.0, 0)
+    assert (rows[8].attacker_count, rows[8].top_attacker_ship_id, rows[8].value, rows[8].npc) == (2, 5, 0.0, 0)
+    assert rows[9].victim_ship_id is None
+    with pytest.raises(TypeError):
+        zkill.summarize_kills(HOME.id, {"kills": []})
+
+
+def test_summarize_kills_keeps_the_newest_few() -> None:
+    """A busy system keeps at most MAX_KILLS_KEPT rows, the newest ones."""
+    kills = [{**killmail(minute), "killmail_id": minute + 1} for minute in range(zkill.MAX_KILLS_KEPT + 5)]
+    rows = zkill.summarize_kills(HOME.id, kills)
+    assert len(rows) == zkill.MAX_KILLS_KEPT and rows[0].killmail_id == 1
+
+
+def test_fetch_stores_the_kill_rows_too(fetcher, tmp_path) -> None:
+    """A good response stores the stats and the kill rows; count_npc follows the fetcher's setting."""
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, json=SAMPLE)))
+    store = Store(tmp_path / "map.db")
+    assert fetcher._fetch(client, store, HOME.id) is True
+    assert [row.killmail_id for row in store.zkill_kills(HOME.id)] == [1003, 1002, 1001, 1004]
+    assert store.zkill_stats(HOME.id).kills_24h == 3
+    fetcher.count_npc = True
+    assert fetcher._fetch(client, store, HOME.id) is True
+    assert store.zkill_stats(HOME.id).kills_24h == 4

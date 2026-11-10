@@ -67,6 +67,7 @@ class Settings:
     overlay_positions: dict = field(default_factory=dict)        # mode -> [x, y]
     known_space_radius: int = 5
     zkill_enabled: bool = True
+    zkill_count_npc: bool = False         # NPC kills (rats killing a ratter) count toward the zKill meter
     rescan_due_hours: int = 24            # a system's last paste this old is due for a rescan
     unknown_jump_default: str = "ignore"  # "add" | "ignore"
     focus_on_wormhole_jump: bool = True   # centre the map on the system a character just jumped into by wormhole

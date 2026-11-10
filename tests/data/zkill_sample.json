@@ -1,0 +1,22 @@
+[
+ {"killmail_id": 1001, "killmail_time": "2026-10-30T11:48:00Z", "solar_system_id": 31000001,
+  "victim": {"ship_type_id": 29984, "character_id": 9001, "corporation_id": 98000002, "alliance_id": 99000002, "damage_taken": 5000},
+  "attackers": [
+   {"ship_type_id": 11978, "character_id": 1, "corporation_id": 98000001, "alliance_id": 99000001, "final_blow": true, "damage_done": 100},
+   {"ship_type_id": 11978, "character_id": 2, "corporation_id": 98000001, "alliance_id": 99000001, "final_blow": false, "damage_done": 100},
+   {"ship_type_id": 29984, "character_id": 3, "corporation_id": 98000001, "alliance_id": 99000001, "final_blow": false, "damage_done": 100},
+   {"ship_type_id": 11978, "character_id": 4, "corporation_id": 98000001, "alliance_id": 99000001, "final_blow": false, "damage_done": 100}],
+  "zkb": {"locationID": 40000001, "hash": "abc", "totalValue": 1234567890.5, "npc": false, "solo": false, "awox": false, "labels": ["pvp"]}},
+ {"killmail_id": 1002, "killmail_time": "2026-10-30T11:55:00Z", "solar_system_id": 31000001,
+  "victim": {"ship_type_id": 587, "character_id": 9002, "corporation_id": 98000002},
+  "attackers": [{"ship_type_id": 0, "faction_id": 500021, "final_blow": true, "damage_done": 50}],
+  "zkb": {"totalValue": 15000000, "npc": true, "solo": false, "awox": false}},
+ {"killmail_id": 1003, "killmail_time": "2026-10-30T11:58:30Z", "solar_system_id": 31000001,
+  "victim": {"ship_type_id": 670, "character_id": 9003, "corporation_id": 98000002},
+  "attackers": [{"ship_type_id": 587, "character_id": 5, "corporation_id": 98000001, "final_blow": true, "damage_done": 10}],
+  "zkb": {"totalValue": 10000.0, "npc": false, "solo": true, "awox": false}},
+ {"killmail_id": 1004, "killmail_time": "2026-10-29T13:00:00Z", "solar_system_id": 31000001,
+  "victim": {"ship_type_id": 587},
+  "attackers": [{"ship_type_id": 587, "final_blow": true}, {"ship_type_id": 587}],
+  "zkb": {"totalValue": 20000000, "npc": false, "solo": false}}
+]

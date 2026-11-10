@@ -71,6 +71,14 @@ CREATE TABLE IF NOT EXISTS zkill (
     fetched_at TEXT NOT NULL
 );
 
+-- the killmails of the last 24 h per system (local only, replaced on each zKill fetch)
+CREATE TABLE IF NOT EXISTS zkill_kills (
+    system_id INTEGER NOT NULL, killmail_id INTEGER NOT NULL, killed_at TEXT NOT NULL,
+    victim_ship_id INTEGER, attacker_count INTEGER NOT NULL, top_attacker_ship_id INTEGER,
+    value REAL NOT NULL, npc INTEGER NOT NULL, solo INTEGER NOT NULL,
+    PRIMARY KEY (system_id, killmail_id)
+);
+
 -- settings of the map itself; they sync on a cloud map (home system, naming scheme)
 CREATE TABLE IF NOT EXISTS map_settings (key TEXT PRIMARY KEY, value TEXT);
 
