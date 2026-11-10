@@ -1,4 +1,6 @@
 """zKill summaries, the cache check and the fetcher, with a fake HTTP transport."""
+import sqlite3
+import threading
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -148,3 +150,109 @@ def test_age_and_had_recent_kill() -> None:
     assert zkill.had_recent_kill(stats, now)
     assert not zkill.had_recent_kill(stats, now + timedelta(minutes=8))
     assert not zkill.had_recent_kill(None, now)
+
+
+@pytest.mark.parametrize("victim", [[1], "x", {"ship_type_id": [1]}])
+def test_summarize_ignores_a_victim_that_is_not_a_dict(victim) -> None:
+    """A malformed victim still counts the kill, only the pod check is skipped."""
+    kill = {"killmail_time": killmail(5)["killmail_time"], "victim": victim}
+    stats = zkill.summarize(HOME.id, [kill], now=NOW)
+    assert (stats.kills_1h, stats.kills_24h, stats.pod_kills_1h) == (1, 1, 0)
+
+
+def test_fetch_reports_a_database_error(fetcher) -> None:
+    """A database error while storing is reported as a warning, not raised."""
+    class BrokenStore:
+        """A store whose write fails."""
+
+        def set_zkill_stats(self, stats) -> None:
+            """Fail like a locked database."""
+            raise sqlite3.OperationalError("database is locked")
+
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, json=[killmail(1)])))
+    assert fetcher._fetch(client, BrokenStore(), HOME.id) is False
+    assert fetcher.statuses[-1] == ("warn", "zKill: OperationalError")
+
+
+def test_worker_survives_an_unexpected_error(fetcher, monkeypatch) -> None:
+    """An unexpected error on one system is reported and the next system is still fetched."""
+    monkeypatch.setattr(zkill, "REQUEST_INTERVAL", 0)
+    fetched = []
+
+    def fake_fetch(self, client, store, system_id, force: bool = False) -> bool:
+        """Crash on the first system."""
+        if not fetched:
+            fetched.append(system_id)
+            raise RuntimeError("boom")
+        fetched.append(system_id)
+        return True
+
+    monkeypatch.setattr(zkill.ZkillFetcher, "_fetch", fake_fetch)
+    fetcher.queue.put((HOME.id, True))
+    fetcher.queue.put((30000142, True))
+    fetcher.queue.put(None)
+    fetcher._run()
+    assert fetched == [HOME.id, 30000142]
+    assert ("err", "zKill: RuntimeError") in fetcher.statuses
+
+
+def test_worker_closes_client_and_store_when_it_crashes(fetcher, monkeypatch) -> None:
+    """A crash outside the per-item guard still closes the client and the store."""
+    closed = []
+
+    class Closable:
+        """Records close()."""
+
+        def __init__(self, name) -> None:
+            self.name = name
+
+        def close(self) -> None:
+            """Record the close."""
+            closed.append(self.name)
+
+    monkeypatch.setattr(zkill, "make_client", lambda: Closable("client"))
+    monkeypatch.setattr(zkill, "Store", lambda path: Closable("store"))
+    fetcher.queue.put("not a tuple")
+    with pytest.raises(ValueError):
+        fetcher._run()
+    assert sorted(closed) == ["client", "store"]
+
+
+def test_worker_waits_between_failing_items(fetcher, monkeypatch) -> None:
+    """Failing items are still spaced REQUEST_INTERVAL apart, so a broken database isn't hammered."""
+    sleeps = []
+    monkeypatch.setattr(zkill.time, "sleep", sleeps.append)
+
+    def fail(self, client, store, system_id, force: bool = False) -> bool:
+        """Always crash."""
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(zkill.ZkillFetcher, "_fetch", fail)
+    for system_id in (1, 2, 3):
+        fetcher.queue.put((system_id, True))
+    fetcher.queue.put(None)
+    fetcher._run()
+    assert sleeps == [zkill.REQUEST_INTERVAL] * 3
+
+
+def test_request_restarts_a_dead_worker(fetcher, monkeypatch) -> None:
+    """A worker thread that died is replaced on the next request and the failure is reported."""
+    monkeypatch.setattr(zkill.ZkillFetcher, "_run", lambda self: None)   # for the replacement thread
+    fetcher.thread = threading.Thread(target=lambda: None)               # ends at once, unasked
+    fetcher.start()
+    fetcher.thread.join()                      # the thread ended without being stopped
+    dead = fetcher.thread
+    assert fetcher.request([HOME.id]) == 1
+    assert fetcher.thread is not dead
+    fetcher.thread.join()
+    assert ("err", "zKill worker restarted") in fetcher.statuses
+
+
+def test_request_does_not_restart_a_stopped_or_unstarted_worker(fetcher) -> None:
+    """Only a started worker that died unasked is restarted."""
+    thread = fetcher.thread
+    fetcher.request([HOME.id])
+    assert fetcher.thread is thread            # never started
+    fetcher.stop()
+    fetcher.request([30000142])
+    assert fetcher.thread is thread            # stopping on purpose

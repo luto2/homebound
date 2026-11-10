@@ -5,6 +5,7 @@ with killmail_time, which gives kills 1h / 24h, pod kills 1h and last kill age.
 Max one request per REQUEST_INTERVAL seconds, cached in the map DB for CACHE_LIFETIME.
 """
 import queue
+import sqlite3
 import threading
 import time
 from collections.abc import Callable, Iterable
@@ -29,7 +30,8 @@ _STOP = None                  # queue item that ends the worker
 def summarize(system_id: int, kills: list[dict], now: datetime | None = None) -> ZkillStats:
     """Turn a zKill killmail list into activity numbers.
 
-    Killmails without a readable ``killmail_time`` are skipped.
+    Killmails without a readable ``killmail_time`` are skipped; a ``victim`` that is not a dict
+    only skips the pod check.
 
     Args:
         system_id: The system the kills are in.
@@ -50,8 +52,10 @@ def summarize(system_id: int, kills: list[dict], now: datetime | None = None) ->
         if killed_at is None:
             continue
         times.append(killed_at)
-        victim = kill.get("victim") or {}
-        if now - killed_at <= timedelta(hours=1) and victim.get("ship_type_id") in POD_TYPE_IDS:
+        victim = kill.get("victim")
+        ship_type_id = victim.get("ship_type_id") if isinstance(victim, dict) else None
+        if (now - killed_at <= timedelta(hours=1) and isinstance(ship_type_id, int)
+                and ship_type_id in POD_TYPE_IDS):
             pod_kills_1h += 1
     kills_1h = sum(1 for killed_at in times if now - killed_at <= timedelta(hours=1))
     last = max(times).isoformat() if times else None
@@ -128,6 +132,7 @@ class ZkillFetcher(BackgroundFetcher):
             require_integer(system_id, "system_ids item", minimum=1)
         if not self.enabled:
             return 0
+        self._restart_if_dead()
         queued = 0
         for system_id in system_ids:
             with self._pending_lock:
@@ -143,30 +148,50 @@ class ZkillFetcher(BackgroundFetcher):
             queued += 1
         return queued
 
+    def _restart_if_dead(self) -> None:
+        """Replace the worker thread if it died without being stopped, and say so on the status line."""
+        if self._stopping or self.thread.ident is None or self.thread.is_alive():
+            return
+        self.thread = threading.Thread(target=self._run, name="zkill", daemon=True)
+        self.thread.start()
+        self._status("err", "zKill worker restarted")
+
     def _run(self) -> None:
-        """Worker loop: one request per queued system, at most one per REQUEST_INTERVAL."""
-        path = self.database_path
-        store = Store(path)  # own connection for this thread
-        client = make_client()
-        while not self._stopping:
-            item = self.queue.get()
-            if item is _STOP:
-                break
-            system_id, force = item
-            with self._pending_lock:
-                self.pending.discard(system_id)
-                force = force or system_id in self.forced
-                self.forced.discard(system_id)
-            if self.database_path != path:  # the user switched maps
+        """Worker loop: one request per queued system, at most one per REQUEST_INTERVAL.
+
+        An error on one system is reported on the status line and the loop goes on; the system is
+        not queued again (the next request retries it). The client and the store are always closed.
+        """
+        client = store = None
+        try:
+            path = self.database_path
+            store = Store(path)  # own connection for this thread
+            client = make_client()
+            while not self._stopping:
+                item = self.queue.get()
+                if item is _STOP:
+                    break
+                system_id, force = item
+                try:
+                    with self._pending_lock:
+                        self.pending.discard(system_id)
+                        force = force or system_id in self.forced
+                        self.forced.discard(system_id)
+                    if self.database_path != path:  # the user switched maps
+                        store.close()
+                        path = self.database_path
+                        store = Store(path)
+                    if not self.enabled or (not force and is_fresh(store.zkill_stats(system_id))):
+                        continue
+                    self._fetch(client, store, system_id, force=force)
+                except Exception as error:  # keep the worker alive whatever one system does
+                    self._status("err", f"zKill: {type(error).__name__}")
+                time.sleep(REQUEST_INTERVAL)  # also after an error, so failures stay rate limited
+        finally:
+            if client:
+                client.close()
+            if store:
                 store.close()
-                path = self.database_path
-                store = Store(path)
-            if not self.enabled or (not force and is_fresh(store.zkill_stats(system_id))):
-                continue
-            self._fetch(client, store, system_id, force=force)
-            time.sleep(REQUEST_INTERVAL)
-        client.close()
-        store.close()
 
     def _fetch(self, client: httpx.Client, store: Store, system_id: int, force: bool = False) -> bool:
         """Fetch and store the stats of one system.
@@ -189,7 +214,7 @@ class ZkillFetcher(BackgroundFetcher):
             response.raise_for_status()
             data = response.json()
             store.set_zkill_stats(summarize(system_id, data if isinstance(data, list) else []))
-        except (httpx.HTTPError, ValueError) as error:
+        except (httpx.HTTPError, ValueError, sqlite3.Error) as error:
             self._status("warn", f"zKill: {type(error).__name__}")
             return False
         self.on_update(system_id)
