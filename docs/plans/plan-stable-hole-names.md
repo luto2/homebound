@@ -1,6 +1,7 @@
 # Plan: hole numbers and system names never change
 
-Status: not started. Owner task 14 in `TODO.md` (human-added), plus a user report that a name changed.
+Status: built, waiting for review (branch of task 14). Owner task 14 in `TODO.md` (human-added), plus a user
+report that a name changed. Built as planned except change 8, see "As built" at the end.
 
 Depends on: nothing. Do it before [`plan-disconnect-connection.md`](plan-disconnect-connection.md)
 (task 5.1), which removes connections and would hit path 5 below. Touches `mapping/naming.py`,
@@ -32,8 +33,8 @@ changed number renames that system **and everything behind it** (`123` → `143`
    `next_hole_index` and passes it to `link_signature`, which writes it onto the sig.
    `used_hole_indices` counts the sig's own number as taken, so a sig whose bookmark was copied as `-3`
    ends up as the lowest other free number (`-2`, `-4`, or `-1` if the guess says static). The naming
-   dialog's answer does the same through `Tracker.answer` → `link_signature`.
-3. **Static or not moves the number.** `Tracker.answer` frees the index and picks a new one when the
+   dialog's answer does the same through `Tracker.apply_naming` → `link_signature`.
+3. **Static or not moves the number.** `Tracker.apply_naming` frees the index and picks a new one when the
    answer says static and the current index isn't a static slot, or the other way round.
    `guess_static` at attach time does the same choice up front.
 4. **Level letters are derived, not stored.** The `a2a` scheme's last letter comes from
@@ -56,7 +57,7 @@ changed number renames that system **and everything behind it** (`123` → `143`
    by hand). `_provisional_indices` and the dry-run branch of `bookmark_for` go away.
 2. **Count up per system, never fill gaps.** A `next_hole` counter on the system row, bumped in the
    same batch as the assignment. Numbers of deleted sigs and holes are not reused.
-3. **The link takes the sig's number.** `_attach`, `answer` and `link_signature` use the sig's stored
+3. **The link takes the sig's number.** `_attach`, `apply_naming` and `link_signature` use the sig's stored
    number for the system. Only a system attached without any sig gets the next number from the
    counter.
 4. **Static is a flag, not a slot.** Drop the reserved slots from `next_hole_index`,
@@ -104,3 +105,23 @@ changed number renames that system **and everything behind it** (`123` → `143`
   name exist from the second it is pasted (change step 1).
 
 No open decisions left.
+
+## As built
+
+- **Change 8 is only half done.** Hole numbers sync (signature `hole_index` and the system placement
+  were synced fields already), so numbers and the numeric names agree between installs, and the
+  same scan pasted on two installs gets the same numbers. `label`, `static` and `next_hole` stay
+  local (`protocol.LOCAL_SYSTEM_FIELDS`, with a TODO): `op_from_json` refuses a field it doesn't
+  know, so the server out there would reject every batch with one, and an older client would fail
+  on every `ops` message with one and ask for it again forever. Syncing them needs a protocol
+  version gate first (bump `PROTOCOL`, strip the fields for older connections, send them only to a
+  server that knows them). Meanwhile each install names systems placed by others itself, when
+  they arrive (`AppState._name_new_systems`), and counts numbers it receives into its own counter
+  (`Store._raise_hole_counters`).
+- Two sigs with the same number (two members pasting different new sigs at once) get a ⚠ on
+  their copy button and a tooltip; nothing is renumbered.
+- A WH sig that comes without a number (from an older cloud client) shows the number it would get
+  and stores it when its bookmark is copied, or at the next paste in that system.
+- A system that comes back without a sig keeps its old number while no hole of the new parent
+  has it, even if the parent is a different one.
+- A scheme change from another cloud member asks the rename question too.

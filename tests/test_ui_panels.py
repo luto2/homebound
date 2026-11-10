@@ -857,6 +857,20 @@ def test_a_typed_static_is_numbered_like_any_other_hole(state, model) -> None:
     assert model.upcoming == {"WH-001": 2, "WH-002": 3}   # 1 was given out: it isn't used again
 
 
+def test_two_sigs_with_one_number_are_flagged(state, model) -> None:
+    """Two cloud members pasting at once can give two sigs the same number: the button and tooltip warn."""
+    add_signature(state, "WH-001", group="wormhole", hole_index=3)
+    add_signature(state, "WH-002", group="wormhole", hole_index=3)
+    add_signature(state, "WH-003", group="wormhole", hole_index=4)
+    model.load(HOME.id)
+    assert model.shared == {"WH-001": ["WH-002"], "WH-002": ["WH-001"]}
+    first, third = (state.store.signature(HOME.id, signature_id) for signature_id in ("WH-001", "WH-003"))
+    assert model.button_label(first) == f"⚠ {state.namer.label(HOME.id)}-3"
+    assert model.button_label(third) == model.bookmark_for(third)
+    assert model._tooltip(first, COLUMN_ACTION).startswith("⚠ WH-002 has this number too")
+    assert model.bookmark_text(first).startswith(f"{state.namer.label(HOME.id)}-3 ")   # the copied text has no sign
+
+
 def test_bookmark_for_reserved_index(state, model) -> None:
     """A stored hole index is used as is."""
     add_signature(state, "WH-001", group="wormhole", hole_index=7)

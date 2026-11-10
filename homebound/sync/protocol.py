@@ -99,6 +99,17 @@ FIELDS: dict[str, dict[str, Any]] = {
     "setting": {"value": _optional(_text(MAX_SHORT_TEXT))},
 }
 LAYOUT_FIELDS = ("x", "y")                     # only sent with a full upsert
+# Naming columns of a system that stay on this computer for now (plan-stable-hole-names.md, change 8).
+# TODO(sync): sync them once the protocol has a version gate. op_from_json refuses a field it doesn't
+# know, so sending one would break the clients and the server that are out there: the server
+# rejects the whole batch as ``invalid`` (the client drops it and reloads the map), and an older
+# client fails on every ``ops`` message that has one, misses that batch and asks for it again
+# forever. The gate: bump PROTOCOL, let the server strip these fields from what it sends to
+# connections that said hello with an older protocol, and let the client send them only when the
+# welcome says the server knows them. Until then each install names systems placed by others
+# itself (``AppState._name_new_systems``); hole numbers do sync (signature ``hole_index`` and the
+# system placement), so the numeric names agree.
+LOCAL_SYSTEM_FIELDS = ("label", "static", "next_hole")
 CREATED_FIELD = {"system": "added_at", "connection": "created_at", "signature": "created_at"}
 
 

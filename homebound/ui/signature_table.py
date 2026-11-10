@@ -91,6 +91,7 @@ class SignatureModel(QAbstractTableModel):
         self.signatures: list[Signature] = []           # every signature + anomaly of the system
         self.leads: dict[str, tuple[int, str]] = {}     # signature id -> (system id, display name)
         self.upcoming: dict[str, int] = {}              # signature id -> number an unnumbered WH sig would get
+        self.shared: dict[str, list[str]] = {}          # signature id -> the other WH sigs with the same number
         self.copied: str | None = None
 
     def sort_state(self) -> tuple[int, bool]:
@@ -178,6 +179,7 @@ class SignatureModel(QAbstractTableModel):
                 self.leads[signature_id] = (other, state.namer.display(other))
         self.rows = self._grouped_rows()
         self.upcoming = self._upcoming_numbers()
+        self.shared = self._shared_numbers()
         self.endResetModel()
         return len(self.rows)
 
@@ -216,6 +218,24 @@ class SignatureModel(QAbstractTableModel):
                       and signature.signature_id not in self.leads]
         first = take_hole_number(self.state.store, self.system_id) if unnumbered else 0
         return {signature_id: first + offset for offset, signature_id in enumerate(unnumbered)}
+
+    def _shared_numbers(self) -> dict[str, list[str]]:
+        """Return the WH sigs whose bookmark number another WH sig here has too.
+
+        That only happens on a cloud map when two members pasted different new sigs at the same
+        time; each sig keeps its number, so the table warns instead of renumbering one.
+        """
+        by_number: dict[int, list[str]] = {}
+        for signature in self.signatures:
+            if is_numbered_kind(signature) and signature.hole_index:
+                by_number.setdefault(signature.hole_index, []).append(signature.signature_id)
+        return {signature_id: [other for other in same if other != signature_id]
+                for same in by_number.values() if len(same) > 1 for signature_id in same}
+
+    def button_label(self, signature: Signature) -> str:
+        """Return the copy button's text: the bookmark label, with a warning sign if the number is shared."""
+        label = self.bookmark_for(signature)
+        return f"⚠ {label}" if signature.signature_id in self.shared else label
 
     def signature_at(self, row: int) -> Signature | None:
         """Return the signature of a row, or None for a header or an out-of-range row."""
@@ -263,6 +283,9 @@ class SignatureModel(QAbstractTableModel):
     def _tooltip(self, signature: Signature, column: int) -> str:
         """Tooltip of a signature cell; the action cell shows the text its button copies."""
         if column == COLUMN_ACTION and is_wormhole_signature(signature):
+            if others := self.shared.get(signature.signature_id):
+                return (f"⚠ {', '.join(others)} has this number too (two members pasted at once). "
+                        f"Delete the wrong sig or bookmark one by hand.\n{self.bookmark_text(signature)}")
             return self.bookmark_text(signature)
         if signature.state == "missing":
             return "Not in the last paste"
@@ -534,7 +557,7 @@ class SignatureDelegate(QStyledItemDelegate):
     def _paint_copy_button(self, painter: QPainter, rect: QRectF, signature: Signature) -> None:
         """Paint "⧉ 123-1", or "✓ Copied" for a moment after a copy."""
         copied = self.model.copied == signature.signature_id
-        label = "✓ Copied" if copied else self.model.bookmark_for(signature)
+        label = "✓ Copied" if copied else self.model.button_label(signature)
         button = self.button_rect(rect, label)
         painter.setPen(QPen(color("success") if copied else color("line-2"), 1))
         painter.setBrush(color("bg-3"))
@@ -601,7 +624,7 @@ class SignatureDelegate(QStyledItemDelegate):
             return True
         if (index.column() == COLUMN_ACTION and event.type() == QEvent.Type.MouseButtonRelease
                 and is_wormhole_signature(row)
-                and self.button_rect(option.rect, self.model.bookmark_for(row)).contains(event.position())):
+                and self.button_rect(option.rect, self.model.button_label(row)).contains(event.position())):
             self.copyRequested.emit(index.row())
             return True
         return super().editorEvent(event, model, option, index)

@@ -8,6 +8,7 @@ import pytest
 
 from conftest import HOME, pick_system
 from homebound.mapdb.store import Signature, Store
+from homebound.mapping.signature_parser import merge_signatures, parse_scanner_text
 from homebound.sync.engine import SyncEngine
 from homebound.sync.hlc import HybridClock
 from homebound.sync.local import LocalReplica
@@ -184,6 +185,40 @@ def test_offline_edits_merge_when_back(pair) -> None:
     assert kira.store.has_system(C2) and bob.store.system(C5).pinned == 1
     assert kira.store.system(HOME.id).notes == "kira's later notes"   # the newer HLC won
     assert bob.replica.outbox() == []
+
+
+def test_two_installs_pasting_the_same_scan_get_the_same_numbers(pair) -> None:
+    """Numbered in signature ID order, the same scan pasted offline on both sides gives the same numbers."""
+    harness, kira, bob = pair
+    scan = "".join(f"{signature_id}\tCosmic Signature\tWormhole\tUnstable Wormhole\t100%\t1 AU\n"
+                   for signature_id in ("CCC-300", "AAA-100", "BBB-200"))
+    bob.disconnect()
+    for install in (kira, bob):
+        merge_signatures(install.store, C5, parse_scanner_text(scan))
+    bob.connect()
+    pump_all(kira, bob)
+    pump_all(kira, bob)
+    numbers = [{signature.signature_id: signature.hole_index for signature in install.store.signatures(C5)}
+               for install in (kira, bob)]
+    assert numbers[0] == numbers[1] == {"AAA-100": 1, "BBB-200": 2, "CCC-300": 3}
+    assert bob.replica.outbox() == [] and kira.replica.outbox() == []
+
+
+def test_numbers_from_the_other_side_count_too(pair) -> None:
+    """A number that arrives from the server raises the counter, so it isn't given again after its sig goes."""
+    harness, kira, bob = pair
+    merge_signatures(kira.store, C5, parse_scanner_text(
+        "AAA-100\tCosmic Signature\tWormhole\t\t100%\t1 AU\nBBB-200\tCosmic Signature\tWormhole\t\t100%\t1 AU\n"))
+    pump_all(kira, bob)
+    assert bob.store.system(C5).next_hole == 2
+    kira.store.delete_signatures(C5, ["BBB-200"])
+    pump_all(kira, bob)
+    merge_signatures(bob.store, C5, parse_scanner_text("ZZZ-999\tCosmic Signature\tWormhole\t\t100%\t1 AU\n"))
+    assert bob.store.signature(C5, "ZZZ-999").hole_index == 3
+    kira.store.update_system(C5, label="Farm chain", static=1)    # local only for now: nothing to send
+    assert kira.replica.outbox() == []
+    pump_all(kira, bob)
+    assert bob.store.system(C5).label is None and bob.store.system(C5).static == 0
 
 
 def test_a_conflict_puts_the_server_version_back(pair) -> None:

@@ -7,8 +7,8 @@ from conftest import HOME, UNIVERSE, pick_system
 from homebound.mapdb.store import Signature, Store
 from homebound.sync.hlc import HybridClock, format_hlc, hlc_milliseconds, is_hlc, parse_hlc, stamp
 from homebound.sync.merge import BatchRejected, MapState, apply_op, check_batch, stamp_server_times
-from homebound.sync.protocol import (InvalidOp, Op, batch_from_json, full_ops_for_rows, op_from_json,
-                                     ops_from_action)
+from homebound.sync.protocol import (FIELDS, LOCAL_SYSTEM_FIELDS, InvalidOp, Op, batch_from_json, full_ops_for_rows,
+                                     op_from_json, ops_from_action)
 
 CLIENTS = ["aaaaaaaa", "bbbbbbbb", "cccccccc"]
 
@@ -300,6 +300,26 @@ def test_every_naming_scheme_of_the_app_is_a_valid_setting(scheme) -> None:
     op = op_from_json({"e": "setting", "k": "naming_scheme", "f": {"value": scheme}, "hlc": format_hlc(1, 0),
                        "c": "aaaaaaaa"})
     assert op.fields["value"] == scheme
+
+
+def test_stored_names_and_the_static_flag_stay_local() -> None:
+    """label, static and next_hole are not sent: an older client or server would refuse a field it doesn't know.
+
+    That refusal is why: op_from_json raises InvalidOp for an unknown field, which drops the whole
+    batch (and an old client keeps asking for it again). See the TODO at ``protocol.LOCAL_SYSTEM_FIELDS``.
+    """
+    assert not set(LOCAL_SYSTEM_FIELDS) & set(FIELDS["system"])
+    store = Store(":memory:")
+    actions: list = []
+    store.listeners.append(actions.append)
+    store.add_system(HOME.id)
+    store.add_system(31000001, parent_id=HOME.id, hole_index=2, label="2", static=1)
+    store.update_system(31000001, label="Z", static=0)
+    created, renamed = (ops_from_action(action, format_hlc(1, 0), CLIENTS[0]) for action in actions[1:])
+    assert not {"label", "static", "next_hole"} & set(created[0].fields) and created[0].placement == (HOME.id, 2)
+    assert renamed == []
+    with pytest.raises(InvalidOp):
+        op_from_json({"e": "system", "k": 31000001, "f": {"label": "2"}, "hlc": format_hlc(1, 0), "c": "aaaaaaaa"})
 
 
 def test_an_unknown_naming_scheme_is_refused() -> None:
