@@ -383,6 +383,11 @@ class SettingsDialog(QDialog):
         self.zkill = QCheckBox("Show kill activity from zKillboard")
         self.zkill.setChecked(self.edited.zkill_enabled)
         layout.addWidget(self.zkill)
+        self.zkill_count_npc = QCheckBox("Count NPC kills")
+        self.zkill_count_npc.setChecked(self.edited.zkill_count_npc)
+        layout.addWidget(self.zkill_count_npc)
+        layout.addWidget(help_label("Off: kills by NPCs are listed dimmed but don't count toward the meter or the "
+                                    "recent-kill mark, so a rat killing a ratter doesn't make a system look hot."))
         layout.addWidget(help_label("Homebound asks zkillboard.com for the last 24h of kills in each system of a visible chain, "
                                     "at most one request per second, cached for 10 minutes. Only system IDs are sent. "
                                     "Apart from EVE-Scout (Routes page), this is the only network access Homebound makes."))
@@ -717,6 +722,7 @@ class SettingsDialog(QDialog):
         edited.known_space_radius = self.radius.value()
         edited.rescan_due_hours = self.rescan_due.value()
         edited.zkill_enabled = self.zkill.isChecked()
+        edited.zkill_count_npc = self.zkill_count_npc.isChecked()
         edited.eve_scout_enabled = self.eve_scout.isChecked()
         edited.route_preference = self.route_preference.currentData()
         edited.route_ship_size = self.route_ship_size.currentData()

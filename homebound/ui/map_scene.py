@@ -18,6 +18,7 @@ from ..theme.tokens import OPACITY, PIXELS, color, font
 from ..universe.db import SIZE_NAMES, Universe
 from ..validation import require_integer, require_number, require_text, require_type
 from ..zkill import had_recent_kill
+from .activity_list import TOOLTIP_ROWS, kill_text
 
 NODE_WIDTH, NODE_HEIGHT = PIXELS["size-node-w"], PIXELS["size-node-h"]
 W, H = NODE_WIDTH, NODE_HEIGHT  # short aliases kept for older importers
@@ -180,6 +181,9 @@ class SystemNode(QGraphicsObject):
                          f"(threshold {self.state.settings.rescan_due_hours}h)")
         elif self.scan_status.state == "never":
             lines.append("Never scanned")
+        if self.zkill:
+            lines.extend(kill_text(kill, self.state.universe)
+                         for kill in self.state.store.zkill_kills(self.system_id)[:TOOLTIP_ROWS])
         return "<br>".join(lines)
 
     @property

@@ -263,3 +263,13 @@ def test_downloads_pass_the_shared_ssl_context(tmp_path, monkeypatch) -> None:
     build_static.fetch("https://example.invalid/", tmp_path / "file.json", refresh=True)
     build_static.zkill_statics(31000005)
     assert len(calls) == 2 and all(options["context"] is ssl_context() for options in calls)
+
+
+def test_ship_names() -> None:
+    """A known ship has a name and group, an unknown ID or a non-ship type has none; bad input raises."""
+    assert UNIVERSE.ship_name(587) == "Rifter" and UNIVERSE.ship_group_name(587) == "Frigate"
+    assert UNIVERSE.ship_name(670) == "Capsule"
+    assert UNIVERSE.ship_name(-5) is None and UNIVERSE.ship_name(2) is None      # unknown, a corporation
+    assert UNIVERSE.ship_group_name(34) is None                                   # Tritanium, not a ship
+    with pytest.raises(TypeError):
+        UNIVERSE.ship_name("Rifter")

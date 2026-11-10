@@ -104,6 +104,24 @@ def test_worker_loop_fetches_until_stopped(fetcher, monkeypatch) -> None:
     assert len(calls) == 1
 
 
+def test_worker_closes_its_client_when_fetch_raises(fetcher, monkeypatch) -> None:
+    """An error that escapes fetch still closes the HTTP client."""
+    closed = []
+
+    class Client:
+        """Records close()."""
+
+        def close(self) -> None:
+            """Record the close."""
+            closed.append(True)
+
+    monkeypatch.setattr(eve_scout, "make_client", lambda: Client())
+    monkeypatch.setattr(fetcher, "fetch", lambda client: (_ for _ in ()).throw(RuntimeError("boom")))
+    with pytest.raises(RuntimeError):
+        fetcher._run()
+    assert closed == [True]
+
+
 def test_status_without_callback() -> None:
     """A fetcher without a status callback still works; a thread stopped before it starts never fetches."""
     fetcher = eve_scout.EveScoutFetcher(lambda: None)

@@ -142,6 +142,21 @@ class ZkillStats:
     fetched_at: str
 
 
+@dataclass
+class KillSummary:
+    """One killmail in a system, reduced to what the activity list shows (cached with the zKill stats)."""
+
+    system_id: int
+    killmail_id: int
+    killed_at: str                       # ISO time, UTC
+    victim_ship_id: int | None
+    attacker_count: int
+    top_attacker_ship_id: int | None     # the ship type most attackers flew
+    value: float                         # total ISK value (zkb.totalValue)
+    npc: int                             # 1 if zKill flags it as an NPC kill
+    solo: int
+
+
 # The entities a map action changes, and how each is keyed: system -> id, connection -> (low id, high id),
 # signature -> (system id, signature id), setting -> key. Characters, zKill and key_value are local only.
 ENTITIES = ("system", "connection", "signature", "setting")
@@ -1002,6 +1017,33 @@ class Store:
              stats.fetched_at))
         self._commit()
         return stats
+
+    def zkill_kills(self, system_id: int) -> list[KillSummary]:
+        """Return the cached kills of a system, newest first."""
+        _check_system_id(system_id)
+        rows = self.database.execute("SELECT * FROM zkill_kills WHERE system_id=? ORDER BY killed_at DESC, killmail_id DESC",
+                                     (system_id,))
+        return [_from_row(KillSummary, row) for row in rows]
+
+    def replace_zkill_kills(self, system_id: int, kills: list[KillSummary]) -> None:
+        """Store the kills of a system, dropping the ones cached before (other systems stay as they are).
+
+        Raises:
+            ValueError: If a kill belongs to another system.
+        """
+        _check_system_id(system_id)
+        require_type(kills, list, "kills")
+        for kill in kills:
+            require_type(kill, KillSummary, "kills item")
+            if kill.system_id != system_id:
+                raise ValueError(f"kill {kill.killmail_id} is in system {kill.system_id}, not {system_id}")
+        self.database.execute("DELETE FROM zkill_kills WHERE system_id=?", (system_id,))
+        self.database.executemany(
+            "INSERT OR REPLACE INTO zkill_kills (system_id, killmail_id, killed_at, victim_ship_id, attacker_count,"
+            " top_attacker_ship_id, value, npc, solo) VALUES (?,?,?,?,?,?,?,?,?)",
+            [(kill.system_id, kill.killmail_id, kill.killed_at, kill.victim_ship_id, kill.attacker_count,
+              kill.top_attacker_ship_id, kill.value, kill.npc, kill.solo) for kill in kills])
+        self._commit()
 
     # ------------------------------------------------------------ key/value settings of this map
     def get_value(self, key: str, default: str | None = None) -> str | None:

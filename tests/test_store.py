@@ -4,7 +4,7 @@ import sqlite3
 import pytest
 
 from conftest import HOME, UNIVERSE, pick_system
-from homebound.mapdb.store import (LIFETIME_4H, Connection, Signature, Store, ZkillStats, map_stats,
+from homebound.mapdb.store import (LIFETIME_4H, Connection, KillSummary, Signature, Store, ZkillStats, map_stats,
                                    utc_now_iso)
 
 JITA = UNIVERSE.by_name("Jita").id
@@ -190,6 +190,24 @@ def test_zkill_stats_round_trip(store) -> None:
     assert store.zkill_stats(JITA) is None
     with pytest.raises(TypeError):
         store.set_zkill_stats({"system_id": HOME.id})
+
+
+def test_replace_zkill_kills_drops_older_rows_of_that_system_only(store) -> None:
+    """A fetch replaces the kill list of one system; other systems keep theirs; rows come back newest first."""
+    first = KillSummary(HOME.id, 1, "2026-10-30T10:00:00+00:00", 587, 2, 11978, 1.5e6, 0, 1)
+    second = KillSummary(HOME.id, 2, "2026-10-30T11:00:00+00:00", None, 0, None, 0.0, 1, 0)
+    other = KillSummary(JITA, 3, "2026-10-30T09:00:00+00:00", 670, 1, 587, 10.0, 0, 0)
+    store.replace_zkill_kills(HOME.id, [first, second])
+    store.replace_zkill_kills(JITA, [other])
+    assert store.zkill_kills(HOME.id) == [second, first]
+    store.replace_zkill_kills(HOME.id, [first])
+    assert store.zkill_kills(HOME.id) == [first] and store.zkill_kills(JITA) == [other]
+    store.replace_zkill_kills(HOME.id, [])
+    assert store.zkill_kills(HOME.id) == []
+    with pytest.raises(ValueError):
+        store.replace_zkill_kills(HOME.id, [other])                  # a row of another system
+    with pytest.raises(TypeError):
+        store.replace_zkill_kills(HOME.id, ["x"])
 
 
 def test_key_values(store) -> None:

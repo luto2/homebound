@@ -9,6 +9,8 @@ Statics where Wanderer and anoik disagree are resolved against zkillboard.com's 
 and the resolution is pinned in statics_resolved.json so later builds don't need zKill. A package ships
 its copy of that file; a rebuild in a package starts from it and writes its own next to the output.
 
+Ship names (type ID -> name and group) come from the same SDE zip, so killmails can show what died.
+
 Usage:  python -m homebound.universe.build_static [--refresh]      (packaged: homebound --build-static)
 """
 import argparse
@@ -36,7 +38,7 @@ OUTPUT = DATA / UNIVERSE_FILE
 RESOLVED = DATA / RESOLVED_FILE
 SHIPPED_RESOLVED = bundled_data_directory() / RESOLVED_FILE   # the same file as RESOLVED in a checkout
 HEADERS = {"User-Agent": user_agent("personal offline mapper; build script")}
-SCHEMA_VERSION = "3"         # bump together with db.SCHEMA_VERSION
+SCHEMA_VERSION = "4"         # bump together with db.SCHEMA_VERSION
 
 SDE_URL = "https://developers.eveonline.com/static-data/eve-online-static-data-latest-jsonl.zip"
 WANDERER_URL = "https://raw.githubusercontent.com/wanderer-industries/wanderer/main/priv/repo/data/"
@@ -69,6 +71,7 @@ SCHEMA = """
                                  max_jump_mass INTEGER, mass_regeneration INTEGER, is_static INTEGER,
                                  spawns_in TEXT,      -- classes it can spawn in (Wanderer), e.g. 'C5,C6'
                                  wanders_into TEXT);  -- classes it can wander into (whtype.info), NULL = no data
+    CREATE TABLE ship_types (id INTEGER PRIMARY KEY, name TEXT, group_name TEXT);   -- SDE category 6 (ships)
     CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
     CREATE INDEX systems_name ON systems (name COLLATE NOCASE);
     CREATE INDEX gates_b ON gates (system_b);
@@ -134,6 +137,25 @@ def _read_json_lines(archive: zipfile.ZipFile, name: str) -> Iterator[dict]:
         for line in io.TextIOWrapper(member, encoding="utf-8"):
             if line.strip():
                 yield json.loads(line)
+
+
+def ship_types(archive: zipfile.ZipFile) -> list[tuple[int, str, str]]:
+    """Read the published ships (SDE category "Ship") with their group names.
+
+    Args:
+        archive: The opened SDE zip.
+
+    Returns:
+        ``(type id, name, group name)`` rows, sorted by type ID.
+    """
+    require_type(archive, zipfile.ZipFile, "archive")
+    ship_categories = {record["_key"] for record in json_lines(archive, "categories.jsonl")
+                       if record.get("name", {}).get("en") == "Ship"}
+    groups = {record["_key"]: record["name"]["en"] for record in json_lines(archive, "groups.jsonl")
+              if record.get("categoryID") in ship_categories}
+    return sorted((record["_key"], record["name"]["en"], groups[record["groupID"]])
+                  for record in json_lines(archive, "types.jsonl")
+                  if record.get("published") and record.get("groupID") in groups)
 
 
 def whtype_wander(script: str) -> dict[str, list[str]]:
@@ -334,6 +356,8 @@ def build(refresh: bool = False, progress: Progress | None = None, keep_cache: b
                       ",".join(spawns_in) or None,
                       ",".join(wander[record["name"]]) if record["name"] in wander else None))
 
+    ships = ship_types(archive)
+
     report("Writing universe.sqlite …", None)
     partial = OUTPUT.with_name(OUTPUT.name + ".part")
     if partial.exists():
@@ -344,6 +368,7 @@ def build(refresh: bool = False, progress: Progress | None = None, keep_cache: b
     database.executemany("INSERT INTO gates VALUES (?,?)", sorted(gates))
     database.executemany("INSERT INTO statics VALUES (?,?)",
                          [(system_id, code) for system_id, codes in statics.items() for code in codes])
+    database.executemany("INSERT INTO ship_types VALUES (?,?,?)", ships)
     database.executemany("INSERT INTO wormhole_types VALUES (?,?,?,?,?,?,?,?,?)", types)
     build_number = (next(iter(json_lines(archive, "_sde.jsonl")), {}).get("buildNumber")
                     if "_sde.jsonl" in archive.namelist() else None)

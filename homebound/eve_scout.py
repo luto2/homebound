@@ -112,12 +112,14 @@ class EveScoutFetcher(BackgroundFetcher):
     def _run(self) -> None:
         """Worker loop: fetch, then sleep until the interval ends or something wakes the thread."""
         client = make_client()
-        while not self._stopping:
-            if self._enabled:
-                self.fetch(client)
-            self._wake.wait(REFRESH_INTERVAL)
-            self._wake.clear()
-        client.close()
+        try:
+            while not self._stopping:
+                if self._enabled:
+                    self.fetch(client)
+                self._wake.wait(REFRESH_INTERVAL)
+                self._wake.clear()
+        finally:
+            client.close()
 
     def fetch(self, client: httpx.Client) -> bool:
         """Fetch and store the links once.
