@@ -108,6 +108,23 @@ def test_answer_no_moves_to_the_next_free_index(simulation) -> None:
     assert simulation.namer.display(c5.id) == "2"
 
 
+def test_apply_naming_after_the_child_expired(simulation) -> None:
+    """A question whose system left the map while it was open is dropped: nothing changes, nothing raises."""
+    c5 = pick_system("C5", exclude={HOME.id})
+    request = simulation.naming_request(simulation.jump(c5.name))
+    simulation.store.remove_system(request.child_id)
+    assert simulation.tracker.apply_naming(request, is_static=True) is None
+    assert simulation.store.system(request.child_id) is None
+
+
+def test_apply_naming_after_the_parent_left(simulation) -> None:
+    """The same when the parent system is no longer on the map."""
+    c5 = pick_system("C5", exclude={HOME.id})
+    request = simulation.naming_request(simulation.jump(c5.name))
+    gone = NamingRequest(99999999, request.child_id, request.connection_id, request.guess)
+    assert simulation.tracker.apply_naming(gone, is_static=True) is None
+
+
 def test_preview_names_for_both_answers(simulation) -> None:
     """The naming question shows both possible names."""
     c5 = pick_system("C5", exclude={HOME.id})

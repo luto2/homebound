@@ -451,7 +451,7 @@ class Tracker:
     # ------------------------------------------------------------ answers from the UI
     @_one_action
     def apply_naming(self, request: NamingRequest, is_static: bool, signature_id: str | None = None,
-                     custom_name: str | None = None) -> int:
+                     custom_name: str | None = None) -> int | None:
         """Apply the answer to a naming question.
 
         Args:
@@ -461,12 +461,15 @@ class Tracker:
             custom_name: A name typed in by hand; empty or None keeps the scheme name.
 
         Returns:
-            The hole index the child ends up with.
+            The hole index the child ends up with, or None if the child or the parent left the map while the
+            question was open (nothing is changed).
         """
         require_type(request, NamingRequest, "request")
         require_type(is_static, bool, "is_static")
         require_text(custom_name, "custom_name", allow_empty=True, optional=True)
         parent_id, child_id = request.parent_id, request.child_id
+        if not (self.store.has_system(child_id) and self.store.has_system(parent_id)):
+            return None
         child_class = self.universe.by_id(child_id).system_class
         current = self.store.system(child_id)
         currently_static = (current.hole_index is not None

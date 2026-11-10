@@ -532,6 +532,53 @@ def test_naming_dialog_accepted_applies_answer(window, modal, qt_application) ->
     assert window.state.settings.auto_name_when_certain is False
 
 
+def test_naming_scrim_comes_down_when_the_system_expires(window, modal, qt_application) -> None:
+    """The system expires while the question is open: the scrim comes down and the queue goes on."""
+    request = naming_request(window)
+    window.naming_queue.clear()
+
+    def expire(dialog) -> int:
+        """Take the child off the map while the dialog is open, then accept it."""
+        window.state.store.remove_system(request.child_id)
+        return 1
+
+    modal.handler = expire
+    window.queue_naming(request)
+    qt_application.processEvents()
+    assert len(modal.dialogs) == 1
+    assert window.area.scrim.isHidden() and window.naming_open is False
+
+
+def test_naming_scrim_comes_down_when_apply_raises(window, modal, qt_application, monkeypatch) -> None:
+    """If applying the answer fails, the scrim still comes down and the next question is asked."""
+    request = naming_request(window)
+    second_child = pick_system("C3", exclude={HOME.id})
+    window.state.dispatch(window.state.tracker.add_wormhole(HOME.id, second_child.id))
+    second = NamingRequest(HOME.id, second_child.id, window.state.store.connection(HOME.id, second_child.id).id,
+                           request.guess)
+    real_apply = window.state.tracker.apply_naming
+    calls = []
+
+    def fail_once(*arguments, **keywords):
+        """Raise on the first answer only."""
+        calls.append(arguments)
+        if len(calls) == 1:
+            raise RuntimeError("boom")
+        return real_apply(*arguments, **keywords)
+
+    monkeypatch.setattr(window.state.tracker, "apply_naming", fail_once)
+    modal.handler = lambda dialog: 1
+    window.naming_open = False
+    window.naming_queue[:] = [request, second]
+    modal.dialogs.clear()
+    with pytest.raises(RuntimeError):
+        window._next_naming()
+    assert window.area.scrim.isHidden() and window.naming_open is False
+    qt_application.processEvents()
+    assert len(modal.dialogs) == 2 and window.naming_queue == []   # the failed one, then the next one
+    assert len(calls) == 2
+
+
 def test_naming_queue_skips_vanished_systems(window, modal, qt_application) -> None:
     """A request whose systems left the map is dropped without a dialog."""
     request = NamingRequest(HOME.id, 99999999, 1, None)

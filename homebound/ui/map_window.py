@@ -873,22 +873,24 @@ class MapWindow(QMainWindow):
         if not (state.store.has_system(request.child_id) and state.store.has_system(request.parent_id)):
             return self._next_naming()
         self.naming_open = True
-        state.select(request.child_id)
-        self.area.scrim.show()
-        self.area.scrim.raise_()
-        dialog = NamingDialog(self, state, request, pending=len(self.naming_queue))
-        dialog.adjustSize()
-        center = self.area.mapToGlobal(self.area.rect().center())
-        dialog.move(center.x() - dialog.width() // 2, center.y() - dialog.height() // 2)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            state.tracker.apply_naming(request, dialog.is_static(), dialog.signature_id(), dialog.custom_name())
-        if dialog.auto_naming.isChecked() != state.settings.auto_name_when_certain:
-            state.settings.auto_name_when_certain = dialog.auto_naming.isChecked()
-            state.apply_settings()
-        self.area.scrim.hide()
-        self.naming_open = False
-        state.mapChanged.emit()
-        QTimer.singleShot(0, self._next_naming)
+        try:
+            state.select(request.child_id)
+            self.area.scrim.show()
+            self.area.scrim.raise_()
+            dialog = NamingDialog(self, state, request, pending=len(self.naming_queue))
+            dialog.adjustSize()
+            center = self.area.mapToGlobal(self.area.rect().center())
+            dialog.move(center.x() - dialog.width() // 2, center.y() - dialog.height() // 2)
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                state.tracker.apply_naming(request, dialog.is_static(), dialog.signature_id(), dialog.custom_name())
+            if dialog.auto_naming.isChecked() != state.settings.auto_name_when_certain:
+                state.settings.auto_name_when_certain = dialog.auto_naming.isChecked()
+                state.apply_settings()
+        finally:   # also after an error: the scrim comes down and the queue goes on
+            self.area.scrim.hide()
+            self.naming_open = False
+            state.mapChanged.emit()
+            QTimer.singleShot(0, self._next_naming)
         return True
 
     def _auto_named(self, event) -> None:
