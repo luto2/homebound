@@ -2,9 +2,9 @@
 
 Status: implemented (2026-11-01), merged into `master`. The PyInstaller folder (including the first-start build into an empty data folder) and the wheel/AUR layout were tried locally on Linux; the AppImage, the Windows build and the workflows have not run yet (they run on the first `v*` tag).
 
-Depends on: [Windows support](plan-windows-support.md) for the Windows build. Signing: [code signing](plan-code-signing.md).
+Depends on: [Windows support](plan-windows-support.md) for the Windows build. Signing: [code signing](../plan-code-signing.md).
 
-Build order across the plans: [rescan status](plan-rescan-status.md) → [backups](plan-backups.md) → [Windows support](plan-windows-support.md) → [packaging](plan-packaging.md) → [code signing](plan-code-signing.md).
+Build order across the plans: [rescan status](plan-rescan-status.md) → [backups](plan-backups.md) → [Windows support](plan-windows-support.md) → [packaging](plan-packaging.md) → [code signing](../plan-code-signing.md).
 
 ## Static data in packages
 
@@ -48,7 +48,7 @@ The bundled fonts from [Windows support](plan-windows-support.md) (item 6) go in
 - PyInstaller folder → **Inno Setup** installer, per-user (`%LOCALAPPDATA%\Programs\Homebound`,
   no admin rights), with a Start-menu entry and optional autostart. Also a **portable zip** of
   the same folder.
-- **Signing**: see [code signing](plan-code-signing.md). Until then, builds are unsigned and SmartScreen
+- **Signing**: see [code signing](../plan-code-signing.md). Until then, builds are unsigned and SmartScreen
   warns on first start.
 
 ## CI and releases (GitHub Actions on `luto2/homebound`)
@@ -114,4 +114,4 @@ whtype.info data (check their terms), EVE SDE and icons (Fenris Creations, forme
   them would need permission from Fenris Creations; that's why nothing of it ships.
   `THIRD_PARTY_NOTICES.md` lists the sources as downloaded at first start.
 - **Not done**: Windows version resource on the exe, a Settings "Rebuild static data" button, and
-  code signing ([its own plan](plan-code-signing.md)).
+  code signing ([its own plan](../plan-code-signing.md)).

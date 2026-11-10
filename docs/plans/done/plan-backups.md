@@ -5,7 +5,7 @@ the plan.
 
 Depends on: nothing. Should ship before [packaging](plan-packaging.md), since packaged users need it most.
 
-Build order across the plans: [rescan status](plan-rescan-status.md) → [backups](plan-backups.md) → [Windows support](plan-windows-support.md) → [packaging](plan-packaging.md) → [code signing](plan-code-signing.md).
+Build order across the plans: [rescan status](plan-rescan-status.md) → [backups](plan-backups.md) → [Windows support](plan-windows-support.md) → [packaging](plan-packaging.md) → [code signing](../plan-code-signing.md).
 
 ## What exists
 

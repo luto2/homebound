@@ -226,7 +226,7 @@ The design asks for a dot grid at `sp-24` pitch (MapWindow README, `qt-implement
 
 ## 11. Cloud sync UI (not built yet)
 
-**Status:** design only. Nothing is built, and cloud sync itself is still WIP (`docs/plans/cloud-sync-plan.md`). This section is the brief, so the screens exist before the client sync work (plan §11, phase 3) starts. The web view is deferred and isn't part of this.
+**Status:** design only. Nothing is built, and cloud sync itself is still WIP (`docs/plans/done/cloud-sync-plan.md`). This section is the brief, so the screens exist before the client sync work (plan §11, phase 3) starts. The web view is deferred and isn't part of this.
 
 **Plan for the design pass, in this order** (each step one spec in `components/` plus a preview in `previews/`):
 

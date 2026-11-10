@@ -1,6 +1,6 @@
 # Homebound Cloud Sync: design plan
 
-> **STATUS: implemented on branch `cloud-sync` (2026-11-08), phases 0–9 of §11. The web view (phase 10) is still deferred.**
+> **STATUS: implemented (2026-11-08) and merged into `master` (1.0.0), phases 0–9 of §11. The web view (phase 10) is still deferred.**
 > Where the build differs from this design, or fills a gap in it, see §21. Open questions are in §20.
 > Design review 2026-11-07: decisions went into §3, §5–§8, §10, §11 and the new §15–§19. All items are decided, apart from the open questions in §20. The protocol is specified in [`sync-protocol.md`](sync-protocol.md).
 

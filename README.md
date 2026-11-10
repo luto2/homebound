@@ -145,9 +145,9 @@ uv run python -m homebound.logs.replay path/to/Local_*.txt --home J161940   # re
 - `homebound/logs/` reads the chat logs, `homebound/mapping/` turns jumps into the map (tracker, naming, signature parsing), `homebound/mapdb/` stores it, `homebound/ui/` is the PySide6 interface.
 - Names are spelled out (no abbreviations), and every public entry point checks its arguments with `homebound/validation.py`.
 - The UI follows `design-system/`: tokens, component specs and Qt notes.
-- Known bugs and loose ends go in `TODO.md`. Design plans, done and not done, are in [docs/plans/](docs/plans/).
+- Known bugs and loose ends go in `TODO.md`. Design plans are in [docs/plans/](docs/plans/) (open ones at the top, finished ones in [done/](docs/plans/done/)); [docs/code-map.md](docs/code-map.md) says where each feature lives in the code.
 
-Packages ([how they're built](docs/plans/plan-packaging.md)):
+Packages ([how they're built](docs/plans/done/plan-packaging.md)):
 
 ```sh
 uv run --group packaging pyinstaller packaging/homebound.spec --noconfirm --workpath build/pyinstaller --distpath dist

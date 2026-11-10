@@ -2,9 +2,9 @@
 
 Status: plan only, nothing implemented yet (2026-11-01).
 
-Depends on: a public repo with an OSI licence (done: GPL-3.0-or-later) and the CI release build from [packaging](plan-packaging.md).
+Depends on: a public repo with an OSI licence (done: GPL-3.0-or-later) and the CI release build from [packaging](done/plan-packaging.md).
 
-Build order across the plans: [rescan status](plan-rescan-status.md) → [backups](plan-backups.md) → [Windows support](plan-windows-support.md) → [packaging](plan-packaging.md) → [code signing](plan-code-signing.md).
+Build order across the plans: [rescan status](done/plan-rescan-status.md) → [backups](done/plan-backups.md) → [Windows support](done/plan-windows-support.md) → [packaging](done/plan-packaging.md) → [code signing](plan-code-signing.md).
 
 **Unsigned, from the user's side**: SmartScreen shows "Windows protected your PC". The user clicks
 *More info* → *Run anyway*. That needs **no admin rights**; the per-user installer doesn't either.
