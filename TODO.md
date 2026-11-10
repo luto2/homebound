@@ -88,7 +88,7 @@ is. The Effort line uses the same scale and models as the human-added tasks.
    `store.py:238,781`, `backup.py:73,367` and `db.py:142`. The `db.py` one hasn't been probed. Move
    `connect` inside the `try` while there: an unreadable file raises despite the docstrings.
    Effort: 1/5 · Sonnet, in the session with 1.
-3. **[8] Test suite segfaults.** `tests/test_ui_panels.py` crashed in 11 of 36 unchanged runs, and a
+3. **Done 2026-11-10 (`31bbb19`): a test-only cause, the app can't hit it; see `docs/plans/done/plan-test-segfault.md`.** **[8] Test suite segfaults.** `tests/test_ui_panels.py` crashed in 11 of 36 unchanged runs, and a
    crash hides every test after it, so the push gate and CI can go red at random. The native stack
    is `QTableView::paintEvent` → `QAbstractItemView::currentIndex()` under `processEvents()` in the
    `table` fixture (`tests/test_ui_panels.py:859`). Python's gc is ruled out (13 of 30 with gc off,
@@ -164,6 +164,7 @@ Small items (partly done 2026-11-10 in `3d65485`; what was skipped is in `docs/p
 Effort for the small items and the graphify list: 1–2/5 · Haiku, batched in one or two sessions;
 P1 and P2 filtering (3/5) · Sonnet.
 
+- [1] `SignatureDelegate.paint` (and other delegates) don't restore `painter.save()` when paint raises ("Painter ended with N saved states"). Harmless today; use `try`/`finally` if paint errors stay possible (found with the test segfault, 2026-11-10).
 
 - [2] `store.py:486`: `add_connection` skips `_check_wormhole_values`, `update_connection(mass=None)`
   stores None, and the tooltip at `map_scene.py:457` would raise on it. No UI path found (E13, E13a).

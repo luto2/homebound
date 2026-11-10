@@ -30,7 +30,6 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 
 | Plan | To do item | State |
 |---|---|---|
-| [plan-test-segfault.md](plan-test-segfault.md) | 3. Test suite segfaults | root cause not confirmed |
 | [plan-duplicated-logic.md](plan-duplicated-logic.md) | 9. Duplicated logic that can drift | not started |
 | [plan-system-sender.md](plan-system-sender.md) | 12. Any `EVE…` sender counts as the system | not started |
 | [plan-small-fixes.md](plan-small-fixes.md) | "Small items" | partly done (`3d65485`) |
@@ -71,4 +70,5 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [done/plan-prune-oserror.md](done/plan-prune-oserror.md) | 2026-11-10 | — |
 | [done/plan-damaged-backup-restore.md](done/plan-damaged-backup-restore.md) | 2026-11-10 | decision 2 (`list_backups` catch) and 3 (a "damaged" marker in the list) |
 | [done/plan-corrupt-map-lockout.md](done/plan-corrupt-map-lockout.md) | 2026-11-10 | the wording of the new warnings; decisions 2, 4, 5 as proposed |
+| [done/plan-test-segfault.md](done/plan-test-segfault.md) | 2026-11-10 | — (test-only; the app can't hit it) |
 
