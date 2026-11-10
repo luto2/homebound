@@ -290,6 +290,22 @@ class TestSystemNode:
         assert [chip[1] for chip in self._chips(monkeypatch, never)] == ["⌂ HOME", "NO SCAN"]
         assert self._chips(monkeypatch, fresh) == [] and fresh._character_marker_start == 8
 
+    def test_static_badge(self, monkeypatch, state, scene) -> None:
+        """A hole flagged as its parent's static wears a STATIC tab where HOME would be, and says so in its tooltip."""
+        state.store.update_system(state.wormhole.id, parent_id=HOME.id, hole_index=2, scanned_at=iso_ago(hours=1))
+        scene.refresh_all()
+        node = scene.nodes[state.wormhole.id]
+        assert not node.static and "STATIC" not in [chip[1] for chip in self._chips(monkeypatch, node)]
+        state.store.update_system(state.wormhole.id, static=1, confirmed=0, scanned_at=iso_ago(hours=26))
+        scene.refresh_all()
+        chips = self._chips(monkeypatch, node)
+        assert node.static and [chip[1] for chip in chips] == ["STATIC", "▲ UNCONFIRMED", "SCAN"]
+        assert chips[2][0] + chips[2][2] < chips[0][0]          # compact, so it ends before the badge
+        assert "Behind its parent's static" in node.toolTip()
+        state.store.update_system(state.wormhole.id, parent_id=None)   # detached: no parent, no static
+        scene.refresh_all()
+        assert not scene.nodes[state.wormhole.id].static
+
     def test_scan_tab_compact_next_to_unconfirmed_and_home(self, monkeypatch, state, scene) -> None:
         """With UNCONFIRMED and HOME the tab is compact and ends before HOME; without HOME it keeps its age."""
         state.store.update_system(HOME.id, confirmed=0)

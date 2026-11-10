@@ -76,7 +76,7 @@ def test_wormhole_side_check() -> None:
 
 
 def test_numeric_chain_and_bookmarks(simulation) -> None:
-    """The static is hole 1, other holes count on, and bookmarks follow the names."""
+    """Holes are numbered in the order they are found, and bookmarks follow the names."""
     c5 = pick_system("C5", exclude={HOME.id})
     request = simulation.naming_request(simulation.jump(c5.name))  # matches home's C5 static
     assert request.guess.guess is True
@@ -100,12 +100,12 @@ def test_numeric_chain_and_bookmarks(simulation) -> None:
     assert simulation.namer.bookmark_home(next_system.id).startswith("11")
 
 
-def test_answer_no_moves_to_the_next_free_index(simulation) -> None:
-    """Answering "not the static" gives the first index after the static slots."""
+def test_answer_no_keeps_the_number(simulation) -> None:
+    """Answering "not the static" only clears the flag: the first hole found stays 1."""
     c5 = pick_system("C5", exclude={HOME.id})
     request = simulation.naming_request(simulation.jump(c5.name))
-    assert simulation.tracker.apply_naming(request, is_static=False) == 2
-    assert simulation.namer.display(c5.id) == "2"
+    assert simulation.tracker.apply_naming(request, is_static=False) == 1
+    assert simulation.namer.display(c5.id) == "1" and simulation.store.system(c5.id).static == 0
 
 
 def test_apply_naming_after_the_child_expired(simulation) -> None:
@@ -126,17 +126,18 @@ def test_apply_naming_after_the_parent_left(simulation) -> None:
 
 
 def test_preview_names_for_both_answers(simulation) -> None:
-    """The naming question shows both possible names."""
+    """The naming question shows the name for both answers: the same, as the answer doesn't move the number."""
     c5 = pick_system("C5", exclude={HOME.id})
     request = simulation.naming_request(simulation.jump(c5.name))
-    assert simulation.tracker.preview_names(request) == ("1", "2")
+    assert simulation.tracker.preview_names(request) == ("1", "1")
+    assert simulation.tracker.preview_name(request, "NOP-000") == "1"   # a sig that isn't there
     with pytest.raises(TypeError):
         simulation.tracker.preview_names(None)
 
 
 def test_chain_depth_position_and_letter_schemes() -> None:
-    """Static chain is A, the first other chain Z."""
-    for scheme, first, second in (("a2a", "A1a", "Z1a"), ("letter_numeric", "A", "Z")):
+    """Chain letters go in found order: the first hole is A (here the static), the second B."""
+    for scheme, first, second in (("a2a", "A1a", "B1a"), ("letter_numeric", "A", "B")):
         simulation = MapSimulation(scheme)
         c5 = pick_system("C5", exclude={HOME.id})
         simulation.tracker.apply_naming(simulation.naming_request(simulation.jump(c5.name)), is_static=True)
@@ -165,7 +166,7 @@ def test_known_space_display_has_the_real_name(simulation) -> None:
     """K-space shows the scheme label and the real name."""
     jita = UNIVERSE.by_name("Jita")
     simulation.jump(jita.name)
-    assert simulation.namer.display(jita.id) == "2 Jita"
+    assert simulation.namer.display(jita.id) == "1 Jita"
 
 
 def test_custom_name_wins(simulation) -> None:
@@ -176,16 +177,16 @@ def test_custom_name_wins(simulation) -> None:
     assert simulation.namer.display(c5.id) == "Farm"
 
 
-def test_changing_the_answer_moves_the_reserved_signature_index(simulation) -> None:
-    """Switching static → not static also moves a signature that held the old index."""
+def test_changing_the_answer_to_a_sig_takes_its_number(simulation) -> None:
+    """Re-asked later ("Change static / hole"), picking a sig moves the system to that sig's number."""
     c5 = pick_system("C5", exclude={HOME.id})
     request = simulation.naming_request(simulation.jump(c5.name))
     simulation.tracker.apply_naming(request, is_static=True)
     paste(simulation, "AAA-111\tCosmic Signature\tWormhole\t\t100%\t1 AU\n")
-    simulation.store.update_signature(HOME.id, "AAA-111", hole_index=1)
+    assert simulation.store.signature(HOME.id, "AAA-111").hole_index == 2
     simulation.tracker.apply_naming(request, is_static=False, signature_id="AAA-111")
-    assert simulation.store.system(c5.id).hole_index == 3     # the paste gave out 2
-    assert simulation.store.signature(HOME.id, "AAA-111").hole_index == 3
+    assert simulation.store.system(c5.id).hole_index == 2 and simulation.store.system(c5.id).static == 0
+    assert simulation.store.signature(HOME.id, "AAA-111").hole_index == 2
     assert simulation.store.connection(HOME.id, c5.id).signature_on(HOME.id) == "AAA-111"
 
 
@@ -247,6 +248,49 @@ def test_saving_a_signature_as_a_site_unlinks_it(simulation) -> None:
     assert simulation.store.connection(HOME.id, c5.id).signature_on(HOME.id) is None
 
 
+def test_a_system_takes_the_number_of_the_sig_it_came_through(simulation) -> None:
+    """Path 2: a sig whose bookmark was copied as -3 names the system behind it 3, static or not."""
+    paste(simulation, "AAA-111\tCosmic Signature\tWormhole\t\t100%\t1 AU\n"
+                      "BBB-222\tCosmic Signature\tWormhole\t\t100%\t1 AU\n"
+                      "CCC-333\tCosmic Signature\tWormhole\t\t100%\t1 AU\n")
+    simulation.store.delete_signatures(HOME.id, ["AAA-111", "BBB-222"])
+    c5 = pick_system("C5", exclude={HOME.id})       # home's static class: the guess says static
+    events = simulation.jump(c5.name)
+    assert simulation.store.connection(HOME.id, c5.id).signature_on(HOME.id) == "CCC-333"
+    assert simulation.store.system(c5.id).hole_index == 3 and simulation.namer.display(c5.id) == "3"
+    assert simulation.store.signature(HOME.id, "CCC-333").hole_index == 3
+    request = simulation.naming_request(events)
+    assert simulation.tracker.apply_naming(request, is_static=True) == 3
+
+
+def test_the_sig_picked_in_the_naming_question_gives_the_number(simulation) -> None:
+    """Path 2 through the question: with two candidates the system waits for the answer, then takes the sig's number."""
+    paste(simulation, "AAA-111\tCosmic Signature\tWormhole\t\t100%\t1 AU\n"
+                      "BBB-222\tCosmic Signature\tWormhole\t\t100%\t1 AU\n")
+    c3 = pick_system("C3")
+    request = simulation.naming_request(simulation.jump(c3.name))
+    assert request.signature_candidates == ["AAA-111", "BBB-222"]
+    assert simulation.store.system(c3.id).hole_index == 3          # no sig yet: the counter's next
+    assert simulation.tracker.preview_name(request, "BBB-222") == "2"
+    assert simulation.tracker.apply_naming(request, is_static=False, signature_id="BBB-222") == 2
+    assert simulation.namer.display(c3.id) == "2"
+    assert simulation.store.signature(HOME.id, "BBB-222").hole_index == 2
+
+
+def test_answering_static_flags_the_hole_and_keeps_its_number(simulation) -> None:
+    """Path 3: "static" for a hole numbered 2 leaves it 2 and sets the flag; "not static" clears only the flag."""
+    paste(simulation, "AAA-111\tCosmic Signature\tWormhole\t\t100%\t1 AU\n"
+                      "BBB-222\tCosmic Signature\tWormhole\t\t100%\t1 AU\n")
+    simulation.store.delete_signatures(HOME.id, ["AAA-111"])
+    c5 = pick_system("C5", exclude={HOME.id})
+    request = simulation.naming_request(simulation.jump(c5.name))
+    assert simulation.store.system(c5.id).hole_index == 2 and simulation.store.system(c5.id).static == 1
+    assert simulation.tracker.apply_naming(request, is_static=False) == 2
+    assert simulation.store.system(c5.id).static == 0
+    assert simulation.tracker.apply_naming(request, is_static=True) == 2
+    assert simulation.store.system(c5.id).static == 1 and simulation.namer.display(c5.id) == "2"
+
+
 def test_a_sig_set_to_wormhole_by_hand_gets_its_number(simulation) -> None:
     """DEF-456 has no group in the paste: it is numbered when the dialog makes it a wormhole, not before."""
     paste(simulation)
@@ -273,7 +317,7 @@ def test_link_signature_for_missing_rows(simulation) -> None:
     c5 = pick_system("C5", exclude={HOME.id})
     simulation.jump(c5.name)
     connection = simulation.store.connection(HOME.id, c5.id)
-    assert simulation.tracker.link_signature(connection.id, HOME.id, "NOP-000", None) is False
+    assert simulation.tracker.link_signature(connection.id, HOME.id, "NOP-000") is False
 
 
 def test_frigate_hole_marks_the_connection(simulation) -> None:

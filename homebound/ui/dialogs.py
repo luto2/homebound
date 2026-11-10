@@ -253,9 +253,10 @@ class NamingDialog(BaseDialog):
         self.add_buttons(cancel_text="Skip (Esc)", primary_text="Accept (Enter)")
 
         (self.yes if request.guess.guess else self.no).radio.setChecked(True)
-        if not if_static:  # parent has no static slot
+        if not if_static:  # parent has no static
             self.yes.setEnabled(False)
         self.group.buttonToggled.connect(self._update_name)
+        self.signature_group.buttonToggled.connect(self._update_name)
         self._update_name()
         if self.asks_static:
             QShortcut(QKeySequence("Y"), self, activated=lambda: self.answer(True))
@@ -318,10 +319,14 @@ class NamingDialog(BaseDialog):
         (self.yes if is_static else self.no).radio.setChecked(True)
         self.accept()
 
+    def scheme_name(self) -> str:
+        """Return the name the picked answer gives: the static answer keeps it, the picked sig may change it."""
+        return self.state.tracker.preview_name(self.request, self.signature_id())
+
     def _update_name(self, *_: object) -> None:
         """Show the name of the picked answer unless the user typed one."""
         if not self._edited:
-            self.name.setText(self.names[self.is_static()])
+            self.name.setText(self.scheme_name())
 
     def is_static(self) -> bool:
         """Return whether "yes, the static" is picked."""
@@ -337,7 +342,7 @@ class NamingDialog(BaseDialog):
     def custom_name(self) -> str | None:
         """Return the name typed by hand, or None if it is the scheme name."""
         text = self.name.text().strip()
-        return text if self._edited and text and text != self.names[self.is_static()] else None
+        return text if self._edited and text and text != self.scheme_name() else None
 
 
 class ConnectionDialog(BaseDialog):

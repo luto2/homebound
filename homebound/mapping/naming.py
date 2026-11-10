@@ -1,14 +1,17 @@
-"""Naming schemes.
+"""Naming schemes, hole numbers and the static question.
 
-Every mapped system has a parent (towards home or the chain root) and a hole index:
-the index of the hole in the parent that leads to it. The static is always 1 (multi-static
-systems use 1..n for their statics), other holes count up from there.
+Every wormhole signature gets a bookmark number the moment it is pasted: the next one of its
+system, counting up from 1 in the order the holes are found and never reused. No number is kept
+for the static; whether a hole is the static is a flag on the system behind it (``static``).
 
-Names are derived from the path of hole indices from home, so restructuring the chain
-renames the subtree automatically; a custom name set by the user always wins.
+Every mapped system has a parent (towards home or the chain root) and a hole index: the number
+of the hole in the parent that leads to it, which is the number of the sig it came through. Its
+name comes from the path of hole numbers from home under the map's scheme and is stored when the
+system is attached (``label``), so it never changes on its own; a custom name set by the user
+always wins.
 
-Bookmark labels: the hole with index h in system S is "S-h"; the hole leading back
-towards home is "S-0".
+Bookmark labels: the hole with number h in system S is "S-h"; the hole leading back towards
+home is "S-0".
 """
 from dataclasses import dataclass
 
@@ -19,8 +22,9 @@ from ..validation import require_integer, require_type
 HOME_NAME = "Home"
 
 # Chain root letters, after the EVE University WHC System Naming Scheme
-# (wiki.eveuniversity.org/WHC_Mapping_Scheme): A and B are kept for the static chains, all other
-# chains take Z Y W U S R Q O M K I E D in that order. Never used: C (wormhole class), F (frigate
+# (wiki.eveuniversity.org/WHC_Mapping_Scheme): home's holes take A and B, then Z Y W U S R Q O M K I
+# E D, in the order they were found (EVE Uni keeps A and B for the statics; here the static is a
+# badge and keeps the letter of its number). Never used: C (wormhole class), F (frigate
 # hole), G (sounds like B/E), H/L/N (high/low/null-sec suffix), J (J-names), P and V (sound like B),
 # T (Pochven), X (sounds like "Eggs").
 STATIC_LETTERS = "AB"
@@ -49,15 +53,16 @@ def hole_digit(hole_index: int) -> str:
     return f"({hole_index})"
 
 
-def chain_letter(hole_index: int, statics: int = 1) -> str:
+def chain_letter(hole_index: int, statics: int = len(STATIC_LETTERS)) -> str:
     """Return the letter of the chain behind home's hole ``hole_index``.
 
     Args:
-        hole_index: The hole in home; 1..statics are the statics.
-        statics: How many statics home has.
+        hole_index: The hole in home: 1 → A, 2 → B, 3 → Z …
+        statics: Only for names from before stored names (the migration): how many of home's
+            first holes were static slots and took A and B; the default gives the found order.
 
     Returns:
-        A or B for a static chain, otherwise Z … D, then ZZ, YY, …; ``"?"`` for an index below 1.
+        A, B, then Z … D, then ZZ, YY, …; ``"?"`` for an index below 1.
     """
     require_integer(hole_index, "hole_index")
     require_integer(statics, "statics", minimum=0)
@@ -96,13 +101,13 @@ class Scheme:
     title: str
     description: str
 
-    def name(self, path: list[int], level_index: int | None, statics: int = 1) -> str:
+    def name(self, path: list[int], level_index: int | None, statics: int = len(STATIC_LETTERS)) -> str:
         """Return the name of the system at the end of ``path``.
 
         Args:
             path: Hole indices from the chain root, at least one.
             level_index: Position among the systems at this depth in this chain (0-based).
-            statics: Number of static slots in the root.
+            statics: See :func:`chain_letter`; only the migration of old maps passes it.
 
         Returns:
             The name.
@@ -129,7 +134,7 @@ class Scheme:
 class NumericPathScheme(Scheme):
     """Home → 1 → 12 → 123: each hop adds its hole digit."""
 
-    def name(self, path: list[int], level_index: int | None, statics: int = 1) -> str:
+    def name(self, path: list[int], level_index: int | None, statics: int = len(STATIC_LETTERS)) -> str:
         """Return the hole digits of the path joined together."""
         self._check(path, level_index, statics)
         return "".join(hole_digit(hole_index) for hole_index in path)
@@ -138,7 +143,7 @@ class NumericPathScheme(Scheme):
 class ChainDepthPositionScheme(Scheme):
     """A1a, A2a, A2b, Z1a: chain letter, depth, then the position at that depth."""
 
-    def name(self, path: list[int], level_index: int | None, statics: int = 1) -> str:
+    def name(self, path: list[int], level_index: int | None, statics: int = len(STATIC_LETTERS)) -> str:
         """Return chain letter + depth + position letter."""
         self._check(path, level_index, statics)
         return f"{chain_letter(path[0], statics)}{len(path)}{letters_for_number((level_index or 0) + 1, upper=False)}"
@@ -147,7 +152,7 @@ class ChainDepthPositionScheme(Scheme):
 class LetterNumericScheme(Scheme):
     """A → A2 → A23, Z: like numeric, but the first hop is the chain letter."""
 
-    def name(self, path: list[int], level_index: int | None, statics: int = 1) -> str:
+    def name(self, path: list[int], level_index: int | None, statics: int = len(STATIC_LETTERS)) -> str:
         """Return the chain letter followed by the remaining hole digits."""
         self._check(path, level_index, statics)
         return chain_letter(path[0], statics) + "".join(hole_digit(hole_index) for hole_index in path[1:])
@@ -156,11 +161,11 @@ class LetterNumericScheme(Scheme):
 SCHEMES: dict[str, Scheme] = {
     "numeric": NumericPathScheme(
         "numeric", "Numeric path",
-        "Each hop adds the hole number; the static is always 1. Home → 1 → 12 → 123."),
+        "Each hop adds the hole's number, counted in the order the holes were found. Home → 1 → 12 → 123."),
     "a2a": ChainDepthPositionScheme(
         "a2a", "Chain · depth · position",
-        "Chain letter from home (A = static, B = 2nd static, then Z, Y, W … as on EVE Uni; no C), "
-        "jumps deep, then the system's letter at that depth. A1a, A2a, A2b, Z1a."),
+        "Chain letter of home's hole in the order found (A, B, then Z, Y, W … as on EVE Uni; no C), "
+        "jumps deep, then the system's letter at that depth. A1a, A2a, A2b, B1a."),
     "letter_numeric": LetterNumericScheme(
         "letter_numeric", "Letter-led numeric",
         "Like numeric, but the first hop from home is a chain letter (same letters as above). A → A2 → A23, Z."),
@@ -311,28 +316,6 @@ def number_signature(store: Store, system_id: int, signature_id: str) -> int | N
     return number
 
 
-def next_hole_index(store: Store, universe: Universe, parent_id: int, is_static: bool,
-                    child_class: str | None = None) -> int:
-    """Return the hole index a new child of ``parent_id`` gets.
-
-    Args:
-        store: The map.
-        universe: Static data.
-        parent_id: The system the hole is in.
-        is_static: Whether the hole is a static.
-        child_class: The class of the system behind it, to pick the right static slot.
-
-    Returns:
-        The static slot for a static, else the next number of the parent after the static slots
-        (numbers count up and are never reused).
-    """
-    require_type(is_static, bool, "is_static")
-    statics = static_slot_count(universe, parent_id)
-    if is_static and statics:
-        return static_slot_for_class(universe, parent_id, child_class)
-    return max(take_hole_number(store, parent_id), statics + 1)
-
-
 def next_level_index(store: Store, root_id: int, path_prefix: list[int]) -> int:
     """Count the systems already at this depth in this chain (same root, same first hop).
 
@@ -449,8 +432,7 @@ class Namer:
                 return HOME_NAME
             system = self.universe.by_id(system_id)
             return system.name if system else str(system_id)
-        label = self.scheme.name(path, self.level_index(system_id) if mapped else None,
-                                 static_slot_count(self.universe, root))
+        label = self.scheme.name(path, self.level_index(system_id) if mapped else None)
         return label if root == self.home_id or self.home_id is None else "~" + label
 
     def display(self, system_id: int) -> str:
@@ -492,7 +474,7 @@ class Namer:
         path = path + [hole_index]
         if level_index is None:
             level_index = next_level_index(self.store, root, path)
-        label = self.scheme.name(path, level_index, static_slot_count(self.universe, root))
+        label = self.scheme.name(path, level_index)
         return label if root == self.home_id or self.home_id is None else "~" + label
 
     def bookmark(self, system_id: int, hole_index: int) -> str:
@@ -651,7 +633,9 @@ def guess_static(store: Store, universe: Universe, parent_id: int, child_id: int
     if child.system_class not in destinations:
         return StaticGuess(not strict, False, True, f"Static {names}; this is {child.system_class}, so not the static")
     slot = static_slot_for_class(universe, parent_id, child.system_class)
-    taken = [sibling for sibling in store.children(parent_id) if sibling.hole_index == slot and sibling.id != child_id]
+    taken = [sibling for sibling in store.children(parent_id)
+             if sibling.static and sibling.id != child_id and (known := universe.by_id(sibling.id))
+             and static_slot_for_class(universe, parent_id, known.system_class) == slot]
     if taken:
         return StaticGuess(True, False, False, f"Static {names} is already mapped")
     # Certain only if the scan backs it up: exactly one unlinked WH sig left and it is the static type.

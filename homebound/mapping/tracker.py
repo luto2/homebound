@@ -5,8 +5,10 @@ A->B classification:
   * either side w-space / Thera / Pochven     -> wormhole: add B + connection A<->B
   * k-space to non-adjacent k-space           -> unknown (bridge, filament, clone jump): ask the UI
 
-New systems get a provisional name straight away (best guess), and a NamingRequest
-is emitted so the UI can confirm "was this the static?" / "which sig?".
+A new system takes the number of the sig it came through (the next number of its parent when no
+sig is known) and the static flag of the best guess; a NamingRequest is emitted so the UI can
+confirm "was this the static?" / "which sig?". The answer sets the flag; only the picked sig can
+change the number.
 """
 import functools
 from dataclasses import dataclass, field
@@ -17,8 +19,8 @@ from ..logs.parser import SystemChange
 from ..mapdb.store import LIFETIME_REMAINING, Connection, Store
 from ..universe.db import Universe
 from ..validation import require_integer, require_text, require_type
-from .naming import (Namer, StaticGuess, guess_static, hole_path, next_hole_index, number_signature,
-                     static_slot_count, static_slot_for_class, used_hole_indices)
+from .naming import (Namer, StaticGuess, guess_static, hole_path, number_signature, static_slot_count,
+                     take_hole_number)
 
 GRID = 62 / 3                          # map grid cell = 1/3 of the node height (token size-node-h)
 CHILD_OFFSET_X, CHILD_OFFSET_Y = 12 * GRID, 5 * GRID  # offset of a new child from its parent, in whole grid cells
@@ -310,7 +312,10 @@ class Tracker:
         return changed
 
     def _attach(self, parent_id: int, child_id: int, character_name: str) -> list:
-        """Make the child a child of the parent, named by the best guess; ask if unsure.
+        """Make the child a child of the parent, through its sig if there is only one; ask if unsure.
+
+        The child takes the number of that sig (its bookmark), else the parent's next number, and
+        the static flag of the guess.
 
         Returns:
             A :class:`NamingRequest` or :class:`AutoNamed` event, or nothing if there is nothing to ask.
@@ -320,13 +325,14 @@ class Tracker:
         connection = self.store.connection(parent_id, child_id)
         child_class = self.universe.by_id(child_id).system_class
         guess = guess_static(self.store, self.universe, parent_id, child_id)
-        hole = next_hole_index(self.store, self.universe, parent_id, guess.applies and guess.guess, child_class)
-        previous = {"parent_id": child.parent_id, "hole_index": child.hole_index}
-        self.store.update_system(child_id, parent_id=parent_id, hole_index=hole)
-
+        previous = {"parent_id": child.parent_id, "hole_index": child.hole_index, "static": child.static}
         candidates = self.unlinked_wormhole_signatures(parent_id, child_class)
-        if len(candidates) == 1:
-            self.link_signature(connection.id, parent_id, candidates[0], hole)
+        taken = candidates[0] if len(candidates) == 1 else None
+        hole = (self._signature_number(parent_id, taken) if taken else None) or take_hole_number(self.store, parent_id)
+        self.store.update_system(child_id, parent_id=parent_id, hole_index=hole,
+                                 static=int(guess.applies and guess.guess))
+        if taken:
+            self.link_signature(connection.id, parent_id, taken)
             candidates = []
         if not guess.applies and not candidates:
             return events  # can't be the static and no sig to pick: nothing to ask
@@ -336,24 +342,31 @@ class Tracker:
         events.append(NamingRequest(parent_id, child_id, connection.id, guess, candidates, character_name))
         return events
 
+    def _signature_number(self, system_id: int, signature_id: str) -> int | None:
+        """Return a sig's bookmark number, giving it the next one if it came without (an older cloud client).
+
+        Returns:
+            The number, or None if the sig doesn't exist.
+        """
+        signature = self.store.signature(system_id, signature_id)
+        if signature is None:
+            return None
+        return signature.hole_index or number_signature(self.store, system_id, signature_id)
+
     @_one_action
-    def link_signature(self, connection_id: int, system_id: int, signature_id: str, hole_index: int | None) -> bool:
-        """Link a signature to a connection and carry its wormhole details over.
+    def link_signature(self, connection_id: int, system_id: int, signature_id: str) -> bool:
+        """Link a signature to a connection and carry its wormhole details over; its number stays.
 
         Args:
             connection_id: The connection.
             system_id: The side the signature is in.
             signature_id: The signature.
-            hole_index: The bookmark index to reserve on the signature, or None.
 
         Returns:
             True if both the signature and the connection exist.
         """
         require_text(signature_id, "signature_id")
-        require_integer(hole_index, "hole_index", minimum=0, optional=True)
         self.store.set_connection_signature(connection_id, system_id, signature_id)
-        if hole_index is not None:
-            self.store.update_signature(system_id, signature_id, hole_index=hole_index)
         signature = self.store.signature(system_id, signature_id)
         connection = self.store.connection_by_id(connection_id)
         if not (signature and connection):
@@ -461,32 +474,28 @@ class Tracker:
             signature_id: The signature that was taken, if one was picked.
             custom_name: A name typed in by hand; empty or None keeps the scheme name.
 
+        The answer only sets the static flag; the number changes only when the picked sig has
+        another one (the system takes the number of the sig it came through).
+
         Returns:
             The hole index the child ends up with, or None if the child or the parent left the map while the
             question was open (nothing is changed).
         """
         require_type(request, NamingRequest, "request")
         require_type(is_static, bool, "is_static")
+        require_text(signature_id, "signature_id", optional=True)
         require_text(custom_name, "custom_name", allow_empty=True, optional=True)
         parent_id, child_id = request.parent_id, request.child_id
         if not (self.store.has_system(child_id) and self.store.has_system(parent_id)):
             return None
-        child_class = self.universe.by_id(child_id).system_class
-        current = self.store.system(child_id)
-        currently_static = (current.hole_index is not None
-                            and current.hole_index <= static_slot_count(self.universe, parent_id))
-        if is_static != currently_static:
-            # free our current index before picking a new one
-            self.store.update_system(child_id, hole_index=None)
-            hole = next_hole_index(self.store, self.universe, parent_id, is_static, child_class)
-            self.store.update_system(child_id, hole_index=hole)
-            for signature in self.store.signatures(parent_id):
-                if signature.hole_index == current.hole_index:
-                    self.store.update_signature(parent_id, signature.signature_id, hole_index=hole)
+        changes: dict[str, Any] = {"static": int(is_static), "custom_name": custom_name or None}
         if signature_id:
-            self.link_signature(request.connection_id, parent_id, signature_id,
-                                self.store.system(child_id).hole_index)
-        self.store.update_system(child_id, custom_name=custom_name or None)
+            number = self._signature_number(parent_id, signature_id)
+            if number and number != self.store.system(child_id).hole_index:
+                changes["hole_index"] = number
+            if self.store.connection_by_id(request.connection_id):
+                self.link_signature(request.connection_id, parent_id, signature_id)
+        self.store.update_system(child_id, **changes)
         return self.store.system(child_id).hole_index
 
     @_one_action
@@ -500,26 +509,36 @@ class Tracker:
         return self.store.update_system(event.child_id, **event.previous)
 
     def preview_names(self, request: NamingRequest) -> tuple[str, str]:
-        """Return the names the child would get under the active scheme.
+        """Return the names the child would get for "static" and "not static" under the active scheme.
+
+        The answer doesn't change the number, so both are the child's name now; the first is empty
+        if the parent has no static.
 
         Args:
             request: The question.
 
         Returns:
-            ``(name if static, name if not static)``; the first is empty if the parent has no static.
+            ``(name if static, name if not static)``.
         """
         require_type(request, NamingRequest, "request")
-        parent_id, child_id = request.parent_id, request.child_id
-        child_class = self.universe.by_id(child_id).system_class
-        current = self.store.system(child_id)
-        statics = static_slot_count(self.universe, parent_id)
-        used = used_hole_indices(self.store, parent_id) - {current.hole_index}
-        static_slot = static_slot_for_class(self.universe, parent_id, child_class) if statics else None
-        free = statics + 1
-        while free in used:
-            free += 1
-        level = self.namer.level_index(child_id)
-        if_static = self.namer.preview(parent_id, static_slot, level) if static_slot else ""
-        keeps_own = current.hole_index and current.hole_index > statics
-        if_not = self.namer.preview(parent_id, current.hole_index if keeps_own else free, level)
-        return if_static, if_not
+        name = self.preview_name(request)
+        return (name if static_slot_count(self.universe, request.parent_id) else ""), name
+
+    def preview_name(self, request: NamingRequest, signature_id: str | None = None) -> str:
+        """Return the name the child gets with this answer: its own, or the one behind the picked sig.
+
+        Args:
+            request: The question.
+            signature_id: The sig picked in the question, or None.
+
+        Returns:
+            The name under the active scheme.
+        """
+        require_type(request, NamingRequest, "request")
+        require_text(signature_id, "signature_id", optional=True)
+        child = self.store.system(request.child_id)
+        signature = self.store.signature(request.parent_id, signature_id) if signature_id else None
+        number = signature.hole_index if signature else None
+        if child is None or not number or number == child.hole_index:
+            return self.namer.label(request.child_id)
+        return self.namer.preview(request.parent_id, number, self.namer.level_index(request.child_id))

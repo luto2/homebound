@@ -212,6 +212,22 @@ def test_naming_dialog_signature_candidates(state) -> None:
     assert dialog.signature_id() is None
 
 
+def test_naming_dialog_name_follows_the_picked_sig(state) -> None:
+    """The static answer leaves the name alone; picking a sig shows the name its number gives."""
+    jump(state, HOME.name, 0)
+    add_sig(state, "AAA-111", hole_index=4)
+    add_sig(state, "BBB-222", hole_index=7)
+    c4 = pick_system("C4")
+    request = next(event for event in jump(state, c4.name) if isinstance(event, NamingRequest))
+    dialog = NamingDialog(None, state, request)
+    own = state.namer.label(c4.id)
+    assert dialog.name.text() == own == "8"
+    dialog.signature_rows["BBB-222"].radio.setChecked(True)
+    assert dialog.name.text() == "7" and dialog.custom_name() is None
+    dialog.signature_rows[""].radio.setChecked(True)
+    assert dialog.name.text() == own
+
+
 def test_signature_text_variants(state) -> None:
     """Descriptions of K162 with and without a mismatching destination, known, unknown, percent."""
     dialog = NamingDialog(None, state, request_for(state, "C5"))

@@ -250,7 +250,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(self.home)
         self.home_help = help_label()
         layout.addWidget(self.home_help)
-        layout.addWidget(help_label("Home is the root of the naming scheme: its static is hole 1, and every name counts from here."))
+        layout.addWidget(help_label("Home is the root of the naming scheme: every name counts from here."))
         layout.addWidget(caption("Map view"))
         self.focus_jump = QCheckBox("Centre the map on a system when a character jumps into it by wormhole")
         self.focus_jump.setChecked(self.edited.focus_on_wormhole_jump)
@@ -291,7 +291,8 @@ class SettingsDialog(QDialog):
         self.auto_name = QCheckBox("Don't ask \"was this the static?\" when the guess is certain")
         self.auto_name.setChecked(self.edited.auto_name_when_certain)
         layout.addWidget(self.auto_name)
-        layout.addWidget(help_label("Bookmarks: the hole with number n in system S is S-n (static = S-1); the way back home is S-0."))
+        layout.addWidget(help_label("Bookmarks: a WH sig gets its number n when it is pasted, so its hole in system S is S-n; "
+                                    "the way back home is S-0. Names never change on their own."))
 
     @staticmethod
     def scheme_preview(key: str) -> str:
@@ -301,13 +302,13 @@ class SettingsDialog(QDialog):
             key: A key of ``SCHEMES``.
 
         Returns:
-            Names for home's static, its two holes, home's second hole and the bookmarks.
+            Names for home's first hole, the two holes behind it, home's second hole and the bookmarks.
         """
         require_text(key, "key")
         scheme = scheme_for_key(key)
-        # Home -> static -> its static and its 2nd hole; Home's 2nd hole (home with one static).
+        # Home -> its 1st hole -> that system's 1st and 2nd hole; Home's 2nd hole.
         paths = [([1], 0), ([1, 1], 0), ([1, 2], 1), ([2], 0)]
-        names = [scheme.name(path, level_index, 1) for path, level_index in paths]
+        names = [scheme.name(path, level_index) for path, level_index in paths]
         return (f"Home → {names[0]} → {names[1]}, {names[2]}   ·   Home → {names[3]}"
                 f"      bookmark in {names[0]}: {names[0]}-1, {names[0]}-2, {names[0]}-0")
 

@@ -8,8 +8,8 @@ from homebound.mapdb.store import Signature, Store
 from homebound.mapping.naming import (SCHEMES, ChainDepthPositionScheme, Namer, Scheme, chain_letter,
                                       freeze_legacy_names, guess_static,
                                       hole_digit, hole_path, is_static_signature, letters_for_number, level_positions,
-                                      next_hole_index, next_level_index, scheme_for_key, signature_destination,
-                                      static_slot_count, static_slot_for_class)
+                                      next_level_index, scheme_for_key, signature_destination,
+                                      static_slot_count, static_slot_for_class, take_hole_number)
 
 
 def test_hole_digits() -> None:
@@ -23,7 +23,7 @@ def test_hole_digits_past_z_are_bracketed_numbers() -> None:
     """Index 35 is still ``z``; 36 and up are the number in brackets, never punctuation like ``{``."""
     assert [hole_digit(hole_index) for hole_index in (35, 36, 37, 100)] == ["z", "(36)", "(37)", "(100)"]
     assert SCHEMES["numeric"].name([1, 36], None) == "1(36)"
-    assert SCHEMES["letter_numeric"].name([2, 61], None) == "Z(61)"
+    assert SCHEMES["letter_numeric"].name([3, 61], None) == "Z(61)"
 
 
 def test_next_level_index_counts_the_same_depth_in_the_same_chain() -> None:
@@ -86,7 +86,7 @@ def test_next_level_index_reads_only_the_chain_behind_the_first_hop() -> None:
 
 
 def test_chain_letters_follow_eve_uni() -> None:
-    """A/B for statics, then Z, Y, W …, never letters that are hard to tell apart."""
+    """A, B, then Z, Y, W …, never letters that are hard to tell apart; with static slots (old maps) as before."""
     assert [chain_letter(hole, 1) for hole in range(1, 6)] == ["A", "Z", "Y", "W", "U"]
     assert [chain_letter(hole, 2) for hole in range(1, 5)] == ["A", "B", "Z", "Y"]
     assert chain_letter(1, 0) == "Z" and chain_letter(0, 1) == "?"
@@ -94,6 +94,19 @@ def test_chain_letters_follow_eve_uni() -> None:
     assert chain_letter(14, 1) == "D" and chain_letter(15, 1) == "ZZ"
     with pytest.raises(TypeError):
         chain_letter("1")
+
+
+def test_chain_letters_go_in_found_order() -> None:
+    """Home's holes 1, 2, 3 are chains A, B, Z whatever its statics; a k-space home starts at A too."""
+    store = Store(":memory:")
+    namer = Namer(store, UNIVERSE, "a2a", HOME.id)
+    store.add_system(HOME.id)
+    children = [system for system in UNIVERSE.all_systems() if system.system_class == "C2"][:3]
+    for hole, child in enumerate(children, start=1):
+        store.add_system(child.id, parent_id=HOME.id, hole_index=hole)
+    assert [namer.display(child.id) for child in children] == ["A1a", "B1a", "Z1a"]
+    assert [chain_letter(hole) for hole in range(1, 5)] == ["A", "B", "Z", "Y"]
+    assert "static" not in SCHEMES["numeric"].description and "A = static" not in SCHEMES["a2a"].description
 
 
 def test_letters_for_number() -> None:
@@ -106,7 +119,8 @@ def test_schemes_name_paths() -> None:
     """Each scheme turns the same path into its own name."""
     assert SCHEMES["numeric"].name([1, 2, 3], None) == "123"
     assert SCHEMES["a2a"].name([1, 2], 1) == "A2b"
-    assert SCHEMES["letter_numeric"].name([2, 3], 0) == "Z3"
+    assert SCHEMES["letter_numeric"].name([2, 3], 0) == "B3"
+    assert SCHEMES["letter_numeric"].name([2, 3], 0, 1) == "Z3"      # a one-static home before stored names
     for bad in ([], [1, -1]):
         with pytest.raises(ValueError):
             SCHEMES["numeric"].name(bad, None)
@@ -129,16 +143,18 @@ def test_static_slots() -> None:
         static_slot_for_class(UNIVERSE, HOME.id, 5)
 
 
-def test_next_hole_index_skips_used_indices() -> None:
-    """Non-static holes take the lowest index that no child or sig uses."""
+def test_take_hole_number_counts_up_from_one() -> None:
+    """No slot for the static: the first hole is 1, then one past the highest number given out or in use."""
     store = Store(":memory:")
     store.add_system(HOME.id)
-    assert next_hole_index(store, UNIVERSE, HOME.id, True, "C5") == 1
-    assert next_hole_index(store, UNIVERSE, HOME.id, False) == 2
+    assert take_hole_number(store, HOME.id) == 1
     store.upsert_signature(Signature(HOME.id, "ABC-123", hole_index=2))
-    assert next_hole_index(store, UNIVERSE, HOME.id, False) == 3
-    with pytest.raises(TypeError):
-        next_hole_index(store, UNIVERSE, HOME.id, "yes")
+    assert take_hole_number(store, HOME.id) == 3
+    store.delete_signatures(HOME.id, ["ABC-123"])
+    assert take_hole_number(store, HOME.id) == 3          # 2 was given out
+    assert take_hole_number(store, 30000142) == 1         # not on the map
+    with pytest.raises(ValueError):
+        take_hole_number(store, 0)
 
 
 def test_hole_path_stops_at_a_loop() -> None:
@@ -187,7 +203,9 @@ def test_guess_static_reasons() -> None:
     matching = guess_static(store, UNIVERSE, HOME.id, c5.id)
     assert matching.applies and matching.guess and not matching.certain
     other = pick_system("C5", exclude={HOME.id, c5.id})
-    store.add_system(other.id, parent_id=HOME.id, hole_index=1)
+    store.add_system(other.id, parent_id=HOME.id, hole_index=4)
+    assert guess_static(store, UNIVERSE, HOME.id, c5.id).guess    # a hole, but not flagged as the static
+    store.update_system(other.id, static=1)
     assert "already mapped" in guess_static(store, UNIVERSE, HOME.id, c5.id).reason
     with pytest.raises(TypeError):
         guess_static(store, UNIVERSE, HOME.id, c5.id, signature_type=296)

@@ -170,6 +170,8 @@ class SystemNode(QGraphicsObject):
             lines.append(f"Owner: {self.mapped.owner_ticker} {self.mapped.owner_note or ''}")
         if self.characters:
             lines.append("Here: " + ", ".join(character[1] for character in self.characters))
+        if self.static:
+            lines.append("Behind its parent's static")
         if self.unconfirmed:
             lines.append("▲ Unconfirmed: added by hand, or on a connection nobody has jumped yet")
         if self.scan_status.state == "due":
@@ -251,8 +253,13 @@ class SystemNode(QGraphicsObject):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRoundedRect(body.adjusted(-1, -1, 1, 1), radius + 1, radius + 1)
 
+    @property
+    def static(self) -> bool:
+        """Whether the system is behind its parent's static (the flag set by the guess or the naming question)."""
+        return bool(self.mapped and self.mapped.parent_id and self.mapped.static)
+
     def _paint_tabs(self, painter: QPainter) -> None:
-        """Draw the HOME, UNCONFIRMED and rescan tabs on the top edge and note where the character markers may start.
+        """Draw the HOME or STATIC, UNCONFIRMED and rescan tabs on the top edge; note where the character markers may start.
 
         Next to both UNCONFIRMED and HOME the rescan tab is compact, so it ends before HOME; if characters are
         here too it is left out, as there would be no room for their markers (the hatch and tooltip remain).
@@ -261,10 +268,12 @@ class SystemNode(QGraphicsObject):
         home = self.system_id == self.state.home_id
         if home:
             painting.draw_chip(painter, NODE_WIDTH - 46, -7, "⌂ HOME", color("accent"), height=13)
+        elif self.static:   # where HOME sits: home has no parent, so it is never behind a static
+            painting.draw_chip(painter, NODE_WIDTH - 48, -7, "STATIC", color("bg-4"), height=13, ink=color("ink"))
         if self.unconfirmed:
             self._character_marker_start += painting.draw_chip(
                 painter, 8, -7, "▲ UNCONFIRMED", color("warning"), height=13) + 4
-        crowded = home and self.unconfirmed
+        crowded = (home or self.static) and self.unconfirmed
         if (label := scan_tab_label(self.scan_status, compact=crowded)) and not (crowded and self.characters):
             self._character_marker_start += painting.draw_chip(
                 painter, self._character_marker_start, -7, label, color("stale"), height=13) + 4
