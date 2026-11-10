@@ -1,6 +1,6 @@
 # Plan: corrupt map locks the app out
 
-Status: proposed (2026-11-06). TODO.md "To do" item 1, findings E5a, E5 and E18.
+Status: implemented (2026-11-10, commit `7be8fbb`). Deviations: the start-up error uses `QMessageBox.critical` (the plan said the app has none; it already had one). The damaged-file warning repeats at every start while a `.damaged` file exists; Settings opens by itself only on the start that set it aside.
 
 Depends on: nothing. Touches the same files as the damaged-backup, prune-error and backup URI plans (see "Overlaps").
 

@@ -49,7 +49,7 @@ What we can't show without ESI: character, corp and alliance *names*. IDs only, 
    `COLUMN_ADDITIONS` style, as a new table), replaced per system on each fetch, so it never holds more
    than the last 24 h. Local only: like `zkill` it isn't a synced entity.
    Skip malformed entries the way `summarize` already skips bad times; add a `try` for non-dict
-   `victim`/`attackers` (this overlaps with [`plan-zkill-worker.md`](../plan-zkill-worker.md); do that plan
+   `victim`/`attackers` (this overlaps with [`plan-zkill-worker.md`](plan-zkill-worker.md); do that plan
    first or in the same branch).
 3. **System panel section.** A small model/delegate in `ui/system_panel.py` (or a new
    `ui/activity_list.py` if it grows past ~150 lines), painted with the existing chip and row helpers

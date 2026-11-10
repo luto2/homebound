@@ -72,14 +72,14 @@ is in suggested order: the cheap data-safety fixes come before the segfault hunt
 cause yet. The number in brackets is criticality out of 10, from impact and how likely the problem
 is. The Effort line uses the same scale and models as the human-added tasks.
 
-1. **[7] Corrupt map locks the app out (E5a, E5, E18).** `AppState.switch_map` saves the new active
+1. **Done 2026-11-10 (`7be8fbb`).** **[7] Corrupt map locks the app out (E5a, E5, E18).** `AppState.switch_map` saves the new active
    map and closes the old store before opening the new one. If the open fails, the app is left on a
    closed store and every later start raises `DatabaseError` until `settings.json` is edited by
    hand. `state.py:102` has no handling at startup either, so a corrupt active map means no window
    and no way to reach Restore. Open first, save after, and show a recovery path at start. Also
    check `_reopen_store` in the `finally` of `restore_backup`, which can hide the original error.
    Effort: 3/5 · Opus. Overlaps 2, 5 and 6 in the backup and store code: do the four in one session.
-2. **[7] Backups come out empty when the data path has `#` or `?` (E3a, E3, E4).** The raw path goes
+2. **Done 2026-11-10 (`ad64cb5`).** **[7] Backups come out empty when the data path has `#` or `?` (E3a, E3, E4).** The raw path goes
    into `file:{path}?mode=ro`, so SQLite opens a different file. `_copy_database` then writes a
    database with 0 tables and reports no error, and restoring that copy would wipe the map. In the
    same case `needs_migration` returns False, `map_stats` returns zeros and stray empty files appear
@@ -100,12 +100,12 @@ is. The Effort line uses the same scale and models as the human-added tasks.
    `LogFile.from_path` raise `ValueError` from `strptime`, and `LogScanner.poll` raises with it on
    every poll. `settings_dialog.py:223` calls it too. Return None for a bad date.
    Effort: 1/5 · Haiku.
-5. **[4] Damaged backup breaks Restore (E8, E8a).** A corrupt zip raises `zlib.error`, a bad manifest
+5. **Done 2026-11-10 (`f2497b3`).** **[4] Damaged backup breaks Restore (E8, E8a).** A corrupt zip raises `zlib.error`, a bad manifest
    raises `KeyError` or `TypeError`, and the UI catches only `BackupError`. The undo branch in
    `restore_maps` doesn't run either. `RestoreBackupDialog` (`dialogs.py:959`) crashes on a non-dict
    map entry.
    Effort: 3/5 · Opus, in the session with 1.
-6. **[4] `prune` can raise `OSError` out of a finished backup (E9).** It sits outside the `try` in
+6. **Done 2026-11-10 (`8142f01`).** **[4] `prune` can raise `OSError` out of a finished backup (E9).** It sits outside the `try` in
    `create_backup` and `copy_to_folder`, while `AppState.backup` documents that it never raises. A
    locked file (Windows, OneDrive) is the likely trigger. During a migration backup it would abort
    opening the map.
