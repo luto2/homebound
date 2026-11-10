@@ -11,6 +11,7 @@ import shutil
 import sqlite3
 import tempfile
 import zipfile
+import zlib
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -32,6 +33,9 @@ SETTINGS_MEMBER = "settings.json"
 MAP_LIST_KEYS = ("maps", "active_map", "home_system", "naming_scheme")
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 NAME_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{4}_(?P<reason>[a-z]+)(?:-\d+)?\.zip$")
+# what reading a member of a damaged zip can raise: a missing member, a broken or cut-off deflate
+# stream, an encrypted member, an unknown compression
+ZIP_READ_ERRORS = (OSError, KeyError, zipfile.BadZipFile, zlib.error, EOFError, RuntimeError, NotImplementedError)
 
 
 class BackupError(Exception):
@@ -208,8 +212,18 @@ def copy_to_folder(path: Path, folder: str, warnings: list[str] | None = None) -
     return copy
 
 
+def _valid_map_entry(entry: object) -> bool:
+    """Return whether a manifest's map entry has the shape a restore needs."""
+    return (isinstance(entry, dict) and isinstance(entry.get("file"), str) and bool(entry["file"])
+            and isinstance(entry.get("home_system", ""), str)
+            and entry.get("naming_scheme", "numeric") in settings_module.SCHEMES)
+
+
 def read_manifest(path: Path) -> dict:
     """Return the manifest of a backup zip.
+
+    A damaged map entry (not a dict, no file name, a home or scheme of the wrong kind) is left out of
+    ``maps``, so the other maps of the backup can still be listed and restored.
 
     Raises:
         BackupError: If the file isn't a backup zip or the manifest can't be read.
@@ -218,10 +232,11 @@ def read_manifest(path: Path) -> dict:
     try:
         with zipfile.ZipFile(path) as archive:
             manifest = json.loads(archive.read(MANIFEST))
-    except (OSError, KeyError, zipfile.BadZipFile, json.JSONDecodeError, UnicodeDecodeError) as error:
+    except (*ZIP_READ_ERRORS, json.JSONDecodeError, UnicodeDecodeError) as error:
         raise BackupError(f"{path.name} is not a readable backup: {error}") from error
     if not isinstance(manifest, dict) or not isinstance(manifest.get("maps"), dict):
         raise BackupError(f"{path.name} has no list of maps")
+    manifest["maps"] = {name: entry for name, entry in manifest["maps"].items() if _valid_map_entry(entry)}
     return manifest
 
 
@@ -326,6 +341,8 @@ def _extract_map(archive: zipfile.ZipFile, member: str, temporary: Path, number:
         data = archive.read(member)
     except KeyError as error:
         raise BackupError(f"The backup has no file {member}") from error
+    except ZIP_READ_ERRORS as error:
+        raise BackupError(f"The backup's copy of {member} is damaged: {error}") from error
     unpacked = temporary / f"unpacked-{number}.db"
     unpacked.write_bytes(data)
     return _copy_database(unpacked, unpacked.with_suffix(".checked.db"))
@@ -349,7 +366,10 @@ def restore_maps(backup: Path, names: list[str], replace: bool, settings: Settin
         Backup map name -> name of the map it went into.
 
     Raises:
-        BackupError: If the backup can't be read, a name isn't in it, or a file can't be written.
+        BackupError: If the backup can't be read, a name isn't in it, or a file can't be written. The
+            settings are then as before and the files of maps added as new are gone; maps already
+            replaced stay replaced (the message names them), and the ``restore`` backup has their
+            earlier state.
     """
     require_type(names, list, "names")
     require_type(settings, Settings, "settings")
@@ -360,6 +380,7 @@ def restore_maps(backup: Path, names: list[str], replace: bool, settings: Settin
     if replace:
         create_backup("restore", settings)
     restored: dict[str, str] = {}
+    replaced: list[str] = []   # maps whose file was already overwritten
     before = (copy.deepcopy(settings.maps), settings.home_system, settings.naming_scheme)
     try:
         with zipfile.ZipFile(backup) as archive, tempfile.TemporaryDirectory() as temporary:
@@ -378,16 +399,23 @@ def restore_maps(backup: Path, names: list[str], replace: bool, settings: Settin
                     target = settings.add_map(new_name, home, scheme)
                     restored[name] = new_name
                 _write_into(checked, target)
-    except (OSError, zipfile.BadZipFile, BackupError) as error:
+                if replace and name in before[0]:
+                    replaced.append(restored[name])
+    except (*ZIP_READ_ERRORS, BackupError, ValueError, TypeError) as error:
         # undo the settings changes and drop the files of maps added as new
         for new_name in set(settings.maps) - set(before[0]):
             path = settings.map_path(new_name)
             for suffix in ("", "-wal", "-shm"):
                 path.with_name(path.name + suffix).unlink(missing_ok=True)
         settings.maps, settings.home_system, settings.naming_scheme = before
-        if isinstance(error, BackupError):
+        message = str(error) if isinstance(error, BackupError) else f"The backup couldn't be restored: {error}"
+        if replaced:
+            names = ", ".join(replaced)
+            message += (f". {names} {'was' if len(replaced) == 1 else 'were'} already replaced; "
+                        f"the restore backup made just now has the earlier state")
+        elif isinstance(error, BackupError):
             raise
-        raise BackupError(f"The backup couldn't be restored: {error}") from error
+        raise BackupError(message) from error
     return restored
 
 
@@ -430,7 +458,7 @@ def restore_settings(backup: Path, settings: Settings) -> int:
     try:
         with zipfile.ZipFile(backup) as archive:
             raw = json.loads(archive.read(SETTINGS_MEMBER))
-    except (OSError, KeyError, zipfile.BadZipFile, json.JSONDecodeError, UnicodeDecodeError) as error:
+    except (*ZIP_READ_ERRORS, json.JSONDecodeError, UnicodeDecodeError) as error:
         raise BackupError(f"{backup.name} has no readable settings: {error}") from error
     if not isinstance(raw, dict):
         raise BackupError(f"{backup.name} has no readable settings")

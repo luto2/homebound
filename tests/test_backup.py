@@ -667,6 +667,92 @@ def test_unreadable_and_damaged_maps(settings, tmp_path) -> None:
         create_backup("manual", settings)
 
 
+def damage_member(path: Path, member: str) -> Path:
+    """Break the deflate stream of one zip member, so reading it raises ``zlib.error``."""
+    with zipfile.ZipFile(path) as archive:
+        offset = archive.getinfo(member).header_offset
+    data = bytearray(path.read_bytes())
+    name_length = int.from_bytes(data[offset + 26:offset + 28], "little")
+    extra_length = int.from_bytes(data[offset + 28:offset + 30], "little")
+    data[offset + 30 + name_length + extra_length] = 0xff   # final block of the reserved, invalid type
+    path.write_bytes(bytes(data))
+    return path
+
+
+def two_map_backup(settings) -> Path:
+    """Add a second map with one system and back both maps up."""
+    with Store(settings.add_map("Second", home_system=OTHER.name)) as store:
+        store.add_system(OTHER.id)
+    return create_backup("manual", settings)
+
+
+@pytest.mark.parametrize("entry", ["oops", [], {"home_system": HOME.name}, {"file": ""},
+                                   {"file": "map.db", "home_system": 5},
+                                   {"file": "map.db", "naming_scheme": "roman"}])
+def test_restore_refuses_damaged_manifest_entry(settings, entry) -> None:
+    """A damaged map entry is left out of the backup's list; the other maps stay restorable."""
+    path = create_backup("manual", settings)
+    with zipfile.ZipFile(path) as archive:
+        members = {name: archive.read(name) for name in archive.namelist()}
+    manifest = json.loads(members["manifest.json"])
+    manifest["maps"] = {"Broken": entry, "Main": manifest["maps"]["Main"]}
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, data in members.items():
+            archive.writestr(name, json.dumps(manifest) if name == "manifest.json" else data)
+    [info] = list_backups()
+    assert list(info.maps) == ["Main"]
+    with pytest.raises(BackupError, match="no map called 'Broken'"):
+        restore_maps(path, ["Broken"], False, settings)
+    assert len(restore_maps(path, ["Main"], False, settings)) == 1
+
+
+def test_failed_restore_undoes_settings_and_files(settings) -> None:
+    """A damaged map member partway through a restore as new maps leaves the settings and folder as before."""
+    path = damage_member(two_map_backup(settings), "maps/second.db")
+    before = (json.dumps(settings.maps), settings.home_system, settings.naming_scheme)
+    files_before = sorted(settings_module.DATA_DIR.rglob("*.db*"))
+    with pytest.raises(BackupError, match="damaged"):
+        restore_maps(path, ["Main", "Second"], False, settings)
+    assert (json.dumps(settings.maps), settings.home_system, settings.naming_scheme) == before
+    assert sorted(settings_module.DATA_DIR.rglob("*.db*")) == files_before
+    with Store(settings.map_path("Second")) as store:
+        assert store.has_system(OTHER.id)
+
+
+def test_failed_replace_says_what_was_replaced(settings) -> None:
+    """A replace that fails on the second map undoes the settings, keeps a restore backup and says what changed."""
+    path = damage_member(two_map_backup(settings), "maps/second.db")
+    before = json.dumps(settings.maps)
+    with pytest.raises(BackupError, match="Main was already replaced") as raised:
+        restore_maps(path, ["Main", "Second"], True, settings)
+    assert "restore backup" in str(raised.value)
+    assert json.dumps(settings.maps) == before
+    assert any(info.reason == "restore" for info in list_backups())
+    with Store(settings.map_path("Second")) as store:
+        assert store.has_system(OTHER.id)
+
+
+def test_damaged_manifest_member_is_skipped_in_list(settings) -> None:
+    """One backup with a damaged manifest doesn't hide the others or stop the next backup."""
+    good = create_backup("manual", settings)
+    broken = backups_directory() / "2026-11-01_1200_auto.zip"
+    with zipfile.ZipFile(broken, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("manifest.json", json.dumps({"reason": "auto", "maps": {"Main": {"file": "map.db"}}}))
+    damage_member(broken, "manifest.json")
+    with pytest.raises(BackupError, match="not a readable backup"):
+        backup_info(broken)
+    assert [info.path for info in list_backups()] == [good]
+    assert auto_backup_due()
+    assert create_backup("manual", settings).exists()
+
+
+def test_restore_settings_with_damaged_member(settings) -> None:
+    """A damaged settings member is a BackupError, not a raw zlib error."""
+    path = damage_member(create_backup("manual", settings), "settings.json")
+    with pytest.raises(BackupError, match="no readable settings"):
+        restore_settings(path, settings)
+
+
 def test_needs_migration_on_damaged_file(tmp_path) -> None:
     """A damaged file doesn't count as needing a migration (opening it fails on its own)."""
     path = tmp_path / "damaged.db"
