@@ -22,6 +22,7 @@ from ..zkill import had_recent_kill
 NODE_WIDTH, NODE_HEIGHT = PIXELS["size-node-w"], PIXELS["size-node-h"]
 W, H = NODE_WIDTH, NODE_HEIGHT  # short aliases kept for older importers
 MINIMUM_ZOOM, MAXIMUM_ZOOM = 0.2, 2.5
+ARROW_STEPS = {Qt.Key.Key_Left: (-1, 0), Qt.Key.Key_Right: (1, 0), Qt.Key.Key_Up: (0, -1), Qt.Key.Key_Down: (0, 1)}
 
 
 def removed_in(connection: Connection, universe: Universe) -> str:
@@ -110,6 +111,8 @@ class SystemNode(QGraphicsObject):
         self.characters: list[tuple[int, str, int]] = []
         self.unconfirmed = False
         self.scan_status = ScanStatus("fresh")
+        self.following = False                       # being moved as part of a block: don't snap on your own
+        self.block_start: dict[SystemNode, QPointF] = {}   # while dragging: where each selected node started
         self._character_marker_start = 8.0   # where the character markers start on the top edge
         self.setFlags(QGraphicsItem.GraphicsItemFlag.ItemIsMovable | QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
                       | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges)
@@ -395,7 +398,7 @@ class SystemNode(QGraphicsObject):
 
     def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value: object) -> object:
         """Snap moves to the grid, keep the edges attached and tell the state when selected."""
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and not self.following:
             return QPointF(round(value.x() / GRID) * GRID, round(value.y() / GRID) * GRID)
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             for edge in self.edges:
@@ -404,12 +407,37 @@ class SystemNode(QGraphicsObject):
             self.state.select(self.system_id)
         return super().itemChange(change, value)
 
+    def mousePressEvent(self, event) -> None:
+        """Select as Qt does, remember where every selected node starts and follow the last clicked system."""
+        super().mousePressEvent(event)
+        if event.button() == Qt.MouseButton.LeftButton:
+            scene = self.scene()
+            self.block_start = ({node: node.pos() for node in scene.selected_nodes()}
+                                if isinstance(scene, MapScene) else {})
+            if self.isSelected():
+                self.state.select(self.system_id)
+
+    def mouseMoveEvent(self, event) -> None:
+        """Drag one node, or all selected nodes as one block that keeps its offsets and snaps to the grid."""
+        if len(self.block_start) < 2 or self not in self.block_start:
+            super().mouseMoveEvent(event)
+            return
+        wanted = self.block_start[self] + event.scenePos() - event.buttonDownScenePos(Qt.MouseButton.LeftButton)
+        step = QPointF(round(wanted.x() / GRID) * GRID, round(wanted.y() / GRID) * GRID) - self.block_start[self]
+        for node, start in self.block_start.items():
+            node.following = True
+            try:
+                node.setPos(start + step)
+            finally:
+                node.following = False
+
     def mouseReleaseEvent(self, event) -> None:
-        """Store the new position after a drag."""
+        """Store the new positions of the dragged nodes."""
         super().mouseReleaseEvent(event)
-        if self.mapped and (self.mapped.x, self.mapped.y) != (self.pos().x(), self.pos().y()):
-            self.state.store.update_system(self.system_id, x=self.pos().x(), y=self.pos().y())
-            self.mapped = self.state.store.system(self.system_id)
+        self.block_start = {}
+        scene = self.scene()
+        if isinstance(scene, MapScene):
+            scene.store_moved_nodes(self)
 
 
 class ConnectionEdge(QGraphicsItem):
@@ -614,6 +642,7 @@ class MapScene(QGraphicsScene):
         state.settingsChanged.connect(self.refresh_scan_status)
         state.scanAgeTick.connect(self.refresh_scan_status)
         state.selectionChanged.connect(self._select)
+        self.selectionChanged.connect(self._count_selection)
         self.rebuild()
 
     def rebuild(self) -> None:
@@ -672,6 +701,69 @@ class MapScene(QGraphicsScene):
         if node and not node.isSelected():
             self.clearSelection()
             node.setSelected(True)
+
+    def _count_selection(self) -> None:
+        """Tell the state how many systems are selected."""
+        self.state.set_selected_count(len(self.selected_nodes()))
+
+    def selected_nodes(self) -> list[SystemNode]:
+        """Return the selected system nodes."""
+        return [item for item in self.selectedItems() if isinstance(item, SystemNode)]
+
+    def store_moved_nodes(self, grabbed: SystemNode | None = None) -> int:
+        """Store the position of every selected node that moved, in one batch (one undo step, one set of sync ops).
+
+        Args:
+            grabbed: The node being dragged; it is stored even when it isn't selected.
+
+        Returns:
+            The number of systems written.
+        """
+        candidates = self.selected_nodes()
+        if grabbed is not None and grabbed not in candidates:
+            candidates.append(grabbed)
+        moved = [node for node in candidates
+                 if node.mapped and (node.mapped.x, node.mapped.y) != (node.pos().x(), node.pos().y())]
+        if not moved:
+            return 0
+        store = self.state.store
+        with store.batch():
+            for node in moved:
+                store.update_system(node.system_id, x=node.pos().x(), y=node.pos().y())
+        for node in moved:
+            node.mapped = store.system(node.system_id)
+        return len(moved)
+
+    def move_selection(self, columns: int, rows: int) -> int:
+        """Move the selected systems by whole grid steps and store them in one batch.
+
+        Args:
+            columns: Grid steps to the right (negative for left).
+            rows: Grid steps down (negative for up).
+
+        Returns:
+            The number of systems written.
+        """
+        require_integer(columns, "columns")
+        require_integer(rows, "rows")
+        nodes = self.selected_nodes()
+        for node in nodes:
+            node.following = True
+            try:
+                node.setPos(node.pos() + QPointF(columns * GRID, rows * GRID))
+            finally:
+                node.following = False
+        return self.store_moved_nodes()
+
+    def select_all(self) -> int:
+        """Select every system on the map.
+
+        Returns:
+            The number of systems selected.
+        """
+        for node in self.nodes.values():
+            node.setSelected(True)
+        return len(self.nodes)
 
     def _item_at(self, scene_position: QPointF) -> QGraphicsItem | None:
         """Return the topmost item at a scene position (needs a view for the transform), or None."""
@@ -778,9 +870,23 @@ class MapScene(QGraphicsScene):
         super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event) -> None:
-        """Cancel drawing a link on Escape."""
-        if event.key() == Qt.Key.Key_Escape and self._link_from is not None:
-            self.cancel_link()
+        """Cancel drawing a link on Escape (else clear the selection), select all on Ctrl+A, move on arrow keys."""
+        key, modifiers = event.key(), event.modifiers()
+        if key == Qt.Key.Key_Escape:
+            if self._link_from is not None:
+                self.cancel_link()
+            else:
+                self.clearSelection()
+            return
+        if key == Qt.Key.Key_A and modifiers & Qt.KeyboardModifier.ControlModifier:
+            self.select_all()
+            event.accept()
+            return
+        arrow = ARROW_STEPS.get(key)
+        if arrow and self.selected_nodes() and not modifiers & ~Qt.KeyboardModifier.ShiftModifier:
+            times = 5 if modifiers & Qt.KeyboardModifier.ShiftModifier else 1
+            self.move_selection(arrow[0] * times, arrow[1] * times)
+            event.accept()
             return
         super().keyPressEvent(event)
 
@@ -852,6 +958,25 @@ class MapView(QGraphicsView):
         self.scale(ratio, ratio)
         self.zoomChanged.emit(self.zoom())
         return self.zoom()
+
+    def mousePressEvent(self, event) -> None:
+        """Ctrl+drag on empty canvas draws a selection rectangle; any other drag pans."""
+        on_empty = not isinstance(self.itemAt(event.position().toPoint()), SystemNode)
+        rubber = (event.button() == Qt.MouseButton.LeftButton and on_empty
+                  and bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier))
+        self.setDragMode(QGraphicsView.DragMode.RubberBandDrag if rubber
+                         else QGraphicsView.DragMode.ScrollHandDrag)
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        """Finish a selection rectangle (selecting systems only) and go back to panning."""
+        rubber = self.dragMode() == QGraphicsView.DragMode.RubberBandDrag
+        super().mouseReleaseEvent(event)
+        if rubber:
+            for item in self.scene().selectedItems():
+                if not isinstance(item, SystemNode):
+                    item.setSelected(False)
+        self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
 
     def wheelEvent(self, event) -> None:
         """Zoom with the mouse wheel."""

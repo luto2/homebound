@@ -63,7 +63,7 @@ Then set your **Home system** (autocomplete over every system name) and pick a *
 | Toolbar | Map menu `▦ Main ▾`, home system, naming scheme, overlay mode, find (Ctrl+F), Fit chain, Settings. |
 | Characters (left) | Every character found in the logs: marker, online state and current system. Double-click a row (or Space) to show its system. Right-click → *Pin overlay to this character*. The row the overlay follows is highlighted. |
 | Routes (left, under Characters) | Jumps and the way from the selected system (or, with nothing selected, the followed character's system) to the trade hubs and your own destinations. See [Routes](#routes). |
-| Map (centre) | Systems and connections. Drag to pan, wheel to zoom, drag a system to move it (it snaps to the grid). Legend bottom-left, zoom bottom-right. With more than one map, a `MAP Main` tag in the top-right corner says which map is open. |
+| Map (centre) | Systems and connections. Drag to pan, wheel to zoom, drag a system to move it (it snaps to the grid). Ctrl+click adds systems to the selection, Ctrl+drag on empty canvas draws a selection rectangle, Ctrl+A selects all, Esc clears; dragging any selected system moves them all, and the arrow keys nudge the selection by one grid step (Shift: five). A moved group is one undo step. Legend bottom-left, zoom bottom-right. With more than one map, a `MAP Main` tag in the top-right corner says which map is open. |
 | System (right) | The selected system: custom name, owner, notes, zKill activity, and the signature table. |
 | Status bar | Log watcher, zKill, EVE-Scout and focus tracking (KWin script, X11 fallback, or Windows), each with ✓ / ▲ / ✕. |
 

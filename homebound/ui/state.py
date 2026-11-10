@@ -35,6 +35,7 @@ class AppState(QObject):
     unknownJump = Signal(object)          # UnknownJump
     autoNamed = Signal(object)            # AutoNamed
     selectionChanged = Signal(int)        # system id (0 = none)
+    selectedCountChanged = Signal(int)    # how many systems are selected on the map
     settingsChanged = Signal()
     status = Signal(str, str, str)        # source (logs|zkill|scout|kwin|backup), level, text
     followedChanged = Signal(object)      # character id or None (overlay target)
@@ -69,6 +70,7 @@ class AppState(QObject):
         self.namer = Namer(self.store, universe, settings.naming_scheme, self.home_id)
         self.tracker = Tracker(self.store, universe, self.namer, settings.auto_name_when_certain)
         self.selected: int = 0
+        self.selected_count: int = 0
         self.followed: int | None = None  # character whose client is focused
         # other members' shared characters on the open cloud map: char id -> {"name", "system_id", "afk"}
         self.remote_presence: dict[int, dict] = {}
@@ -415,6 +417,19 @@ class AppState(QObject):
             return False
         self.selected = system_id
         self.selectionChanged.emit(system_id)
+        return True
+
+    def set_selected_count(self, count: int) -> bool:
+        """Remember how many systems are selected on the map.
+
+        Returns:
+            True if the count changed.
+        """
+        require_integer(count, "count", minimum=0)
+        if count == self.selected_count:
+            return False
+        self.selected_count = count
+        self.selectedCountChanged.emit(count)
         return True
 
     def set_followed(self, character_id: int | None) -> bool:
