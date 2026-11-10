@@ -508,6 +508,14 @@ def naming_request(window, system_class="C5") -> NamingRequest:
             window.state.store, window.state.universe, HOME.id, simulation_child.id, strict=False))
 
 
+def test_map_name_accepts_any_characters(window) -> None:
+    """The map name check accepts any characters, as the dialog hint promises (only length and duplicates count)."""
+    check = window._map_name_check()
+    assert check("Ünï/cøde")[0] is True
+    assert check("Corp (main) #2")[0] is True
+    assert check("")[0] is False
+
+
 def test_queue_naming_validates(window) -> None:
     """Only naming requests can be queued."""
     with pytest.raises(TypeError):
@@ -759,6 +767,27 @@ def test_rename_system_via_menu_and_key(window, modal) -> None:
     count = len(modal.dialogs)
     window._key_rename()
     assert len(modal.dialogs) == count
+
+
+def test_set_home_survives_a_parent_loop(window) -> None:
+    """A parent loop in a damaged map makes the home without hanging the UI thread."""
+    child = add_child(window)
+    window.state.store.update_system(HOME.id, parent_id=child.id)
+    window.state.store.update_system(child.id, parent_id=HOME.id)
+    window._set_home(child.id)
+    assert window.state.settings.home_system == child.name
+
+
+def test_map_actions_skip_a_system_the_universe_lacks(window, modal) -> None:
+    """A map node for a system outside the universe can't be renamed, re-named or made home; nothing changes."""
+    window.state.store.add_system(31999999)
+    home = window.state.settings.home_system
+    modal.handler = lambda dialog: 0
+    assert window._rename(31999999) is False
+    assert window._rename_hole(31999999) is False
+    window._set_home(31999999)
+    assert modal.dialogs == [] and window.state.settings.home_system == home
+    assert window.state.store.system(31999999).parent_id is None
 
 
 def test_set_home_reroots_chain(window) -> None:

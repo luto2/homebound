@@ -258,6 +258,24 @@ def test_script_directory_and_run_command(monkeypatch) -> None:
     assert seen[0][0] == ("echo", "hi") and seen[0][1]["timeout"] == linux_module.COMMAND_TIMEOUT_SECONDS
 
 
+def test_run_command_failures_are_a_failed_result(monkeypatch) -> None:
+    """A missing tool or a timeout gives a failed result with the reason, not an exception."""
+    def missing(command, **options):
+        """Simulate a tool that isn't installed."""
+        raise FileNotFoundError("qdbus6")
+
+    def slow(command, **options):
+        """Simulate a command that runs past its timeout."""
+        raise linux_module.subprocess.TimeoutExpired(command, linux_module.COMMAND_TIMEOUT_SECONDS)
+
+    monkeypatch.setattr(linux_module.subprocess, "run", missing)
+    result = linux_module._run_command("qdbus6", "org.kde.KWin")
+    assert result.returncode == 1 and result.stdout == "" and "qdbus6" in result.stderr
+    monkeypatch.setattr(linux_module.subprocess, "run", slow)
+    result = linux_module._run_command("qdbus6", "org.kde.KWin")
+    assert result.returncode == 1 and result.stdout == "" and "timed out" in result.stderr
+
+
 def test_kwin_available(monkeypatch) -> None:
     """KWin scripts are managed only where kpackagetool6 exists."""
     monkeypatch.setattr(linux_module.shutil, "which", lambda name: None)

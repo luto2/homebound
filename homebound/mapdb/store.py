@@ -701,13 +701,15 @@ class Store:
             The connection as stored.
 
         Raises:
-            ValueError: If both ends are the same system or a key is not a connections column.
+            ValueError: If both ends are the same system, a key is not a connections column, or ``lifetime``
+                or ``mass`` is out of range.
         """
         _check_system_id(system_a, "system_a")
         _check_system_id(system_b, "system_b")
         if system_a == system_b:
             raise ValueError(f"a connection needs two different systems, got {system_a} twice")
         _check_columns(values, CONNECTION_COLUMNS[3:], "connections")
+        self._check_wormhole_values(values, mass_required=True)
         existing = self.connection(system_a, system_b)
         if existing:
             return existing
@@ -747,7 +749,7 @@ class Store:
         """
         require_integer(connection_id, "connection_id", minimum=1)
         _check_columns(changes, CONNECTION_COLUMNS[3:], "connections")
-        self._check_wormhole_values(changes)
+        self._check_wormhole_values(changes, mass_required=True)
         key = self._connection_key(connection_id)
         if key is None:
             return False
@@ -763,15 +765,20 @@ class Store:
         return True
 
     @staticmethod
-    def _check_wormhole_values(changes: dict) -> None:
+    def _check_wormhole_values(changes: dict, mass_required: bool = False) -> None:
         """Reject lifetime and mass values the rest of the app can't show.
+
+        Args:
+            changes: The column values about to be written.
+            mass_required: Connections always have a mass, so a present ``mass`` key must be a mass state, None
+                included. Signatures may have none, so for them None is allowed.
 
         Raises:
             ValueError: If ``lifetime`` is not a LIFETIME_* state or ``mass`` is not a mass state.
         """
         if "lifetime" in changes and changes["lifetime"] not in LIFETIME_STATES:
             raise ValueError(f"lifetime must be one of {LIFETIME_STATES}, got {changes['lifetime']!r}")
-        if changes.get("mass") is not None and changes["mass"] not in MASS_STATES:
+        if "mass" in changes and (mass_required or changes["mass"] is not None) and changes["mass"] not in MASS_STATES:
             raise ValueError(f"mass must be one of {MASS_STATES}, got {changes['mass']!r}")
 
     def set_connection_signature(self, connection_id: int, system_id: int, signature_id: str | None) -> bool:

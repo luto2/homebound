@@ -10,6 +10,7 @@ from PySide6.QtGui import QColor, QFont, QFontMetricsF, QMouseEvent, QPainter, Q
 from PySide6.QtWidgets import QWidget
 
 from ..mapping.chain import Chain, ChainRow
+from ..settings import clamp_to_range
 from ..theme import painting
 from ..theme.tokens import OPACITY, PIXELS, color, font
 from ..validation import require_type
@@ -27,7 +28,7 @@ class OverlayFonts:
 
     def __init__(self, text_size: int) -> None:
         """Build the fonts; the size is clamped to 11–14 px."""
-        size = max(11, min(14, int(text_size)))
+        size = clamp_to_range("overlay_text_size", int(text_size))
         self.row = font("overlay-row", size)
         self.current = QFont(self.row)
         self.current.setWeight(QFont.Weight.ExtraBold)

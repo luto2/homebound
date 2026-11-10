@@ -70,7 +70,10 @@ def run(cmd: list[str], cwd: Path, env: dict | None = None, timeout: int | None 
         p = subprocess.run(cmd, cwd=cwd, env={**os.environ, **(env or {})}, capture_output=True, text=True, check=False,
                            timeout=timeout)
     except subprocess.TimeoutExpired as e:
-        return False, f"timed out after {timeout}s\n{e.stdout or ''}{e.stderr or ''}"
+        # CPython gives the partial output as bytes even with text=True: decode it
+        partial = "".join(part.decode(errors="replace") if isinstance(part, bytes) else (part or "")
+                          for part in (e.stdout, e.stderr))
+        return False, f"timed out after {timeout}s\n{partial}"
     return p.returncode == 0, p.stdout + p.stderr
 
 

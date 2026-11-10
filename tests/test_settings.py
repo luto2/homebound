@@ -238,10 +238,22 @@ def test_copy_failure_does_not_stop_the_load(data_dir, monkeypatch) -> None:
     assert settings.naming_scheme == "numeric" and "disk full" in settings.load_problem
 
 
+def test_overlay_opacity_range_matches_the_tokens() -> None:
+    """The overlay's opacity range (settings) is the one its tokens give, which the overlay paints with."""
+    from homebound.theme.tokens import OPACITY
+    assert (OPACITY["op-overlay-bg-min"], OPACITY["op-overlay-bg-max"]) == settings_module.OVERLAY_OPACITY_RANGE
+
+
 def test_settings_scheme_list_matches_naming() -> None:
     """The scheme names the settings file accepts are the ones naming knows."""
     from homebound.mapping import naming
     assert settings_module.SCHEMES == tuple(naming.SCHEMES)
+
+
+def test_route_preferences_match_routing() -> None:
+    """The route preferences the settings file accepts are the ones routing knows."""
+    from homebound import routing
+    assert settings_module.ROUTE_PREFERENCES == routing.PREFERENCES
 
 
 def test_detected_log_folder_is_used(data_dir, monkeypatch) -> None:

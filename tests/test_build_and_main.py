@@ -297,6 +297,17 @@ def test_zkill_statics_parses_page(monkeypatch) -> None:
         build_static.zkill_statics(0)
 
 
+def test_zkill_statics_gives_none_when_zkill_is_unreachable(monkeypatch, capsys) -> None:
+    """A failed zKill request is None, with the reason on stderr; the build then falls back to the union."""
+    def unreachable(request, timeout):
+        """Simulate zKillboard refusing the connection."""
+        raise build_static.urllib.error.URLError("connection refused")
+
+    monkeypatch.setattr(build_static.urllib.request, "urlopen", unreachable)
+    assert build_static.zkill_statics(31000001) is None
+    assert "connection refused" in capsys.readouterr().err
+
+
 def test_small_helpers() -> None:
     """whole_number truncates numbers and numeric strings and gives None otherwise; known_space_label
     rounds security to HS/LS/NS and rejects values out of range; an empty whtype script gives nothing."""
@@ -488,6 +499,23 @@ def test_main_builds_then_starts(fake_app, monkeypatch) -> None:
     monkeypatch.setattr(QDialog, "exec", lambda dialog: 1)
     assert entry_point.main() == 0
     assert len(attempts) == 2 and len(FakeWindow.instances) == 1
+
+
+def test_main_reports_data_that_still_fails_after_the_build(fake_app, monkeypatch) -> None:
+    """If the build finished but the data still can't be loaded, main() shows the error and returns 1."""
+    def unreadable(*arguments) -> str:
+        """Fail every time, as a damaged build would."""
+        raise UniverseDataError("unreadable")
+
+    windows_before = len(FakeWindow.instances)
+    monkeypatch.setattr("homebound.universe.db.open_universe", unreadable)
+    from PySide6.QtWidgets import QDialog, QMessageBox
+    monkeypatch.setattr(QDialog, "exec", lambda dialog: 1)
+    shown = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *arguments: shown.append(arguments[-1]))
+    assert entry_point.main() == 1
+    assert len(shown) == 1 and "unreadable" in shown[0]
+    assert len(FakeWindow.instances) == windows_before
 
 
 def test_main_version_and_build_static(monkeypatch, capsys) -> None:

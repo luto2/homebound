@@ -315,6 +315,8 @@ class SystemPanel(QWidget):
         if not self.system_id:
             return
         system, mapped = state.universe.by_id(self.system_id), state.store.system(self.system_id)
+        if system is None or mapped is None:   # a map node for a system the universe doesn't have
+            return
         if not self.name.hasFocus():
             self.name.setText(mapped.custom_name or "")
             self.name.setPlaceholderText(state.namer.label(self.system_id) if not mapped.custom_name else "Custom name")

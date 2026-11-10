@@ -92,6 +92,29 @@ def test_connection_validation(store) -> None:
         store.connection_by_id("1")
 
 
+def test_add_connection_checks_lifetime_and_mass(store) -> None:
+    """A new connection gets the same lifetime and mass checks as an update; a null mass is refused."""
+    store.add_system(JITA)
+    with pytest.raises(ValueError):
+        store.add_connection(HOME.id, JITA, lifetime=9)
+    with pytest.raises(ValueError):
+        store.add_connection(HOME.id, JITA, mass="bogus")
+    with pytest.raises(ValueError):
+        store.add_connection(HOME.id, JITA, mass=None)
+    assert store.connection(HOME.id, JITA) is None
+
+
+def test_null_mass_is_refused_on_update_connection(store) -> None:
+    """A connection's mass can't be cleared to NULL; the row keeps its value. A signature's can (it may have none)."""
+    store.add_system(JITA)
+    connection = store.add_connection(HOME.id, JITA, mass="fresh")
+    with pytest.raises(ValueError):
+        store.update_connection(connection.id, mass=None)
+    assert store.connection_by_id(connection.id).mass == "fresh"
+    store.upsert_signature(Signature(HOME.id, "ABC-123", group="wormhole", kind="sig", mass="fresh"))
+    assert store.update_signature(HOME.id, "ABC-123", mass=None) is True
+
+
 def test_lifetime_clock_only_restarts_on_a_change(store) -> None:
     """Saving the same lifetime keeps the clock; stable clears it."""
     store.add_system(JITA)

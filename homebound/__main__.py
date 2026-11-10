@@ -30,7 +30,7 @@ def main() -> int:
         # makes it use the window icon. The installer's shortcuts carry the same ID, so pinned shortcuts group with it.
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QMessageBox
 
     from .settings import Settings
     from .theme.qss import apply_theme
@@ -50,7 +50,11 @@ def main() -> int:
         from .ui.dialogs import BuildDataDialog
         if not BuildDataDialog(BUILD_COMMAND, outdated=static_data_path().exists()).exec():
             return 1
-        universe = open_universe()
+        try:
+            universe = open_universe()
+        except UniverseDataError as error:   # the build wrote a file the app still can't load
+            QMessageBox.critical(None, "Homebound", f"The EVE data was built but can't be loaded: {error}")
+            return 1
 
     from .ui.focus import FocusTracker
     from .ui.map_window import MapWindow

@@ -116,8 +116,15 @@ def _script_directory() -> Path:
 
 
 def _run_command(*command: str) -> subprocess.CompletedProcess:
-    """Run a command and capture its output as text."""
-    return subprocess.run(command, capture_output=True, text=True, timeout=COMMAND_TIMEOUT_SECONDS)
+    """Run a command and capture its output as text.
+
+    A tool that isn't installed, or one that runs past the timeout, gives a failed result (exit code 1, the
+    reason in ``stderr``) rather than an exception, so a settings button can't crash the app.
+    """
+    try:
+        return subprocess.run(command, capture_output=True, text=True, timeout=COMMAND_TIMEOUT_SECONDS)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return subprocess.CompletedProcess(command, 1, "", str(error))
 
 
 def kwin_script_status() -> str:

@@ -25,7 +25,7 @@ var g = '';
 g += dlg({n: 'New map', label: 'invalid: name already used', title: 'New map', sub: 'Each map has its own systems, sigs and home system.', cap: 'Map name', val: 'Corp', state: 'is-invalid',
   help: '✕ A map called “Corp” already exists.', hk: 'err', ok: 'Create map', off: 1, foot: 'Opens Settings → Home next'});
 g += dlg({n: 'Rename map', label: 'prefilled, text selected', title: 'Rename map', sub: 'Main · home J161940', cap: 'New name',
-  val: '<span style="background:var(--accent);color:var(--ink-inverse);padding:0 1px">Main</span>', help: 'Letters, digits, spaces and - _ . (max 32).', ok: 'Rename'});
+  val: '<span style="background:var(--accent);color:var(--ink-inverse);padding:0 1px">Main</span>', help: 'Up to 32 characters.', ok: 'Rename'});
 g += dlg({n: 'Rename system', label: 'empty restores the scheme name', title: 'Rename system', sub: '<b>A2</b> · <span class="lm-mono">J163856</span> · C5', cap: 'Custom name',
   val: '<span class="ph">A2</span>', end: '<span class="lm-faint" style="margin-left:auto;font-size:11px">scheme name</span>', help: 'Leave empty to use the scheme name (A2).', ok: 'Use scheme name'});
 var opts = [['J1638', '91', 'C3', '', 1], ['J1638', '56', 'C5', 'already on this map', 0], ['J1638', '32', 'C1', '', 0], ['J1638', '04', 'C4', '', 0]];

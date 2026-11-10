@@ -157,6 +157,10 @@ class TestHelpers:
         assert (map_scene.W, map_scene.H) == (map_scene.NODE_WIDTH, map_scene.NODE_HEIGHT)
         assert GRID == map_scene.NODE_HEIGHT / 3
 
+    def test_grid_is_a_third_of_the_node_height_token(self) -> None:
+        """The grid step (defined once, in the tracker) is a third of the node height token."""
+        assert GRID == map_scene.PIXELS["size-node-h"] / 3
+
 
 class TestSystemNode:
     """System nodes: data, tooltip, painting, markers and dragging."""

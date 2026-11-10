@@ -67,6 +67,14 @@ def mouse(kind, position, button=Qt.MouseButton.LeftButton) -> QMouseEvent:
 
 
 # ---------------------------------------------------------------- helpers
+def test_panel_refresh_with_a_system_the_universe_lacks(state, panel) -> None:
+    """A map node the universe doesn't know shows its panel without details, and doesn't raise."""
+    state.store.add_system(31999999)
+    panel.system_id = 31999999
+    panel.refresh()
+    assert panel.system_id == 31999999
+
+
 def test_plural() -> None:
     """One is singular, everything else plural."""
     assert plural(1, "sig") == "1 sig"

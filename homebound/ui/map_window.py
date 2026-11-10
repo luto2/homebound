@@ -604,7 +604,7 @@ class MapWindow(QMainWindow):
         settings = self.state.settings
         dialog = PromptDialog(self, "New map", "Each map has its own systems, sigs and home system.", "Map name",
                               validate=self._map_name_check(), primary="Create map",
-                              hint="Letters, digits, spaces and - _ . (max 32).", foot_note="Opens Settings → Home next")
+                              hint=f"Up to {MAP_NAME_LIMIT} characters.", foot_note="Opens Settings → Home next")
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return False
         name = dialog.text()
@@ -629,7 +629,7 @@ class MapWindow(QMainWindow):
         home = settings.maps.get(old, {}).get("home_system") or settings.home_system
         dialog = PromptDialog(self, "Rename map", f"{old} · home {home}" if home else f"{old} · no home", "New name",
                               old, validate=self._map_name_check(keep=old), primary="Rename",
-                              hint="Letters, digits, spaces and - _ . (max 32).")
+                              hint=f"Up to {MAP_NAME_LIMIT} characters.")
         if dialog.exec() != QDialog.DialogCode.Accepted or dialog.text() == old:
             return False
         try:
@@ -978,6 +978,8 @@ class MapWindow(QMainWindow):
         state = self.state
         mapped = state.store.system(system_id)
         universe_system = state.universe.by_id(system_id)
+        if universe_system is None:   # a map node for a system the universe doesn't have
+            return False
         automatic = state.namer.scheme_label(system_id)
         dialog = PromptDialog(
             self, "Rename system",
@@ -999,6 +1001,8 @@ class MapWindow(QMainWindow):
         """
         state = self.state
         mapped = state.store.system(system_id)
+        if state.universe.by_id(system_id) is None:
+            return False
         connection = state.store.connection(mapped.parent_id, system_id) if mapped.parent_id else None
         if not connection:
             return False
@@ -1011,10 +1015,14 @@ class MapWindow(QMainWindow):
     def _set_home(self, system_id: int) -> None:
         """Make a system home and re-root the chain so that its former ancestors hang below it."""
         state = self.state
-        state.settings.home_system = state.universe.by_id(system_id).name
-        chain = []
+        universe_system = state.universe.by_id(system_id)
+        if universe_system is None:   # the home setting is a name: a system the universe doesn't know can't be home
+            return
+        state.settings.home_system = universe_system.name
+        chain, seen = [], set()
         current = state.store.system(system_id)
-        while current:
+        while current and current.id not in seen:   # a damaged map with a parent loop must not hang the UI
+            seen.add(current.id)
             chain.append(current)
             current = state.store.system(current.parent_id) if current.parent_id else None
         with state.store.batch():

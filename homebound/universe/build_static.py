@@ -20,6 +20,7 @@ import shutil
 import sqlite3
 import sys
 import time
+import urllib.error
 import urllib.request
 import zipfile
 from collections.abc import Callable, Iterator
@@ -184,8 +185,13 @@ def zkill_statics(system_id: int) -> list[str] | None:
     """
     require_integer(system_id, "system_id", minimum=1)
     url = f"https://zkillboard.com/system/{system_id}/"
-    page = urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=30).read()
-    text = html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page.decode("utf-8", "replace"))))
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=30) as response:
+            page = response.read()
+    except (urllib.error.URLError, TimeoutError) as error:
+        print(f"  zKill page for system {system_id} could not be read: {error}", file=sys.stderr)
+        return None
+    text =html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page.decode("utf-8", "replace"))))
     match = re.search(r"Statics:(.*?)(Alltime|$)", text)
     if not match:
         return None

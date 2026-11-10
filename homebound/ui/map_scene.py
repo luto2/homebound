@@ -12,7 +12,7 @@ from ..mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_CHIPS, LIFETIME_EX
                            LIFETIME_REMAINING, Connection)
 from ..mapping.chain import connected_component, wormhole_adjacency
 from ..mapping.scan_status import ScanStatus, age_text, format_duration
-from ..mapping.tracker import expires_at, hole_size
+from ..mapping.tracker import GRID, expires_at, hole_size
 from ..theme import painting
 from ..theme.tokens import OPACITY, PIXELS, color, font
 from ..universe.db import SIZE_NAMES, Universe
@@ -21,7 +21,6 @@ from ..zkill import had_recent_kill
 
 NODE_WIDTH, NODE_HEIGHT = PIXELS["size-node-w"], PIXELS["size-node-h"]
 W, H = NODE_WIDTH, NODE_HEIGHT  # short aliases kept for older importers
-GRID = NODE_HEIGHT / 3  # background grid cell: a third of a system node's height; nodes snap to it
 MINIMUM_ZOOM, MAXIMUM_ZOOM = 0.2, 2.5
 
 
