@@ -1249,3 +1249,20 @@ def test_header_notes_the_other_selected_systems(state, panel, qt_application) -
     assert panel.selected_note.text() == "+2 selected" and not panel.selected_note.isHidden()
     state.set_selected_count(1)
     assert panel.selected_note.isHidden()
+
+
+# ---------------------------------------------------------------- widgets left behind
+LEFT_BEHIND: list = []
+
+
+def test_a_table_left_shown(table) -> None:
+    """A test's table, still shown when the test ends (the next test checks it is gone)."""
+    LEFT_BEHIND.append(table)
+    assert table.isVisible()
+
+
+def test_widgets_of_the_last_test_are_deleted(qt_application) -> None:
+    """No test's widget outlives it: one left behind would paint on its closed map in later tests."""
+    import shiboken6
+    assert LEFT_BEHIND and not shiboken6.isValid(LEFT_BEHIND[0])
+    assert [widget for widget in qt_application.topLevelWidgets() if widget.isVisible()] == []
