@@ -135,6 +135,15 @@ class Signature:
 
 
 @dataclass
+class Alias:
+    """A remembered name of a solar system: it stays when the system leaves the map (this map only)."""
+
+    system_id: int
+    name: str
+    set_at: str = ""
+
+
+@dataclass
 class ZkillStats:
     """Cached zKillboard activity for one system."""
 
@@ -169,6 +178,15 @@ ENTITY_TABLES = {"system": "systems", "connection": "connections", "signature": 
                  "setting": "map_settings"}
 ENTITY_WHERE = {"system": "id=?", "connection": "system_a=? AND system_b=?",
                 "signature": "system_id=? AND signature_id=?", "setting": "key=?"}
+
+
+# Entities that are undoable like the others but stay on this computer: sync never sends them
+# (``ops_from_action`` is given an action without them, see ``Action.synced``). alias -> system ID.
+# TODO(sync): sync aliases once the protocol has a version gate (plan-system-alias.md, decision 2); an
+# unknown entity is refused by older clients and by the server out there (see ``protocol.LOCAL_SYSTEM_FIELDS``).
+LOCAL_ENTITIES = ("alias",)
+ALL_ENTITY_TABLES = ENTITY_TABLES | {"alias": "aliases"}
+ALL_ENTITY_WHERE = ENTITY_WHERE | {"alias": "system_id=?"}
 
 
 def key_values(key: Any) -> list:
@@ -223,6 +241,11 @@ class Action:
     def __bool__(self) -> bool:
         """An action is truthy when it changed anything."""
         return bool(self.changes)
+
+    def synced(self) -> "Action":
+        """Return this action without the changes of local-only entities (the part sync may send)."""
+        return Action([change for change in self.changes if change.entity not in LOCAL_ENTITIES],
+                      self.origin, self.id)
 
 
 SIGNATURE_COLUMNS = [field.name for field in fields(Signature)]
@@ -534,7 +557,7 @@ class Store:
 
     def _row(self, entity: str, key: Any) -> dict | None:
         """Return the stored row of an entity as a dict, or None if it doesn't exist."""
-        row = self.database.execute(f"SELECT * FROM {ENTITY_TABLES[entity]} WHERE {ENTITY_WHERE[entity]}",
+        row = self.database.execute(f"SELECT * FROM {ALL_ENTITY_TABLES[entity]} WHERE {ALL_ENTITY_WHERE[entity]}",
                                     key_values(key)).fetchone()
         return dict(row) if row else None
 
@@ -586,6 +609,8 @@ class Store:
             self.database.execute("DELETE FROM connections WHERE system_a=? AND system_b=?", key)
         elif entity == "signature":
             self.delete_signatures(key[0], [key[1]])
+        elif entity == "alias":
+            self.delete_alias(key)
         else:
             self._touch("setting", key)
             self.database.execute("DELETE FROM map_settings WHERE key=?", (key,))
@@ -593,7 +618,7 @@ class Store:
     def _insert_row(self, entity: str, key: Any, row: dict) -> None:
         """Put a whole row back (it doesn't exist now)."""
         self._touch(entity, key)
-        table = ENTITY_TABLES[entity]
+        table = ALL_ENTITY_TABLES[entity]
         row = dict(row)
         if entity == "system" and row.get("parent_id") and not self.has_system(row["parent_id"]):
             row["parent_id"] = None   # the parent is gone since: put it back unplaced (number and name stay)
@@ -610,7 +635,7 @@ class Store:
     def _update_row(self, entity: str, key: Any, values: dict) -> None:
         """Set columns of an existing entity's row."""
         self._touch(entity, key)
-        table, where = ENTITY_TABLES[entity], ENTITY_WHERE[entity]
+        table, where = ALL_ENTITY_TABLES[entity], ALL_ENTITY_WHERE[entity]
         keys = key_values(key)
         self.database.execute(f"UPDATE {table} SET {', '.join(f'{_quoted(column)}=?' for column in values)} "
                               f"WHERE {where}", [*values.values(), *keys])
@@ -634,6 +659,8 @@ class Store:
     def add_system(self, system_id: int, **values: Any) -> MapSystem:
         """Put a system on the map; an existing one is left as it is.
 
+        A new system without a ``custom_name`` gets the system's alias, if it has one.
+
         Args:
             system_id: The EVE solar system ID.
             **values: Initial column values (``parent_id``, ``x``, ``y`` …).
@@ -649,6 +676,8 @@ class Store:
         new_system = MapSystem(system_id, **({"added_at": utc_now_iso()} | values))
         with self.batch():
             if not self.has_system(system_id):
+                if "custom_name" not in values:   # a remembered name comes back with the system
+                    new_system.custom_name = self.alias(system_id)
                 self._touch("system", system_id)
                 self.database.execute(
                     f"INSERT INTO systems ({','.join(map(_quoted, SYSTEM_COLUMNS))}) "
@@ -729,6 +758,42 @@ class Store:
         _check_system_id(system_id)
         return [_from_row(MapSystem, row) for row in self.database.execute(
             f"{SYSTEMS_SELECT} WHERE s.parent_id=? ORDER BY s.hole_index", (system_id,))]
+
+    # ------------------------------------------------------------ aliases
+    def alias(self, system_id: int) -> str | None:
+        """Return the remembered name of a solar system (on the map or not), or None."""
+        _check_system_id(system_id)
+        row = self.database.execute("SELECT name FROM aliases WHERE system_id=?", (system_id,)).fetchone()
+        return row["name"] if row else None
+
+    def aliases(self) -> list[Alias]:
+        """Return every remembered name of this map, ordered by system ID."""
+        return [_from_row(Alias, row) for row in self.database.execute("SELECT * FROM aliases ORDER BY system_id")]
+
+    def set_alias(self, system_id: int, name: str) -> None:
+        """Remember a name for a solar system; it stays when the system leaves the map.
+
+        Raises:
+            ValueError: If ``system_id`` is not positive or ``name`` is empty.
+            TypeError: If ``name`` is not a string.
+        """
+        _check_system_id(system_id)
+        require_text(name, "name")
+        with self.batch():
+            self._touch("alias", system_id)
+            self.database.execute("INSERT OR REPLACE INTO aliases (system_id, name, set_at) VALUES (?,?,?)",
+                                  (system_id, name, utc_now_iso()))
+
+    def delete_alias(self, system_id: int) -> bool:
+        """Forget the remembered name of a solar system.
+
+        Returns:
+            True if there was one.
+        """
+        _check_system_id(system_id)
+        with self.batch():
+            self._touch("alias", system_id)
+            return self.database.execute("DELETE FROM aliases WHERE system_id=?", (system_id,)).rowcount > 0
 
     # ------------------------------------------------------------ connections
     def connections(self) -> list[Connection]:

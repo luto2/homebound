@@ -5,7 +5,7 @@ import pytest
 
 from conftest import HOME, UNIVERSE, MapSimulation, pick_system
 from homebound.mapdb.store import Signature, Store
-from homebound.mapping.naming import (SCHEMES, ChainDepthPositionScheme, Namer, Scheme, chain_letter,
+from homebound.mapping.naming import (SCHEMES, rename_system, ChainDepthPositionScheme, Namer, Scheme, chain_letter,
                                       freeze_legacy_names, guess_static, label_unnamed_systems, number_for_letters,
                                       hole_digit, hole_path, is_static_signature, letters_for_number, level_positions,
                                       next_level_index, scheme_for_key, signature_destination,
@@ -357,3 +357,37 @@ def test_an_old_numeric_map_keeps_its_names_and_a_new_file_needs_nothing(tmp_pat
     assert Store(tmp_path / "new.db").get_value("legacy_names") is None
     with pytest.raises(TypeError):
         freeze_legacy_names(store, UNIVERSE, 1, HOME.id)
+
+
+def test_namer_shows_a_remembered_name_like_a_custom_name() -> None:
+    """A system added again with an alias shows it as its name, and the bookmarks use it."""
+    store = Store(":memory:")
+    store.add_system(HOME.id)
+    child = pick_system("C5", exclude={HOME.id})
+    store.set_alias(child.id, "Staging")
+    store.add_system(child.id, parent_id=HOME.id, hole_index=1)
+    namer = Namer(store, UNIVERSE, "numeric", HOME.id)
+    assert namer.display(child.id) == "Staging" and namer.bookmark(child.id, 2) == "Staging-2"
+    assert namer.scheme_label(child.id) != "Staging"
+
+
+def test_rename_system_remembers_or_forgets_in_one_action() -> None:
+    """Rename sets the custom name; "remember" also keeps it as the alias; an empty name forgets both."""
+    store = Store(":memory:")
+    store.add_system(HOME.id)
+    child = pick_system("C5", exclude={HOME.id})
+    store.add_system(child.id, parent_id=HOME.id, hole_index=1)
+    actions = []
+    store.listeners.append(actions.append)
+    rename_system(store, child.id, "Staging", remember=True)
+    assert (store.system(child.id).custom_name, store.alias(child.id)) == ("Staging", "Staging") and len(actions) == 1
+    rename_system(store, child.id, "Farm", remember=False)        # unchecked: the alias goes
+    assert (store.system(child.id).custom_name, store.alias(child.id)) == ("Farm", None)
+    rename_system(store, child.id, "Farm", remember=True)
+    rename_system(store, child.id, "", remember=True)             # clearing the name forgets both
+    assert (store.system(child.id).custom_name, store.alias(child.id)) == (None, None)
+    rename_system(store, child.id, "Staging", remember=True)
+    store.undo(actions[-1])                                       # one undo step undoes name and alias
+    assert (store.system(child.id).custom_name, store.alias(child.id)) == (None, None)
+    with pytest.raises(TypeError):
+        rename_system(store, child.id, "x", remember="yes")

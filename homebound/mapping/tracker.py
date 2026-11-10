@@ -487,7 +487,7 @@ class Tracker:
             request: The question.
             is_static: Whether the hole was the static.
             signature_id: The signature that was taken, if one was picked.
-            custom_name: A name typed in by hand; empty or None keeps the scheme name.
+            custom_name: A name typed in by hand; empty or None keeps the name the system has (its alias or the scheme name).
 
         The answer only sets the static flag; the number changes only when the picked sig has
         another one (the system takes the number of the sig it came through).
@@ -503,7 +503,9 @@ class Tracker:
         parent_id, child_id = request.parent_id, request.child_id
         if not (self.store.has_system(child_id) and self.store.has_system(parent_id)):
             return None
-        changes: dict[str, Any] = {"static": int(is_static), "custom_name": custom_name or None}
+        changes: dict[str, Any] = {"static": int(is_static)}
+        if custom_name:   # none typed keeps the name the system has (a remembered one, see Store.add_system)
+            changes["custom_name"] = custom_name
         if signature_id:
             number = self._signature_number(parent_id, signature_id)
             if number and number != self.store.system(child_id).hole_index:

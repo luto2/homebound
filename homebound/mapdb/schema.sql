@@ -20,6 +20,14 @@ CREATE TABLE IF NOT EXISTS systems (
     next_hole    INTEGER DEFAULT 0  -- highest hole number given out here; numbers are never reused
 );
 
+-- Remembered names of solar systems (this map only, not synced). They outlive the system's place on the map;
+-- a system added again gets its alias as custom_name. Old map files get the empty table when they are opened.
+CREATE TABLE IF NOT EXISTS aliases (
+    system_id INTEGER PRIMARY KEY,
+    name      TEXT NOT NULL,
+    set_at    TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS connections (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     system_a    INTEGER NOT NULL REFERENCES systems(id) ON DELETE CASCADE,  -- the lower ID

@@ -466,3 +466,100 @@ def test_store_is_a_context_manager(tmp_path) -> None:
         opened.add_system(HOME.id)
     with pytest.raises(sqlite3.ProgrammingError):
         opened.system(HOME.id)
+
+
+# ---------------------------------------------------------------- aliases
+def test_alias_set_read_replace_delete(store) -> None:
+    """An alias belongs to a system ID, can be replaced, and is deleted by itself."""
+    assert store.alias(JITA) is None and store.aliases() == []
+    store.set_alias(JITA, "Staging")
+    store.set_alias(HOME.id, "Farm")
+    assert store.alias(JITA) == "Staging"
+    store.set_alias(JITA, "Hostile static")
+    assert [(alias.system_id, alias.name) for alias in sorted(store.aliases(), key=lambda a: a.system_id)] == sorted(
+        [(JITA, "Hostile static"), (HOME.id, "Farm")])
+    assert all(alias.set_at for alias in store.aliases())
+    assert store.delete_alias(JITA) and not store.delete_alias(JITA)
+    assert store.alias(JITA) is None and store.alias(HOME.id) == "Farm"
+
+
+def test_alias_validation(store) -> None:
+    """Alias arguments are checked."""
+    with pytest.raises(ValueError):
+        store.set_alias(0, "x")
+    with pytest.raises(ValueError):
+        store.set_alias(JITA, "")
+    with pytest.raises(TypeError):
+        store.set_alias(JITA, 5)
+    with pytest.raises(ValueError):
+        store.alias(0)
+    with pytest.raises(ValueError):
+        store.delete_alias(-1)
+
+
+def test_alias_survives_remove_system_and_comes_back_as_custom_name(store) -> None:
+    """Taking a system off the map keeps its alias; adding it again names it, unless a name is given."""
+    store.add_system(JITA, parent_id=HOME.id, hole_index=1)
+    store.set_alias(JITA, "Staging")
+    store.remove_system(JITA)
+    assert store.alias(JITA) == "Staging" and not store.has_system(JITA)
+    assert store.add_system(JITA).custom_name == "Staging"
+    store.remove_system(JITA)
+    assert store.add_system(JITA, custom_name="Other").custom_name == "Other"
+    assert store.alias(JITA) == "Staging"      # adding with another name doesn't touch the alias
+    assert store.add_system(HOME.id).custom_name is None      # no alias, no name
+
+
+def test_alias_does_not_touch_the_stored_label(store) -> None:
+    """The alias fills the custom name only; the scheme label stored at attach stays as given."""
+    store.set_alias(JITA, "Staging")
+    system = store.add_system(JITA, parent_id=HOME.id, hole_index=1, label="1")
+    assert (system.custom_name, system.label) == ("Staging", "1")
+
+
+def test_alias_is_an_undoable_local_entity(store) -> None:
+    """A batch records an alias change, undo puts the old alias back, and it is never a synced entity."""
+    with store.batch() as action:
+        store.set_alias(JITA, "Staging")
+    assert [(change.entity, change.key, change.created) for change in action.changes] == [("alias", JITA, True)]
+    with store.batch() as replace:
+        store.set_alias(JITA, "Hostile")
+    store.undo(replace)
+    assert store.alias(JITA) == "Staging"
+    store.undo(action)
+    assert store.alias(JITA) is None
+    with store.batch() as deleting:
+        store.set_alias(JITA, "Staging")
+    with store.batch() as forgetting:
+        store.delete_alias(JITA)
+    store.undo(forgetting)
+    assert store.alias(JITA) == "Staging"
+    assert "alias" not in store_module.ENTITIES and "alias" not in store_module.ENTITY_TABLES
+    assert "alias" in store_module.LOCAL_ENTITIES
+
+
+def test_aliases_are_not_sent_to_the_sync_server(store) -> None:
+    """A local action that only changed an alias has nothing left for sync once the local entities are dropped."""
+    from homebound.sync.protocol import ops_from_action
+    with store.batch() as action:
+        store.set_alias(JITA, "Staging")
+    assert action.changes and ops_from_action(action.synced(), "hlc", "client") == []
+
+
+def test_aliases_are_kept_in_the_file_and_old_files_get_the_empty_table(tmp_path) -> None:
+    """A map file written before aliases opens with an empty table; aliases survive closing and a backup copy."""
+    path = tmp_path / "old.db"
+    Store(path).close()
+    database = sqlite3.connect(path)
+    database.execute("DROP TABLE aliases")      # what a file from before aliases looks like
+    database.commit()
+    database.close()
+    assert not needs_migration(path)            # a new table is made empty on open, nothing to back up
+    store = Store(path)
+    assert store.aliases() == []
+    store.set_alias(JITA, "Staging")
+    store.close()
+    copy = tmp_path / "copy.db"
+    copy.write_bytes(path.read_bytes())
+    with Store(copy) as reopened:
+        assert reopened.alias(JITA) == "Staging"

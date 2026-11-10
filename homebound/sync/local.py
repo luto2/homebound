@@ -114,7 +114,7 @@ class LocalReplica:
         if action.origin != "local":
             return None
         hlc = clock.tick()
-        ops = ops_from_action(action, hlc, client_id)
+        ops = ops_from_action(action.synced(), hlc, client_id)
         if not ops:
             return None
         for op in ops:

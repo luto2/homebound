@@ -101,6 +101,7 @@ others show or edit it.
 | Names are stored at attach and never change on their own (`MapSystem.label`) | `mapping/naming.py` `Namer.attach_label`, `next_level_index`, `label_unnamed_systems`; `ui/state.py` `AppState._name_new_systems` | — |
 | Explicit renames: scheme change, Make home (asked, one undo step) | `mapping/naming.py` `renames`, `rename_systems` | `ui/map_window.py` `offer_rename`, `_ask_rename_for_scheme`, `_set_home`; `ui/dialogs.py` `RenameSystemsDialog` |
 | Old maps keep the names they showed (once per file) | `mapping/naming.py` `freeze_legacy_names`, `legacy_label`, `legacy_signature_numbers`; `mapdb/store.py` `LEGACY_NAMES_KEY` | `ui/state.py` `AppState._freeze_legacy_names` |
+| Remembered names (alias): outlive the system on the map, fill `custom_name` when it is added again; local only | `mapdb/store.py` `Alias`, `Store.alias/set_alias/delete_alias`, `LOCAL_ENTITIES`; `mapping/naming.py` `rename_system` | `ui/map_window.py` `_rename`, `ui/system_panel.py` remember button, `ui/settings_dialog.py` `refresh_aliases` |
 | Custom name (per map, lost when the system leaves the map) | `MapSystem.custom_name` | `ui/map_window.py` `_rename`; `ui/system_panel.py` name field |
 | Change static / hole of a system | `mapdb/store.py` `update_system(hole_index=…)` | `ui/map_window.py` `_rename_hole` |
 

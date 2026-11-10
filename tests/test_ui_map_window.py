@@ -1119,3 +1119,29 @@ def test_opening_an_old_map_freezes_the_names_it_showed(qt_application, monkeypa
     assert [state.namer.label(ids[role]) for role in "ABCDE"] == ["A", "Z", "A2", "A3", "A4"]
     assert state.store.get_value("legacy_names") == "0"
     state.stop()
+
+
+def test_rename_can_remember_the_name(window, modal) -> None:
+    """The Rename box keeps the name as the system's alias; unchecked or cleared forgets it; one Undo undoes both."""
+    child = add_child(window)
+    store = window.state.store
+
+    def answer(text: str, remember: bool):
+        """Return a dialog handler that types a name and sets the box."""
+        return lambda dialog: (dialog.field.setText(text), dialog.check.setChecked(remember), 1)[2]
+
+    modal.handler = answer("Staging", True)
+    window._rename(child.id)
+    assert (store.system(child.id).custom_name, store.alias(child.id)) == ("Staging", "Staging")
+    seen = []
+    modal.handler = lambda dialog: (seen.append(dialog.is_checked()), dialog.field.setText("Farm"), 1)[2]
+    window._rename(child.id)                      # starts checked because the system has an alias
+    assert seen == [True] and store.alias(child.id) == "Farm"
+    modal.handler = answer("Farm", False)
+    window._rename(child.id)
+    assert store.alias(child.id) is None and store.system(child.id).custom_name == "Farm"
+    modal.handler = answer("Staging", True)
+    window._rename(child.id)
+    modal.handler = answer("", True)
+    window._rename(child.id)
+    assert (store.system(child.id).custom_name, store.alias(child.id)) == (None, None)

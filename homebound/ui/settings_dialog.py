@@ -8,8 +8,8 @@ from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QCompleter, QDialog, QFileDialog, QFrame, QHBoxLayout,
-    QHeaderView, QLabel, QLineEdit, QListWidget, QPushButton, QSlider, QSpinBox, QStackedWidget,
-    QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QHeaderView, QLabel, QLineEdit, QListWidget, QPushButton, QSlider, QSpinBox, QStackedWidget, QTableWidget,
+    QTableWidgetItem, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from .. import app_version, backup, routing
@@ -293,6 +293,39 @@ class SettingsDialog(QDialog):
         layout.addWidget(self.auto_name)
         layout.addWidget(help_label("Bookmarks: a WH sig gets its number n when it is pasted, so its hole in system S is S-n; "
                                     "the way back home is S-0. Names never change on their own."))
+        layout.addWidget(caption("Remembered names"))
+        layout.addWidget(help_label("A name remembered with Rename comes back when the system is mapped again. "
+                                    "They belong to this map; deleting one doesn't rename a system that is on the map."))
+        self.alias_table = QTableWidget(0, 3)
+        self.alias_table.setHorizontalHeaderLabels(["System", "Name", ""])
+        self.alias_table.verticalHeader().hide()
+        self.alias_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.alias_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.alias_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.alias_empty = help_label("No remembered names yet.")
+        layout.addWidget(self.alias_table)
+        layout.addWidget(self.alias_empty)
+        self.refresh_aliases()
+
+    def refresh_aliases(self) -> None:
+        """Fill the remembered names table from the map."""
+        aliases = self.state.store.aliases()
+        self.alias_table.setRowCount(len(aliases))
+        for row, alias in enumerate(aliases):
+            system = self.state.universe.by_id(alias.system_id)
+            self.alias_table.setItem(row, 0, QTableWidgetItem(system.name if system else f"System {alias.system_id}"))
+            self.alias_table.setItem(row, 1, QTableWidgetItem(alias.name))
+            delete = QPushButton("Delete")
+            delete.clicked.connect(lambda _=False, system_id=alias.system_id: self.delete_alias(system_id))
+            self.alias_table.setCellWidget(row, 2, delete)
+        self.alias_table.setVisible(bool(aliases))
+        self.alias_empty.setVisible(not aliases)
+
+    def delete_alias(self, system_id: int) -> None:
+        """Forget one remembered name (at once, not with Save: it is the map's data, not a setting)."""
+        require_integer(system_id, "system_id", minimum=1)
+        self.state.store.delete_alias(system_id)
+        self.refresh_aliases()
 
     @staticmethod
     def scheme_preview(key: str) -> str:
