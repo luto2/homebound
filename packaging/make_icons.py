@@ -1,8 +1,8 @@
 """Render the app mark (``map_window.app_mark``) into the icon files the packages need.
 
-Writes ``packaging/icons/homebound.png`` (256 px, for the AppImage and the AUR package), ``homebound.svg``
-(the same drawing as a vector, for the hicolor theme) and ``homebound.ico`` (16-256 px, for the Windows
-exe and installer). The results are committed; run this again after changing ``app_mark``:
+Writes ``packaging/icons/homebound.png`` (256 px, for the AppImage and the AUR package), ``homebound-48.png``
+(48 px, for the hicolor theme's 48x48 folder), ``homebound.svg`` (the same drawing as a vector, for the hicolor
+theme) and ``homebound.ico`` (16-256 px, for the Windows exe and installer). The results are committed; run this again after changing ``app_mark``:
 
     QT_QPA_PLATFORM=offscreen uv run python packaging/make_icons.py
 """
@@ -56,6 +56,7 @@ def main() -> int:
     application = QApplication.instance() or QApplication(sys.argv)
     ICONS.mkdir(exist_ok=True)
     (ICONS / "homebound.png").write_bytes(png_bytes(256))
+    (ICONS / "homebound-48.png").write_bytes(png_bytes(48))
     (ICONS / "homebound.ico").write_bytes(ico_bytes(ICO_SIZES))
     (ICONS / "homebound.svg").write_text(svg_text())
     del application
