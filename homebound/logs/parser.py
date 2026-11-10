@@ -43,13 +43,16 @@ class LogFile:
             path: The file; only its name is used.
 
         Returns:
-            The log file, or None if the name is not a Local log name.
+            The log file, or None if the name is not a Local log name or its date is not a real date.
         """
         require_type(path, Path, "path")
         match = FILE_PATTERN.match(path.name)
         if not match:
             return None
-        started = datetime.strptime(match.group(1) + match.group(2), "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+        try:
+            started = datetime.strptime(match.group(1) + match.group(2), "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
         return cls(path, int(match.group(3)), started)
 
 

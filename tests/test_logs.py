@@ -76,6 +76,10 @@ def test_log_file_name() -> None:
     log_file = LogFile.from_path(Path("Local_20261028_165148_2122853402.txt"))
     assert log_file.character_id == 2122853402 and log_file.started.hour == 16
     assert LogFile.from_path(Path("Corp_20261028_165148_1.txt")) is None
+    # digits that are not a date: month 13, day 32, hour 24 (no ValueError, just None)
+    assert LogFile.from_path(Path("Local_20261399_000000_1.txt")) is None
+    assert LogFile.from_path(Path("Local_20261028_240000_1.txt")) is None
+    assert LogFile.from_path(Path("Local_20261232_000000_1.txt")) is None
     with pytest.raises(TypeError):
         LogFile.from_path("Local_20261028_165148_1.txt")
 
@@ -86,6 +90,9 @@ def test_parse_log_file(tmp_path) -> None:
     write_log(path, HEADER + line("2026.10.28 16:51:53", "Channel changed to Local : Jita"))
     assert [change.system for change in parse_log_file(path)] == ["Jita"]
     assert parse_log_file(tmp_path / "notes.txt") == []
+    bad_name = tmp_path / "Local_20261399_000000_1.txt"
+    write_log(bad_name, HEADER + line("2026.10.28 16:51:53", "Channel changed to Local : Jita"))
+    assert parse_log_file(bad_name) == []
 
 
 def test_scanner_tail(tmp_path) -> None:
@@ -105,6 +112,19 @@ def test_scanner_tail(tmp_path) -> None:
     assert scanner.poll().changes == []
     with pytest.raises(TypeError):
         scanner.poll(now="now")
+
+
+def test_scanner_skips_a_bad_file_name(tmp_path) -> None:
+    """A log whose name has digits that are no date is skipped; the other characters still track."""
+    path = tmp_path / "Local_20261028_165148_7.txt"
+    write_log(path, HEADER)
+    write_log(tmp_path / "Local_20261399_000000_1.txt", HEADER)
+    scanner = LogScanner(tmp_path)
+    assert set(scanner.newest_files()) == {7}
+    scanner.poll()
+    with open(path, "ab") as log:
+        log.write(line("2026.10.28 17:00:00", "Channel changed to Local : J161940").encode("utf-16-le"))
+    assert [change.system for change in scanner.poll().changes] == ["J161940"]
 
 
 def test_scanner_partial_write(tmp_path) -> None:

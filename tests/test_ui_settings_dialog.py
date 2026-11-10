@@ -124,6 +124,16 @@ def test_log_folder_empty(dialog, tmp_path) -> None:
     assert dialog.log_help.property("role") == "help-warn"
 
 
+def test_log_folder_skips_a_bad_name(dialog, tmp_path) -> None:
+    """A log whose name has digits that are no date is not counted, and does not break the check."""
+    folder = tmp_path / "logs"
+    (folder / "Local_20261028_165148_111.txt").write_text("x")
+    (folder / "Local_20261399_000000_222.txt").write_text("x")
+    dialog.log_directory.setText(str(folder))
+    assert dialog.validate_log_directory() == "valid"
+    assert dialog.log_help.text() == "✓ 1 Local logs from 1 characters"
+
+
 def test_log_folder_with_logs(dialog, tmp_path) -> None:
     """A folder of Local logs is valid; the hint counts the logs and the distinct characters."""
     folder = tmp_path / "logs"
