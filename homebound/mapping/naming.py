@@ -571,6 +571,54 @@ def label_unnamed_systems(namer: "Namer") -> int:
     return len(unnamed)
 
 
+def renames(namer: "Namer", system_ids: list[int] | None = None) -> dict[int, tuple[str, str]]:
+    """Return the systems whose stored name differs from what the scheme gives them where they are now.
+
+    Positions at a depth (``a2a``) are counted afresh, in the order the systems were added.
+
+    Args:
+        namer: The namer of the map, with the scheme to rename to.
+        system_ids: Only these systems; None for every placed one.
+
+    Returns:
+        System ID -> (name now, new name), nearest to the root first, then by hole numbers.
+    """
+    require_type(namer, Namer, "namer")
+    require_type(system_ids, (list, type(None)), "system_ids")
+    store = namer.store
+    wanted = None if system_ids is None else set(system_ids)
+    placed = [system for system in store.systems()
+              if system.parent_id is not None and (wanted is None or system.id in wanted)]
+    placed.sort(key=lambda system: (len(path := hole_path(store, system.id)[1]), path, system.id))
+    changes = {}
+    for system in placed:
+        new = namer.computed_label(system.id)
+        old = namer.scheme_label(system.id)
+        if new != old:
+            changes[system.id] = (old, new)
+    return changes
+
+
+def rename_systems(namer: "Namer", system_ids: list[int] | None = None) -> int:
+    """Give systems the names the scheme gives them where they are now: the explicit rename.
+
+    Names never change on their own; this is what a scheme change or "Make home" runs when the user
+    says yes. Custom names and hole numbers stay. One batch, so one Undo puts the old names back.
+
+    Args:
+        namer: The namer of the map, with the scheme to rename to.
+        system_ids: Only these systems; None for every placed one.
+
+    Returns:
+        The number of systems renamed.
+    """
+    changes = renames(namer, system_ids)
+    with namer.store.batch():
+        for system_id, (_, new) in changes.items():
+            namer.store.update_system(system_id, label=new)
+    return len(changes)
+
+
 # ---------------------------------------------------------------- maps from before stored names
 
 def legacy_label(store: Store, universe: Universe, scheme_key: str, home_id: int | None, system_id: int,

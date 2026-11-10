@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 
 from .. import app_version
 from ..mapdb.store import Action, map_stats
-from ..mapping.naming import SCHEMES, guess_static
+from ..mapping.naming import SCHEMES, guess_static, hole_path, rename_systems, renames
 from ..mapping.tracker import NamingRequest
 from ..settings import MAP_NAME_LIMIT
 from ..theme import painting
@@ -23,7 +23,8 @@ from ..theme.tokens import OPACITY, PIXELS, color, font
 from ..validation import require_choice, require_integer, require_text, require_type
 from . import menus
 from .character_dock import CharacterDock
-from .dialogs import AddSystemDialog, ConfirmDeleteMapDialog, ConnectionDialog, NamingDialog, PromptDialog
+from .dialogs import (AddSystemDialog, ConfirmDeleteMapDialog, ConnectionDialog, NamingDialog, PromptDialog,
+                      RenameSystemsDialog)
 from ..mapping.scan_status import age_text
 from .map_scene import ConnectionEdge, MapScene, MapView
 from .overlay import Overlay
@@ -297,6 +298,7 @@ class MapWindow(QMainWindow):
         state.unknownJump.connect(self._unknown_jump)
         state.wormholeJumped.connect(self.focus_jumped_system)
         state.autoNamed.connect(self._auto_named)
+        state.schemeChanged.connect(self._ask_rename_for_scheme)
         state.settingsChanged.connect(self._sync_settings)
         state.mapChanged.connect(self._refresh_find)
         state.status.connect(self._status)
@@ -701,9 +703,45 @@ class MapWindow(QMainWindow):
         self._sync_tray()
 
     def _scheme_changed(self, _index: int) -> None:
-        """Apply the naming scheme picked in the toolbar."""
+        """Apply the naming scheme picked in the toolbar (``schemeChanged`` then asks about renaming)."""
         self.state.settings.naming_scheme = self.scheme_combo.currentData()
         self.state.apply_settings()
+
+    def offer_rename(self, title: str, why: str, system_ids: list[int] | None = None) -> int:
+        """Ask whether to rename systems to what the scheme gives them now, and do it on yes.
+
+        The rename is one Store action with an Undo toast. Nothing is asked when no name would change.
+
+        Args:
+            title: The question.
+            why: What happens either way.
+            system_ids: Only these systems; None for every placed one.
+
+        Returns:
+            The number of systems renamed.
+        """
+        require_text(title, "title")
+        state = self.state
+        changes = renames(state.namer, system_ids)
+        if not changes:
+            return 0
+        dialog = RenameSystemsDialog(self, title, why, list(changes.values()))
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return 0
+        with state.store.batch() as action:
+            renamed = rename_systems(state.namer, system_ids)
+        state.mapChanged.emit()
+        self.offer_undo(f"Renamed {renamed} system{'s' if renamed != 1 else ''}",
+                        f"{state.namer.scheme.title} names", action)
+        return renamed
+
+    def _ask_rename_for_scheme(self, old_key: str) -> int:
+        """After a scheme change: offer to rename every system with the new scheme."""
+        title = self.state.namer.scheme.title
+        return self.offer_rename("Rename all systems with the new scheme?",
+                                 f"Names never change on their own. New systems get {title} names either way; "
+                                 f"Rename gives every system on the map its {title} name too (hole numbers "
+                                 f"and custom names stay, Undo brings the old names back).")
 
     def set_overlay_mode(self, mode: str) -> bool:
         """Switch the overlay mode; the pinned modes need a pinned character.
@@ -1019,6 +1057,7 @@ class MapWindow(QMainWindow):
         if universe_system is None:   # the home setting is a name: a system the universe doesn't know can't be home
             return
         state.settings.home_system = universe_system.name
+        state.namer.home_id = system_id   # already for the names the re-rooted chain gets when the batch ends
         chain, seen = [], set()
         current = state.store.system(system_id)
         while current and current.id not in seen:   # a damaged map with a parent loop must not hang the UI
@@ -1026,13 +1065,18 @@ class MapWindow(QMainWindow):
             chain.append(current)
             current = state.store.system(current.parent_id) if current.parent_id else None
         with state.store.batch():
-            for index, node in enumerate(chain):
+            for index, node in enumerate(chain):   # the holes on the way turn round: none of them is a static now
                 if index == 0:
-                    state.store.update_system(node.id, parent_id=None, hole_index=None)
+                    state.store.update_system(node.id, parent_id=None, hole_index=None, static=0)
                 else:
                     state.store.update_system(node.id, parent_id=chain[index - 1].id,
-                                              hole_index=chain[index - 1].hole_index)
+                                              hole_index=chain[index - 1].hole_index, static=0)
         state.apply_settings()
+        behind = [system.id for system in state.store.systems() if hole_path(state.store, system.id)[0] == system_id]
+        self.offer_rename("Rename the chain behind the new home?",
+                          "Names never change on their own. Rename names every system behind the new home "
+                          "from there (hole numbers and custom names stay, Undo brings the old names back); "
+                          "Keep names leaves them as they are.", behind)
 
     def offer_undo(self, title: str, detail: str, action: Action) -> None:
         """Show an Undo toast for a destructive action.

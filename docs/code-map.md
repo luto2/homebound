@@ -94,9 +94,13 @@ others show or edit it.
 | Feature | Logic | UI |
 |---|---|---|
 | The three schemes (numeric path, chain·depth·position, letter-numeric) | `mapping/naming.py` `Scheme` subclasses, `scheme_for_key` | toolbar combo in `ui/map_window.py` `_build_toolbar`; `ui/settings_dialog.py` |
-| Hole index and static slots of a new child | `mapping/naming.py` `next_hole_index`, `static_slot_count`, `static_slot_for_class` | — |
-| "Was this the static?" guess and question | `mapping/naming.py` `guess_static`; `mapping/tracker.py` `NamingRequest`, `AutoNamed`, `apply_naming` | `ui/dialogs.py` `NamingDialog`; `ui/map_window.py` `queue_naming`, `_next_naming`, `Scrim` |
-| Display name of a system (custom name, scheme name, real name) | `mapping/naming.py` `Namer.label`, `Namer.display` | everywhere a name is drawn |
+| Hole numbers: a WH sig's number at paste, the per-system counter that never reuses one | `mapping/naming.py` `number_wormhole_signatures`, `number_signature`, `take_hole_number`; `MapSystem.next_hole`, raised in `mapdb/store.py` `Store._raise_hole_counters` | `ui/signature_table.py` `SignatureModel.bookmark_for` |
+| A new child takes its sig's number; static is a flag (`MapSystem.static`) | `mapping/tracker.py` `Tracker._attach`, `apply_naming` | STATIC tab in `ui/map_scene.py` `SystemNode._paint_tabs` |
+| "Was this the static?" guess and question | `mapping/naming.py` `guess_static`; `mapping/tracker.py` `NamingRequest`, `AutoNamed`, `apply_naming`, `preview_name` | `ui/dialogs.py` `NamingDialog`; `ui/map_window.py` `queue_naming`, `_next_naming`, `Scrim` |
+| Display name of a system (custom name, stored label, real name) | `mapping/naming.py` `Namer.label`, `Namer.scheme_label`, `Namer.display` | everywhere a name is drawn |
+| Names are stored at attach and never change on their own (`MapSystem.label`) | `mapping/naming.py` `Namer.attach_label`, `next_level_index`, `label_unnamed_systems`; `ui/state.py` `AppState._name_new_systems` | — |
+| Explicit renames: scheme change, Make home (asked, one undo step) | `mapping/naming.py` `renames`, `rename_systems` | `ui/map_window.py` `offer_rename`, `_ask_rename_for_scheme`, `_set_home`; `ui/dialogs.py` `RenameSystemsDialog` |
+| Old maps keep the names they showed (once per file) | `mapping/naming.py` `freeze_legacy_names`, `legacy_label`, `legacy_signature_numbers`; `mapdb/store.py` `LEGACY_NAMES_KEY` | `ui/state.py` `AppState._freeze_legacy_names` |
 | Custom name (per map, lost when the system leaves the map) | `MapSystem.custom_name` | `ui/map_window.py` `_rename`; `ui/system_panel.py` name field |
 | Change static / hole of a system | `mapdb/store.py` `update_system(hole_index=…)` | `ui/map_window.py` `_rename_hole` |
 
@@ -207,7 +211,7 @@ detail.
 | Module | Owns |
 |---|---|
 | `tracker.py` | Character moves → map changes, answers from the UI, expiry |
-| `naming.py` | Naming schemes, hole indices, the static guess, `Namer` |
+| `naming.py` | Naming schemes, hole numbers, stored names and renames, the static guess, `Namer` |
 | `chain.py` | Chain of a system as a tree |
 | `signature_parser.py` | Probe scanner paste parsing and merge |
 | `scan_status.py` | Rescan status and duration formatting |

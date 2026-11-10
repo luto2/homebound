@@ -16,7 +16,7 @@ from homebound.mapping import signature_parser
 from homebound.mapping.tracker import AutoNamed, NamingRequest, UnknownJump
 from homebound.theme.tokens import PIXELS
 from homebound.ui import map_window as map_window_module
-from homebound.ui.dialogs import ConnectionDialog, NamingDialog
+from homebound.ui.dialogs import ConnectionDialog, NamingDialog, RenameSystemsDialog
 from homebound.ui.map_window import Legend, MapArea, MapWindow, Scrim, app_mark
 from homebound.ui.toast import Glyph
 from homebound.universe.db import System
@@ -172,6 +172,37 @@ def test_scheme_combo_applies_scheme(window) -> None:
     combo.setCurrentIndex(index)
     window._scheme_changed(index)
     assert window.state.settings.naming_scheme == combo.itemData(index)
+
+
+def test_a_scheme_change_renames_only_when_confirmed_and_undo_brings_the_names_back(window, modal) -> None:
+    """Names don't follow a new scheme by themselves; "Rename" renames all in one action, Undo restores them."""
+    state = window.state
+    first, second = add_child(window, "C5"), add_child(window, "C3")
+    third = pick_system("C2")
+    state.dispatch(state.tracker.add_wormhole(first.id, third.id))
+    names = lambda: [state.namer.display(system.id) for system in (first, second, third)]  # noqa: E731
+    assert names() == ["1", "2", "11"]
+    state.settings.naming_scheme = "letter_numeric"
+    state.apply_settings()                                   # "Keep names": the modal answers no
+    assert isinstance(modal.dialogs[-1], RenameSystemsDialog) and names() == ["1", "2", "11"]
+    assert modal.dialogs[-1].preview.text() == "1 → A\n2 → B\n11 → A1"
+    modal.handler = lambda dialog: 1
+    state.settings.naming_scheme = "a2a"
+    state.apply_settings()
+    assert names() == ["A1a", "B1a", "A2a"]
+    assert window.toasts.trigger_undo() is True
+    assert names() == ["1", "2", "11"]
+    count = len(modal.dialogs)
+    state.apply_settings()                                   # same scheme: nothing to ask
+    assert len(modal.dialogs) == count
+
+
+def test_rename_dialog_lists_the_first_renames(qt_application) -> None:
+    """Five renames are listed, the rest counted; the primary button says how many."""
+    dialog = RenameSystemsDialog(None, "Rename?", "Why.", [(str(number), f"A{number}") for number in range(7)])
+    assert dialog.preview.text().splitlines()[-1] == "… and 2 more"
+    with pytest.raises(TypeError):
+        RenameSystemsDialog(None, "Rename?", "Why.", "1 → A")
 
 
 # ---------------------------------------------------------------- maps
@@ -798,6 +829,24 @@ def test_set_home_reroots_chain(window) -> None:
     assert store.system(child.id).parent_id is None
     assert store.system(HOME.id).parent_id == child.id
     assert window.state.settings.home_system == child.name
+
+
+def test_make_home_asks_before_renaming_the_chain(window, modal) -> None:
+    """The old home gets a name at once; the rest of the chain is renamed from the new home only on yes."""
+    state = window.state
+    child = add_child(window)
+    grandchild = pick_system("C2")
+    state.dispatch(state.tracker.add_wormhole(child.id, grandchild.id))
+    other = add_child(window, "C3")
+    assert [state.namer.display(system.id) for system in (child, grandchild, other)] == ["1", "11", "2"]
+    window._set_home(child.id)                               # "Keep names"
+    assert isinstance(modal.dialogs[-1], RenameSystemsDialog)
+    assert state.namer.display(child.id) == "Home" and state.namer.display(grandchild.id) == "11"
+    assert state.namer.display(HOME.id) == "1" and state.store.system(HOME.id).label == "1"
+    modal.handler = lambda dialog: 1
+    window._set_home(HOME.id)
+    assert state.store.system(child.id).static == 0
+    assert [state.namer.display(system.id) for system in (child, grandchild, other)] == ["1", "11", "2"]
 
 
 def test_node_menu_set_home(window, modal) -> None:

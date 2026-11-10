@@ -36,6 +36,7 @@ class AppState(QObject):
     autoNamed = Signal(object)            # AutoNamed
     selectionChanged = Signal(int)        # system id (0 = none)
     settingsChanged = Signal()
+    schemeChanged = Signal(str)           # the map's naming scheme changed (old key); names stay until renamed
     status = Signal(str, str, str)        # source (logs|zkill|scout|kwin|backup), level, text
     followedChanged = Signal(object)      # character id or None (overlay target)
     scanAgeTick = Signal()                # once a minute: scan ages moved on, rescan states may change
@@ -349,6 +350,7 @@ class AppState(QObject):
         """Save the settings and pass the changes on to the namer, tracker, zKill and watcher."""
         settings = self.settings
         settings.save()
+        old_scheme = self.namer.scheme_key
         self.namer.scheme_key = settings.naming_scheme
         self.namer.home_id = self.home_id
         self.tracker.auto_when_certain = settings.auto_name_when_certain
@@ -359,6 +361,8 @@ class AppState(QObject):
             self.watcher.set_log_directory(settings.log_directory)
         self.settingsChanged.emit()
         self.mapChanged.emit()
+        if old_scheme != settings.naming_scheme:
+            self.schemeChanged.emit(old_scheme)
 
     def save_route_settings(self) -> None:
         """Save the settings after a route option changed and tell the views, without a map rebuild."""

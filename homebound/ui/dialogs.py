@@ -695,6 +695,33 @@ class AddSystemDialog(PromptDialog):
         return True, f"✓ {system.name} · {system.system_class} · {what}"
 
 
+class RenameSystemsDialog(BaseDialog):
+    """Asks before names change: after a scheme change or "Make home" (names never change on their own)."""
+
+    SHOWN = 5   # renames listed before "… and n more"
+
+    def __init__(self, parent: QWidget | None, title: str, why: str, changes: list[tuple[str, str]]) -> None:
+        """Build the question.
+
+        Args:
+            parent: The window to centre on.
+            title: The question, e.g. "Rename all systems with the new scheme?".
+            why: What happens either way.
+            changes: ``(name now, new name)`` of every system that would be renamed.
+        """
+        require_text(title, "title")
+        require_text(why, "why")
+        require_type(changes, list, "changes")
+        super().__init__(parent, title, why)
+        lines = [f"{old} → {new}" for old, new in changes[:self.SHOWN]]
+        if len(changes) > self.SHOWN:
+            lines.append(f"… and {len(changes) - self.SHOWN} more")
+        self.preview = QLabel("\n".join(lines))
+        self.preview.setProperty("mono", "true")
+        self.body.addWidget(self.preview)
+        self.add_buttons(cancel_text="Keep names", primary_text=f"Rename {len(changes)}")
+
+
 class ConfirmDeleteMapDialog(BaseDialog):
     """The one action that asks first (spec: ConfirmDialog). Cancel is the default: Enter and Esc keep the map."""
 
