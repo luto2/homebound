@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import app_version, settings as settings_module
+from .platform.paths import read_only_uri
 from .settings import MAP_NAME_LIMIT, Settings
 from .validation import require_choice, require_type
 
@@ -60,7 +61,8 @@ def _copy_database(source: Path, target: Path) -> Path:
     The copy uses a rollback journal, so it is one self-contained file.
 
     Raises:
-        BackupError: If the source can't be read or the copy fails the integrity check.
+        BackupError: If the source can't be read, the copy fails the integrity check, or a database
+            file has no ``systems`` table (it isn't a map).
     """
     try:
         with source.open("rb") as file:
@@ -70,13 +72,15 @@ def _copy_database(source: Path, target: Path) -> Path:
     if header and header != SQLITE_HEADER:   # SQLite reads a short non-database file as an empty one
         raise BackupError(f"{source.name} is not a map file")
     try:
-        source_database = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
+        source_database = sqlite3.connect(read_only_uri(source), uri=True)
         try:
             target_database = sqlite3.connect(target)
             try:
                 source_database.backup(target_database)
                 target_database.execute("PRAGMA journal_mode = DELETE")
                 result = target_database.execute("PRAGMA integrity_check").fetchone()[0]
+                has_systems = target_database.execute(
+                    "SELECT 1 FROM sqlite_master WHERE name = 'systems'").fetchone()
             finally:
                 target_database.close()
         finally:
@@ -85,6 +89,8 @@ def _copy_database(source: Path, target: Path) -> Path:
         raise BackupError(f"{source.name} can't be read: {error}") from error
     if result != "ok":
         raise BackupError(f"{source.name} failed the integrity check: {result}")
+    if header and not has_systems:   # a zero-byte map is an empty one and still backs up
+        raise BackupError(f"{source.name} holds no map data")
     return target
 
 

@@ -1,7 +1,9 @@
 """Universe lookups and the pure helpers of the static data build."""
 import io
 import json
+import shutil
 import sqlite3
+import sys
 import zipfile
 from contextlib import closing
 
@@ -125,6 +127,21 @@ def test_missing_and_outdated_files(tmp_path) -> None:
         Universe(broken)
     with pytest.raises(TypeError):
         Universe(5)
+
+
+@pytest.mark.parametrize("name", ["data#1", pytest.param("what?x", marks=pytest.mark.skipif(
+    sys.platform == "win32", reason="no ? in Windows names")), "a%20b", "e%23f"])
+def test_universe_loads_from_an_awkward_path(tmp_path, name) -> None:
+    """A ``#``, ``?`` or ``%`` in the folder name still loads that universe file, and leaves no stray file."""
+    path = tmp_path / name / "universe.sqlite"
+    path.parent.mkdir()
+    shutil.copyfile(UNIVERSE_PATH, path)
+    universe = Universe(path)
+    try:
+        assert len(universe.all_names()) == len(UNIVERSE.all_names())
+    finally:
+        universe.database.close()
+    assert sorted(entry.name for entry in tmp_path.iterdir()) == [name]
 
 
 def test_open_universe_skips_an_outdated_rebuild(tmp_path, monkeypatch) -> None:

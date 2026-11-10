@@ -3,6 +3,7 @@ import json
 import os
 import sqlite3
 import sys
+import tempfile
 import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -24,6 +25,10 @@ OTHER = pick_system("C3")
 IS_ROOT = getattr(os, "geteuid", lambda: 1)() == 0   # root can write anywhere; Windows has no geteuid
 # chmod can't make a folder read-only for root, nor on Windows (which ignores the bit on folders)
 CANNOT_LOCK_FOLDERS = IS_ROOT or sys.platform == "win32"
+# data folder names with characters SQLite reads as URI syntax ("?" can't be in a Windows name)
+AWKWARD = ["data#1", pytest.param("what?x", marks=pytest.mark.skipif(sys.platform == "win32",
+                                                                     reason="no ? in Windows names")),
+           "a%20b", "e%23f"]
 
 
 @pytest.fixture
@@ -52,6 +57,17 @@ def tables_in(data: bytes, folder: Path) -> set[str]:
     database = sqlite3.connect(path)
     try:
         return {row[0] for row in database.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    finally:
+        database.close()
+
+
+def map_rows(data: bytes, folder: Path) -> list[int]:
+    """Return the system IDs of a map file given as bytes."""
+    path = folder / "inspect.db"
+    path.write_bytes(data)
+    database = sqlite3.connect(path)
+    try:
+        return [row[0] for row in database.execute("SELECT id FROM systems ORDER BY id")]
     finally:
         database.close()
 
@@ -138,6 +154,37 @@ def test_read_only_folder_fails_the_backup(settings) -> None:
             create_backup("manual", settings)
     finally:
         folder.chmod(0o700)
+
+
+@pytest.mark.parametrize("name", AWKWARD)
+def test_backup_keeps_the_map_on_an_awkward_data_path(monkeypatch, tmp_path, name) -> None:
+    """A ``#``, ``?`` or ``%`` in the data folder still backs up that folder's map, and leaves no stray file."""
+    (tmp_path / name).mkdir()
+    settings = isolated_settings(monkeypatch, tmp_path / name)
+    with Store(settings.map_path()) as store:
+        store.add_system(HOME.id)
+    path = create_backup("manual", settings)
+    with zipfile.ZipFile(path) as archive:
+        assert map_rows(archive.read("map.db"), tmp_path / name) == [HOME.id]
+    assert sorted(entry.name for entry in tmp_path.iterdir()) == [name]
+
+
+def test_backup_refuses_a_database_without_map_tables(settings) -> None:
+    """A SQLite file with no ``systems`` table isn't a map, so backing it up is refused."""
+    path = settings.map_path()
+    path.unlink()
+    database = sqlite3.connect(path)
+    database.execute("CREATE TABLE unrelated (a)")
+    database.commit()
+    database.close()
+    with pytest.raises(BackupError, match="holds no map data"):
+        create_backup("manual", settings)
+
+
+def test_backup_of_a_zero_byte_map_still_succeeds(settings) -> None:
+    """An empty map file (SQLite reads it as an empty database) backs up, so it doesn't block deleting the map."""
+    settings.map_path().write_bytes(b"")
+    assert create_backup("manual", settings).exists()
 
 
 def test_copy_to_folder(settings, tmp_path) -> None:
@@ -227,6 +274,18 @@ def test_store_calls_before_migration_once(tmp_path) -> None:
     Store(path, before_migration=calls.append).close()
     Store(path, before_migration=calls.append).close()
     assert calls == [path]
+
+
+@pytest.mark.parametrize("name", AWKWARD)
+def test_old_map_on_an_awkward_path_gets_a_migration_backup(tmp_path, name) -> None:
+    """An old-schema map in a folder with URI syntax in its name is seen as old and backed up first."""
+    (tmp_path / name).mkdir()
+    path = old_schema_map(tmp_path / name / "map.db")
+    assert needs_migration(path)
+    calls = []
+    Store(path, before_migration=calls.append).close()
+    assert calls == [path]
+    assert sorted(entry.name for entry in tmp_path.iterdir()) == [name]
 
 
 def test_old_map_gets_one_migration_backup(monkeypatch, tmp_path, qt_application) -> None:
@@ -325,6 +384,34 @@ def test_restore_checks_names_and_file(settings, tmp_path) -> None:
     (tmp_path / "junk.zip").write_text("x")
     with pytest.raises(BackupError):
         restore_maps(tmp_path / "junk.zip", ["Main"], False, settings)
+
+
+def test_restore_with_a_hash_in_the_temp_folder_keeps_the_map(settings, monkeypatch, tmp_path) -> None:
+    """Unpacking into a temp folder with a ``#`` in its name still restores the backup's map."""
+    path = create_backup("manual", settings)
+    temporary = tmp_path / "Temp#1"
+    temporary.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(temporary))
+    restore_maps(path, ["Main"], True, settings)
+    with Store(settings.map_path()) as store:
+        assert [system.id for system in store.systems()] == [HOME.id]
+
+
+def test_restore_refuses_a_backup_without_map_data(settings, tmp_path) -> None:
+    """A backup whose map member has no tables is refused, and the current map keeps its rows."""
+    empty = tmp_path / "empty.db"
+    database = sqlite3.connect(empty)
+    database.execute("PRAGMA user_version = 1")   # a valid header and no tables
+    database.close()
+    path = backups_directory() / "2026-11-01_1200_manual.zip"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.write(empty, "map.db")
+        archive.writestr("manifest.json", json.dumps({"maps": {"Main": {"file": "map.db"}}}))
+    with pytest.raises(BackupError, match="holds no map data"):
+        restore_maps(path, ["Main"], True, settings)
+    with Store(settings.map_path()) as store:
+        assert [system.id for system in store.systems()] == [HOME.id]
 
 
 def test_restore_replacing_open_map(monkeypatch, tmp_path, qt_application) -> None:
