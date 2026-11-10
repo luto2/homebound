@@ -242,6 +242,75 @@ def is_static_signature(universe: Universe, system_id: int, signature: Signature
     return bool(system and code and code in {static.upper() for static in system.statics})
 
 
+def take_hole_number(store: Store, system_id: int) -> int:
+    """Return the next hole number of a system: one past the highest it has given out or holds now.
+
+    Numbers count up per system and are never reused, so a bookmark made in-game for a deleted
+    sig or hole can't end up on another one. The caller stores the number (on a sig or as a child's
+    ``hole_index``); the system's ``next_hole`` follows when the batch ends.
+
+    Args:
+        store: The map.
+        system_id: The system the hole is in.
+
+    Returns:
+        The number, 1 or more.
+    """
+    require_integer(system_id, "system_id", minimum=1)
+    system = store.system(system_id)
+    return max([system.next_hole if system else 0, *used_hole_indices(store, system_id)]) + 1
+
+
+def is_numbered_kind(signature: Signature) -> bool:
+    """Return whether a signature gets a bookmark number: a wormhole signature, not an anomaly."""
+    require_type(signature, Signature, "signature")
+    return signature.group == "wormhole" and signature.kind != "anom"
+
+
+def number_wormhole_signatures(store: Store, system_id: int) -> list[str]:
+    """Give every wormhole signature of a system that has no bookmark number yet the next one.
+
+    Called by every paste and by an edit that makes a sig a wormhole, so a number exists from the
+    moment the sig is known to be a hole, in any system, mapped or not. New sigs are numbered in
+    signature ID order, so two clients pasting the same scan agree. A sig a connection already
+    uses is left alone (its bookmark comes from the system behind it).
+
+    Args:
+        store: The map.
+        system_id: The system.
+
+    Returns:
+        The IDs of the signatures that got a number.
+    """
+    require_integer(system_id, "system_id", minimum=1)
+    with store.batch():
+        return [signature.signature_id for signature in store.signatures(system_id)   # in signature ID order
+                if number_signature(store, system_id, signature.signature_id)]
+
+
+def number_signature(store: Store, system_id: int, signature_id: str) -> int | None:
+    """Give one signature the next bookmark number if it is a wormhole sig without one.
+
+    Args:
+        store: The map.
+        system_id: The system the signature is in.
+        signature_id: The signature.
+
+    Returns:
+        The new number, or None if the sig is gone, not a wormhole, already numbered or used by a
+        connection.
+    """
+    require_integer(system_id, "system_id", minimum=1)
+    signature = store.signature(system_id, signature_id)
+    if signature is None or not is_numbered_kind(signature) or signature.hole_index:
+        return None
+    if any(connection.signature_on(system_id) == signature_id for connection in store.connections_of_system(system_id)):
+        return None
+    number = take_hole_number(store, system_id)
+    store.update_signature(system_id, signature_id, hole_index=number)
+    return number
+
+
 def next_hole_index(store: Store, universe: Universe, parent_id: int, is_static: bool,
                     child_class: str | None = None) -> int:
     """Return the hole index a new child of ``parent_id`` gets.
@@ -254,17 +323,14 @@ def next_hole_index(store: Store, universe: Universe, parent_id: int, is_static:
         child_class: The class of the system behind it, to pick the right static slot.
 
     Returns:
-        The static slot for a static, else the lowest free index after the static slots.
+        The static slot for a static, else the next number of the parent after the static slots
+        (numbers count up and are never reused).
     """
     require_type(is_static, bool, "is_static")
     statics = static_slot_count(universe, parent_id)
     if is_static and statics:
         return static_slot_for_class(universe, parent_id, child_class)
-    used = used_hole_indices(store, parent_id)
-    index = statics + 1
-    while index in used:
-        index += 1
-    return index
+    return max(take_hole_number(store, parent_id), statics + 1)
 
 
 def next_level_index(store: Store, root_id: int, path_prefix: list[int]) -> int:
@@ -590,6 +656,8 @@ def guess_static(store: Store, universe: Universe, parent_id: int, child_id: int
         return StaticGuess(True, False, False, f"Static {names} is already mapped")
     # Certain only if the scan backs it up: exactly one unlinked WH sig left and it is the static type.
     static_names = {wormhole_type.name for wormhole_type in types}
-    unlinked = [signature for signature in store.signatures(parent_id) if signature.group == "wormhole" and not signature.hole_index]
+    linked = {connection.signature_on(parent_id) for connection in store.connections_of_system(parent_id)}
+    unlinked = [signature for signature in store.signatures(parent_id)
+                if is_numbered_kind(signature) and signature.signature_id not in linked and signature.state != "missing"]
     certain = len(unlinked) == 1 and (unlinked[0].type or "").upper() in static_names
     return StaticGuess(True, True, certain, f"Static {names} matches this {child.system_class}")

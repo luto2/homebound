@@ -814,64 +814,47 @@ def test_wormhole_name_cell_falls_back_to_the_scanner_name(state, model) -> None
 
 
 # ---------------------------------------------------------------- bookmarks
-def test_bookmark_for_unlinked_and_provisional(state, model) -> None:
-    """Unlinked holes get consecutive provisional indices; dry runs store nothing."""
+def test_bookmark_for_an_unnumbered_sig_shows_the_number_it_would_get(state, model) -> None:
+    """A WH sig that came without a number (an older cloud client) shows the next ones; nothing is stored."""
     add_signature(state, "WH-001", group="wormhole")
     add_signature(state, "WH-002", group="wormhole")
     model.load(HOME.id)
     first, second = (state.store.signature(HOME.id, f"WH-00{number}") for number in (1, 2))
     label = state.namer.label(HOME.id)
-    slots = len(UNIVERSE.static_types(HOME.id))
-    assert model.provisional == {"WH-001": slots + 1, "WH-002": slots + 2}
-    assert model.bookmark_for(first) == f"{label}-{slots + 1}"
-    assert model.bookmark_for(second) == f"{label}-{slots + 2}"
-    # not provisional (e.g. a stale model): the next free index, stored nowhere
-    model.provisional.clear()
-    assert model.reserve_index(first, dry_run=True) == slots + 1
+    assert model.upcoming == {"WH-001": 1, "WH-002": 2}
+    assert model.bookmark_for(first) == f"{label}-1"
+    assert model.bookmark_for(second) == f"{label}-2"
+    model.upcoming.clear()   # a stale model: the next number, stored nowhere
+    assert model.bookmark_for(first) == f"{label}-1"
     assert state.store.signature(HOME.id, "WH-001").hole_index is None
-    assert model.bookmark_for(first) == f"{label}-{slots + 1}"
 
 
 def test_reserve_index_stores(state, model) -> None:
-    """Reserving stores the index; a static type takes its static slot."""
+    """Reserving stores the next number; a static type gets no slot of its own; a numbered sig needs none."""
     add_signature(state, "WH-001", group="wormhole")
     add_signature(state, "WH-002", group="wormhole", type="H296")
     model.load(HOME.id)
     first = state.store.signature(HOME.id, "WH-001")
-    index = model.provisional["WH-001"]
-    assert model.reserve_index(first) == index
-    assert state.store.signature(HOME.id, "WH-001").hole_index == index and "WH-001" not in model.provisional
-    second = state.store.signature(HOME.id, "WH-002")
-    model.provisional.clear()   # without a provisional number the type decides: H296 is the first static
-    assert model.reserve_index(second) == 1
-    assert state.store.signature(HOME.id, "WH-002").hole_index == 1
-    assert state.store.signature(HOME.id, "WH-001").hole_index == index   # kept
+    assert model.reserve_index(first) == 1
+    assert state.store.signature(HOME.id, "WH-001").hole_index == 1 and "WH-001" not in model.upcoming
+    assert model.reserve_index(state.store.signature(HOME.id, "WH-002")) == 2
+    assert model.reserve_index(state.store.signature(HOME.id, "WH-002")) is None
+    assert state.store.signature(HOME.id, "WH-001").hole_index == 1   # kept
+    with pytest.raises(TypeError):
+        model.reserve_index("WH-001")
 
 
-def test_provisional_index_of_typed_static(state, model) -> None:
-    """A sig typed as home's static (H296) is numbered with the static slot, like next_hole_index; the rest follow."""
-    add_signature(state, "WH-001", group="wormhole")
-    add_signature(state, "WH-002", group="wormhole", type="H296")
-    model.load(HOME.id)
-    label = state.namer.label(HOME.id)
-    slots = len(UNIVERSE.static_types(HOME.id))
-    assert model.provisional == {"WH-001": slots + 1, "WH-002": 1}
-    assert model.bookmark_for(state.store.signature(HOME.id, "WH-002")) == f"{label}-1"
-    assert model.reserve_index(state.store.signature(HOME.id, "WH-002"), dry_run=True) == 1
-
-
-def test_provisional_index_of_typed_static_when_slot_taken(state, model) -> None:
-    """A typed static whose slot a mapped hole or another typed sig already holds is numbered after the statics."""
+def test_a_typed_static_is_numbered_like_any_other_hole(state, model) -> None:
+    """No slot is kept for the static: a sig of home's static type counts on after the holes in use."""
     child = pick_system("C5", exclude={HOME.id})
     state.store.add_system(child.id, parent_id=HOME.id, hole_index=1)
     add_signature(state, "WH-001", group="wormhole", type="H296")
     model.load(HOME.id)
-    slots = len(UNIVERSE.static_types(HOME.id))
-    assert model.provisional == {"WH-001": slots + 1}
+    assert model.upcoming == {"WH-001": 2}
     state.store.remove_system(child.id)
     add_signature(state, "WH-002", group="wormhole", type="H296")
     model.load(HOME.id)
-    assert sorted(model.provisional.values()) == [1, slots + 1]
+    assert model.upcoming == {"WH-001": 2, "WH-002": 3}   # 1 was given out: it isn't used again
 
 
 def test_bookmark_for_reserved_index(state, model) -> None:
@@ -904,7 +887,7 @@ def test_bookmark_for_linked_child_and_home(state, panel) -> None:
     child_model.load(child.id)
     assert child_model.bookmark_for(state.store.signature(child.id, "BACK-01")) == state.namer.bookmark_home(child.id)
     assert "-0" in child_model.bookmark_for(state.store.signature(child.id, "BACK-01"))
-    assert "BACK-01" not in child_model.provisional
+    assert "BACK-01" not in child_model.upcoming
 
 
 def test_bookmark_text_linked_hole_to_c3(state, model) -> None:

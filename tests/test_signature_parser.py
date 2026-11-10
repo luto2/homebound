@@ -100,3 +100,38 @@ def test_a_paste_is_one_undoable_action(store) -> None:
     assert len(actions) == 1 and len(store.signatures(HOME.id)) > 1
     store.undo(actions[0])
     assert store.signatures(HOME.id) == []
+
+
+def wormhole_rows(*signature_ids: str) -> str:
+    """Return scanner text with one wormhole row per signature ID."""
+    return "".join(f"{signature_id}\tCosmic Signature\tWormhole\tUnstable Wormhole\t100,0%\t1 AU\n"
+                   for signature_id in signature_ids)
+
+
+def numbers(store: Store, system_id: int = HOME.id) -> dict[str, int | None]:
+    """Return the stored bookmark number of every signature of a system."""
+    return {signature.signature_id: signature.hole_index for signature in store.signatures(system_id)}
+
+
+def test_a_paste_numbers_its_wormholes_and_later_pastes_keep_them(store) -> None:
+    """Path 1: three WH sigs get 1, 2, 3 when pasted; a new sig with a lower ID gets 4 and nobody moves."""
+    merge_signatures(store, HOME.id, parse_scanner_text(wormhole_rows("BBB-200", "CCC-300", "DDD-400")))
+    assert numbers(store) == {"BBB-200": 1, "CCC-300": 2, "DDD-400": 3}
+    merge_signatures(store, HOME.id, parse_scanner_text(wormhole_rows("AAA-100", "BBB-200", "CCC-300", "DDD-400")))
+    assert numbers(store) == {"AAA-100": 4, "BBB-200": 1, "CCC-300": 2, "DDD-400": 3}
+
+
+def test_a_freed_number_is_not_given_again(store) -> None:
+    """Path 6: delete sig 2, paste a new WH sig: it gets 4, not 2."""
+    merge_signatures(store, HOME.id, parse_scanner_text(wormhole_rows("AAA-100", "BBB-200", "CCC-300")))
+    store.delete_signatures(HOME.id, ["BBB-200"])
+    merge_signatures(store, HOME.id, parse_scanner_text(wormhole_rows("AAA-100", "CCC-300", "ZZZ-999")))
+    assert numbers(store) == {"AAA-100": 1, "CCC-300": 3, "ZZZ-999": 4}
+
+
+def test_only_wormholes_get_a_number_and_an_unknown_one_gets_it_once_it_is_a_wormhole(store) -> None:
+    """Sites and anomalies get none; a sig of unknown group is numbered by the paste that says it is a wormhole."""
+    merge_signatures(store, HOME.id, parse_scanner_text(SCAN))
+    assert numbers(store) == {"ABC-123": 1, "DEF-456": None, "GHI-789": None, "XYZ-000": None}
+    merge_signatures(store, HOME.id, parse_scanner_text(wormhole_rows("DEF-456")))
+    assert numbers(store)["DEF-456"] == 2

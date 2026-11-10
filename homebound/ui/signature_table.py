@@ -15,8 +15,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QHeaderView, QSt
                                QStyleOptionViewItem, QTableView, QWidget)
 
 from ..mapdb.store import LIFETIME_CHIPS, Signature
-from ..mapping.naming import (is_static_signature, next_hole_index, signature_destination, static_slot_count,
-                             static_slot_for_class, used_hole_indices)
+from ..mapping.naming import is_numbered_kind, number_signature, signature_destination, take_hole_number
 from ..mapping.signature_parser import GROUP_ORDER
 from ..mapping.tracker import hole_size
 from ..theme import painting
@@ -91,7 +90,7 @@ class SignatureModel(QAbstractTableModel):
         self.rows: list[Signature | GroupHeader] = []   # in display order
         self.signatures: list[Signature] = []           # every signature + anomaly of the system
         self.leads: dict[str, tuple[int, str]] = {}     # signature id -> (system id, display name)
-        self.provisional: dict[str, int] = {}           # signature id -> bookmark index not stored yet
+        self.upcoming: dict[str, int] = {}              # signature id -> number an unnumbered WH sig would get
         self.copied: str | None = None
 
     def sort_state(self) -> tuple[int, bool]:
@@ -178,7 +177,7 @@ class SignatureModel(QAbstractTableModel):
                 other = connection.other_end(system_id)
                 self.leads[signature_id] = (other, state.namer.display(other))
         self.rows = self._grouped_rows()
-        self.provisional = self._provisional_indices()
+        self.upcoming = self._upcoming_numbers()
         self.endResetModel()
         return len(self.rows)
 
@@ -204,47 +203,19 @@ class SignatureModel(QAbstractTableModel):
                 rows += members
         return rows
 
-    def _static_slot(self, signature: Signature) -> int | None:
-        """Return the static slot of a signature typed as one of this system's statics, else None.
+    def _upcoming_numbers(self) -> dict[str, int]:
+        """Return the numbers the unnumbered, unlinked WH sigs would get, in signature ID order.
 
-        The slot is the one :func:`next_hole_index` gives a static of that type.
+        A paste numbers every WH sig, so this is only for sigs that came without one: from a cloud
+        client older than stored numbers. Copying the bookmark stores the number.
         """
-        universe = self.state.universe
-        known = universe.known_type(signature.type)
-        if not (known and is_static_signature(universe, self.system_id, signature)
-                and static_slot_count(universe, self.system_id)):
-            return None
-        return static_slot_for_class(universe, self.system_id, known.destinations[0] if known.destinations else None)
-
-    def _provisional_indices(self) -> dict[str, int]:
-        """Number the unlinked, unreserved wormhole signatures (not all the same).
-
-        A signature typed as one of the system's statics takes that static's slot while no hole
-        or reserved signature holds it; the others are numbered one after another after the
-        static slots.
-        """
-        provisional: dict[str, int] = {}
         if not self.system_id:
-            return provisional
-        used = used_hole_indices(self.state.store, self.system_id)
-        unnumbered = [signature for signature in self.signatures
-                      if is_wormhole_signature(signature) and not signature.hole_index
+            return {}
+        unnumbered = [signature.signature_id for signature in self.signatures
+                      if is_numbered_kind(signature) and not signature.hole_index
                       and signature.signature_id not in self.leads]
-        remaining = []
-        for signature in unnumbered:
-            slot = self._static_slot(signature)
-            if slot is not None and slot not in used:
-                provisional[signature.signature_id] = slot
-                used.add(slot)
-            else:
-                remaining.append(signature)
-        index = static_slot_count(self.state.universe, self.system_id) + 1
-        for signature in remaining:
-            while index in used:
-                index += 1
-            provisional[signature.signature_id] = index
-            used.add(index)
-        return provisional
+        first = take_hole_number(self.state.store, self.system_id) if unnumbered else 0
+        return {signature_id: first + offset for offset, signature_id in enumerate(unnumbered)}
 
     def signature_at(self, row: int) -> Signature | None:
         """Return the signature of a row, or None for a header or an out-of-range row."""
@@ -369,8 +340,8 @@ class SignatureModel(QAbstractTableModel):
     def bookmark_for(self, signature: Signature) -> str:
         """Return the bookmark label of a wormhole signature.
 
-        A linked hole uses the child's hole index (or ``-0`` towards home); otherwise the reserved
-        index, the provisional one, or the next free one.
+        A linked hole uses the child's hole number (or ``-0`` towards home); otherwise the sig's
+        own number, given when it was pasted.
         """
         state = self.state
         if signature.signature_id in self.leads:
@@ -383,32 +354,22 @@ class SignatureModel(QAbstractTableModel):
                 return state.namer.bookmark_home(self.system_id)
         if signature.hole_index:
             return state.namer.bookmark(self.system_id, signature.hole_index)
-        if signature.signature_id in self.provisional:
-            return state.namer.bookmark(self.system_id, self.provisional[signature.signature_id])
-        return state.namer.bookmark(self.system_id, self.reserve_index(signature, dry_run=True))
+        number = self.upcoming.get(signature.signature_id) or take_hole_number(state.store, self.system_id)
+        return state.namer.bookmark(self.system_id, number)
 
-    def reserve_index(self, signature: Signature, dry_run: bool = False) -> int:
-        """Store a bookmark index on a signature.
+    def reserve_index(self, signature: Signature) -> int | None:
+        """Store a bookmark number on a WH sig that came without one (see :meth:`_upcoming_numbers`).
 
         Args:
             signature: The signature.
-            dry_run: Only work out the index, don't store it.
 
         Returns:
-            The index.
+            The number, or None if the sig needs none (already numbered, linked, or not a wormhole).
         """
-        state = self.state
-        if not dry_run and signature.signature_id in self.provisional:
-            index = self.provisional.pop(signature.signature_id)
-            state.store.update_signature(self.system_id, signature.signature_id, hole_index=index)
-            return index
-        known = state.universe.known_type(signature.type)
-        is_static = is_static_signature(state.universe, self.system_id, signature)
-        index = next_hole_index(state.store, state.universe, self.system_id, is_static,
-                                known.destinations[0] if known and known.destinations else None)
-        if not dry_run:
-            state.store.update_signature(self.system_id, signature.signature_id, hole_index=index)
-        return index
+        require_type(signature, Signature, "signature")
+        number = number_signature(self.state.store, self.system_id, signature.signature_id)
+        self.upcoming.pop(signature.signature_id, None)
+        return number
 
 
 class RowFlash(QObject):

@@ -11,6 +11,7 @@ from dataclasses import dataclass, replace
 
 from ..mapdb.store import Signature, Store, utc_now_iso
 from ..validation import require_integer, require_type
+from .naming import number_wormhole_signatures
 
 SIGNATURE_ID_PATTERN = re.compile(r"^[A-Z]{3}-\d{3}$")
 WORMHOLE_CODE_PATTERN = re.compile(r"\b([A-Z]\d{3}|K162)\b")
@@ -117,7 +118,8 @@ def merge_signatures(store: Store, system_id: int, parsed: list[ParsedSignature]
     Known information is never downgraded: a row with an empty group or name keeps what was known.
     Signatures missing from the paste are marked "missing", but only for the kinds the paste contains,
     so pasting just the signatures (anomalies filtered out in the scanner) leaves the anomalies alone,
-    and the other way round.
+    and the other way round. Every wormhole signature without a bookmark number gets the next one
+    (:func:`~homebound.mapping.naming.number_wormhole_signatures`).
 
     Args:
         store: The map.
@@ -163,5 +165,6 @@ def _merge(store: Store, system_id: int, parsed: list) -> "MergeResult":
                if signature_id not in seen and (signature.kind or "sig") in kinds]
     for signature_id in missing:
         store.update_signature(system_id, signature_id, state="missing")
+    number_wormhole_signatures(store, system_id)   # a WH sig has its bookmark number from its first paste on
     store.update_system(system_id, scanned_at=now)
     return MergeResult(added, updated, missing)

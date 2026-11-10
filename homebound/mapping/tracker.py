@@ -17,7 +17,7 @@ from ..logs.parser import SystemChange
 from ..mapdb.store import LIFETIME_REMAINING, Connection, Store
 from ..universe.db import Universe
 from ..validation import require_integer, require_text, require_type
-from .naming import (Namer, StaticGuess, guess_static, hole_path, next_hole_index,
+from .naming import (Namer, StaticGuess, guess_static, hole_path, next_hole_index, number_signature,
                      static_slot_count, static_slot_for_class, used_hole_indices)
 
 GRID = 62 / 3                          # map grid cell = 1/3 of the node height (token size-node-h)
@@ -397,6 +397,7 @@ class Tracker:
         if unknown:
             raise ValueError(f"unknown signature field(s): {', '.join(sorted(unknown))}")
         self.store.update_signature(system_id, signature_id, **values)
+        number_signature(self.store, system_id, signature_id)   # set to wormhole by hand: it gets its number now
         connection = next((candidate for candidate in self.store.connections_of_system(system_id)
                            if candidate.signature_on(system_id) == signature_id), None)
         if not connection:

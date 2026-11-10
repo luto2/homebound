@@ -184,8 +184,8 @@ def test_changing_the_answer_moves_the_reserved_signature_index(simulation) -> N
     paste(simulation, "AAA-111\tCosmic Signature\tWormhole\t\t100%\t1 AU\n")
     simulation.store.update_signature(HOME.id, "AAA-111", hole_index=1)
     simulation.tracker.apply_naming(request, is_static=False, signature_id="AAA-111")
-    assert simulation.store.system(c5.id).hole_index == 2
-    assert simulation.store.signature(HOME.id, "AAA-111").hole_index == 2
+    assert simulation.store.system(c5.id).hole_index == 3     # the paste gave out 2
+    assert simulation.store.signature(HOME.id, "AAA-111").hole_index == 3
     assert simulation.store.connection(HOME.id, c5.id).signature_on(HOME.id) == "AAA-111"
 
 
@@ -245,6 +245,16 @@ def test_saving_a_signature_as_a_site_unlinks_it(simulation) -> None:
     simulation.jump(c5.name)
     assert simulation.tracker.save_signature(HOME.id, "ABC-123", {"group": "data"}) is None
     assert simulation.store.connection(HOME.id, c5.id).signature_on(HOME.id) is None
+
+
+def test_a_sig_set_to_wormhole_by_hand_gets_its_number(simulation) -> None:
+    """DEF-456 has no group in the paste: it is numbered when the dialog makes it a wormhole, not before."""
+    paste(simulation)
+    assert simulation.store.signature(HOME.id, "DEF-456").hole_index is None
+    simulation.tracker.save_signature(HOME.id, "DEF-456", {"group": "wormhole"})
+    assert simulation.store.signature(HOME.id, "DEF-456").hole_index == 2
+    simulation.tracker.save_signature(HOME.id, "DEF-456", {"name": "x"})
+    assert simulation.store.signature(HOME.id, "DEF-456").hole_index == 2
 
 
 def test_save_signature_without_a_connection_and_bad_keys(simulation) -> None:
