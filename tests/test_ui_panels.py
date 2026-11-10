@@ -721,7 +721,7 @@ def test_cell_data_and_flags(state, model) -> None:
     assert cell("BBB-222", COLUMN_NAME, tooltip) == "Barren\nDouble-click to edit"
     assert cell("EEE-555", COLUMN_NAME, tooltip) == "Hideaway"
     assert cell("GGG-777", COLUMN_NAME, tooltip) == "Not in the last paste"
-    assert cell("CCC-333", COLUMN_ACTION, tooltip) == "Copy bookmark name"
+    assert cell("CCC-333", COLUMN_ACTION, tooltip) == model.bookmark_text(state.store.signature(HOME.id, "CCC-333"))
     assert cell("CCC-333", COLUMN_NAME) == "→ C5"
 
 
@@ -849,6 +849,54 @@ def test_bookmark_for_linked_child_and_home(state, panel) -> None:
     assert "BACK-01" not in child_model.provisional
 
 
+def test_bookmark_text_linked_hole_to_c3(state, model) -> None:
+    """A linked hole copies its number, the sig's three letters and the class it leads to."""
+    child = pick_system("C3", exclude={HOME.id})
+    state.dispatch(state.tracker.add_wormhole(HOME.id, child.id))
+    add_signature(state, "ABC-123", group="wormhole")
+    state.store.set_connection_signature(state.store.connection(HOME.id, child.id).id, HOME.id, "ABC-123")
+    model.load(HOME.id)
+    signature = state.store.signature(HOME.id, "ABC-123")
+    assert model.bookmark_text(signature) == f"{model.bookmark_for(signature)} ABC C3"
+
+
+def test_bookmark_text_unlinked_known_type_and_k162(state, model) -> None:
+    """An unlinked sig takes the class of its known type's destination; a K162 takes the destination set by hand,
+    and copies no class (and no trailing space) when it has none."""
+    add_signature(state, "ABC-123", group="wormhole", type="D382")
+    add_signature(state, "ABD-456", group="wormhole", type="K162", destination="C4")
+    add_signature(state, "ABE-789", group="wormhole", type="K162")
+    model.load(HOME.id)
+    typed, by_hand, bare = (state.store.signature(HOME.id, sig) for sig in ("ABC-123", "ABD-456", "ABE-789"))
+    assert model.bookmark_text(typed) == f"{model.bookmark_for(typed)} ABC C2"
+    assert model.bookmark_text(by_hand) == f"{model.bookmark_for(by_hand)} ABD C4"
+    assert model.bookmark_text(bare) == f"{model.bookmark_for(bare)} ABE"
+
+
+def test_bookmark_text_return_hole_uses_home_class(state, model) -> None:
+    """The return hole of a child is numbered -0 and copies the class of the system it leads back to."""
+    child = pick_system("C5", exclude={HOME.id})
+    state.dispatch(state.tracker.add_wormhole(HOME.id, child.id))
+    state.store.upsert_signature(Signature(child.id, "BAK-001", group="wormhole", kind="sig"))
+    state.store.set_connection_signature(state.store.connection(HOME.id, child.id).id, child.id, "BAK-001")
+    model.load(child.id)
+    signature = state.store.signature(child.id, "BAK-001")
+    home_class = state.universe.by_id(HOME.id).system_class
+    assert model.bookmark_text(signature) == f"{state.namer.bookmark_home(child.id)} BAK {home_class}"
+    assert model.bookmark_text(signature).startswith(state.namer.bookmark_home(child.id) + " ")
+
+
+def test_copy_button_tooltip_is_the_copied_text(state, model) -> None:
+    """The action cell's tooltip shows exactly the text the button copies."""
+    add_signature(state, "ABC-123", group="wormhole", type="D382")
+    model.load(HOME.id)
+    row = next(index for index, entry in enumerate(model.rows) if getattr(entry, "signature_id", None) == "ABC-123")
+    signature = model.signature_at(row)
+    tooltip = model.data(model.index(row, COLUMN_ACTION), Qt.ItemDataRole.ToolTipRole)
+    assert tooltip == model.bookmark_text(signature)
+    assert tooltip.endswith(" ABC C2")
+
+
 # ---------------------------------------------------------------- table widget
 @pytest.fixture
 def table(state, qt_application) -> Iterator[SignatureTable]:
@@ -929,7 +977,7 @@ def test_copy_row_reserves_and_gives_feedback(state, table, qt_application) -> N
     row = row_of(table, "WH-001")
     label = table.copy_row(row)
     stored = state.store.signature(HOME.id, "WH-001")
-    assert stored.hole_index and label == f"{state.namer.label(HOME.id)}-{stored.hole_index}"
+    assert stored.hole_index and label == f"{state.namer.label(HOME.id)}-{stored.hole_index} WH"
     assert QApplication.clipboard().text() == label and copied == [(label,)]
     assert table.signature_model.copied == "WH-001" and table._copied_timer.isActive()
     table.grab()   # paints "✓ Copied"
@@ -948,7 +996,7 @@ def test_copy_row_of_linked_hole_does_not_reserve(state, table) -> None:
     state.store.set_connection_signature(state.store.connection(HOME.id, child.id).id, HOME.id, "OUT-001")
     table.load(HOME.id)
     label = table.copy_row(row_of(table, "OUT-001"))
-    assert label.endswith(f"-{state.store.system(child.id).hole_index}")
+    assert label.startswith(f"{state.namer.label(HOME.id)}-{state.store.system(child.id).hole_index} OUT ")
     assert state.store.signature(HOME.id, "OUT-001").hole_index is None
 
 

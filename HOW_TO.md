@@ -152,6 +152,7 @@ To fix a wrong answer later, right-click the system → **Change static / hole �
 Every wormhole sig in the table has a copy button such as `⧉ 12-1`:
 - The hole with number *n* in system *S* is `S-n`, so the static of `12` is `12-1`.
 - The hole leading back towards home is `S-0`.
+- The button copies the whole line for the in-game bookmark: `<number> <sig> <class>`, for example `12-1 ABC C3` (the sig is its three letters, the class is where the hole leads). Without a known class it copies `12-1 ABC`. The button shows only the number; its tooltip shows the text it copies.
 
 ---
 

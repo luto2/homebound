@@ -276,11 +276,10 @@ class SignatureModel(QAbstractTableModel):
             return None
         return self._display_text(row, column)
 
-    @staticmethod
-    def _tooltip(signature: Signature, column: int) -> str:
-        """Tooltip of a signature cell."""
+    def _tooltip(self, signature: Signature, column: int) -> str:
+        """Tooltip of a signature cell; the action cell shows the text its button copies."""
         if column == COLUMN_ACTION and is_wormhole_signature(signature):
-            return "Copy bookmark name"
+            return self.bookmark_text(signature)
         if signature.state == "missing":
             return "Not in the last paste"
         return (signature.name or "") + ("\nDouble-click to edit" if signature.kind != "anom" else "")
@@ -335,6 +334,24 @@ class SignatureModel(QAbstractTableModel):
             system = universe.by_id(self.leads[signature.signature_id][0])
             return system.system_class if system else None
         return signature_destination(universe, signature)
+
+    def bookmark_text(self, signature: Signature) -> str:
+        """Return the text the copy button copies: ``<number> <sig> <class>``, e.g. ``123-2 ABC C3``.
+
+        The number is the bookmark label, the sig is the three letters of its ID, and the class is where the hole
+        leads (as the class badges write it). The class is left out, with its space, when none is known.
+
+        Args:
+            signature: A wormhole signature of the loaded system.
+
+        Returns:
+            The text, e.g. ``"123-2 ABC C3"`` or ``"123-2 ABC"``.
+        """
+        require_type(signature, Signature, "signature")
+        parts = [self.bookmark_for(signature), signature.signature_id.split("-")[0]]
+        if system_class := self.lead_class(signature):
+            parts.append(system_class)
+        return " ".join(parts)
 
     def bookmark_for(self, signature: Signature) -> str:
         """Return the bookmark label of a wormhole signature.
@@ -771,10 +788,10 @@ class SignatureTable(QTableView):
             self.editRequested.emit(signature)
 
     def copy_row(self, row: int) -> str | None:
-        """Copy the bookmark label of a row, reserving its index first.
+        """Copy the bookmark text of a row, reserving its index first.
 
         Returns:
-            The label copied, or None for a header row.
+            The text copied, or None for a header row.
         """
         model = self.signature_model
         signature = model.signature_at(row)
@@ -783,7 +800,7 @@ class SignatureTable(QTableView):
         if not signature.hole_index and signature.signature_id not in model.leads:
             model.reserve_index(signature)
             model.rows[row] = signature = self.state.store.signature(model.system_id, signature.signature_id)
-        label = model.bookmark_for(signature)
+        label = model.bookmark_text(signature)
         QApplication.clipboard().setText(label)
         model.copied = signature.signature_id
         self.viewport().update()
