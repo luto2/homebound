@@ -2,8 +2,10 @@
 import json
 import os
 import re
+import shutil
 from dataclasses import asdict, dataclass, field, fields
-from pathlib import Path
+from datetime import datetime
+from pathlib import Path, PurePath
 
 from .platform.paths import data_directory, documents_directory, is_windows
 from .universe.db import SIZES
@@ -14,10 +16,12 @@ SETTINGS_FILE = DATA_DIR / "settings.json"
 
 OVERLAY_MODES = ("off", "follow", "pinned_eve", "pinned_always")
 SCHEMES = ("numeric", "a2a", "letter_numeric")
+UNKNOWN_JUMP_CHOICES = ("add", "ignore")
 ROUTE_PREFERENCES = ("shortest", "safer", "less_secure")   # same as routing.PREFERENCES
 TRADE_HUBS = ["Jita", "Amarr", "Dodixie", "Rens", "Hek"]   # default route destinations
-# route settings that must be one of a few values; anything else keeps the default
-SETTING_CHOICES = {"route_preference": ROUTE_PREFERENCES, "route_ship_size": SIZES}
+# settings that must be one of a few values; anything else keeps the default
+SETTING_CHOICES = {"route_preference": ROUTE_PREFERENCES, "route_ship_size": SIZES, "overlay_mode": OVERLAY_MODES,
+                   "unknown_jump_default": UNKNOWN_JUMP_CHOICES, "naming_scheme": SCHEMES}
 DEFAULT_MAP = "Main"
 MAP_NAME_LIMIT = 32                       # characters
 MARKER_SLOTS = 6
@@ -48,6 +52,9 @@ def clamp_to_range(key: str, value: int | float) -> int | float:
 @dataclass
 class Settings:
     """Everything the user can set, plus the list of maps."""
+
+    # Why the file was not used as it is (empty when it was fine). Not a setting: no field, so not saved.
+    load_problem = ""
 
     log_directory: str = ""
     home_system: str = ""                 # system name, e.g. J161940
@@ -221,21 +228,69 @@ class Settings:
         settings = cls()
         if SETTINGS_FILE.exists():
             try:
-                raw = json.loads(SETTINGS_FILE.read_text())
-            except (json.JSONDecodeError, OSError):
-                raw = {}
-            settings._apply(raw if isinstance(raw, dict) else {})
+                decoded = json.loads(SETTINGS_FILE.read_text(encoding="utf-8-sig"))
+            except (ValueError, OSError):   # ValueError covers bad JSON and bad UTF-8
+                decoded = None
+            if isinstance(decoded, dict):
+                settings._apply(decoded)
+            else:
+                settings.load_problem = "settings.json can't be read, so the defaults are used"
+            if settings.load_problem:
+                settings._keep_copy()
         if not settings.log_directory:
             found = detect_log_directories()
             settings.log_directory = str(found[0]) if found else ""
         settings._ensure_maps()
         return settings
 
+    def _keep_copy(self) -> None:
+        """Copy the settings file aside, so the next save can't lose what it held. Never raises.
+
+        The copy is ``settings.bad-<time>.json`` in the data folder, made once per distinct content. If
+        it fails, ``load_problem`` says so too.
+        """
+        try:
+            original = SETTINGS_FILE.read_bytes()
+            if any(path.read_bytes() == original for path in DATA_DIR.glob("settings.bad-*.json")):
+                return
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            target, number = DATA_DIR / f"settings.bad-{stamp}.json", 2
+            while target.exists():
+                target, number = DATA_DIR / f"settings.bad-{stamp}-{number}.json", number + 1
+            shutil.copy2(SETTINGS_FILE, target)
+        except OSError as error:
+            self.load_problem += f" (the file could not be copied aside: {error})"
+
+    def _usable_maps(self, maps: dict) -> dict:
+        """Return the map entries that can be used. An entry without a usable name or file is dropped.
+
+        The optional fields of a kept entry (home system, naming scheme) are reset to their defaults when
+        they have the wrong type. Entries are otherwise kept as they are, with any extra keys.
+        ``load_problem`` says how many entries were dropped.
+        """
+        usable, dropped = {}, 0
+        for name, entry in maps.items():
+            file = entry.get("file") if isinstance(entry, dict) else None
+            if (not isinstance(name, str) or not name.strip() or not isinstance(file, str) or not file.strip()
+                    or PurePath(file).is_absolute() or ".." in PurePath(file).parts):
+                dropped += 1
+                continue
+            entry = dict(entry)
+            if "home_system" in entry and not isinstance(entry["home_system"], str):
+                entry["home_system"] = ""
+            if "naming_scheme" in entry and entry["naming_scheme"] not in SCHEMES:
+                entry["naming_scheme"] = "numeric"
+            usable[name] = entry
+        if dropped:
+            noun = "entry" if dropped == 1 else "entries"
+            self.load_problem = f"{dropped} map {noun} in settings.json can't be used and were dropped"
+        return usable
+
     def _apply(self, raw: dict) -> int:
         """Take the values from a decoded settings file that fit the field types.
 
         Numbers outside their range (:data:`SETTING_RANGES`, e.g. from a hand-edited file) are
-        clamped to the nearest allowed value.
+        clamped to the nearest allowed value. Unusable map entries are dropped (see :meth:`_usable_maps`).
 
         Returns:
             The number of values taken.
@@ -259,6 +314,8 @@ class Settings:
                 fits = fits and value in SETTING_CHOICES[key]
             elif key == "route_destinations":
                 fits = fits and all(isinstance(name, str) and name.strip() for name in value)
+            elif key == "maps" and fits:
+                value = self._usable_maps(value)
             if fits:
                 setattr(self, key, clamp_to_range(key, value))
                 taken += 1

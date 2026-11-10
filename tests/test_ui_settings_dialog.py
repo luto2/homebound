@@ -124,6 +124,13 @@ def test_log_folder_empty(dialog, tmp_path) -> None:
     assert dialog.log_help.property("role") == "help-warn"
 
 
+def test_overlay_mode_list_matches_settings() -> None:
+    """The overlay modes the settings file accepts are the ones the settings dialog offers."""
+    from homebound import settings as settings_module
+    from homebound.ui import settings_dialog
+    assert settings_module.OVERLAY_MODES == tuple(key for key, *_ in settings_dialog.OVERLAY_MODES)
+
+
 def test_log_folder_skips_a_bad_name(dialog, tmp_path) -> None:
     """A log whose name has digits that are no date is not counted, and does not break the check."""
     folder = tmp_path / "logs"

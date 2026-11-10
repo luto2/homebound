@@ -404,6 +404,8 @@ values when opened again.
 
 ## 15. Troubleshooting
 
+**The app starts with default settings.** `settings.json` could not be read, or a map in it is unusable. Homebound keeps a copy of the file as it was, as `settings.bad-<time>.json` next to it, before the next save overwrites it. Fix the copy by hand and put it back as `settings.json`, or copy the map entries across.
+
 **Characters don't move on the map.** Check that *Log chat to file* is on in EVE and that the status bar shows the log watcher with ✓. Settings → Log folder should report the logs and characters it found.
 
 **The overlay doesn't follow the focused client.** On Plasma, install the KWin script (Settings → KWin focus script) and check that the status bar shows it as active. On Windows the status bar should say *Windows focus: active*. The overlay matches the window title `EVE - <character name>` against the names in the logs.

@@ -122,6 +122,128 @@ def test_broken_settings_file_gives_defaults(data_dir) -> None:
         assert Settings.load().naming_scheme == "numeric"
 
 
+def test_non_utf8_settings_file_gives_defaults(data_dir) -> None:
+    """A file that is not UTF-8 is unreadable: default settings, no crash."""
+    (data_dir / "settings.json").write_bytes(b"\xff\xfe{}")
+    assert Settings.load().naming_scheme == "numeric"
+
+
+def test_utf8_bom_settings_file_loads(data_dir) -> None:
+    """A file saved with a byte order mark (Notepad) loads its values."""
+    (data_dir / "settings.json").write_bytes(b"\xef\xbb\xbf" + json.dumps({"naming_scheme": "a2a"}).encode())
+    assert Settings.load().naming_scheme == "a2a"
+
+
+def test_bad_file_is_kept_before_the_next_save(data_dir) -> None:
+    """An unusable file is copied aside once; the next save writes good settings over it."""
+    garbage = b"{not json"
+    (data_dir / "settings.json").write_bytes(garbage)
+    settings = Settings.load()
+    assert settings.load_problem
+    settings.save()
+    assert json.loads((data_dir / "settings.json").read_text())["active_map"] == "Main"
+    copies = list(data_dir.glob("settings.bad-*.json"))
+    assert len(copies) == 1 and copies[0].read_bytes() == garbage
+    (data_dir / "settings.json").write_bytes(garbage)
+    assert Settings.load().load_problem
+    assert list(data_dir.glob("settings.bad-*.json")) == copies
+
+
+@pytest.mark.parametrize("maps", [
+    {"x": 1},
+    {"x": {"home_system": "J1"}},
+    {"x": {"file": 5}},
+    {"x": {"file": " "}},
+    {"x": {"file": "../../x.db"}},
+    {"x": {"file": "/etc/x.db"}},
+    {"": {"file": "maps/x.db"}},
+    {"x": "maps/x.db"},
+])
+def test_malformed_maps_are_dropped(data_dir, maps) -> None:
+    """A map entry that can't be used is dropped; the settings load and save, with a map left to use."""
+    (data_dir / "settings.json").write_text(json.dumps({"maps": maps}))
+    settings = Settings.load()
+    assert list(settings.maps) == ["Main"]
+    assert settings.map_path() == data_dir / "map.db"
+    settings.save()
+    assert list(Settings.load().maps) == ["Main"]
+
+
+def test_maps_that_are_not_an_object_are_ignored(data_dir) -> None:
+    """A maps value of the wrong type is ignored, as any other wrong-typed setting."""
+    (data_dir / "settings.json").write_text(json.dumps({"maps": [1]}))
+    assert list(Settings.load().maps) == ["Main"]
+
+
+def test_good_maps_survive_a_bad_neighbour(data_dir) -> None:
+    """Valid maps keep their order and their entries; a bad one goes, and an active map that was dropped moves on."""
+    (data_dir / "settings.json").write_text(json.dumps({
+        "active_map": "Bad",
+        "maps": {"Main": {"file": "map.db", "home_system": "J161940", "naming_scheme": "a2a", "extra": 1},
+                 "Bad": {"home_system": "J1"},
+                 "Corp": {"file": "maps/corp.db"}}}))
+    settings = Settings.load()
+    assert list(settings.maps) == ["Main", "Corp"]
+    assert settings.maps["Main"] == {"file": "map.db", "home_system": "J161940", "naming_scheme": "a2a", "extra": 1}
+    assert settings.active_map == "Main"
+
+
+def test_dropped_map_entry_leaves_a_copy(data_dir) -> None:
+    """The file as it was, byte for byte, is kept when a map entry is dropped."""
+    original = json.dumps({"maps": {"Main": {"file": "map.db"}, "Bad": {"file": 5}}}, indent=4).encode()
+    (data_dir / "settings.json").write_bytes(original)
+    settings = Settings.load()
+    assert list(settings.maps) == ["Main"] and settings.load_problem
+    settings.save()
+    copies = list(data_dir.glob("settings.bad-*.json"))
+    assert len(copies) == 1 and copies[0].read_bytes() == original
+
+
+def test_clean_and_wrong_typed_files_leave_no_copy(data_dir) -> None:
+    """A clean file, and a wrong-typed top-level value, load silently: no copy and no problem."""
+    (data_dir / "settings.json").write_text(json.dumps({"known_space_radius": "far", "naming_scheme": "a2a"}))
+    settings = Settings.load()
+    assert settings.naming_scheme == "a2a" and settings.load_problem == ""
+    assert list(data_dir.glob("settings.bad-*.json")) == []
+
+
+@pytest.mark.parametrize(("key", "bad", "default", "good"), [
+    ("overlay_mode", "zzz", "follow", "pinned_always"),
+    ("unknown_jump_default", "q", "ignore", "add"),
+    ("naming_scheme", "q", "numeric", "a2a"),
+])
+def test_bad_choices_keep_the_defaults(data_dir, key, bad, default, good) -> None:
+    """A choice setting with a value outside its choices keeps the default; a listed value loads."""
+    (data_dir / "settings.json").write_text(json.dumps({key: bad}))
+    assert getattr(Settings.load(), key) == default
+    (data_dir / "settings.json").write_text(json.dumps({key: good}))
+    assert getattr(Settings.load(), key) == good
+
+
+def test_map_entry_with_unknown_scheme_gets_numeric(data_dir) -> None:
+    """A map whose naming scheme is not a known one loads with the numeric scheme."""
+    (data_dir / "settings.json").write_text(json.dumps({"maps": {"Main": {"file": "map.db", "naming_scheme": "q"}}}))
+    assert Settings.load().maps["Main"]["naming_scheme"] == "numeric"
+
+
+def test_copy_failure_does_not_stop_the_load(data_dir, monkeypatch) -> None:
+    """If the copy aside fails, the settings still load with defaults and say the copy failed."""
+    (data_dir / "settings.json").write_bytes(b"\xff\xfe{}")
+
+    def refuse(source, target):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(settings_module.shutil, "copy2", refuse)
+    settings = Settings.load()
+    assert settings.naming_scheme == "numeric" and "disk full" in settings.load_problem
+
+
+def test_settings_scheme_list_matches_naming() -> None:
+    """The scheme names the settings file accepts are the ones naming knows."""
+    from homebound.mapping import naming
+    assert settings_module.SCHEMES == tuple(naming.SCHEMES)
+
+
 def test_detected_log_folder_is_used(data_dir, monkeypatch) -> None:
     """Without a saved folder, the first detected one is used."""
     monkeypatch.setattr(settings_module, "detect_log_directories", lambda: [Path("/found/Chatlogs")])
