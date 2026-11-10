@@ -1,6 +1,6 @@
 # TrayMenu
 
-The `QSystemTrayIcon` context menu: overlay on/off, unlock, overlay mode and window actions.
+The `QSystemTrayIcon` context menu: unlock, the overlay mode group (Off included) and window actions.
 
 - `QMenu` on `bg-2`, `radius-4`, items 26px; hover is a full `accent` bar with `ink-inverse` text.
 - Toggles show ✓, the exclusive overlay mode group shows ●, in a 14px check column (`QActionGroup`, checkable actions).

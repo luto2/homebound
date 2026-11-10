@@ -301,7 +301,7 @@ On Linux the overlay is an X11 override-redirect window, so it stays above fulls
 ## 11. Tray icon and notifications
 
 Closing the main window keeps Homebound running in the tray. The tray menu has:
-- Show overlay and Unlock overlay
+- Unlock overlay
 - the overlay modes
 - Show map window
 - Settings …

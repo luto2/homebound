@@ -368,14 +368,39 @@ def test_mode_buttons_drive_overlay_mode(window) -> None:
         if button.property("mode") == "off":
             button.click()
     assert window.state.settings.overlay_mode == "off"
-    assert window.overlay_action.isChecked() is False and window.unlock_action.isEnabled() is False
+    assert window.mode_actions["off"].isChecked() and window.unlock_action.isEnabled() is False
+    for button in window.mode_buttons.buttons():
+        if button.property("mode") == "follow":
+            button.click()
+    assert window.mode_actions["follow"].isChecked() and not window.mode_actions["off"].isChecked()
+
+
+def test_tray_mode_group_lists_every_toolbar_mode(window) -> None:
+    """The tray's mode group has one action per toolbar mode, in the same order, and no separate toggle."""
+    assert list(window.mode_actions) == [key for key, _ in map_window_module.MODES]
+    assert window.mode_actions["off"].text() == "Off"
+    tray_texts = [action.text() for action in window.tray.contextMenu().actions()]
+    assert "Show overlay" not in tray_texts
+
+
+def test_tray_off_mode_and_back(window) -> None:
+    """The tray's Off action turns the overlay off; Follow afterwards brings it back."""
+    window.mode_actions["follow"].trigger()
+    window.mode_actions["off"].trigger()
+    assert window.state.settings.overlay_mode == "off"
+    assert window.mode_actions["off"].isChecked() and not window.mode_actions["follow"].isChecked()
+    assert window.unlock_action.isEnabled() is False
+    window.mode_actions["follow"].trigger()
+    assert window.state.settings.overlay_mode == "follow"
+    assert window.mode_actions["follow"].isChecked() and not window.mode_actions["off"].isChecked()
+    assert window.unlock_action.isEnabled()
 
 
 def test_tray_menu_toggle_and_modes(window) -> None:
-    """The tray's checkboxes and mode group switch the overlay and respect pinning."""
-    window.overlay_action.setChecked(True)
+    """The tray's mode group switches the overlay and respects pinning."""
+    window.mode_actions["follow"].trigger()
     assert window.state.settings.overlay_mode == "follow"
-    window.overlay_action.setChecked(False)
+    window.mode_actions["off"].trigger()
     assert window.state.settings.overlay_mode == "off"
     assert window.mode_actions["pinned_eve"].isEnabled() is False
     assert "Pin a character" in window.mode_actions["pinned_eve"].toolTip()

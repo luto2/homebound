@@ -33,6 +33,8 @@ from .system_panel import SystemPanel
 from .toast import ToastHost
 
 MODES = [("off", "Off"), ("follow", "Follow"), ("pinned_eve", "Pinned"), ("pinned_always", "Always")]
+TRAY_LABELS = {"off": "Off", "follow": "Follow active client", "pinned_eve": "Pinned character · over all clients",
+               "pinned_always": "Pinned character · always shown"}
 STATUS_SOURCES = ("logs", "zkill", "scout", "kwin", "sync", "backup")
 STATUS_LEVELS = {"ok": ("✓", "success"), "warn": ("▲", "warning"), "err": ("✕", "danger")}
 PIN_FIRST_HINT = "Pin a character first (right-click it in the Characters list)"
@@ -449,11 +451,8 @@ class MapWindow(QMainWindow):
         """
         menu = QMenu()
         menu.setStyleSheet(build_qss())
-        self.overlay_action = QAction("Show overlay", menu, checkable=True)
-        self.overlay_action.toggled.connect(self._toggle_overlay)
         self.unlock_action = QAction("Unlock overlay", menu, checkable=True)
         self.unlock_action.toggled.connect(self.overlay.set_unlocked)
-        menu.addAction(self.overlay_action)
         menu.addAction(self.unlock_action)
         menu.addSeparator()
         caption_action = QWidgetAction(menu)
@@ -465,9 +464,8 @@ class MapWindow(QMainWindow):
         menu.addAction(caption_action)
         self.mode_group = QActionGroup(menu)
         self.mode_actions: dict[str, QAction] = {}
-        for key, label in [("follow", "Follow active client"), ("pinned_eve", "Pinned character · over all clients"),
-                           ("pinned_always", "Pinned character · always shown")]:
-            action = QAction(label, menu, checkable=True)
+        for key, _ in MODES:
+            action = QAction(TRAY_LABELS[key], menu, checkable=True)
             action.setData(key)
             self.mode_group.addAction(action)
             menu.addAction(action)
@@ -502,13 +500,10 @@ class MapWindow(QMainWindow):
     def _sync_tray(self) -> None:
         """Bring the tray menu and icon in line with the overlay settings."""
         mode = self.state.settings.overlay_mode
-        for action in (self.overlay_action, self.unlock_action):
-            action.blockSignals(True)
-        self.overlay_action.setChecked(mode != "off")
+        self.unlock_action.blockSignals(True)
         self.unlock_action.setChecked(self.overlay.unlocked)
         self.unlock_action.setEnabled(mode != "off")
-        for action in (self.overlay_action, self.unlock_action):
-            action.blockSignals(False)
+        self.unlock_action.blockSignals(False)
         pinned = self.state.settings.overlay_pinned_character is not None
         for key, action in self.mode_actions.items():
             action.setChecked(key == mode)
