@@ -362,7 +362,8 @@ class TestSystemNode:
             assert not image.isNull()
 
     def test_paint_every_variant(self, state, scene) -> None:
-        """Nodes with owner, stale scan, unconfirmed state, custom name, zKill stats, characters and hover paint."""
+        """Painting nodes with owner, stale scan, unconfirmed state, custom name, zKill stats, characters and hover
+        doesn't raise."""
         state.store.update_system(HOME.id, owner_ticker="ABCD", owner_slot=2, scanned_at=iso_ago(hours=30),
                                   confirmed=0)
         state.store.update_system(state.k_space.id, custom_name="Custom")
@@ -379,7 +380,8 @@ class TestSystemNode:
                 assert not paint_item(node, zoom, selected=True).isNull()
 
     def test_paint_subtitle_and_effect(self, state, scene) -> None:
-        """A renamed w-space system with an effect and a renamed k-space system (real name as subtitle) paint."""
+        """Painting a renamed w-space system with an effect and a renamed k-space system (real name as subtitle)
+        doesn't raise."""
         with_effect = next(system for system in UNIVERSE.all_systems() if system.effect and system.id != HOME.id)
         state.store.add_system(with_effect.id, x=500, y=500)
         scene.rebuild()
@@ -713,7 +715,8 @@ class TestConnectionEdge:
         {"confirmed": 0}, {"wormhole_type": None}])
     @pytest.mark.parametrize("zoom", [0.3, 1.0])
     def test_paint_states(self, state, scene, changes, zoom) -> None:
-        """Edges paint in every mass, lifetime, frigate, confirmation and type state, hovered and selected or not."""
+        """Painting an edge in every mass, lifetime, frigate, confirmation and type state, hovered and selected or not,
+        doesn't raise."""
         edge = self.edge_for(scene, state, **changes)
         edge.hover = bool(changes)
         edge.setSelected(bool(changes))

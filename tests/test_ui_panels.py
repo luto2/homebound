@@ -111,7 +111,7 @@ def test_missing_banner_without_other_kind(qt_application) -> None:
 
 # ---------------------------------------------------------------- small widgets
 def test_badge_strip_paints_all_variants(state, qt_application) -> None:
-    """Class badge, effect and statics paint for a wormhole system, a k-space one and none."""
+    """Painting the strip for a wormhole system, a k-space one and none doesn't raise."""
     strip = BadgeStrip(state)
     strip.resize(300, 22)
     strip.grab()   # no system: paints nothing
@@ -1176,7 +1176,7 @@ def populate_everything(state) -> None:
 
 
 def test_painting_all_row_kinds(state, table, qt_application) -> None:
-    """Every kind of row paints, fresh, selected, hovered, stale and with the copied feedback."""
+    """Grabbing the table with every kind of row (fresh, selected, hovered, stale, copied) doesn't raise."""
     populate_everything(state)
     table.load(HOME.id)
     table.viewport().resize(table.viewport().size())
@@ -1232,7 +1232,7 @@ def test_table_header_view_paints(table) -> None:
 
 
 def test_panel_paints_with_a_full_table(state, panel, qt_application) -> None:
-    """The whole panel renders with missing banner, signatures and anomalies."""
+    """Grabbing the panel with a missing banner, signatures and anomalies doesn't raise, and the banner is visible."""
     paste_sample(state)
     signature_parser.merge_signatures(state.store, HOME.id, signature_parser.parse_scanner_text(
         "\n".join(SCAN.splitlines()[:2]) + "\n"))
