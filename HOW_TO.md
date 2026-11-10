@@ -398,6 +398,14 @@ preselected:
 the backup. The list of maps stays as it is. Settings closes afterwards so it shows the restored
 values when opened again.
 
+**A damaged map file** (one SQLite can't read, for example after a crash or a half-synced copy) is
+renamed to `map.db.damaged` (or `.damaged-2` …, with its `-wal` and `-shm`) and never deleted.
+At start, Homebound then opens that map empty and shows Settings → Backups; when you switch to a
+damaged map, you stay on the open one and the map is empty next time. To get it back, pick a backup
+and restore the map with *Replace*. Homebound warns at every start while a `.damaged` file is
+there; delete it once the map is back. A map that can't be opened for another reason, such as a
+read-only or locked file, is never moved: at start Homebound says why and quits.
+
 **Network**: apart from the map data download on first start (and `--build-static`), the only requests go to zKillboard, for systems in visible chains, and to EVE-Scout (api.eve-scout.com), for the public list of Thera and Turnur connections. zKill requests are rate-limited to one per second and cached for 10 minutes; turn them off in Settings → zKill. EVE-Scout is asked once every 5 minutes and nothing about you or your map is sent; turn it off in Settings → Routes.
 
 ---

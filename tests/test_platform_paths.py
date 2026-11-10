@@ -1,7 +1,9 @@
 """Data folder, Documents folder and universe file per platform (sys.platform and the environment patched)."""
 import ctypes
+import sqlite3
 import sys
-from pathlib import Path
+from contextlib import closing
+from pathlib import Path, PureWindowsPath
 from types import SimpleNamespace
 
 import pytest
@@ -98,3 +100,40 @@ def test_packaged_paths(clean_environment, monkeypatch) -> None:
     monkeypatch.delattr(sys, "_MEIPASS")
     monkeypatch.setattr(sys, "prefix", str(home / "usr"))
     assert paths.bundled_data_directory() == home / "usr/share/homebound"
+
+
+# folder names with characters SQLite reads as URI syntax ("?" can't be in a Windows name)
+AWKWARD_FOLDERS = ["data#1", pytest.param("what?x", marks=pytest.mark.skipif(sys.platform == "win32",
+                                                                             reason="no ? in Windows names")),
+                   "a%20b", "x%23y", "100%", "space here", "Grüße"]
+
+
+def test_file_uri_handles_windows_paths() -> None:
+    """A drive path gets a leading slash; a UNC path keeps its two, so ``server`` isn't read as an authority."""
+    assert paths.file_uri(PureWindowsPath(r"C:\Users\Max#1\map.db")) == "file:///C:/Users/Max%231/map.db"
+    assert paths.file_uri(PureWindowsPath(r"\\server\share\home#1\map.db")) == "file:////server/share/home%231/map.db"
+
+
+def test_read_only_uri_escapes_uri_syntax(tmp_path) -> None:
+    """``#``, ``?`` and ``%`` are escaped, so the only query is the ``mode=ro`` we add."""
+    uri = paths.read_only_uri(Path("/x/a#b?c%20d/e%23f/100%/sp ace/ü.db"))
+    assert uri == "file:///x/a%23b%3Fc%2520d/e%2523f/100%25/sp%20ace/%C3%BC.db?mode=ro"
+    assert paths.read_only_uri("relative.db") == paths.read_only_uri(Path.cwd() / "relative.db")
+    with pytest.raises(TypeError):
+        paths.read_only_uri(None)
+
+
+@pytest.mark.parametrize("folder", AWKWARD_FOLDERS)
+def test_read_only_uri_opens_the_right_file_read_only(tmp_path, folder) -> None:
+    """The URI opens the file at that path, read-only, and creates nothing else."""
+    path = tmp_path / folder / "marker.db"
+    path.parent.mkdir()
+    with closing(sqlite3.connect(path)) as database:
+        database.execute("CREATE TABLE marker (value TEXT)")
+        database.execute("INSERT INTO marker VALUES ('here')")
+        database.commit()
+    with closing(sqlite3.connect(paths.read_only_uri(path), uri=True)) as database:
+        assert database.execute("SELECT value FROM marker").fetchone() == ("here",)
+        with pytest.raises(sqlite3.OperationalError):
+            database.execute("INSERT INTO marker VALUES ('written')")
+    assert sorted(entry.name for entry in tmp_path.iterdir()) == [folder]

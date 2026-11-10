@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
-from ..platform.paths import source_tree, static_data_candidates, static_data_path
+from ..platform.paths import read_only_uri, source_tree, static_data_candidates, static_data_path
 from ..validation import require_integer, require_text, require_type
 
 DEFAULT_PATH = static_data_path()
@@ -139,7 +139,7 @@ class Universe:
         path = Path(path)
         if not path.exists():
             raise UniverseDataError(f"{path} missing. Run: {BUILD_COMMAND}")
-        self.database = sqlite3.connect(f"file:{path}?mode=ro", uri=True, check_same_thread=False)
+        self.database = sqlite3.connect(read_only_uri(path), uri=True, check_same_thread=False)
         version = self._schema_version()
         if version != SCHEMA_VERSION:
             self.database.close()

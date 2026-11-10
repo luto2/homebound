@@ -6,6 +6,7 @@ import sys
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
+from typing import NoReturn
 
 import pytest
 
@@ -367,6 +368,8 @@ class FakeWindow:
 class FakeState:
     """Stands in for AppState."""
 
+    recovered_map = ""
+
     def __init__(self, universe, settings, auto_backup: bool = False) -> None:
         """Remember the arguments."""
         self.universe, self.settings, self.started, self.stopped = universe, settings, False, False
@@ -448,6 +451,32 @@ def test_main_normal_path(fake_app, monkeypatch, log_directory, settings_page) -
     assert isinstance(window.sync, FakeSync) and window.sync.state is window.state
     assert window.sync.started and window.sync.stopped
     assert window.settings_opened == settings_page
+
+
+def test_main_opens_backups_after_recovery(fake_app, monkeypatch) -> None:
+    """When the open map was set aside at start, Settings opens on Backups (even without a log folder)."""
+    from homebound.ui.settings_dialog import PAGES
+    monkeypatch.setattr(fake_app, "load", classmethod(lambda cls: FakeSettings("")))
+    monkeypatch.setattr(FakeState, "recovered_map", "map.db was damaged and is kept as map.db.damaged")
+    assert entry_point.main() == 0
+    assert FakeWindow.instances[0].settings_opened == PAGES.index("Backups")
+
+
+def test_main_reports_an_unopenable_map(fake_app, monkeypatch) -> None:
+    """A map that can't be opened (and wasn't set aside) is shown in an error box, and main() returns 1."""
+    import homebound.ui.state
+    from PySide6.QtWidgets import QMessageBox
+
+    def unopenable(*arguments: object, **keywords: object) -> NoReturn:
+        """Fail like a map file without permission."""
+        raise homebound.ui.state.MapOpenError("The map “Main” can't be opened: attempt to write a readonly database")
+
+    monkeypatch.setattr(fake_app, "load", classmethod(lambda cls: FakeSettings("/logs")))
+    monkeypatch.setattr(homebound.ui.state, "AppState", unopenable)
+    shown = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *arguments: shown.append(arguments[-1]))
+    assert entry_point.main() == 1
+    assert len(shown) == 1 and "readonly" in shown[0] and not FakeWindow.instances
 
 
 @pytest.mark.parametrize("platform, preset, expected",

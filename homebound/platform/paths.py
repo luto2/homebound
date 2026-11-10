@@ -1,4 +1,4 @@
-"""Where Homebound keeps its data, where the user's Documents folder is, and which universe file to read.
+"""Where Homebound keeps its data, where the user's Documents folder is, which universe file to read, and SQLite URIs.
 
 Linux keeps ``~/.local/share/homebound`` (existing data stays where it is); Windows uses
 ``%APPDATA%\\Homebound``. ``HOMEBOUND_HOME`` wins on both.
@@ -7,7 +7,10 @@ import ctypes
 import os
 import sys
 import uuid
-from pathlib import Path
+from pathlib import Path, PurePath
+from urllib.parse import quote
+
+from ..validation import require_type
 
 APP_FOLDER = "Homebound"
 UNIVERSE_FILE = "universe.sqlite"
@@ -105,6 +108,32 @@ def static_data_candidates() -> list[Path]:
         return [Path(os.environ["HOMEBOUND_UNIVERSE"])]
     candidates = [data_directory() / UNIVERSE_FILE, bundled_data_directory() / UNIVERSE_FILE]
     return [path for index, path in enumerate(candidates) if path.is_file() and path not in candidates[:index]]
+
+
+def file_uri(path: PurePath) -> str:
+    """Return the ``file:`` URI of an absolute path, in the form SQLite accepts.
+
+    Every character SQLite reads as URI syntax (``#``, ``?``, ``%``) is escaped. A drive letter gets a
+    leading slash; a UNC path keeps its two, so ``server`` isn't read as a URI authority, which SQLite refuses.
+
+    Raises:
+        TypeError: If ``path`` is not a path.
+    """
+    require_type(path, PurePath, "path")
+    name = path.as_posix()
+    return f"file://{'' if name.startswith('/') else '/'}{quote(os.fsencode(name), safe='/:')}"
+
+
+def read_only_uri(path: Path | str) -> str:
+    """Return the URI that opens a SQLite file read-only, whatever characters its path has.
+
+    Pass it to ``sqlite3.connect`` with ``uri=True``. A relative path is taken from the current folder.
+
+    Raises:
+        TypeError: If ``path`` is not a string or path.
+    """
+    require_type(path, (str, Path), "path")
+    return f"{file_uri(Path(path).absolute())}?mode=ro"
 
 
 def static_data_path() -> Path:

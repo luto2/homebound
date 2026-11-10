@@ -1,6 +1,7 @@
 """Tests for the settings dialog: every page and saving."""
 import json
 import sys
+import zipfile
 from collections.abc import Callable
 from typing import NoReturn
 
@@ -17,7 +18,7 @@ from homebound.mapdb.store import Store
 from homebound.ui.dialogs import RestoreBackupDialog
 from homebound.ui.settings_dialog import PAGES, SettingsDialog
 from homebound.ui.state import AppState
-from ui_helpers import make_state
+from ui_helpers import make_state, write_garbage
 
 LOG_NAME = "Local_20261028_165148_{}.txt"
 
@@ -583,6 +584,48 @@ def test_backups_page_restore_cancel_and_failure(dialog, state, modal, monkeypat
     monkeypatch.setattr(state, "restore_backup", failing)
     modal.handler = lambda restore: (restore.replace.setChecked(True), 1)[1]
     assert dialog.restore_selected_backup() is False and "damaged" in dialog.backup_help.text()
+
+
+def broken_backup(path, member: str, maps: dict | None = None) -> None:
+    """Write a backup zip whose ``member`` has a broken deflate stream (reading it raises ``zlib.error``)."""
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("manifest.json", json.dumps({"reason": "manual", "maps": maps or {}}))
+        if member != "manifest.json":
+            archive.writestr(member, "x" * 100)
+    with zipfile.ZipFile(path) as archive:
+        offset = archive.getinfo(member).header_offset
+    data = bytearray(path.read_bytes())
+    data[offset + 30 + int.from_bytes(data[offset + 26:offset + 28], "little")
+         + int.from_bytes(data[offset + 28:offset + 30], "little")] = 0xff
+    path.write_bytes(bytes(data))
+
+
+def test_backups_page_with_damaged_backups(dialog, state, modal) -> None:
+    """A damaged backup doesn't hide the good ones, and one that fails mid-way says nothing was restored."""
+    dialog.backup_now()
+    folder = backup_module.backups_directory()
+    broken_backup(folder / "2026-11-01_1200_manual.zip", "manifest.json")
+    broken_backup(folder / "2026-11-02_1200_manual.zip", "map.db",
+                  {"Main": {"file": "map.db"}, "Bad": "not an entry"})
+    assert dialog.refresh_backups() == 2
+    damaged = next(info for info in dialog.backups if info.path.name.startswith("2026-11-02"))
+    assert list(damaged.maps) == ["Main"]   # the bad entry is left out, so the restore dialog can show the rest
+    dialog.backup_list.setCurrentItem(dialog.backup_list.topLevelItem(dialog.backups.index(damaged)))
+    modal.handler = lambda restore: (restore.as_new.setChecked(True), 1)[1]
+    maps_before = dict(state.settings.maps)
+    assert dialog.restore_selected_backup() is False
+    assert "Nothing restored" in dialog.backup_help.text() and "damaged" in dialog.backup_help.text()
+    assert state.settings.maps == maps_before
+
+
+def test_backups_page_shows_the_recovered_map(monkeypatch, tmp_path, kwin, qt_application) -> None:
+    """After a damaged map was set aside, the Backups page says which file was kept and to use Replace."""
+    write_garbage(tmp_path / "map.db")
+    recovered = make_state(monkeypatch, tmp_path)
+    page = SettingsDialog(None, recovered, PAGES.index("Backups"))
+    assert page.backup_help.text().endswith(recovered.damaged_warning) and "map.db.damaged" in page.backup_help.text()
+    assert page.backup_help.property("role") == "help-warn"
+    recovered.stop()
 
 
 def test_backups_page_restoring_settings_closes(dialog, state, modal) -> None:

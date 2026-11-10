@@ -158,8 +158,9 @@ others show or edit it.
 | Settings file, defaults, allowed values and ranges | `settings.py` `Settings`, `SETTING_CHOICES`, `clamp_to_range` |
 | Automatic, manual and safety backups; pruning | `backup.py` `create_backup`, `prune`, `auto_backup_due`; `ui/state.py` `AppState.backup` |
 | Restore | `backup.py` `restore_maps`, `restore_settings`; `ui/state.py` `restore_backup`; `ui/dialogs.py` `RestoreBackupDialog` |
+| Damaged map file set aside at start or on a switch | `ui/state.py` `MapOpenError`, `set_aside_damaged`, `damaged_map_files`, `AppState._load_map`; `__main__.py` |
 | Schema migration of old map files | `mapdb/store.py` `COLUMN_RENAMES`, `TABLE_RENAMES`, `COLUMN_ADDITIONS`, `needs_migration` |
-| Data folder, Documents folder, which universe file | `platform/paths.py` |
+| Data folder, Documents folder, which universe file; read-only SQLite URIs (`read_only_uri`) | `platform/paths.py` |
 
 ### Static universe data
 
@@ -224,7 +225,7 @@ detail.
 
 | Module | Owns |
 |---|---|
-| `paths.py` | Data, Documents and universe paths; packaged or checkout |
+| `paths.py` | Data, Documents and universe paths; packaged or checkout; read-only SQLite URIs |
 | `focus_linux.py` | KWin script install and D-Bus calls, xprop polling |
 | `focus_windows.py` | Foreground window polling, keep-on-top |
 | `kwin/homebound-focus/` | The KWin script itself (JavaScript) |

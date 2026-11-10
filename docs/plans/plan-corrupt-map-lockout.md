@@ -91,7 +91,7 @@ Wrap lines 283-285 in `Store.__init__` so a failure closes the connection and re
 
 ### `homebound/__main__.py`
 
-- Around line 60: catch `MapOpenError`, show it in a small dialog, return 1. The app has no `QMessageBox`; follow `BuildDataDialog` and the design system's StartupError spec.
+- Around line 60: catch `MapOpenError`, show it in a small dialog, return 1. (Correction while implementing: `__main__.py:56` already uses `QMessageBox.critical` for a universe that still fails after the build, so the same box is used here rather than a new `BaseDialog`. The StartupError spec would replace both.)
 - Around line 66: if `state.recovered_map`, call `window.open_settings(PAGES.index("Backups"))`, otherwise the existing log-folder check.
 
 ### `homebound/ui/settings_dialog.py`

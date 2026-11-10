@@ -10,7 +10,7 @@ def main() -> int:
 
     Returns:
         The exit code: 1 if the static universe data is missing or outdated and the user quits instead of
-        building it, else Qt's exit code.
+        building it, or if the open map can't be opened; else Qt's exit code.
     """
     arguments = sys.argv[1:]
     if arguments[:1] == ["--version"]:
@@ -58,11 +58,16 @@ def main() -> int:
 
     from .ui.focus import FocusTracker
     from .ui.map_window import MapWindow
-    from .ui.state import AppState
+    from .ui.settings_dialog import PAGES
+    from .ui.state import AppState, MapOpenError
     from .ui.sync_manager import SyncManager
 
     settings = Settings.load()
-    state = AppState(universe, settings, auto_backup=True)
+    try:
+        state = AppState(universe, settings, auto_backup=True)
+    except MapOpenError as error:   # not a damaged file (that is set aside): locked, read-only, a folder
+        QMessageBox.critical(None, "Homebound", str(error))
+        return 1
     focus = FocusTracker()
     sync = SyncManager(state)
     window = MapWindow(state, focus, sync)
@@ -70,7 +75,9 @@ def main() -> int:
     focus.start()
     sync.start()
     window.show()
-    if not settings.log_directory:
+    if state.recovered_map:   # the open map was damaged and starts empty: offer the restore first
+        window.open_settings(PAGES.index("Backups"))
+    elif not settings.log_directory:
         window.open_settings(0)
     exit_code = application.exec()
     sync.stop()

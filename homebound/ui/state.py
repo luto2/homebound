@@ -1,10 +1,11 @@
 """Shared application state: store, universe, naming, tracker, watcher, zKill, EVE-Scout -> Qt signals."""
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from .. import backup, routing
+from .. import backup, routing, settings as settings_module
 from ..eve_scout import EveScoutFetcher
 from ..logs.parser import SystemChange
 from ..logs.watcher import LogWatcher
@@ -20,6 +21,80 @@ from ..zkill import ZkillFetcher
 
 EXPIRY_INTERVAL_MS = 5 * 60 * 1000
 SCAN_AGE_INTERVAL_MS = 60 * 1000
+
+
+# SQLite errors that mean the file itself is damaged; locked, read-only or missing-folder errors don't count
+DAMAGED_CODES = (sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB)
+DAMAGED_SUFFIX = ".damaged"
+
+
+class MapOpenError(Exception):
+    """A map file couldn't be opened; the message says why, in words for the user.
+
+    ``damaged`` is True when the file itself is damaged (it can be set aside), False for anything
+    else, such as a locked or read-only file, where the file must stay where it is.
+    """
+
+    def __init__(self, message: str, damaged: bool = False) -> None:
+        """Keep the message and whether the file is damaged."""
+        super().__init__(message)
+        self.damaged = damaged
+
+
+def _first_of(problems: list[str]) -> str:
+    """Return the first of several problems for a one-line status, e.g. ``a.zip: denied (+2 more)``."""
+    return problems[0] + (f" (+{len(problems) - 1} more)" if len(problems) > 1 else "")
+
+
+def _open_error(path: Path, error: Exception) -> MapOpenError:
+    """Turn a failed open or first read of a map file into a :class:`MapOpenError`."""
+    code = getattr(error, "sqlite_errorcode", None)
+    damaged = isinstance(error, sqlite3.DatabaseError) and code is not None and code & 0xff in DAMAGED_CODES
+    return MapOpenError(f"The map file {path.name} can't be opened: {error}", damaged)
+
+
+def set_aside_damaged(path: Path) -> Path:
+    """Rename a damaged map file to ``<name>.damaged`` (``.damaged-2`` … if taken), with its ``-wal`` and ``-shm``.
+
+    The bytes stay as they were, so the copy can still be salvaged, and no stale WAL is left next to
+    the empty map that takes its place.
+
+    Returns:
+        The new name of the file.
+
+    Raises:
+        TypeError: If ``path`` is not a path.
+        MapOpenError: If the file can't be renamed (not ``damaged``: it stays where it is).
+    """
+    require_type(path, Path, "path")
+    sidecars = ("-wal", "-shm")
+    target, number = path.with_name(path.name + DAMAGED_SUFFIX), 2
+    while any(target.with_name(target.name + suffix).exists() for suffix in ("", *sidecars)):
+        target, number = path.with_name(f"{path.name}{DAMAGED_SUFFIX}-{number}"), number + 1
+    moved = []
+    try:
+        for suffix in sidecars:   # the sidecars first, so a file that won't move keeps its WAL
+            sidecar = path.with_name(path.name + suffix)
+            if sidecar.exists():
+                sidecar.replace(target.with_name(target.name + suffix))
+                moved.append(suffix)
+        path.replace(target)
+    except OSError as error:
+        for suffix in moved:   # put back what already moved
+            try:
+                target.with_name(target.name + suffix).replace(path.with_name(path.name + suffix))
+            except OSError:
+                pass
+        raise MapOpenError(f"The map file {path.name} is damaged and couldn't be set aside: {error}") from error
+    return target
+
+
+def damaged_map_files(settings: Settings) -> list[Path]:
+    """Return the damaged map files that were set aside next to the maps, oldest name first (sidecars left out)."""
+    require_type(settings, Settings, "settings")
+    folders = {settings.map_path(name).parent for name in settings.maps}
+    return sorted(path for folder in folders if folder.is_dir() for path in folder.glob(f"*{DAMAGED_SUFFIX}*")
+                  if not path.name.endswith(("-wal", "-shm")))
 
 
 class AppState(QObject):
@@ -54,6 +129,13 @@ class AppState(QObject):
             settings: The user settings.
             database_path: The map file, or None for the active map's file.
             auto_backup: Make the daily ``auto`` backup first if it is due (the app start does).
+
+        A damaged map file is set aside (see :func:`set_aside_damaged`) and an empty map opens in its
+        place; ``recovered_map`` then says so. While a set-aside file exists, ``damaged_warning`` holds
+        a reminder, queued for start() at every start.
+
+        Raises:
+            MapOpenError: If the map can't be opened for another reason, or the damaged file can't be set aside.
         """
         super().__init__()
         require_type(universe, Universe, "universe")
@@ -66,7 +148,23 @@ class AppState(QObject):
         if auto_backup and backup.has_map_files(settings) and backup.auto_backup_due():
             self.backup("auto")
         self.database_path = str(database_path or settings.map_path())
-        self.store = self._open_store()
+        self.recovered_map = ""           # what happened, when the open map was set aside at this start
+        try:
+            self.store = self._load_map(self.database_path, [], self.home_id)
+        except MapOpenError as error:
+            if not error.damaged:
+                raise
+            kept = set_aside_damaged(Path(self.database_path))
+            self.store = self._load_map(self.database_path, [], self.home_id)
+            self.recovered_map = (f"The map “{settings.active_map}” was damaged and couldn't be opened, so it starts "
+                                  f"empty. The damaged file is kept as {self._data_name(kept)}. To get the map "
+                                  f"back, pick a backup here and restore it with Replace.")
+        damaged = damaged_map_files(settings)
+        self.damaged_warning = self.recovered_map or (
+            f"A damaged map file is still kept as {', '.join(map(self._data_name, damaged))}. Restore the map "
+            f"from a backup with Replace if you haven't, then delete the file to stop this warning." if damaged else "")
+        if self.damaged_warning:
+            self._report_backup("warn", self.damaged_warning)
         self.namer = Namer(self.store, universe, settings.naming_scheme, self.home_id)
         self.tracker = Tracker(self.store, universe, self.namer, settings.auto_name_when_certain)
         self.selected: int = 0
@@ -116,9 +214,54 @@ class AppState(QObject):
             changed |= self.store.set_map_setting("naming_scheme", self.settings.naming_scheme)
         return changed
 
-    def _open_store(self) -> Store:
-        """Open the active map file, backing it up first if its schema is about to be migrated."""
-        return Store(self.database_path, before_migration=lambda path: self.backup("migration"))
+    @staticmethod
+    def _data_name(path: Path) -> str:
+        """Return a file's name relative to the data folder, as the user finds it there."""
+        try:
+            return path.relative_to(settings_module.DATA_DIR).as_posix()
+        except ValueError:
+            return str(path)
+
+    def _open_store(self, path: str) -> Store:
+        """Open a map file, backing it up first if its schema is about to be migrated.
+
+        Raises:
+            MapOpenError: If SQLite or the file system refuses the file.
+        """
+        try:
+            return Store(path, before_migration=lambda _: self.backup("migration"))
+        except (sqlite3.Error, OSError) as error:
+            raise _open_error(Path(path), error) from error
+
+    def _load_map(self, path: str, characters: list, home_id: int | None) -> Store:
+        """Open a map file and do its first reads and writes, without making it the open map yet.
+
+        A file can open and still be damaged inside, so the characters are carried over and the home
+        is checked here, where a failure leaves the open map alone.
+
+        Args:
+            path: The map file.
+            characters: Character rows to carry over from the map that was open.
+            home_id: The map's home system, added if it is missing; None for no home.
+
+        Returns:
+            The new store.
+
+        Raises:
+            MapOpenError: If the file can't be opened or read.
+        """
+        store = self._open_store(path)
+        try:
+            for row in characters:
+                if not all(isinstance(row[column], str) and row[column].strip() for column in ("name", "seen_at")):
+                    continue  # legacy row without a name or time: set_character would refuse it
+                store.set_character(row["id"], row["name"], row["system_id"], row["seen_at"])
+            if home_id and not store.has_system(home_id):
+                store.add_system(home_id)
+        except (sqlite3.Error, OSError) as error:
+            store.close()
+            raise _open_error(Path(path), error) from error
+        return store
 
     def start(self) -> None:
         """Start the log watcher, the zKill and EVE-Scout threads, the expiry timer and the scan age tick.
@@ -165,17 +308,37 @@ class AppState(QObject):
         Args:
             name: The map to switch to.
 
+        The new map is opened before anything changes, so a map that won't open leaves the open map,
+        the settings and the views as they were. A damaged file is set aside first, so the map opens
+        empty next time and backups work again.
+
         Returns:
             True if the map changed; False if it is already active or doesn't exist.
+
+        Raises:
+            MapOpenError: If the map can't be opened (``damaged`` when its file was set aside).
         """
         settings = self.settings
         if name == settings.active_map or name not in settings.maps:
             return False
         characters = list(self.store.characters())
+        path = settings.map_path(name)
+        home = settings.maps[name].get("home_system", "")
+        system = self.universe.by_name(home) if home else None
+        try:
+            store = self._load_map(str(path), characters, system.id if system else None)
+        except MapOpenError as error:
+            if not error.damaged:
+                raise
+            kept = set_aside_damaged(path)
+            raise MapOpenError(f"The map “{name}” is damaged and can't be opened. The file is kept as "
+                               f"{self._data_name(kept)}; the map opens empty next time. To get it back, restore "
+                               f"it from a backup with Replace (Settings → Backups).", damaged=True) from error
+        old = self.store
         settings.switch_map(name)
+        self._use_store(store)
+        old.close()
         settings.save()
-        self.store.close()
-        self._reopen_store(characters)
         self.selected = 0
         self.selectionChanged.emit(0)
         self.mapSwitched.emit(name)
@@ -185,19 +348,23 @@ class AppState(QObject):
         return True
 
     def _reopen_store(self, characters: list) -> Store:
-        """Open the active map's file again (after a switch or restore) and carry the characters over."""
-        self.database_path = str(self.settings.map_path())
-        self.store = self._open_store()
-        for row in characters:
-            if not all(isinstance(row[column], str) and row[column].strip() for column in ("name", "seen_at")):
-                continue  # legacy row without a name or time: set_character would refuse it
-            self.store.set_character(row["id"], row["name"], row["system_id"], row["seen_at"])
-        self.namer.store = self.tracker.store = self.store
+        """Open the active map's file again (after a restore) and carry the characters over.
+
+        Raises:
+            MapOpenError: If the map can't be opened.
+        """
+        return self._use_store(self._load_map(str(self.settings.map_path()), characters, self.home_id))
+
+    def _use_store(self, store: Store) -> Store:
+        """Make an opened store the open map: point the namer, tracker and zKill at it."""
+        self.store = store
+        self.database_path = store.path
+        self.namer.store = self.tracker.store = store
         self.namer.scheme_key = self.settings.naming_scheme
         self.namer.home_id = self.home_id
         self.zkill.database_path = self.database_path
         self._ensure_home()
-        return self.store
+        return store
 
     # ------------------------------------------------------------ backups
     def _report_backup(self, level: str, text: str) -> None:
@@ -221,8 +388,9 @@ class AppState(QObject):
             The new backup, or None if it failed.
         """
         require_choice(reason, backup.REASONS, "reason")
+        undeleted: list[str] = []   # old backups prune couldn't remove; the backup still counts
         try:
-            path = backup.create_backup(reason, self.settings)
+            path = backup.create_backup(reason, self.settings, undeleted)
         except backup.BackupError as error:
             self.last_backup_error = str(error)
             if report_failure:
@@ -230,11 +398,15 @@ class AppState(QObject):
             return None
         self.last_backup_error = ""
         try:
-            backup.copy_to_folder(path, self.settings.backup_copy_directory)
+            backup.copy_to_folder(path, self.settings.backup_copy_directory, undeleted)
         except backup.BackupError as error:
-            self._report_backup("warn", f"Backed up, but not copied: {error}")
+            either = f". Old backups couldn't be removed either: {_first_of(undeleted)}" if undeleted else ""
+            self._report_backup("warn", f"Backed up, but not copied: {error}{either}")
             return path
-        self._report_backup("ok", f"Backed up {datetime.now():%H:%M}")
+        if undeleted:
+            self._report_backup("warn", f"Backed up, but old backups couldn't be removed: {_first_of(undeleted)}")
+        else:
+            self._report_backup("ok", f"Backed up {datetime.now():%H:%M}")
         return path
 
     def restore_backup(self, path: Path, names: list[str], replace: bool, restore_settings: bool = False) -> dict[str, str]:
@@ -253,7 +425,8 @@ class AppState(QObject):
             Backup map name -> name of the map it went into.
 
         Raises:
-            homebound.backup.BackupError: If the safety backup or the restore fails.
+            homebound.backup.BackupError: If the safety backup or the restore fails, or the open map
+                can't be opened again afterwards (the message then says to restart).
         """
         require_type(path, Path, "path")
         require_type(names, list, "names")
@@ -268,9 +441,16 @@ class AppState(QObject):
             restored = backup.restore_maps(path, names, replace, settings) if names else {}
             if restore_settings:
                 backup.restore_settings(path, settings)
-        finally:
+        except Exception as error:
             if reopen:
+                self._reopen_after_failed_restore(characters, error)
+            raise
+        if reopen:
+            try:
                 self._reopen_store(characters)
+            except MapOpenError as error:
+                raise backup.BackupError(f"The backup was restored, but the map couldn't be opened again: {error}. "
+                                         f"Restart Homebound.") from error
         self.apply_settings()
         if reopen:
             self.selected = 0
@@ -278,6 +458,18 @@ class AppState(QObject):
             self.mapSwitched.emit(settings.active_map)
             self.charactersChanged.emit()
         return restored
+
+    def _reopen_after_failed_restore(self, characters: list, error: Exception) -> None:
+        """Open the map again after a failed restore, without hiding why the restore failed.
+
+        Raises:
+            homebound.backup.BackupError: Naming both reasons, from ``error``, if the map won't open either.
+        """
+        try:
+            self._reopen_store(characters)
+        except MapOpenError as reopen_error:
+            raise backup.BackupError(f"{error}. The map couldn't be opened again either: {reopen_error}. "
+                                     f"Restart Homebound.") from error
 
     # ------------------------------------------------------------ scan status
     def scan_status(self, system_id: int) -> ScanStatus:

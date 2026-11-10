@@ -18,9 +18,10 @@ from homebound.theme.tokens import PIXELS
 from homebound.ui import map_window as map_window_module
 from homebound.ui.dialogs import ConnectionDialog, NamingDialog
 from homebound.ui.map_window import Legend, MapArea, MapWindow, Scrim, app_mark
+from homebound.ui.state import MapOpenError
 from homebound.ui.toast import Glyph
 from homebound.universe.db import System
-from ui_helpers import FakeFocus, make_state
+from ui_helpers import FakeFocus, make_state, write_garbage
 
 NOW = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
 
@@ -275,6 +276,28 @@ def test_switch_map_and_validation(window) -> None:
         window.switch_map(3)
     with pytest.raises(ValueError):
         window.switch_map(" ")
+
+
+def test_failed_switch_shows_a_toast(window) -> None:
+    """A map that can't be opened shows an error toast and the window stays on the open map."""
+    settings = window.state.settings
+    write_garbage(settings.add_map("Other"))
+    assert window.switch_map("Other") is False
+    assert settings.active_map == "Main"
+    toast = window.toasts.toasts[-1]
+    assert toast_kind(toast) == "danger" and "Other" in toast_text(toast)
+
+
+def test_new_map_stops_when_the_switch_fails(window, modal, monkeypatch) -> None:
+    """If the new map can't be opened, Settings doesn't open on the old map's Home page."""
+    def refuse(name: str) -> NoReturn:
+        """Fail like a map folder that can't be written."""
+        raise MapOpenError("The map “Second” can't be opened: disk I/O error")
+
+    monkeypatch.setattr(window.state, "switch_map", refuse)
+    modal.handler = lambda dialog: (dialog.field.setText("Second"), 1)[1]
+    assert window.new_map() is False
+    assert window.opened_pages == [] and "disk I/O error" in toast_text(window.toasts.toasts[-1])
 
 
 def test_delete_map(window, modal) -> None:

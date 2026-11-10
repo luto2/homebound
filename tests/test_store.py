@@ -1,11 +1,14 @@
 """Map store: rows, validation, lifetime clock, migrations, batches and undo, and map stats."""
 import sqlite3
+import sys
+from typing import NoReturn
 
 import pytest
 
+import homebound.mapdb.store as store_module
 from conftest import HOME, UNIVERSE, pick_system
 from homebound.mapdb.store import (LIFETIME_4H, Connection, KillSummary, Signature, Store, ZkillStats, map_stats,
-                                   utc_now_iso)
+                                   needs_migration, utc_now_iso)
 
 JITA = UNIVERSE.by_name("Jita").id
 
@@ -358,6 +361,51 @@ def test_old_map_files_are_migrated(tmp_path) -> None:
     assert store.system(1).confirmed == 1
     assert store._migrate() == 0          # a second run has nothing left to do
     store.close()
+
+
+@pytest.mark.parametrize("name", ["data#1", pytest.param("what?x", marks=pytest.mark.skipif(
+    sys.platform == "win32", reason="no ? in Windows names")), "a%20b", "e%23f"])
+def test_map_stats_on_an_awkward_data_path(tmp_path, name) -> None:
+    """A ``#``, ``?`` or ``%`` in the folder name still counts that map's rows."""
+    path = tmp_path / name / "map.db"
+    path.parent.mkdir()
+    with Store(path) as file_store:
+        file_store.add_system(HOME.id)
+    assert map_stats(path)["systems"] == 1
+    assert sorted(entry.name for entry in tmp_path.iterdir()) == [name]
+
+
+def test_needs_migration_and_map_stats_on_an_unreadable_file(tmp_path, monkeypatch) -> None:
+    """A file SQLite can't open gives False and zero counts instead of raising."""
+    path = tmp_path / "map.db"
+    with Store(path) as file_store:
+        file_store.add_system(HOME.id)
+
+    def refuse(*arguments: object, **keywords: object) -> NoReturn:
+        """Fail like a file without read permission."""
+        raise sqlite3.OperationalError("unable to open database file")
+
+    monkeypatch.setattr(store_module.sqlite3, "connect", refuse)
+    assert not needs_migration(path)
+    assert map_stats(path) == {"systems": 0, "signatures": 0, "last": None}
+
+
+def test_failed_store_open_closes_the_connection(tmp_path) -> None:
+    """A Store whose migration fails closes its connection, so the file isn't held open (Windows can't rename it)."""
+    kept = []
+
+    class FailingStore(Store):
+        """Fails in the first read, as a damaged file does."""
+
+        def _migrate(self) -> int:
+            """Keep self for the test, then fail."""
+            kept.append(self)
+            raise sqlite3.DatabaseError("file is not a database")
+
+    with pytest.raises(sqlite3.DatabaseError):
+        FailingStore(tmp_path / "map.db")
+    with pytest.raises(sqlite3.ProgrammingError):
+        kept[0].database.execute("SELECT 1")
 
 
 def test_map_stats(tmp_path, store) -> None:
