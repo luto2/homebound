@@ -11,6 +11,8 @@ from PySide6.QtWidgets import QApplication, QStyleOptionViewItem
 from conftest import HOME, SCAN, UNIVERSE, pick_system
 from homebound.mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, Signature, ZkillStats)
 from homebound.mapping import signature_parser
+from homebound.theme import painting
+from homebound.theme.tokens import color
 from homebound.ui import signature_table as table_module
 from homebound.ui.signature_table import (
     COLUMN_ACTION, COLUMN_AGE, COLUMN_FLAG, COLUMN_GROUP, COLUMN_NAME, COLUMN_SEEN, COLUMN_SIGNATURE, COLUMN_TYPE,
@@ -110,6 +112,20 @@ def test_missing_banner_without_other_kind(qt_application) -> None:
 
 
 # ---------------------------------------------------------------- small widgets
+def test_badge_strip_draws_the_class_badge(state, qt_application) -> None:
+    """A wormhole system gets a filled badge at the left edge, a k-space one an outline, no system nothing."""
+    strip = BadgeStrip(state)
+    strip.resize(300, 22)
+    ground = strip.grab().toImage().pixelColor(3, 11)
+    strip.set_system(HOME.id)
+    assert HOME.system_class == "C5"
+    assert strip.grab().toImage().pixelColor(3, 11) == color(painting.CLASSES["C5"][0])
+    strip.set_system(0)
+    assert strip.grab().toImage().pixelColor(3, 11) == ground
+    strip.set_system(next(system for system in UNIVERSE.all_systems() if system.known_space).id)
+    assert strip.grab().toImage().pixelColor(1, 11) != ground
+
+
 def test_badge_strip_paints_all_variants(state, qt_application) -> None:
     """Painting the strip for a wormhole system, a k-space one and none doesn't raise."""
     strip = BadgeStrip(state)

@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QGraphicsSceneContextMenuEvent, QGraphicsSceneMou
 from conftest import HOME, UNIVERSE, pick_system
 from homebound.mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, LIFETIME_REMAINING, Connection,
                                    ZkillStats)
+from homebound.theme.tokens import color
 from homebound.ui import map_scene
 from homebound.mapping.scan_status import ScanStatus, age_text
 from homebound.ui.map_scene import (GRID, ConnectionEdge, MapScene, MapView, SystemNode, elide, removed_in,
@@ -722,6 +723,50 @@ class TestConnectionEdge:
         edge.setSelected(bool(changes))
         image = paint_item(edge, zoom, selected=bool(changes))
         assert not image.isNull()
+
+    @staticmethod
+    def stroke_samples(edge, image: QImage) -> list:
+        """The pixels of an image on the edge's curve, outside the label plate in the middle (offset of paint_item)."""
+        points = [edge.path.pointAtPercent(t / 20) for t in (2, 3, 4, 5, 15, 16, 17, 18)]
+        return [image.pixelColor(round(80 + point.x()), round(60 + point.y())) for point in points]
+
+    def test_fresh_edge_is_stroked(self, state, scene) -> None:
+        """A fresh edge is a solid line in the edge-fresh colour along its curve and nothing away from it."""
+        edge = self.edge_for(scene, state)
+        image = paint_item(edge, 1.0)
+        expected = color("edge-fresh")
+        solid = [pixel for pixel in self.stroke_samples(edge, image) if pixel.alpha() == 255
+                 and all(abs(a - b) <= 4 for a, b in ((pixel.red(), expected.red()), (pixel.green(), expected.green()),
+                                                      (pixel.blue(), expected.blue())))]
+        assert len(solid) >= 4
+        point = edge.path.pointAtPercent(0.25)
+        assert image.pixelColor(round(80 + point.x()), round(60 + point.y()) + 40).alpha() == 0
+
+    @pytest.mark.parametrize("changes", [
+        {"mass": "critical"}, {"wormhole_type": None}, {"lifetime": LIFETIME_4H}, {"lifetime": LIFETIME_1H}])
+    def test_dashed_and_dotted_edges_are_stroked(self, state, scene, changes) -> None:
+        """Critical, unknown and short-lived edges leave pixels on the curve (dashes and dots leave gaps, so any)."""
+        edge = self.edge_for(scene, state, **changes)
+        assert any(pixel.alpha() > 0 for pixel in self.stroke_samples(edge, paint_item(edge, 1.0)))
+
+    def test_expired_edge_is_faded(self, state, scene) -> None:
+        """An expired edge is stroked at 40% opacity: visible, but not opaque."""
+        edge = self.edge_for(scene, state, lifetime=LIFETIME_EXPIRED, lifetime_set_at="2026-01-01T00:00:00+00:00")
+        point = edge.path.pointAtPercent(0.25)
+        alpha = paint_item(edge, 1.0).pixelColor(round(80 + point.x()), round(60 + point.y())).alpha()
+        assert 0 < alpha < 255
+
+    def test_selected_edge_adds_an_underlay(self, state, scene) -> None:
+        """A selected edge covers more pixels than the same edge unselected."""
+        edge = self.edge_for(scene, state)
+
+        def covered(selected: bool) -> int:
+            edge.setSelected(selected)
+            image = paint_item(edge, 1.0, selected=selected)
+            return sum(image.pixelColor(x, y).alpha() > 0 for x in range(image.width()) for y in range(image.height()))
+
+        plain = covered(False)
+        assert plain > 0 and covered(True) > plain
 
     def test_paint_through_scene_render(self, scene) -> None:
         """Rendering the whole scene draws visible pixels."""
