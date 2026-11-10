@@ -114,7 +114,7 @@ is. The Effort line uses the same scale and models as the human-added tasks.
    `ValueError`, so `sqlite3.Error` or a non-dict `victim` ends the thread until restart. Report it
    on the status line and keep the worker alive. `client.close()` belongs in a `finally`.
    Effort: 2/5 · Sonnet.
-8. **[4] Paint tests can't see a paint bug (T1).** With `ConnectionEdge.paint`,
+8. **Done 2026-11-10 (`a7980f7`).** **[4] Paint tests can't see a paint bug (T1).** With `ConnectionEdge.paint`,
    `RouteDelegate.paint` and `BadgeStrip.paintEvent` all no-ops, the 4 UI test files still pass.
    `done/plan-test-fixes.md` accepts this limit, but six docstrings claim more than "doesn't raise". Fix
    those docstrings, and add pixel checks for edges and route rows.

@@ -37,7 +37,6 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [plan-damaged-backup-restore.md](plan-damaged-backup-restore.md) | 5. Damaged backup breaks Restore | proposed |
 | [plan-prune-oserror.md](plan-prune-oserror.md) | 6. `prune` raises out of a finished backup | proposed |
 | [plan-zkill-worker.md](plan-zkill-worker.md) | 7. zKill worker dies silently | proposed |
-| [plan-paint-tests.md](plan-paint-tests.md) | 8. Paint tests can't see a paint bug | proposed |
 | [plan-duplicated-logic.md](plan-duplicated-logic.md) | 9. Duplicated logic that can drift | not started |
 | [plan-system-sender.md](plan-system-sender.md) | 12. Any `EVE…` sender counts as the system | not started |
 | [plan-small-fixes.md](plan-small-fixes.md) | "Small items" | partly done (`3d65485`) |
@@ -71,6 +70,7 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [done/plan-naming-scrim.md](done/plan-naming-scrim.md) | 2026-11-10 | — |
 | [done/plan-appimage-ssl.md](done/plan-appimage-ssl.md) | 2026-11-10 | a run of the AppImage on Arch |
 | [done/plan-multi-select-move.md](done/plan-multi-select-move.md) | 2026-11-10 | multi-delete |
+| [done/plan-paint-tests.md](done/plan-paint-tests.md) | 2026-11-10 | the old `render()` helper (open decision 4) |
 
 Four of the open audit plans overlap in the backup and store code; read their "Overlaps" sections before
 starting either: corrupt-map lockout, backup URI, damaged-backup restore and prune errors.
