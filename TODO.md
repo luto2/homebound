@@ -16,7 +16,7 @@ a small change whose file and fix are named.
    Effort: 3/5 · Sonnet. The API already returns full killmails; the work is parsing, caching and a popup.
 2. **Icons and cache refresh done 2026-11-10 (`e6b86d3`); cause and desktop test still open.** Image for the app menu. Same as "To do" 14. Plan: `docs/plans/plan-menu-icon.md`.
    Effort: 1/5 · Haiku for the code. Most of it is testing on Plasma by hand.
-3. Linux SSL error when building the SDE. Same as "To do" 13. Plan: `docs/plans/plan-appimage-ssl.md`.
+3. **Done 2026-11-10 (`e970367`); not yet tested on Arch.** Linux SSL error when building the SDE. Same as "To do" 13. Plan: `docs/plans/done/plan-appimage-ssl.md`.
    Effort: 2/5 · Sonnet. Small, but three HTTP stacks and the AppImage build; a slip fails silently.
 4. **Done 2026-11-10 (`82d0d14`).** The tray icon's right-click menu doesn't have the overlay Off option, just the other 3. Plan:
    `docs/plans/done/plan-tray-overlay-off.md`.
@@ -52,8 +52,8 @@ a small change whose file and fix are named.
     side and the classes. "Return" means back to the system you jumped in from, not towards home. Plan:
     `docs/plans/plan-return-hole.md`.
     Effort: 3/5 · Sonnet. Needs the K162/static type rules for both sides; Opus if those get unclear.
-13. Multi-select systems to move them together. Found while planning: Ctrl+click may already select
-    two nodes, but a drag then stores only the grabbed one. Plan: `docs/plans/plan-multi-select-move.md`.
+13. **Done 2026-11-10 (`1fe3fd2`).** Multi-select systems to move them together. Found while planning: Ctrl+click may already select
+    two nodes, but a drag then stores only the grabbed one. Plan: `docs/plans/done/plan-multi-select-move.md`.
     Effort: 2/5 · Sonnet. Qt already moves selected items together; add rubber-band selection and save all
     positions in one Store batch (one undo step, one set of sync ops).
 14. Names must never change once given, but a user reported one that did. Neither a system nor a WH sig
@@ -138,7 +138,7 @@ is. The Effort line uses the same scale and models as the human-added tasks.
     saying `anyone in local : Amarr` is read as a jump to Amarr (`parser.py:124`). Check the
     localized sender names, then match `SYSTEM_SENDERS` exactly.
     Effort: 1/5 · Haiku.
-13. **[8] AppImage can't download the game data on Arch (2026-11-08).** On first start of the 1.0.0
+13. **Done 2026-11-10 (`e970367`); not yet tested on Arch.** **[8] AppImage can't download the game data on Arch (2026-11-08).** On first start of the 1.0.0
     AppImage on CachyOS, the data download fails with `URLError: <urlopen error [SSL:
     CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate
     (_ssl.c:1085)>`, so the app can't be used at all. Running `~/.local/bin/homebound --build-static`
@@ -148,7 +148,7 @@ is. The Effort line uses the same scale and models as the human-added tasks.
     certificates under `/usr/lib/ssl`, which Arch doesn't have (Arch keeps them in `/etc/ssl/cert.pem`
     and `/etc/ssl/certs/`). Check whether httpx (zKill, EVE-Scout) has the same problem. Possible
     fixes: bundle `certifi` and pass its CA file to `urlopen` and httpx, or try the common system CA
-    paths in order. Plan: `docs/plans/plan-appimage-ssl.md` (httpx already uses certifi; `websockets`
+    paths in order. Plan: `docs/plans/done/plan-appimage-ssl.md` (httpx already uses certifi; `websockets`
     for cloud sync is affected too).
     Effort: 2/5 · Sonnet. Same as human-added task 3.
 14. **Partly done 2026-11-10 (`e6b86d3`), see human-added task 2.** **[2] No icon in the app menu after the README install (2026-11-08).** On CachyOS (Plasma),

@@ -1,7 +1,6 @@
 # Plan: TLS certificates in the packaged app (AppImage on Arch)
 
-Status: not started. Owner task "linux ssl error when building SDE" (`TODO.md`, human-added task 3), same
-bug as `TODO.md` "To do" item 13.
+Status: implemented (2026-11-10, commit `e970367`). Deviations: certifi is loaded on top of the system store (not instead of it), `sync/api.py` is covered too, and the first-run dialog shows a certificate hint. Not yet tested on Arch: check that `certifi/cacert.pem` is in `dist/homebound/_internal` at the next build and that the AppImage downloads the data on CachyOS.
 
 Depends on: nothing. One commit for the fix, one for the test. Ship it in the next AppImage, because the
 bug stops the app before the first window.

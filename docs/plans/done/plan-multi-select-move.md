@@ -1,6 +1,6 @@
 # Plan: select several systems and move them together
 
-Status: not started. Owner task 13 in `TODO.md` (human-added): "multi select for systems to move them".
+Status: implemented (2026-11-10, commit `1fe3fd2`). Deviations: the suspected bug was real (only the grabbed node was stored). The whole selection moves as one block instead of Qt's per-node move, so offsets don't drift; `AppState` got a selected count for the panel's "+N selected". Multi-delete not included.
 
 Depends on: nothing. One commit: `ui/map_scene.py` (nodes, scene and view) and its tests.
 
