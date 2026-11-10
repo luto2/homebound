@@ -4,7 +4,7 @@ Status: implemented (2026-11-01), merged into `master`; the tests pass on Window
 
 Depends on: nothing. [Packaging](plan-packaging.md) builds on it.
 
-Build order across the plans: [rescan status](plan-rescan-status.md) → [backups](plan-backups.md) → [Windows support](plan-windows-support.md) → [packaging](plan-packaging.md) → [code signing](plan-code-signing.md).
+Build order across the plans: [rescan status](plan-rescan-status.md) → [backups](plan-backups.md) → [Windows support](plan-windows-support.md) → [packaging](plan-packaging.md) → [code signing](../plan-code-signing.md).
 
 ## What breaks on Windows today
 

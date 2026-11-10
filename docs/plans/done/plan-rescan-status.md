@@ -9,7 +9,7 @@ Status: implemented 2026-11-01, except the optional overlay marker. Deviations f
 
 Depends on: nothing.
 
-Build order across the plans: [rescan status](plan-rescan-status.md) → [backups](plan-backups.md) → [Windows support](plan-windows-support.md) → [packaging](plan-packaging.md) → [code signing](plan-code-signing.md).
+Build order across the plans: [rescan status](plan-rescan-status.md) → [backups](plan-backups.md) → [Windows support](plan-windows-support.md) → [packaging](plan-packaging.md) → [code signing](../plan-code-signing.md).
 
 ## What exists
 

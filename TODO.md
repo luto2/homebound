@@ -3,12 +3,74 @@
 Bugs and loose ends found during the codebase cleanup (2026-10-31). "Fixed" entries were fixed as
 part of the cleanup and are listed so the behaviour change is on record.
 
+## Human-added tasks
+
+Each task has a plan in `docs/plans/` (index: `docs/plans/README.md`).
+
+Each task ends with an effort rating from 1 (a few lines, the fix is known) to 5 (several layers,
+the sync protocol or an unknown cause) and the model suggested for it: Opus for protocol, server,
+unknown causes or design calls made while coding; Sonnet for a feature the plan pins down; Haiku for
+a small change whose file and fix are named.
+
+1. Show what zKill activity happened, not just how much. Plan: `docs/plans/plan-zkill-details.md`.
+   Effort: 3/5 · Sonnet. The API already returns full killmails; the work is parsing, caching and a popup.
+2. Image for the app menu. Same as "To do" 14. Plan: `docs/plans/plan-menu-icon.md`.
+   Effort: 1/5 · Haiku for the code. Most of it is testing on Plasma by hand.
+3. Linux SSL error when building the SDE. Same as "To do" 13. Plan: `docs/plans/plan-appimage-ssl.md`.
+   Effort: 2/5 · Sonnet. Small, but three HTTP stacks and the AppImage build; a slip fails silently.
+4. The tray icon's right-click menu doesn't have the overlay Off option, just the other 3. Plan:
+   `docs/plans/plan-tray-overlay-off.md`.
+   Effort: 1/5 · Haiku. One menu built from `MODES`.
+5. Add systems without a connection, to see if a chain connects to them. Open question: monetization,
+   and how to stop people mapping from those systems as well. Could be a separate feature that doesn't
+   allow new systems, just the connection alert. Plan: `docs/plans/plan-watched-systems.md`.
+   1. Delete a connection without deleting the systems, to allow exfilling out of a chain if the
+      connection is lost; maybe stop mapping additional connections there after ~1h. Plan:
+      `docs/plans/plan-disconnect-connection.md`.
+   Effort: 3/5 · Sonnet. New setting, a check on new connections and a toast; 5.1 is 2/5 · Sonnet (Store
+   batch, undo and sync must stay right).
+6. Overhaul the online indicator in the character list; maybe check if the client is open. Plan:
+   `docs/plans/plan-online-indicator.md`.
+   Effort: 4/5 · Opus. Presence on the server, a protocol message and compatibility with old clients.
+7. Persistent system alias. Plan: `docs/plans/plan-system-alias.md`.
+   Effort: 3/5 · Sonnet. New table, Naming page, lookups in several places; undo only covers `ENTITIES`.
+8. Category for combat-scanned ships. Found while planning: combat-probe rows are stored as cosmic
+   signatures under wrong groups (`Customs Office` → Ice), and a combat-only paste marks every real
+   signature in the system missing. Plan: `docs/plans/plan-combat-scan.md`.
+   Effort: 5/5 · Opus. Parser, merge rules, expiring ships and a protocol change. Record real pastes first.
+9. Rework/add a structure list; combat-scanned structures go in there automatically. Plan:
+   `docs/plans/plan-structure-list.md` (after 8).
+   Effort: 4/5 · Opus for the table and sync entity, Sonnet for the list widget and timer tab.
+10. Some sig types don't like getting collapsed. Likely cause: a group with any "new" or "missing" row
+    refuses to collapse, and despawned anomalies stay "missing" for good. Plan:
+    `docs/plans/plan-sig-group-collapse.md`.
+    Effort: 2/5 · Haiku if the repro matches the likely cause, else Sonnet (it turns into debugging).
+11. The wormhole name copy button should also copy the sig ID, and the class if one is known, as
+    "<number> <sig> <class>". Plan: `docs/plans/plan-copy-bookmark-text.md`.
+    Effort: 1/5 · Haiku. `SignatureModel.bookmark_for` plus the class from `lead_class`.
+12. Option to mark a sig or WH as the return wormhole right away, and set its WH type from the other
+    side and the classes. "Return" means back to the system you jumped in from, not towards home. Plan:
+    `docs/plans/plan-return-hole.md`.
+    Effort: 3/5 · Sonnet. Needs the K162/static type rules for both sides; Opus if those get unclear.
+13. Multi-select systems to move them together. Found while planning: Ctrl+click may already select
+    two nodes, but a drag then stores only the grabbed one. Plan: `docs/plans/plan-multi-select-move.md`.
+    Effort: 2/5 · Sonnet. Qt already moves selected items together; add rubber-band selection and save all
+    positions in one Store batch (one undo step, one set of sync ops).
+14. Names must never change once given, but a user reported one that did. Neither a system nor a WH sig
+    may get a new name once it has one. No slot is reserved for the static: a hole keeps the number it
+    got when pasted, even if it later turns out to be the static. Found while planning: six ways names
+    change today (preview-only sig numbers, the link overwriting the sig's number, the static slot,
+    derived `a2a` letters, numbers lost on detach, reused numbers).
+    Plan: `docs/plans/plan-stable-hole-names.md` (before 5.1).
+    Effort: 4/5 · Opus. New synced fields (`label`, `static`, `next_hole`), a migration that keeps
+    today's names, and paste-time numbering that two cloud clients must agree on.
+
 ## To do
 
 From the audit of `582ee55` (2026-11-06). IDs match `docs/findings/findings.md`. The list
 is in suggested order: the cheap data-safety fixes come before the segfault hunt, which has no known
 cause yet. The number in brackets is criticality out of 10, from impact and how likely the problem
-is.
+is. The Effort line uses the same scale and models as the human-added tasks.
 
 1. **[7] Corrupt map locks the app out (E5a, E5, E18).** `AppState.switch_map` saves the new active
    map and closes the old store before opening the new one. If the open fails, the app is left on a
@@ -16,6 +78,7 @@ is.
    hand. `state.py:102` has no handling at startup either, so a corrupt active map means no window
    and no way to reach Restore. Open first, save after, and show a recovery path at start. Also
    check `_reopen_store` in the `finally` of `restore_backup`, which can hide the original error.
+   Effort: 3/5 · Opus. Overlaps 2, 5 and 6 in the backup and store code: do the four in one session.
 2. **[7] Backups come out empty when the data path has `#` or `?` (E3a, E3, E4).** The raw path goes
    into `file:{path}?mode=ro`, so SQLite opens a different file. `_copy_database` then writes a
    database with 0 tables and reports no error, and restoring that copy would wipe the map. In the
@@ -24,6 +87,7 @@ is.
    files are slugged; only the data path can. Build the URI with `Path.resolve().as_uri()` in
    `store.py:238,781`, `backup.py:73,367` and `db.py:142`. The `db.py` one hasn't been probed. Move
    `connect` inside the `try` while there: an unreadable file raises despite the docstrings.
+   Effort: 1/5 · Sonnet, in the session with 1.
 3. **[8] Test suite segfaults.** `tests/test_ui_panels.py` crashed in 11 of 36 unchanged runs, and a
    crash hides every test after it, so the push gate and CI can go red at random. The native stack
    is `QTableView::paintEvent` → `QAbstractItemView::currentIndex()` under `processEvents()` in the
@@ -31,41 +95,75 @@ is.
    10 of 30 with it on), and the queued `headerClicked` connection doesn't fit the stack. Next step:
    find which view is painting and what freed its selection model. Whether the app can crash the
    same way is unknown.
+   Effort: 4/5 · Opus. Cause unknown; needs native-crash debugging.
 4. **[4] One badly named log file stops all tracking (E6).** `Local_20261399_000000_1.txt` makes
    `LogFile.from_path` raise `ValueError` from `strptime`, and `LogScanner.poll` raises with it on
    every poll. `settings_dialog.py:223` calls it too. Return None for a bad date.
+   Effort: 1/5 · Haiku.
 5. **[4] Damaged backup breaks Restore (E8, E8a).** A corrupt zip raises `zlib.error`, a bad manifest
    raises `KeyError` or `TypeError`, and the UI catches only `BackupError`. The undo branch in
    `restore_maps` doesn't run either. `RestoreBackupDialog` (`dialogs.py:959`) crashes on a non-dict
    map entry.
+   Effort: 3/5 · Opus, in the session with 1.
 6. **[4] `prune` can raise `OSError` out of a finished backup (E9).** It sits outside the `try` in
    `create_backup` and `copy_to_folder`, while `AppState.backup` documents that it never raises. A
    locked file (Windows, OneDrive) is the likely trigger. During a migration backup it would abort
    opening the map.
+   Effort: 1/5 · Sonnet, in the session with 1.
 7. **[4] zKill worker dies silently (E7a, E7, E19).** `_fetch` catches only HTTP errors and
    `ValueError`, so `sqlite3.Error` or a non-dict `victim` ends the thread until restart. Report it
    on the status line and keep the worker alive. `client.close()` belongs in a `finally`.
+   Effort: 2/5 · Sonnet.
 8. **[4] Paint tests can't see a paint bug (T1).** With `ConnectionEdge.paint`,
    `RouteDelegate.paint` and `BadgeStrip.paintEvent` all no-ops, the 4 UI test files still pass.
-   `plan-test-fixes.md` accepts this limit, but six docstrings claim more than "doesn't raise". Fix
+   `done/plan-test-fixes.md` accepts this limit, but six docstrings claim more than "doesn't raise". Fix
    those docstrings, and add pixel checks for edges and route rows.
+   Effort: 3/5 · Sonnet.
 9. **[3] Duplicated logic that can drift (D2, D1).** `needs_migration` and `_migrate` repeat the
    migration rules, and a drift skips the safety backup. Orphan cleanup in `tracker.py:429-433` and
    `map_window.py:1139-1144` already differs on systems with a character in them. Check that
    difference is intended.
+   Effort: 3/5 · Sonnet.
 10. **[3] Bad `settings.json` crashes at start (E1, E2).** Non-UTF-8 raises `UnicodeDecodeError`
     (`settings.py:220`), and `{"maps":{"x":1}}` or an entry without `file` raises. The docstring
     promises defaults. `overlay_mode`, `unknown_jump_default` and `naming_scheme` take any string;
     add them to `SETTING_CHOICES`.
+    Effort: 1/5 · Haiku.
 11. **[3] Naming dialog can leave the scrim up (E11).** `apply_naming` raises `AttributeError` if the
     child is gone (`tracker.py:457`), and `map_window.py:873-887` has no `try/finally`, so the scrim
     stays up and `naming_open` stays True. It needs the connection to expire during the dialog with
     no character left in the system.
+    Effort: 1/5 · Haiku.
 12. **[3] Any sender starting with `EVE` counts as the system (E14).** A player named "EVE Fan"
     saying `anyone in local : Amarr` is read as a jump to Amarr (`parser.py:124`). Check the
     localized sender names, then match `SYSTEM_SENDERS` exactly.
+    Effort: 1/5 · Haiku.
+13. **[8] AppImage can't download the game data on Arch (2026-11-08).** On first start of the 1.0.0
+    AppImage on CachyOS, the data download fails with `URLError: <urlopen error [SSL:
+    CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate
+    (_ssl.c:1085)>`, so the app can't be used at all. Running `~/.local/bin/homebound --build-static`
+    in a terminal, as the dialog suggests, presumably fails the same way. The downloads use
+    `urllib.request.urlopen` (`build_static.py:101,187`) with Python's default SSL context. Likely
+    cause, not verified: the bundled OpenSSL comes from the Ubuntu CI runner and looks for CA
+    certificates under `/usr/lib/ssl`, which Arch doesn't have (Arch keeps them in `/etc/ssl/cert.pem`
+    and `/etc/ssl/certs/`). Check whether httpx (zKill, EVE-Scout) has the same problem. Possible
+    fixes: bundle `certifi` and pass its CA file to `urlopen` and httpx, or try the common system CA
+    paths in order. Plan: `docs/plans/plan-appimage-ssl.md` (httpx already uses certifi; `websockets`
+    for cloud sync is affected too).
+    Effort: 2/5 · Sonnet. Same as human-added task 3.
+14. **[2] No icon in the app menu after the README install (2026-11-08).** On CachyOS (Plasma),
+    Homebound appears in the menu but has no icon. The install command writes a valid 256×256
+    `homebound.png` to `~/.local/share/icons/hicolor/256x256/apps/`, and the desktop entry says
+    `Icon=homebound`. Other apps' icons in that folder show up, so the location seems fine. Cause not
+    found yet. Things to try: a stale menu cache (`kbuildsycoca6`), installing `homebound.svg` to
+    `scalable/apps` too, or an absolute `Icon=` path in the desktop entry. Plan:
+    `docs/plans/plan-menu-icon.md`.
+    Effort: 1/5 · Haiku for the code. Same as human-added task 2.
 
 Small items:
+Effort for the small items and the graphify list: 1–2/5 · Haiku, batched in one or two sessions;
+P1 and P2 filtering (3/5) · Sonnet.
+
 
 - [2] `store.py:486`: `add_connection` skips `_check_wormhole_values`, `update_connection(mass=None)`
   stores None, and the tooltip at `map_scene.py:457` would raise on it. No UI path found (E13, E13a).
@@ -79,7 +177,7 @@ Small items:
   `x / GRID == pytest.approx(round(x / GRID))` (T11). The `or` is needed for `%` in general, because
   1989 of the first 4000 multiples of `GRID` land next to `GRID`. These inputs only reach the first
   arm, though, and `approx(0)` is too tight for larger coordinates. The test does catch a missing or
-  wrong snap, and `plan-test-fixes.md` rules out `or` assertions like this.
+  wrong snap, and `done/plan-test-fixes.md` rules out `or` assertions like this.
 - [1] Weak tests, from `docs/findings/findings.md` and not all re-checked: T2, T4 to T9, T12, T13.
 - [1] Test structure: copied fixtures and helpers, the fixture imported at `test_ui_routes.py:19`.
 - [1] `_set_home` (`map_window.py:1013`) has no loop guard. No way to create a parent loop was found,
@@ -127,8 +225,8 @@ the same scale. Test-only functions and `graphify-out/` are listed above.
 - [1] `focus_windows.py` has an indented `ui.focus` import whose guard wasn't read, so that apparent
   cycle is only assumed harmless.
 
-Open in the plans: the optional overlay marker (`plan-rescan-status.md`), a run on a real Windows
-machine (`plan-windows-support.md`) and code signing (`plan-code-signing.md`).
+Open in the plans: the optional overlay marker (`done/plan-rescan-status.md`), a run on a real Windows
+machine (`done/plan-windows-support.md`) and code signing (`plan-code-signing.md`).
 
 ## Fixed in the TODO sweep (2026-11-01)
 
