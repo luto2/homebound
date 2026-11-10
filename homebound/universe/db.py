@@ -7,11 +7,11 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
-from ..platform.paths import source_tree, static_data_candidates, static_data_path
+from ..platform.paths import read_only_uri, source_tree, static_data_candidates, static_data_path
 from ..validation import require_integer, require_text, require_type
 
 DEFAULT_PATH = static_data_path()
-SCHEMA_VERSION = "3"         # bump together with build_static.SCHEMA_VERSION
+SCHEMA_VERSION = "4"         # bump together with build_static.SCHEMA_VERSION
 KNOWN_SPACE_CLASSES = ("HS", "LS", "NS")
 EMPIRE_CLASSES = ("HS", "LS")
 # SDE faction -> empire whose colour its space gets (Ammatar and Khanid space count as Amarr)
@@ -139,7 +139,7 @@ class Universe:
         path = Path(path)
         if not path.exists():
             raise UniverseDataError(f"{path} missing. Run: {BUILD_COMMAND}")
-        self.database = sqlite3.connect(f"file:{path}?mode=ro", uri=True, check_same_thread=False)
+        self.database = sqlite3.connect(read_only_uri(path), uri=True, check_same_thread=False)
         version = self._schema_version()
         if version != SCHEMA_VERSION:
             self.database.close()
@@ -168,6 +168,9 @@ class Universe:
             self._types[name] = WormholeType(name, _split(destinations), lifetime_hours, total_mass, max_jump_mass,
                                              bool(is_static), _split(spawns_in),
                                              None if wanders_into is None else _split(wanders_into))
+        self._ships: dict[int, tuple[str, str]] = {
+            type_id: (name, group_name)
+            for type_id, name, group_name in self.database.execute("SELECT id, name, group_name FROM ship_types")}
         self._nearest_hub: dict[int, tuple[str, int]] | None = None
 
     def close(self) -> None:
@@ -288,6 +291,17 @@ class Universe:
                 if system_id not in found or jumps <= found[system_id][1]:
                     found[system_id] = (hub.name, jumps)
         return found
+
+    # ---- ships
+    def ship_name(self, type_id: int) -> str | None:
+        """Return the name of a ship type (``"Loki"``), or None for an unknown ID or a type that isn't a ship."""
+        require_integer(type_id, "type_id")
+        return self._ships.get(type_id, (None, None))[0]
+
+    def ship_group_name(self, type_id: int) -> str | None:
+        """Return the group of a ship type (``"Strategic Cruiser"``), or None as for :meth:`ship_name`."""
+        require_integer(type_id, "type_id")
+        return self._ships.get(type_id, (None, None))[1]
 
     # ---- wormhole types
     def wormhole_type(self, name: str) -> WormholeType | None:

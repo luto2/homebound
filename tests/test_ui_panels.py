@@ -11,6 +11,8 @@ from PySide6.QtWidgets import QApplication, QStyleOptionViewItem
 from conftest import HOME, SCAN, UNIVERSE, pick_system
 from homebound.mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, Signature, ZkillStats)
 from homebound.mapping import signature_parser
+from homebound.theme import painting
+from homebound.theme.tokens import color
 from homebound.ui import signature_table as table_module
 from homebound.ui.signature_table import (
     COLUMN_ACTION, COLUMN_AGE, COLUMN_FLAG, COLUMN_GROUP, COLUMN_NAME, COLUMN_SEEN, COLUMN_SIGNATURE, COLUMN_TYPE,
@@ -110,8 +112,22 @@ def test_missing_banner_without_other_kind(qt_application) -> None:
 
 
 # ---------------------------------------------------------------- small widgets
+def test_badge_strip_draws_the_class_badge(state, qt_application) -> None:
+    """A wormhole system gets a filled badge at the left edge, a k-space one an outline, no system nothing."""
+    strip = BadgeStrip(state)
+    strip.resize(300, 22)
+    ground = strip.grab().toImage().pixelColor(3, 11)
+    strip.set_system(HOME.id)
+    assert HOME.system_class == "C5"
+    assert strip.grab().toImage().pixelColor(3, 11) == color(painting.CLASSES["C5"][0])
+    strip.set_system(0)
+    assert strip.grab().toImage().pixelColor(3, 11) == ground
+    strip.set_system(next(system for system in UNIVERSE.all_systems() if system.known_space).id)
+    assert strip.grab().toImage().pixelColor(1, 11) != ground
+
+
 def test_badge_strip_paints_all_variants(state, qt_application) -> None:
-    """Class badge, effect and statics paint for a wormhole system, a k-space one and none."""
+    """Painting the strip for a wormhole system, a k-space one and none doesn't raise."""
     strip = BadgeStrip(state)
     strip.resize(300, 22)
     strip.grab()   # no system: paints nothing
@@ -1173,7 +1189,7 @@ def populate_everything(state) -> None:
 
 
 def test_painting_all_row_kinds(state, table, qt_application) -> None:
-    """Every kind of row paints, fresh, selected, hovered, stale and with the copied feedback."""
+    """Grabbing the table with every kind of row (fresh, selected, hovered, stale, copied) doesn't raise."""
     populate_everything(state)
     table.load(HOME.id)
     table.viewport().resize(table.viewport().size())
@@ -1229,7 +1245,7 @@ def test_table_header_view_paints(table) -> None:
 
 
 def test_panel_paints_with_a_full_table(state, panel, qt_application) -> None:
-    """The whole panel renders with missing banner, signatures and anomalies."""
+    """Grabbing the panel with a missing banner, signatures and anomalies doesn't raise, and the banner is visible."""
     paste_sample(state)
     signature_parser.merge_signatures(state.store, HOME.id, signature_parser.parse_scanner_text(
         "\n".join(SCAN.splitlines()[:2]) + "\n"))
@@ -1237,3 +1253,29 @@ def test_panel_paints_with_a_full_table(state, panel, qt_application) -> None:
     qt_application.processEvents()
     assert not panel.grab().isNull()
     assert panel.banner.isVisible()
+
+
+def test_header_notes_the_other_selected_systems(state, panel, qt_application) -> None:
+    """With several systems selected the panel says how many more there are besides the shown one."""
+    panel.set_system(HOME.id)
+    state.set_selected_count(3)
+    assert panel.selected_note.text() == "+2 selected" and not panel.selected_note.isHidden()
+    state.set_selected_count(1)
+    assert panel.selected_note.isHidden()
+
+
+# ---------------------------------------------------------------- widgets left behind
+LEFT_BEHIND: list = []
+
+
+def test_a_table_left_shown(table) -> None:
+    """A test's table, still shown when the test ends (the next test checks it is gone)."""
+    LEFT_BEHIND.append(table)
+    assert table.isVisible()
+
+
+def test_widgets_of_the_last_test_are_deleted(qt_application) -> None:
+    """No test's widget outlives it: one left behind would paint on its closed map in later tests."""
+    import shiboken6
+    assert LEFT_BEHIND and not shiboken6.isValid(LEFT_BEHIND[0])
+    assert [widget for widget in qt_application.topLevelWidgets() if widget.isVisible()] == []

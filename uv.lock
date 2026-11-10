@@ -324,6 +324,7 @@ name = "homebound"
 version = "1.0.0"
 source = { editable = "." }
 dependencies = [
+    { name = "certifi" },
     { name = "httpx" },
     { name = "pyside6-essentials" },
     { name = "websockets" },
@@ -348,6 +349,7 @@ packaging = [
 
 [package.metadata]
 requires-dist = [
+    { name = "certifi" },
     { name = "cryptography", marker = "extra == 'server'", specifier = ">=42" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "pyside6-essentials", specifier = ">=6.8" },

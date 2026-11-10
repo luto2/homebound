@@ -1,7 +1,6 @@
 # Plan: show what the zKill activity was, not just how much
 
-Status: not started. Owner task "show what zkill activity happend not just how much" (`TODO.md`,
-human-added task 1). New feature.
+Status: implemented (2026-11-10, commits `7e99e8d`, `0ae364d`, `1665163`). Deviations: NPC kills count toward the meter and the map like any other kill (owner, 2026-11-10: the "Count NPC kills" setting from the first build was removed; the list still dims NPC rows); the tooltip rows show on any hover of the node; no copy button, double-click/Enter opens the kill; fold state not saved; `tests/data/zkill_sample.json` is hand-built, not recorded. Universe schema 4: every user rebuilds the game data once.
 
 Depends on: nothing. Touches the zKill worker, the map file schema, the universe build, the system panel
 and the node tooltip. Four commits, in the order of the steps below.
@@ -43,7 +42,7 @@ What we can't show without ESI: character, corp and alliance *names*. IDs only, 
    (ships) only, about 500 rows. `universe/db.py` `Universe.ship_name(type_id)` returns `"Loki"` or
    `None`. This is a universe schema change, so bump its version: every user gets the rebuild dialog
    once (`UniverseDataError`). Ship it in the same release as the SSL fix
-   ([`plan-appimage-ssl.md`](plan-appimage-ssl.md)) so that rebuild works on Arch.
+   ([`done/plan-appimage-ssl.md`](plan-appimage-ssl.md)) so that rebuild works on Arch.
 2. **Keep the kills.** In `zkill.py`, `summarize` also returns a list of `KillSummary` rows
    (`killmail_id, killed_at, victim_ship_id, attacker_count, top_attacker_ship_id, value, npc, solo`).
    `mapdb/store.py` gets a `zkill_kills` table keyed by `(system_id, killmail_id)` (added in

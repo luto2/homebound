@@ -1,6 +1,6 @@
 # Plan: keep the zKill worker alive
 
-Status: proposed. Audit item: TODO.md "To do" no. 7, "[4] zKill worker dies silently (E7a, E7, E19)".
+Status: implemented (2026-11-10, commit `3241a44`). Deviations: also restarts a dead worker thread from `request()` ("zKill worker restarted" on the status line); `eve_scout` closes its client in a `finally`.
 
 Depends on: nothing. One commit, `homebound/zkill.py` plus `tests/test_zkill.py`.
 

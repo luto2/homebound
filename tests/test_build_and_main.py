@@ -6,6 +6,7 @@ import sys
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
+from typing import NoReturn
 
 import pytest
 
@@ -42,6 +43,14 @@ def make_sde(path: Path, with_build: bool = True) -> None:
             {"_key": 30000150, "name": name("Nullish"), "regionID": 2, "constellationID": 20,
              "securityStatus": -0.4},
             {"_key": 32000001, "name": name("Abyssal"), "regionID": 3, "constellationID": 30}),
+        "categories.jsonl": jsonl({"_key": 6, "name": name("Ship")}, {"_key": 7, "name": name("Module")}),
+        "groups.jsonl": jsonl({"_key": 25, "categoryID": 6, "name": name("Frigate")},
+                              {"_key": 832, "categoryID": 6, "name": name("Logistics")},
+                              {"_key": 53, "categoryID": 7, "name": name("Energy Weapon")}),
+        "types.jsonl": jsonl({"_key": 587, "groupID": 25, "published": True, "name": name("Rifter")},
+                             {"_key": 11978, "groupID": 832, "published": True, "name": name("Scimitar")},
+                             {"_key": 999, "groupID": 25, "published": False, "name": name("Old Rifter")},
+                             {"_key": 3001, "groupID": 53, "published": True, "name": name("Laser")}),
         "mapStargates.jsonl": jsonl(
             {"solarSystemID": 30000142, "destination": {"solarSystemID": 30000144}},
             {"solarSystemID": 30000144, "destination": {"solarSystemID": 30000142}}),
@@ -126,6 +135,8 @@ def test_build_end_to_end(fake_sources) -> None:
     assert universe.wormhole_type("B274").destinations == ("DR", "HS")
     assert universe.wormhole_type("B274").wanders_into == ()
     assert universe.wormhole_type("K162").wanders_into is None
+    assert universe.ship_name(587) == "Rifter" and universe.ship_group_name(11978) == "Logistics"
+    assert universe.ship_name(999) is None and universe.ship_name(3001) is None    # unpublished, not a ship
     meta = dict(universe.database.execute("SELECT key, value FROM meta"))
     assert meta["schema_version"] == SCHEMA_VERSION == build_static.SCHEMA_VERSION
     assert meta["sde_build"] == "12345"
@@ -230,11 +241,11 @@ def test_fetch_reports_fractions(tmp_path, monkeypatch) -> None:
         headers = {"Content-Length": "6"}
 
     monkeypatch.setattr(build_static, "CHUNK", 4)
-    monkeypatch.setattr(build_static.urllib.request, "urlopen", lambda request, timeout: SizedResponse(b"abcdef"))
+    monkeypatch.setattr(build_static.urllib.request, "urlopen", lambda request, timeout, context: SizedResponse(b"abcdef"))
     fractions = []
     build_static.fetch("https://example.invalid/x", tmp_path / "a", True, fractions.append)
     assert fractions == [4 / 6, 1.0]
-    monkeypatch.setattr(build_static.urllib.request, "urlopen", lambda request, timeout: FakeResponse(b"abc"))
+    monkeypatch.setattr(build_static.urllib.request, "urlopen", lambda request, timeout, context: FakeResponse(b"abc"))
     fractions.clear()
     build_static.fetch("https://example.invalid/x", tmp_path / "b", True, fractions.append)
     assert fractions == [None]
@@ -260,7 +271,7 @@ def test_fetch_downloads_and_caches(tmp_path, monkeypatch) -> None:
     and rejects an empty URL or a target that is not a Path."""
     requested = []
 
-    def fake_urlopen(request, timeout) -> FakeResponse:
+    def fake_urlopen(request, timeout, context) -> FakeResponse:
         """Record the URL, User-Agent and timeout and answer with a fixed payload."""
         requested.append((request.full_url, request.get_header("User-agent"), timeout))
         return FakeResponse(b"payload")
@@ -287,11 +298,11 @@ def test_zkill_statics_parses_page(monkeypatch) -> None:
     page = (b"<html><body><div>Statics: <b>(N110)</b> &amp; (H296)</div> Alltime kills</body></html>")
     seen = []
     monkeypatch.setattr(build_static.urllib.request, "urlopen",
-                        lambda request, timeout: seen.append(request.full_url) or FakeResponse(page))
+                        lambda request, timeout, context: seen.append(request.full_url) or FakeResponse(page))
     assert build_static.zkill_statics(31000001) == ["H296", "N110"]
     assert seen == ["https://zkillboard.com/system/31000001/"]
     monkeypatch.setattr(build_static.urllib.request, "urlopen",
-                        lambda request, timeout: FakeResponse(b"<html>no such line</html>"))
+                        lambda request, timeout, context: FakeResponse(b"<html>no such line</html>"))
     assert build_static.zkill_statics(31000001) is None
     with pytest.raises(ValueError):
         build_static.zkill_statics(0)
@@ -299,7 +310,7 @@ def test_zkill_statics_parses_page(monkeypatch) -> None:
 
 def test_zkill_statics_gives_none_when_zkill_is_unreachable(monkeypatch, capsys) -> None:
     """A failed zKill request is None, with the reason on stderr; the build then falls back to the union."""
-    def unreachable(request, timeout):
+    def unreachable(request, timeout, context):
         """Simulate zKillboard refusing the connection."""
         raise build_static.urllib.error.URLError("connection refused")
 
@@ -356,6 +367,8 @@ class FakeWindow:
 
 class FakeState:
     """Stands in for AppState."""
+
+    recovered_map = ""
 
     def __init__(self, universe, settings, auto_backup: bool = False) -> None:
         """Remember the arguments."""
@@ -438,6 +451,32 @@ def test_main_normal_path(fake_app, monkeypatch, log_directory, settings_page) -
     assert isinstance(window.sync, FakeSync) and window.sync.state is window.state
     assert window.sync.started and window.sync.stopped
     assert window.settings_opened == settings_page
+
+
+def test_main_opens_backups_after_recovery(fake_app, monkeypatch) -> None:
+    """When the open map was set aside at start, Settings opens on Backups (even without a log folder)."""
+    from homebound.ui.settings_dialog import PAGES
+    monkeypatch.setattr(fake_app, "load", classmethod(lambda cls: FakeSettings("")))
+    monkeypatch.setattr(FakeState, "recovered_map", "map.db was damaged and is kept as map.db.damaged")
+    assert entry_point.main() == 0
+    assert FakeWindow.instances[0].settings_opened == PAGES.index("Backups")
+
+
+def test_main_reports_an_unopenable_map(fake_app, monkeypatch) -> None:
+    """A map that can't be opened (and wasn't set aside) is shown in an error box, and main() returns 1."""
+    import homebound.ui.state
+    from PySide6.QtWidgets import QMessageBox
+
+    def unopenable(*arguments: object, **keywords: object) -> NoReturn:
+        """Fail like a map file without permission."""
+        raise homebound.ui.state.MapOpenError("The map “Main” can't be opened: attempt to write a readonly database")
+
+    monkeypatch.setattr(fake_app, "load", classmethod(lambda cls: FakeSettings("/logs")))
+    monkeypatch.setattr(homebound.ui.state, "AppState", unopenable)
+    shown = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *arguments: shown.append(arguments[-1]))
+    assert entry_point.main() == 1
+    assert len(shown) == 1 and "readonly" in shown[0] and not FakeWindow.instances
 
 
 @pytest.mark.parametrize("platform, preset, expected",

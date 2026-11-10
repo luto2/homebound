@@ -1,6 +1,6 @@
 # Plan: prune must not raise out of a finished backup
 
-Status: proposed. Audit item: `TODO.md` "To do" 6, finding E9 in `docs/findings/findings.md`.
+Status: implemented (2026-11-10, commit `8142f01`). Deviations: `partial_cleanup` skips files too (owner decision); prune failures are reported as a warning through a `warnings` list.
 
 Depends on: nothing. Touches the same functions as the corrupt-map, backup-URI and damaged-backup plans, see "Overlaps".
 

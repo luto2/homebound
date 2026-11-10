@@ -16,20 +16,10 @@ from ..sync.login import LoopbackLogin
 from . import menus
 from .dialogs import BaseDialog, PromptDialog, danger_button
 from .sync_manager import SyncManager
-from .widgets import help_label
+from .widgets import help_label, isk
 
 ROLE_LABELS = {"owner": "Owner", "manager": "Manager", "editor": "Editor", "viewer": "Viewer"}
 ACCESS_LABELS = {"alliance": "Alliance", "corp": "Corporation", "char": "Character"}
-
-
-def isk(amount: float | int | None) -> str:
-    """Format ISK the way EVE players read it: 125M, 1.5B."""
-    amount = float(amount or 0)
-    if amount >= 1e9:
-        return f"{amount / 1e9:.2f}B ISK".replace(".00B", "B")
-    if amount >= 1e6:
-        return f"{amount / 1e6:.0f}M ISK"
-    return f"{amount:,.0f} ISK"
 
 
 def short_date(text: str | None) -> str:

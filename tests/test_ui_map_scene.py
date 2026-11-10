@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QGraphicsSceneContextMenuEvent, QGraphicsSceneMou
 from conftest import HOME, UNIVERSE, pick_system
 from homebound.mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, LIFETIME_REMAINING, Connection,
                                    ZkillStats)
+from homebound.theme.tokens import color
 from homebound.ui import map_scene
 from homebound.mapping.scan_status import ScanStatus, age_text
 from homebound.ui.map_scene import (GRID, ConnectionEdge, MapScene, MapView, SystemNode, elide, removed_in,
@@ -378,7 +379,8 @@ class TestSystemNode:
             assert not image.isNull()
 
     def test_paint_every_variant(self, state, scene) -> None:
-        """Nodes with owner, stale scan, unconfirmed state, custom name, zKill stats, characters and hover paint."""
+        """Painting nodes with owner, stale scan, unconfirmed state, custom name, zKill stats, characters and hover
+        doesn't raise."""
         state.store.update_system(HOME.id, owner_ticker="ABCD", owner_slot=2, scanned_at=iso_ago(hours=30),
                                   confirmed=0)
         state.store.update_system(state.k_space.id, custom_name="Custom")
@@ -395,7 +397,8 @@ class TestSystemNode:
                 assert not paint_item(node, zoom, selected=True).isNull()
 
     def test_paint_subtitle_and_effect(self, state, scene) -> None:
-        """A renamed w-space system with an effect and a renamed k-space system (real name as subtitle) paint."""
+        """Painting a renamed w-space system with an effect and a renamed k-space system (real name as subtitle)
+        doesn't raise."""
         with_effect = next(system for system in UNIVERSE.all_systems() if system.effect and system.id != HOME.id)
         state.store.add_system(with_effect.id, x=500, y=500)
         scene.rebuild()
@@ -481,6 +484,142 @@ class TestSystemNode:
         monkeypatch.setattr(state.store, "update_system", lambda *arguments, **changes: calls.append(changes))
         node.mouseReleaseEvent(mouse_event(QEvent.Type.GraphicsSceneMouseRelease, node.pos()))
         assert calls == []
+
+
+def drag_node(scene, node, delta, modifiers=Qt.KeyboardModifier.NoModifier) -> None:
+    """Press on a node, move the mouse by a scene delta and release, as the view would deliver it."""
+    start = node.center()
+    end = start + delta
+    for kind, position in ((QEvent.Type.GraphicsSceneMousePress, start), (QEvent.Type.GraphicsSceneMouseMove, end),
+                           (QEvent.Type.GraphicsSceneMouseRelease, end)):
+        event = mouse_event(kind, position, modifiers=modifiers)
+        event.setButtonDownScenePos(Qt.MouseButton.LeftButton, start)
+        event.setLastScenePos(start if kind != QEvent.Type.GraphicsSceneMousePress else position)
+        getattr(scene, {QEvent.Type.GraphicsSceneMousePress: "mousePressEvent",
+                        QEvent.Type.GraphicsSceneMouseMove: "mouseMoveEvent",
+                        QEvent.Type.GraphicsSceneMouseRelease: "mouseReleaseEvent"}[kind])(event)
+
+
+class TestMultiSelectMove:
+    """Several selected systems move together and are stored in one batch."""
+
+    def select_two(self, scene, state):
+        """Select home and the high-sec neighbour the way Ctrl+click does."""
+        first, second = scene.nodes[HOME.id], scene.nodes[state.k_space.id]
+        first.setSelected(True)
+        second.setSelected(True)
+        return first, second
+
+    def test_dragging_one_of_two_selected_stores_both(self, state, scene) -> None:
+        """Regression: the node that wasn't grabbed keeps its dragged position in the store."""
+        first, second = self.select_two(scene, state)
+        drag_node(scene, first, QPointF(GRID * 3, GRID * 2))
+        stored_first, stored_second = state.store.system(HOME.id), state.store.system(state.k_space.id)
+        assert (stored_first.x, stored_first.y) == (first.pos().x(), first.pos().y()) != (0, 0)
+        assert (stored_second.x, stored_second.y) == (second.pos().x(), second.pos().y()) != (300, 0)
+
+    def test_one_batch_one_undo(self, state, scene) -> None:
+        """A moved group is one store action and one undo puts every node back."""
+        actions = []
+        state.store.listeners.append(actions.append)
+        first, second = self.select_two(scene, state)
+        drag_node(scene, first, QPointF(GRID * 3, GRID * 2))
+        assert len(actions) == 1
+        state.store.undo(actions[0])
+        assert (state.store.system(HOME.id).x, state.store.system(HOME.id).y) == (0, 0)
+        assert (state.store.system(state.k_space.id).x, state.store.system(state.k_space.id).y) == (300, 0)
+
+    def test_block_stays_on_the_grid_and_keeps_offsets(self, state, scene) -> None:
+        """Every node moves by the same whole number of grid steps."""
+        first, second = self.select_two(scene, state)
+        offset = second.pos() - first.pos()
+        before = first.pos()
+        drag_node(scene, first, QPointF(GRID * 3.4, GRID * 2.2))
+        step = first.pos() - before
+        assert step.x() / GRID == pytest.approx(3) and step.y() / GRID == pytest.approx(2)
+        assert second.pos() - first.pos() == offset
+
+    def test_cloud_map_with_local_layout_stores_overrides(self, state, scene) -> None:
+        """On a cloud map the moves go to the local layout and the shared positions stay."""
+        state.store.layout_local = True
+        first, second = self.select_two(scene, state)
+        drag_node(scene, first, QPointF(GRID * 3, GRID * 2))
+        assert state.store.system(HOME.id).x == first.pos().x() != 0
+        assert state.store.system(state.k_space.id).x == second.pos().x() != 300
+        rows = state.store.database.execute("SELECT COUNT(*) FROM layout_override").fetchone()[0]
+        assert rows == 2
+
+    def test_shift_click_still_links_with_a_selection(self, state, scene) -> None:
+        """Shift+press on a node starts a link even while several systems are selected."""
+        first, second = self.select_two(scene, state)
+        scene.mousePressEvent(mouse_event(QEvent.Type.GraphicsSceneMousePress, first.center(),
+                                          modifiers=Qt.KeyboardModifier.ShiftModifier))
+        assert scene._link_from is first
+        scene.cancel_link()
+
+    def test_clicking_a_selected_node_keeps_the_group_and_follows_it(self, state, scene) -> None:
+        """A press on a node that is already selected keeps the group and shows that system in the panel."""
+        first, second = self.select_two(scene, state)
+        assert state.selected == state.k_space.id
+        scene.mousePressEvent(mouse_event(QEvent.Type.GraphicsSceneMousePress, first.center()))
+        assert state.selected == HOME.id and len(scene.selected_nodes()) == 2
+        assert state.selected_count == 2
+
+    def test_arrow_keys_move_the_selection_one_batch_per_press(self, state, scene) -> None:
+        """Arrow keys move by one grid step, Shift by five, each press one store action."""
+        actions = []
+        state.store.listeners.append(actions.append)
+        first, second = self.select_two(scene, state)
+        before = first.pos()
+
+        def press(key, modifiers=Qt.KeyboardModifier.NoModifier) -> None:
+            scene.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, key, modifiers))
+
+        press(Qt.Key.Key_Right)
+        assert first.pos() - before == QPointF(GRID, 0) and len(actions) == 1
+        press(Qt.Key.Key_Down, Qt.KeyboardModifier.ShiftModifier)
+        assert first.pos() - before == QPointF(GRID, 5 * GRID) and len(actions) == 2
+        assert state.store.system(state.k_space.id).y == pytest.approx(5 * GRID)
+
+    def test_arrow_key_without_selection_does_nothing(self, state, scene) -> None:
+        """No selected systems: an arrow key writes nothing."""
+        actions = []
+        state.store.listeners.append(actions.append)
+        scene.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Left, Qt.KeyboardModifier.NoModifier))
+        assert actions == []
+
+    def test_select_all_and_escape(self, state, scene) -> None:
+        """Ctrl+A selects every system, Escape clears the selection."""
+        scene.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier))
+        assert len(scene.selected_nodes()) == len(scene.nodes) == 3
+        scene.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Escape, Qt.KeyboardModifier.NoModifier))
+        assert scene.selected_nodes() == [] and state.selected_count == 0
+
+    def test_rubber_band_selects_the_systems_inside_and_plain_drag_pans(self, state, scene) -> None:
+        """Ctrl+drag on empty canvas selects the systems it covers; a plain drag keeps the hand mode."""
+        from PySide6.QtGui import QMouseEvent
+        from PySide6.QtWidgets import QGraphicsView
+        view = scene.view
+        view.resize(800, 600)
+        view.show()
+        view.centerOn(150, 75)
+
+        def mouse(kind, point, modifiers):
+            return QMouseEvent(kind, QPointF(point), QPointF(view.viewport().mapToGlobal(point)),
+                               Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, modifiers)
+
+        top_left = view.mapFromScene(QPointF(-100, -60))
+        bottom_right = view.mapFromScene(QPointF(150, 250))   # covers home and the wormhole below it, not the neighbour
+        ctrl = Qt.KeyboardModifier.ControlModifier
+        view.mousePressEvent(mouse(QEvent.Type.MouseButtonPress, top_left, ctrl))
+        assert view.dragMode() == QGraphicsView.DragMode.RubberBandDrag
+        view.mouseMoveEvent(mouse(QEvent.Type.MouseMove, bottom_right, ctrl))
+        view.mouseReleaseEvent(mouse(QEvent.Type.MouseButtonRelease, bottom_right, ctrl))
+        assert sorted(node.system_id for node in scene.selected_nodes()) == sorted([HOME.id, state.wormhole.id])
+        assert view.dragMode() == QGraphicsView.DragMode.ScrollHandDrag
+        view.mousePressEvent(mouse(QEvent.Type.MouseButtonPress, top_left, Qt.KeyboardModifier.NoModifier))
+        assert view.dragMode() == QGraphicsView.DragMode.ScrollHandDrag
+        view.mouseReleaseEvent(mouse(QEvent.Type.MouseButtonRelease, top_left, Qt.KeyboardModifier.NoModifier))
 
 
 class TestConnectionEdge:
@@ -593,12 +732,57 @@ class TestConnectionEdge:
         {"confirmed": 0}, {"wormhole_type": None}])
     @pytest.mark.parametrize("zoom", [0.3, 1.0])
     def test_paint_states(self, state, scene, changes, zoom) -> None:
-        """Edges paint in every mass, lifetime, frigate, confirmation and type state, hovered and selected or not."""
+        """Painting an edge in every mass, lifetime, frigate, confirmation and type state, hovered and selected or not,
+        doesn't raise."""
         edge = self.edge_for(scene, state, **changes)
         edge.hover = bool(changes)
         edge.setSelected(bool(changes))
         image = paint_item(edge, zoom, selected=bool(changes))
         assert not image.isNull()
+
+    @staticmethod
+    def stroke_samples(edge, image: QImage) -> list:
+        """The pixels of an image on the edge's curve, outside the label plate in the middle (offset of paint_item)."""
+        points = [edge.path.pointAtPercent(t / 20) for t in (2, 3, 4, 5, 15, 16, 17, 18)]
+        return [image.pixelColor(round(80 + point.x()), round(60 + point.y())) for point in points]
+
+    def test_fresh_edge_is_stroked(self, state, scene) -> None:
+        """A fresh edge is a solid line in the edge-fresh colour along its curve and nothing away from it."""
+        edge = self.edge_for(scene, state)
+        image = paint_item(edge, 1.0)
+        expected = color("edge-fresh")
+        solid = [pixel for pixel in self.stroke_samples(edge, image) if pixel.alpha() == 255
+                 and all(abs(a - b) <= 4 for a, b in ((pixel.red(), expected.red()), (pixel.green(), expected.green()),
+                                                      (pixel.blue(), expected.blue())))]
+        assert len(solid) >= 4
+        point = edge.path.pointAtPercent(0.25)
+        assert image.pixelColor(round(80 + point.x()), round(60 + point.y()) + 40).alpha() == 0
+
+    @pytest.mark.parametrize("changes", [
+        {"mass": "critical"}, {"wormhole_type": None}, {"lifetime": LIFETIME_4H}, {"lifetime": LIFETIME_1H}])
+    def test_dashed_and_dotted_edges_are_stroked(self, state, scene, changes) -> None:
+        """Critical, unknown and short-lived edges leave pixels on the curve (dashes and dots leave gaps, so any)."""
+        edge = self.edge_for(scene, state, **changes)
+        assert any(pixel.alpha() > 0 for pixel in self.stroke_samples(edge, paint_item(edge, 1.0)))
+
+    def test_expired_edge_is_faded(self, state, scene) -> None:
+        """An expired edge is stroked at 40% opacity: visible, but not opaque."""
+        edge = self.edge_for(scene, state, lifetime=LIFETIME_EXPIRED, lifetime_set_at="2026-01-01T00:00:00+00:00")
+        point = edge.path.pointAtPercent(0.25)
+        alpha = paint_item(edge, 1.0).pixelColor(round(80 + point.x()), round(60 + point.y())).alpha()
+        assert 0 < alpha < 255
+
+    def test_selected_edge_adds_an_underlay(self, state, scene) -> None:
+        """A selected edge covers more pixels than the same edge unselected."""
+        edge = self.edge_for(scene, state)
+
+        def covered(selected: bool) -> int:
+            edge.setSelected(selected)
+            image = paint_item(edge, 1.0, selected=selected)
+            return sum(image.pixelColor(x, y).alpha() > 0 for x in range(image.width()) for y in range(image.height()))
+
+        plain = covered(False)
+        assert plain > 0 and covered(True) > plain
 
     def test_paint_through_scene_render(self, scene) -> None:
         """Rendering the whole scene draws visible pixels."""

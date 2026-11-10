@@ -1,13 +1,16 @@
 """Universe lookups and the pure helpers of the static data build."""
 import io
 import json
+import shutil
 import sqlite3
+import sys
 import zipfile
 from contextlib import closing
 
 import pytest
 
 from conftest import HOME, UNIVERSE
+from homebound.http import ssl_context
 from homebound.platform.paths import static_data_path
 from homebound.universe import build_static
 from homebound.universe import db
@@ -127,6 +130,21 @@ def test_missing_and_outdated_files(tmp_path) -> None:
         Universe(5)
 
 
+@pytest.mark.parametrize("name", ["data#1", pytest.param("what?x", marks=pytest.mark.skipif(
+    sys.platform == "win32", reason="no ? in Windows names")), "a%20b", "e%23f"])
+def test_universe_loads_from_an_awkward_path(tmp_path, name) -> None:
+    """A ``#``, ``?`` or ``%`` in the folder name still loads that universe file, and leaves no stray file."""
+    path = tmp_path / name / "universe.sqlite"
+    path.parent.mkdir()
+    shutil.copyfile(UNIVERSE_PATH, path)
+    universe = Universe(path)
+    try:
+        assert len(universe.all_names()) == len(UNIVERSE.all_names())
+    finally:
+        universe.database.close()
+    assert sorted(entry.name for entry in tmp_path.iterdir()) == [name]
+
+
 def test_open_universe_skips_an_outdated_rebuild(tmp_path, monkeypatch) -> None:
     """A rebuilt copy with an old schema gives way to the bundled file; with nothing usable the first error is raised."""
     old = tmp_path / "old.sqlite"
@@ -230,3 +248,45 @@ def test_known_type_ignores_k162_blanks_and_case() -> None:
     assert UNIVERSE.known_type("XXXX") is None
     with pytest.raises(TypeError):
         UNIVERSE.known_type(5)
+
+
+class FakeResponse:
+    """A urlopen result: a context manager with headers and a body."""
+
+    headers = {"Content-Length": "2"}
+
+    def __init__(self) -> None:
+        self.chunks = [b"{}"]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *error) -> None:
+        return None
+
+    def read(self, size: int = -1) -> bytes:
+        return self.chunks.pop(0) if self.chunks else b""
+
+
+def test_downloads_pass_the_shared_ssl_context(tmp_path, monkeypatch) -> None:
+    """fetch and the zKill statics page both hand urlopen homebound's context (certifi's CAs)."""
+    calls = []
+
+    def fake_urlopen(request, **options):
+        calls.append(options)
+        return FakeResponse()
+
+    monkeypatch.setattr(build_static.urllib.request, "urlopen", fake_urlopen)
+    build_static.fetch("https://example.invalid/", tmp_path / "file.json", refresh=True)
+    build_static.zkill_statics(31000005)
+    assert len(calls) == 2 and all(options["context"] is ssl_context() for options in calls)
+
+
+def test_ship_names() -> None:
+    """A known ship has a name and group, an unknown ID or a non-ship type has none; bad input raises."""
+    assert UNIVERSE.ship_name(587) == "Rifter" and UNIVERSE.ship_group_name(587) == "Frigate"
+    assert UNIVERSE.ship_name(670) == "Capsule"
+    assert UNIVERSE.ship_name(-5) is None and UNIVERSE.ship_name(2) is None      # unknown, a corporation
+    assert UNIVERSE.ship_group_name(34) is None                                   # Tritanium, not a ship
+    with pytest.raises(TypeError):
+        UNIVERSE.ship_name("Rifter")

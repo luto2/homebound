@@ -1,6 +1,6 @@
 # Plan: corrupt map locks the app out
 
-Status: proposed (2026-11-06). TODO.md "To do" item 1, findings E5a, E5 and E18.
+Status: implemented (2026-11-10, commit `7be8fbb`). Deviations: the start-up error uses `QMessageBox.critical` (the plan said the app has none; it already had one). The damaged-file warning repeats at every start while a `.damaged` file exists; Settings opens by itself only on the start that set it aside.
 
 Depends on: nothing. Touches the same files as the damaged-backup, prune-error and backup URI plans (see "Overlaps").
 
@@ -91,7 +91,7 @@ Wrap lines 283-285 in `Store.__init__` so a failure closes the connection and re
 
 ### `homebound/__main__.py`
 
-- Around line 60: catch `MapOpenError`, show it in a small dialog, return 1. The app has no `QMessageBox`; follow `BuildDataDialog` and the design system's StartupError spec.
+- Around line 60: catch `MapOpenError`, show it in a small dialog, return 1. (Correction while implementing: `__main__.py:56` already uses `QMessageBox.critical` for a universe that still fails after the build, so the same box is used here rather than a new `BaseDialog`. The StartupError spec would replace both.)
 - Around line 66: if `state.recovered_map`, call `window.open_settings(PAGES.index("Backups"))`, otherwise the existing log-folder check.
 
 ### `homebound/ui/settings_dialog.py`

@@ -149,8 +149,9 @@ others show or edit it.
 | Routes dock (trade hubs, own destinations, strip, copy route) | `ui/route_dock.py`; data from `ui/state.py` `AppState.routes`, `route_options` |
 | EVE-Scout Thera/Turnur connections | `eve_scout.py` `EveScoutFetcher`, `parse_signatures` |
 | zKillboard activity (kills 1h/24h, pod kills, last kill) | `zkill.py` `ZkillFetcher`, `summarize`; cached in the map's `zkill` table (`mapdb/store.py` `ZkillStats`) |
+| zKill activity list (what died: ship, value, NPC/solo; folded section in the system panel, three rows in the node tooltip) | `ui/activity_list.py` `ActivityList`, `kill_text`; rows from `zkill.py` `summarize_kills`, stored in `zkill_kills` (`mapdb/store.py` `KillSummary`); ship names from `universe/db.py` `ship_name` |
 | zKill meter and recent-kill mark | `theme/painting.py` `draw_zkill`, `draw_recent_kill`; `ui/map_scene.py` `SystemNode`; `ui/overlay.py` |
-| Shared HTTP client, User-Agent, background fetcher base | `http.py` `make_client`, `BackgroundFetcher` |
+| Shared HTTP client, TLS context (system CAs + certifi), User-Agent, background fetcher base | `http.py` `make_client`, `ssl_context`, `BackgroundFetcher` |
 
 ### Maps, settings and backups
 
@@ -161,8 +162,9 @@ others show or edit it.
 | Settings file, defaults, allowed values and ranges | `settings.py` `Settings`, `SETTING_CHOICES`, `clamp_to_range` |
 | Automatic, manual and safety backups; pruning | `backup.py` `create_backup`, `prune`, `auto_backup_due`; `ui/state.py` `AppState.backup` |
 | Restore | `backup.py` `restore_maps`, `restore_settings`; `ui/state.py` `restore_backup`; `ui/dialogs.py` `RestoreBackupDialog` |
+| Damaged map file set aside at start or on a switch | `ui/state.py` `MapOpenError`, `set_aside_damaged`, `damaged_map_files`, `AppState._load_map`; `__main__.py` |
 | Schema migration of old map files | `mapdb/store.py` `COLUMN_RENAMES`, `TABLE_RENAMES`, `COLUMN_ADDITIONS`, `needs_migration` |
-| Data folder, Documents folder, which universe file | `platform/paths.py` |
+| Data folder, Documents folder, which universe file; read-only SQLite URIs (`read_only_uri`) | `platform/paths.py` |
 
 ### Static universe data
 
@@ -227,7 +229,7 @@ detail.
 
 | Module | Owns |
 |---|---|
-| `paths.py` | Data, Documents and universe paths; packaged or checkout |
+| `paths.py` | Data, Documents and universe paths; packaged or checkout; read-only SQLite URIs |
 | `focus_linux.py` | KWin script install and D-Bus calls, xprop polling |
 | `focus_windows.py` | Foreground window polling, keep-on-top |
 | `kwin/homebound-focus/` | The KWin script itself (JavaScript) |
@@ -249,6 +251,7 @@ detail.
 | `map_window.py` | Main window, toolbar, status bar, tray, map menu, context menus, map actions |
 | `map_scene.py` | Nodes, edges, scene and view |
 | `system_panel.py` | Right dock |
+| `activity_list.py` | zKill activity section of the system panel, kill row text |
 | `signature_table.py` | Signature table |
 | `character_dock.py` | Character list |
 | `route_dock.py` | Routes list |
@@ -258,7 +261,7 @@ detail.
 | `settings_dialog.py` | Settings dialog |
 | `toast.py` | Toasts |
 | `menus.py` | Context-menu helpers and icons |
-| `widgets.py` | Small shared widgets |
+| `widgets.py` | Small shared widgets, the ISK formatter |
 | `focus.py` | Focus state, independent of the OS |
 | `notify.py` | Desktop notifications |
 | `cloud.py` | Cloud menu and its dialogs |

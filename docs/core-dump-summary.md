@@ -1,7 +1,7 @@
 # Core dump summary: test suite segfaults
 
 What the core dumps from 2026-11-06 show. The cores themselves stay out of the repo because they hold process
-memory; this file records their stacks only. Cause and fix are in `docs/plans/plan-test-segfault.md`.
+memory; this file records their stacks only. Cause and fix are in `docs/plans/done/plan-test-segfault.md`.
 
 Setup: Linux x86-64, CPython 3.13.13, PySide6 6.12.0, offscreen Qt platform. Qt had no debug symbols.
 

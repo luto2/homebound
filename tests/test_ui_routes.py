@@ -3,7 +3,7 @@ from collections.abc import Iterator
 
 import pytest
 from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, Qt
-from PySide6.QtGui import QHelpEvent, QImage, QPainter
+from PySide6.QtGui import QColor, QHelpEvent, QImage, QPainter
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (QApplication, QStyle, QStyleOptionGraphicsItem, QStyleOptionViewItem,
                                QToolTip)
@@ -60,6 +60,19 @@ def render(dock: RouteDock) -> QImage:
             option.rect = QRect(0, 0, 300, 40)
             option.state = state
             delegate.paint(painter, option, dock.list.model().index(row, 0))
+    painter.end()
+    return image
+
+
+def paint_row(dock: RouteDock, row: int, state=QStyle.StateFlag.State_None) -> QImage:
+    """Paint one row of the dock onto an opaque 300 x 40 base (QColor black) and return the image."""
+    image = QImage(300, 40, QImage.Format.Format_ARGB32)
+    image.fill(QColor("black"))
+    painter = QPainter(image)
+    option = QStyleOptionViewItem()
+    option.rect = QRect(0, 0, 300, 40)
+    option.state = state
+    dock.list.itemDelegate().paint(painter, option, dock.list.model().index(row, 0))
     painter.end()
     return image
 
@@ -297,3 +310,27 @@ def test_window_wiring(window, modal) -> None:
     window.state.settings.eve_scout_enabled = True
     window._sync_settings()
     assert window.status_labels["scout"].text().endswith("EVE-Scout …")
+
+
+def test_route_row_ground_follows_state(dock, state) -> None:
+    """A plain row leaves the base alone, a hovered one is bg-4 and a selected one is tinted differently."""
+    plain = paint_row(dock, 0).pixelColor(150, 2)
+    hover = paint_row(dock, 0, QStyle.StateFlag.State_MouseOver).pixelColor(150, 2)
+    selected = paint_row(dock, 0, QStyle.StateFlag.State_Selected).pixelColor(150, 2)
+    assert plain == QColor("black")
+    assert hover == color("bg-4")
+    assert selected not in (plain, hover)
+
+
+def test_route_strip_squares_are_painted(dock, state) -> None:
+    """The first squares of the strip are filled in the security colour of their systems; no route draws none."""
+    unrouted = paint_row(dock, 1).pixelColor(12, 30)   # no origin: no route, so no square (only text there)
+    state.store.add_system(JITA)
+    state.select(JITA)
+    route = dock.list.item(1).data(256)[1]
+    assert route.jumps > 1
+    image = paint_row(dock, 1)
+    for hop, centre_x in zip(route.hops[1:3], (12, 22)):
+        system = UNIVERSE.by_id(hop.system_id)
+        assert image.pixelColor(centre_x, 30) == painting.security_color(system.system_class, system.security)
+    assert image.pixelColor(12, 30) != unrouted

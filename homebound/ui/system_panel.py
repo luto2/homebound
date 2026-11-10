@@ -15,6 +15,7 @@ from ..theme.tokens import PIXELS, color, font
 from ..validation import require_integer, require_type
 from ..zkill import ZKILL_STALE_AFTER, age
 from ..mapping.scan_status import age_text
+from .activity_list import ActivityList
 from .signature_table import SignatureTable
 from .state import AppState
 
@@ -167,6 +168,7 @@ class SystemPanel(QWidget):
         self._build_details(body)
         self._build_signatures(body)
         state.selectionChanged.connect(self.set_system)
+        state.selectedCountChanged.connect(self.refresh_selected_note)
         state.systemUpdated.connect(lambda system_id: system_id == self.system_id and self.refresh())
         state.mapChanged.connect(self.refresh)
         state.settingsChanged.connect(self.refresh)
@@ -182,7 +184,11 @@ class SystemPanel(QWidget):
         self.name.editingFinished.connect(self._save_name)
         self.system_name_label = QLabel()
         self.system_name_label.setProperty("role", "mono")
+        self.selected_note = QLabel()
+        self.selected_note.setProperty("role", "help")
+        self.selected_note.hide()
         row.addWidget(self.name, 1)
+        row.addWidget(self.selected_note)
         row.addWidget(self.system_name_label)
         body.addLayout(row)
         self.location_label = QLabel()
@@ -219,6 +225,8 @@ class SystemPanel(QWidget):
         zkill_row.addWidget(self.zkill, 1)
         zkill_row.addWidget(self.zkill_refresh)
         body.addLayout(zkill_row)
+        self.activity = ActivityList(self.state)
+        body.addWidget(self.activity)
 
         self.notes = QPlainTextEdit()
         self.notes.setPlaceholderText("Notes")
@@ -280,6 +288,11 @@ class SystemPanel(QWidget):
         body.addLayout(bottom)
 
     # ------------------------------------------------------------ load
+    def refresh_selected_note(self, count: int = 0) -> None:
+        """Say how many more systems are selected besides the one shown ("+2 selected")."""
+        self.selected_note.setText(f"+{count - 1} selected")
+        self.selected_note.setVisible(count > 1 and bool(self.system_id))
+
     def set_system(self, system_id: int) -> int:
         """Show a system (0, or a system not on the map, shows the empty state).
 
@@ -312,6 +325,7 @@ class SystemPanel(QWidget):
             self.system_id = 0
         self.empty.setVisible(not self.system_id)
         self.body.setVisible(bool(self.system_id))
+        self.refresh_selected_note(state.selected_count)
         if not self.system_id:
             return
         system, mapped = state.universe.by_id(self.system_id), state.store.system(self.system_id)
@@ -336,6 +350,7 @@ class SystemPanel(QWidget):
             self.notes.setPlainText(mapped.notes or "")
             self.notes.blockSignals(False)
         self.zkill.setText(self.zkill_text())
+        self.activity.load(self.system_id if state.settings.zkill_enabled else 0)
         self.table.load(self.system_id)
         signatures = self.table.signature_model.signatures
         missing = [signature for signature in signatures if signature.state == "missing"]

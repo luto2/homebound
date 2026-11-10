@@ -63,7 +63,7 @@ Then set your **Home system** (autocomplete over every system name) and pick a *
 | Toolbar | Map menu `▦ Main ▾`, home system, naming scheme, overlay mode, find (Ctrl+F), Fit chain, Settings. |
 | Characters (left) | Every character found in the logs: marker, online state and current system. Double-click a row (or Space) to show its system. Right-click → *Pin overlay to this character*. The row the overlay follows is highlighted. |
 | Routes (left, under Characters) | Jumps and the way from the selected system (or, with nothing selected, the followed character's system) to the trade hubs and your own destinations. See [Routes](#routes). |
-| Map (centre) | Systems and connections. Drag to pan, wheel to zoom, drag a system to move it (it snaps to the grid). Legend bottom-left, zoom bottom-right. With more than one map, a `MAP Main` tag in the top-right corner says which map is open. |
+| Map (centre) | Systems and connections. Drag to pan, wheel to zoom, drag a system to move it (it snaps to the grid). Ctrl+click adds systems to the selection, Ctrl+drag on empty canvas draws a selection rectangle, Ctrl+A selects all, Esc clears; dragging any selected system moves them all, and the arrow keys nudge the selection by one grid step (Shift: five). A moved group is one undo step. Legend bottom-left, zoom bottom-right. With more than one map, a `MAP Main` tag in the top-right corner says which map is open. |
 | System (right) | The selected system: custom name, owner, notes, zKill activity, and the signature table. |
 | Status bar | Log watcher, zKill, EVE-Scout and focus tracking (KWin script, X11 fallback, or Windows), each with ✓ / ▲ / ✕. |
 
@@ -404,6 +404,14 @@ preselected:
 *Also restore settings* (off by default) takes the overlay, naming, zKill and other choices from
 the backup. The list of maps stays as it is. Settings closes afterwards so it shows the restored
 values when opened again.
+
+**A damaged map file** (one SQLite can't read, for example after a crash or a half-synced copy) is
+renamed to `map.db.damaged` (or `.damaged-2` …, with its `-wal` and `-shm`) and never deleted.
+At start, Homebound then opens that map empty and shows Settings → Backups; when you switch to a
+damaged map, you stay on the open one and the map is empty next time. To get it back, pick a backup
+and restore the map with *Replace*. Homebound warns at every start while a `.damaged` file is
+there; delete it once the map is back. A map that can't be opened for another reason, such as a
+read-only or locked file, is never moved: at start Homebound says why and quits.
 
 **Network**: apart from the map data download on first start (and `--build-static`), the only requests go to zKillboard, for systems in visible chains, and to EVE-Scout (api.eve-scout.com), for the public list of Thera and Turnur connections. zKill requests are rate-limited to one per second and cached for 10 minutes; turn them off in Settings → zKill. EVE-Scout is asked once every 5 minutes and nothing about you or your map is sent; turn it off in Settings → Routes.
 

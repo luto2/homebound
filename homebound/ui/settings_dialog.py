@@ -534,6 +534,8 @@ class SettingsDialog(QDialog):
         buttons.addStretch(1)
         layout.addLayout(buttons)
         self.backup_help = help_label()
+        if self.state.damaged_warning:   # the start-up toast sits behind this dialog
+            set_help(self.backup_help, f"▲ {self.state.damaged_warning}", "help-warn")
         layout.addWidget(self.backup_help)
         layout.addWidget(help_label("A backup is made once a day at start, before a map is updated to a new format, "
                                     "deleted or replaced by a restore, and when you click Back up now. The newest 7 "

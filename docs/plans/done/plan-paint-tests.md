@@ -1,6 +1,6 @@
 # Plan: paint tests that can see a paint bug
 
-Status: proposed. Not started.
+Status: implemented (2026-11-10, commits `9e72e56`, `a7980f7`). Deviations: edge tests assert at least 4 of 8 samples; the no-route row is compared with the routed paint (the text covers the base pixel); the old `render()` helper in `tests/test_ui_routes.py` and the other open decisions are left as they were.
 
 Depends on: nothing. Step 1 (docstrings) and step 2 (pixel checks) are separate commits.
 

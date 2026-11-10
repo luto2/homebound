@@ -9,6 +9,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
+from ..platform.paths import read_only_uri
 from ..validation import require_choice, require_integer, require_text, require_type
 
 # Wormhole lifetime state, stored in the `lifetime` column of connections and signatures.
@@ -143,6 +144,21 @@ class ZkillStats:
     pod_kills_1h: int | None
     last_kill_at: str | None
     fetched_at: str
+
+
+@dataclass
+class KillSummary:
+    """One killmail in a system, reduced to what the activity list shows (cached with the zKill stats)."""
+
+    system_id: int
+    killmail_id: int
+    killed_at: str                       # ISO time, UTC
+    victim_ship_id: int | None
+    attacker_count: int
+    top_attacker_ship_id: int | None     # the ship type most attackers flew
+    value: float                         # total ISK value (zkb.totalValue)
+    npc: int                             # 1 if zKill flags it as an NPC kill
+    solo: int
 
 
 # The entities a map action changes, and how each is keyed: system -> id, connection -> (low id, high id),
@@ -315,26 +331,28 @@ def needs_migration(path: Path | str) -> bool:
     require_type(path, (str, Path), "path")
     if str(path) == ":memory:" or not Path(path).is_file() or Path(path).stat().st_size == 0:
         return False
-    database = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
-        tables = {row[0] for row in database.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        if any(old in tables and new not in tables for old, new in TABLE_RENAMES):
-            return True
-        for table, old, new in COLUMN_RENAMES:
-            have = _table_columns(database, table)
-            if old in have and new not in have:
+        database = sqlite3.connect(read_only_uri(path), uri=True)
+        try:
+            tables = {row[0] for row in database.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if any(old in tables and new not in tables for old, new in TABLE_RENAMES):
                 return True
-        for table, column, _ in COLUMN_ADDITIONS:
-            have = _table_columns(database, table)
-            if have and column not in have:
-                return True
-        old_keys = [old for old, _ in KEY_RENAMES]
-        return "key" in _table_columns(database, "key_value") and database.execute(
-            f"SELECT count(*) FROM key_value WHERE key IN ({','.join('?' * len(old_keys))})", old_keys).fetchone()[0] > 0
+            for table, old, new in COLUMN_RENAMES:
+                have = _table_columns(database, table)
+                if old in have and new not in have:
+                    return True
+            for table, column, _ in COLUMN_ADDITIONS:
+                have = _table_columns(database, table)
+                if have and column not in have:
+                    return True
+            old_keys = [old for old, _ in KEY_RENAMES]
+            return "key" in _table_columns(database, "key_value") and database.execute(
+                f"SELECT count(*) FROM key_value WHERE key IN ({','.join('?' * len(old_keys))})",
+                old_keys).fetchone()[0] > 0
+        finally:
+            database.close()
     except sqlite3.Error:
         return False
-    finally:
-        database.close()
 
 
 class Store:
@@ -365,13 +383,17 @@ class Store:
         if before_migration and needs_migration(self.path):
             before_migration(Path(self.path))
         self.database = sqlite3.connect(self.path)
-        self.database.row_factory = sqlite3.Row
-        legacy_names = bool(self._columns("systems")) and "label" not in self._columns("systems")
-        self._migrate()
-        self.database.executescript(files("homebound.mapdb").joinpath("schema.sql").read_text())
-        if legacy_names:   # names used to be derived: the ones the map shows are frozen once it is open
-            self.database.execute("INSERT OR REPLACE INTO key_value VALUES (?, '1')", (LEGACY_NAMES_KEY,))
-            self.database.commit()
+        try:
+            self.database.row_factory = sqlite3.Row
+            legacy_names = bool(self._columns("systems")) and "label" not in self._columns("systems")
+            self._migrate()
+            self.database.executescript(files("homebound.mapdb").joinpath("schema.sql").read_text())
+            if legacy_names:   # names used to be derived: the ones the map shows are frozen once it is open
+                self.database.execute("INSERT OR REPLACE INTO key_value VALUES (?, '1')", (LEGACY_NAMES_KEY,))
+                self.database.commit()
+        except BaseException:
+            self.database.close()   # a damaged file must not stay open (Windows couldn't rename it)
+            raise
         self.listeners: list[Callable[[Action], object]] = []   # called with every finished action
         self.revision = 0                 # goes up with every action that changed something
         self._depth = 0                   # nesting of batch()
@@ -1050,6 +1072,33 @@ class Store:
         self._commit()
         return stats
 
+    def zkill_kills(self, system_id: int) -> list[KillSummary]:
+        """Return the cached kills of a system, newest first."""
+        _check_system_id(system_id)
+        rows = self.database.execute("SELECT * FROM zkill_kills WHERE system_id=? ORDER BY killed_at DESC, killmail_id DESC",
+                                     (system_id,))
+        return [_from_row(KillSummary, row) for row in rows]
+
+    def replace_zkill_kills(self, system_id: int, kills: list[KillSummary]) -> None:
+        """Store the kills of a system, dropping the ones cached before (other systems stay as they are).
+
+        Raises:
+            ValueError: If a kill belongs to another system.
+        """
+        _check_system_id(system_id)
+        require_type(kills, list, "kills")
+        for kill in kills:
+            require_type(kill, KillSummary, "kills item")
+            if kill.system_id != system_id:
+                raise ValueError(f"kill {kill.killmail_id} is in system {kill.system_id}, not {system_id}")
+        self.database.execute("DELETE FROM zkill_kills WHERE system_id=?", (system_id,))
+        self.database.executemany(
+            "INSERT OR REPLACE INTO zkill_kills (system_id, killmail_id, killed_at, victim_ship_id, attacker_count,"
+            " top_attacker_ship_id, value, npc, solo) VALUES (?,?,?,?,?,?,?,?,?)",
+            [(kill.system_id, kill.killmail_id, kill.killed_at, kill.victim_ship_id, kill.attacker_count,
+              kill.top_attacker_ship_id, kill.value, kill.npc, kill.solo) for kill in kills])
+        self._commit()
+
     # ------------------------------------------------------------ key/value settings of this map
     def get_value(self, key: str, default: str | None = None) -> str | None:
         """Return a per-map UI setting (local only), or ``default`` if it isn't set."""
@@ -1083,16 +1132,17 @@ def map_stats(path: Path | str) -> dict:
     stats = {"systems": 0, "signatures": 0, "last": None}
     if not Path(path).exists():
         return stats
-    database = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
-        stats["systems"] = database.execute("SELECT count(*) FROM systems").fetchone()[0]
-        stats["signatures"] = database.execute("SELECT count(*) FROM signatures").fetchone()[0]
-        stats["last"] = max(filter(None, (
-            database.execute("SELECT max(added_at) FROM systems").fetchone()[0],
-            database.execute("SELECT max(updated_at) FROM connections").fetchone()[0],
-            database.execute("SELECT max(updated_at) FROM signatures").fetchone()[0])), default=None)
+        database = sqlite3.connect(read_only_uri(path), uri=True)
+        try:
+            stats["systems"] = database.execute("SELECT count(*) FROM systems").fetchone()[0]
+            stats["signatures"] = database.execute("SELECT count(*) FROM signatures").fetchone()[0]
+            stats["last"] = max(filter(None, (
+                database.execute("SELECT max(added_at) FROM systems").fetchone()[0],
+                database.execute("SELECT max(updated_at) FROM connections").fetchone()[0],
+                database.execute("SELECT max(updated_at) FROM signatures").fetchone()[0])), default=None)
+        finally:
+            database.close()
     except sqlite3.Error:
         pass
-    finally:
-        database.close()
     return stats

@@ -910,7 +910,9 @@ class BuildDataDialog(BaseDialog):
             self.accept()
             return True
         self.progress.hide()
-        self._set_status(f"✕ The build failed: {error}", "help-err")
+        hint = ("\nYour system's certificates weren't found or don't match; check that ca-certificates is installed."
+                if "CERTIFICATE_VERIFY_FAILED" in error else "")
+        self._set_status(f"✕ The build failed: {error}{hint}", "help-err")
         self.download_button.setText("Retry")
         self.download_button.setEnabled(True)
         return False

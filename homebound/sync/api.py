@@ -3,7 +3,7 @@ from typing import Any
 
 import httpx
 
-from ..http import user_agent
+from ..http import ssl_context, user_agent
 
 
 class ApiError(Exception):
@@ -23,7 +23,7 @@ class SyncApi:
         self.server = server.rstrip("/")
         self.token = token
         self.http = httpx.Client(base_url=self.server, timeout=20, headers={"User-Agent": user_agent("cloud sync")},
-                                 transport=transport)
+                                 transport=transport, verify=ssl_context())
 
     def close(self) -> None:
         """Close the HTTP client."""

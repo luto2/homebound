@@ -12,11 +12,11 @@ the sync protocol or an unknown cause) and the model suggested for it: Opus for 
 unknown causes or design calls made while coding; Sonnet for a feature the plan pins down; Haiku for
 a small change whose file and fix are named.
 
-1. Show what zKill activity happened, not just how much. Plan: `docs/plans/plan-zkill-details.md`.
+1. **Done 2026-11-10 (`1665163`).** Show what zKill activity happened, not just how much. Plan: `docs/plans/done/plan-zkill-details.md`.
    Effort: 3/5 · Sonnet. The API already returns full killmails; the work is parsing, caching and a popup.
 2. **Icons and cache refresh done 2026-11-10 (`e6b86d3`); cause and desktop test still open.** Image for the app menu. Same as "To do" 14. Plan: `docs/plans/plan-menu-icon.md`.
    Effort: 1/5 · Haiku for the code. Most of it is testing on Plasma by hand.
-3. Linux SSL error when building the SDE. Same as "To do" 13. Plan: `docs/plans/plan-appimage-ssl.md`.
+3. **Done 2026-11-10 (`e970367`); not yet tested on Arch.** Linux SSL error when building the SDE. Same as "To do" 13. Plan: `docs/plans/done/plan-appimage-ssl.md`.
    Effort: 2/5 · Sonnet. Small, but three HTTP stacks and the AppImage build; a slip fails silently.
 4. **Done 2026-11-10 (`82d0d14`).** The tray icon's right-click menu doesn't have the overlay Off option, just the other 3. Plan:
    `docs/plans/done/plan-tray-overlay-off.md`.
@@ -52,8 +52,8 @@ a small change whose file and fix are named.
     side and the classes. "Return" means back to the system you jumped in from, not towards home. Plan:
     `docs/plans/plan-return-hole.md`.
     Effort: 3/5 · Sonnet. Needs the K162/static type rules for both sides; Opus if those get unclear.
-13. Multi-select systems to move them together. Found while planning: Ctrl+click may already select
-    two nodes, but a drag then stores only the grabbed one. Plan: `docs/plans/plan-multi-select-move.md`.
+13. **Done 2026-11-10 (`1fe3fd2`).** Multi-select systems to move them together. Found while planning: Ctrl+click may already select
+    two nodes, but a drag then stores only the grabbed one. Plan: `docs/plans/done/plan-multi-select-move.md`.
     Effort: 2/5 · Sonnet. Qt already moves selected items together; add rubber-band selection and save all
     positions in one Store batch (one undo step, one set of sync ops).
 14. Names must never change once given, but a user reported one that did. Neither a system nor a WH sig
@@ -72,14 +72,14 @@ is in suggested order: the cheap data-safety fixes come before the segfault hunt
 cause yet. The number in brackets is criticality out of 10, from impact and how likely the problem
 is. The Effort line uses the same scale and models as the human-added tasks.
 
-1. **[7] Corrupt map locks the app out (E5a, E5, E18).** `AppState.switch_map` saves the new active
+1. **Done 2026-11-10 (`7be8fbb`).** **[7] Corrupt map locks the app out (E5a, E5, E18).** `AppState.switch_map` saves the new active
    map and closes the old store before opening the new one. If the open fails, the app is left on a
    closed store and every later start raises `DatabaseError` until `settings.json` is edited by
    hand. `state.py:102` has no handling at startup either, so a corrupt active map means no window
    and no way to reach Restore. Open first, save after, and show a recovery path at start. Also
    check `_reopen_store` in the `finally` of `restore_backup`, which can hide the original error.
    Effort: 3/5 · Opus. Overlaps 2, 5 and 6 in the backup and store code: do the four in one session.
-2. **[7] Backups come out empty when the data path has `#` or `?` (E3a, E3, E4).** The raw path goes
+2. **Done 2026-11-10 (`ad64cb5`).** **[7] Backups come out empty when the data path has `#` or `?` (E3a, E3, E4).** The raw path goes
    into `file:{path}?mode=ro`, so SQLite opens a different file. `_copy_database` then writes a
    database with 0 tables and reports no error, and restoring that copy would wipe the map. In the
    same case `needs_migration` returns False, `map_stats` returns zeros and stray empty files appear
@@ -88,7 +88,7 @@ is. The Effort line uses the same scale and models as the human-added tasks.
    `store.py:238,781`, `backup.py:73,367` and `db.py:142`. The `db.py` one hasn't been probed. Move
    `connect` inside the `try` while there: an unreadable file raises despite the docstrings.
    Effort: 1/5 · Sonnet, in the session with 1.
-3. **[8] Test suite segfaults.** `tests/test_ui_panels.py` crashed in 11 of 36 unchanged runs, and a
+3. **Done 2026-11-10 (`31bbb19`): a test-only cause, the app can't hit it; see `docs/plans/done/plan-test-segfault.md`.** **[8] Test suite segfaults.** `tests/test_ui_panels.py` crashed in 11 of 36 unchanged runs, and a
    crash hides every test after it, so the push gate and CI can go red at random. The native stack
    is `QTableView::paintEvent` → `QAbstractItemView::currentIndex()` under `processEvents()` in the
    `table` fixture (`tests/test_ui_panels.py:859`). Python's gc is ruled out (13 of 30 with gc off,
@@ -100,21 +100,21 @@ is. The Effort line uses the same scale and models as the human-added tasks.
    `LogFile.from_path` raise `ValueError` from `strptime`, and `LogScanner.poll` raises with it on
    every poll. `settings_dialog.py:223` calls it too. Return None for a bad date.
    Effort: 1/5 · Haiku.
-5. **[4] Damaged backup breaks Restore (E8, E8a).** A corrupt zip raises `zlib.error`, a bad manifest
+5. **Done 2026-11-10 (`f2497b3`).** **[4] Damaged backup breaks Restore (E8, E8a).** A corrupt zip raises `zlib.error`, a bad manifest
    raises `KeyError` or `TypeError`, and the UI catches only `BackupError`. The undo branch in
    `restore_maps` doesn't run either. `RestoreBackupDialog` (`dialogs.py:959`) crashes on a non-dict
    map entry.
    Effort: 3/5 · Opus, in the session with 1.
-6. **[4] `prune` can raise `OSError` out of a finished backup (E9).** It sits outside the `try` in
+6. **Done 2026-11-10 (`8142f01`).** **[4] `prune` can raise `OSError` out of a finished backup (E9).** It sits outside the `try` in
    `create_backup` and `copy_to_folder`, while `AppState.backup` documents that it never raises. A
    locked file (Windows, OneDrive) is the likely trigger. During a migration backup it would abort
    opening the map.
    Effort: 1/5 · Sonnet, in the session with 1.
-7. **[4] zKill worker dies silently (E7a, E7, E19).** `_fetch` catches only HTTP errors and
+7. **Done 2026-11-10 (`3241a44`).** **[4] zKill worker dies silently (E7a, E7, E19).** `_fetch` catches only HTTP errors and
    `ValueError`, so `sqlite3.Error` or a non-dict `victim` ends the thread until restart. Report it
    on the status line and keep the worker alive. `client.close()` belongs in a `finally`.
    Effort: 2/5 · Sonnet.
-8. **[4] Paint tests can't see a paint bug (T1).** With `ConnectionEdge.paint`,
+8. **Done 2026-11-10 (`a7980f7`).** **[4] Paint tests can't see a paint bug (T1).** With `ConnectionEdge.paint`,
    `RouteDelegate.paint` and `BadgeStrip.paintEvent` all no-ops, the 4 UI test files still pass.
    `done/plan-test-fixes.md` accepts this limit, but six docstrings claim more than "doesn't raise". Fix
    those docstrings, and add pixel checks for edges and route rows.
@@ -138,7 +138,7 @@ is. The Effort line uses the same scale and models as the human-added tasks.
     saying `anyone in local : Amarr` is read as a jump to Amarr (`parser.py:124`). Check the
     localized sender names, then match `SYSTEM_SENDERS` exactly.
     Effort: 1/5 · Haiku.
-13. **[8] AppImage can't download the game data on Arch (2026-11-08).** On first start of the 1.0.0
+13. **Done 2026-11-10 (`e970367`); not yet tested on Arch.** **[8] AppImage can't download the game data on Arch (2026-11-08).** On first start of the 1.0.0
     AppImage on CachyOS, the data download fails with `URLError: <urlopen error [SSL:
     CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate
     (_ssl.c:1085)>`, so the app can't be used at all. Running `~/.local/bin/homebound --build-static`
@@ -148,7 +148,7 @@ is. The Effort line uses the same scale and models as the human-added tasks.
     certificates under `/usr/lib/ssl`, which Arch doesn't have (Arch keeps them in `/etc/ssl/cert.pem`
     and `/etc/ssl/certs/`). Check whether httpx (zKill, EVE-Scout) has the same problem. Possible
     fixes: bundle `certifi` and pass its CA file to `urlopen` and httpx, or try the common system CA
-    paths in order. Plan: `docs/plans/plan-appimage-ssl.md` (httpx already uses certifi; `websockets`
+    paths in order. Plan: `docs/plans/done/plan-appimage-ssl.md` (httpx already uses certifi; `websockets`
     for cloud sync is affected too).
     Effort: 2/5 · Sonnet. Same as human-added task 3.
 14. **Partly done 2026-11-10 (`e6b86d3`), see human-added task 2.** **[2] No icon in the app menu after the README install (2026-11-08).** On CachyOS (Plasma),
@@ -164,6 +164,7 @@ Small items (partly done 2026-11-10 in `3d65485`; what was skipped is in `docs/p
 Effort for the small items and the graphify list: 1–2/5 · Haiku, batched in one or two sessions;
 P1 and P2 filtering (3/5) · Sonnet.
 
+- [1] `SignatureDelegate.paint` (and other delegates) don't restore `painter.save()` when paint raises ("Painter ended with N saved states"). Harmless today; use `try`/`finally` if paint errors stay possible (found with the test segfault, 2026-11-10).
 
 - [2] `store.py:486`: `add_connection` skips `_check_wormhole_values`, `update_connection(mass=None)`
   stores None, and the tooltip at `map_scene.py:457` would raise on it. No UI path found (E13, E13a).

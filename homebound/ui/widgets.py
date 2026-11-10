@@ -15,6 +15,16 @@ def caption(text: str) -> QLabel:
     return label
 
 
+def isk(amount: float | int | None) -> str:
+    """Format ISK the way EVE players read it: 125M, 1.5B."""
+    amount = float(amount or 0)
+    if amount >= 1e9:
+        return f"{amount / 1e9:.2f}B ISK".replace(".00B", "B")
+    if amount >= 1e6:
+        return f"{amount / 1e6:.0f}M ISK"
+    return f"{amount:,.0f} ISK"
+
+
 def help_label(text: str = "", role: str = "help", selectable: bool = False) -> QLabel:
     """Return a word-wrapped help label with a theme role (``help``, ``help-ok``, ``help-warn``, ``help-err``).
 

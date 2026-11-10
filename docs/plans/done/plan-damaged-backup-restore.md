@@ -1,6 +1,6 @@
 # Plan: damaged backups and Restore
 
-Status: proposed (2026-11-06). TODO.md "To do" item 5, findings E8 and E8a.
+Status: implemented (2026-11-10, commit `f2497b3`). Deviations: none; a malformed map entry is dropped and the rest kept (owner decision).
 
 Depends on: nothing. Touches the same file as the corrupt-map lockout, backup URI handling and prune-error plans (see "Overlaps").
 
