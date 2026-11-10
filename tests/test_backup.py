@@ -17,7 +17,8 @@ from conftest import HOME, UNIVERSE, pick_system
 from homebound.backup import (KEEP_AUTO, KEEP_SAFETY, BackupError, auto_backup_due, backup_info, backups_directory, copy_to_folder,
                               create_backup, list_backups, prune, read_manifest, restore_maps, restore_settings,
                               restored_name)
-from homebound.mapdb.store import Store, needs_migration
+from homebound.mapdb.store import (COLUMN_ADDITIONS, COLUMN_RENAMES, KEY_RENAMES, TABLE_RENAMES, Store,
+                                   needs_migration)
 from homebound.settings import Settings
 from ui_helpers import isolated_settings, make_state, write_garbage
 
@@ -398,6 +399,58 @@ def test_needs_migration_sees_each_kind_of_change(tmp_path) -> None:
         database.commit()
         database.close()
         assert needs_migration(path), statement
+
+
+def undo_one_step(path: Path, step: tuple[str, tuple]) -> None:
+    """Turn a current map file back into one that has exactly one migration step still to do."""
+    kind, details = step
+    database = sqlite3.connect(path)
+    if kind == "table":
+        database.execute(f"ALTER TABLE {details[1]} RENAME TO {details[0]}")
+    elif kind == "rename":
+        table, old, new = details
+        database.execute(f'ALTER TABLE {table} RENAME COLUMN "{new}" TO "{old}"')
+    elif kind == "addition":
+        table, column, _ = details
+        database.execute(f'ALTER TABLE {table} DROP COLUMN "{column}"')
+    else:
+        database.execute("INSERT INTO key_value VALUES (?, 'x')", (details[0],))
+    database.commit()
+    database.close()
+
+
+MIGRATION_STEPS = ([("table", step) for step in TABLE_RENAMES] + [("rename", step) for step in COLUMN_RENAMES]
+                   + [("addition", step) for step in COLUMN_ADDITIONS] + [("key", step) for step in KEY_RENAMES])
+
+
+@pytest.mark.parametrize("step", MIGRATION_STEPS, ids=[f"{kind}-{'-'.join(details)}" for kind, details in MIGRATION_STEPS])
+def test_every_migration_step_is_seen_before_and_gone_after(tmp_path, step) -> None:
+    """Each rule in the migration tables: pending means ``needs_migration``, and opening the map clears it.
+
+    This keeps ``needs_migration`` (which decides on the safety backup) and ``Store._migrate`` (which
+    changes the file) in step with each other.
+    """
+    path = tmp_path / "map.db"
+    Store(path).close()
+    assert not needs_migration(path)
+    undo_one_step(path, step)
+    assert needs_migration(path)
+    Store(path).close()
+    assert not needs_migration(path)
+
+
+def test_stale_old_key_next_to_the_new_one_is_not_a_migration(tmp_path) -> None:
+    """``_migrate`` leaves an old settings key alone when the new key exists, so it can't count as pending."""
+    path = tmp_path / "map.db"
+    Store(path).close()
+    database = sqlite3.connect(path)
+    database.executemany("INSERT INTO key_value VALUES (?, 'x')", [("sig_sort",), ("signature_sort",)])
+    database.commit()
+    database.close()
+    calls = []
+    Store(path, before_migration=calls.append).close()
+    Store(path, before_migration=calls.append).close()
+    assert not needs_migration(path) and len(calls) <= 1
 
 
 def test_store_calls_before_migration_once(tmp_path) -> None:

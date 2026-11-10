@@ -1,6 +1,6 @@
 # Plan: duplicated logic that can drift (TODO item 9, findings D1 and D2)
 
-Status: not started.
+Status: part A done (2026-11-10), part B not started.
 
 Check before building: is `state.home_id` always equal to `namer.home_id`? `state.home_id` is a
 property read from `settings.home_system`; `namer.home_id` is a copy set at start, in `switch_map` and in
@@ -14,9 +14,9 @@ bug that exists today. Part B follows the owner decision below.
 
 ### Problem as verified
 
-`needs_migration` (`homebound/mapdb/store.py:227-257`) decides whether `Store.__init__` calls the
+`needs_migration` (`homebound/mapdb/store.py`, which now opens the file with `read_only_uri`) decides whether `Store.__init__` calls the
 `before_migration` hook, which makes the safety backup (`ui/state.py:102`). `Store._migrate`
-(`store.py:291-322`) is what actually changes the file. Both walk `TABLE_RENAMES`, `COLUMN_RENAMES`,
+(`store.py`, which also fills `systems.next_hole` after adding it) is what actually changes the file. Both walk `TABLE_RENAMES`, `COLUMN_RENAMES`,
 `COLUMN_ADDITIONS` and `KEY_RENAMES` with their own copy of each test. If a fourth kind of
 change is added to `_migrate` and not to `needs_migration`, the file is changed without a backup.
 
@@ -35,7 +35,7 @@ alone, so they cannot catch either problem.
 
 `homebound/mapdb/store.py`:
 
-- Replace the two walks with one function, `_apply_migrations(database, dry_run: bool) -> int`,
+- (Done.) Replace the two walks with one function, `_apply_migrations(database, dry_run: bool) -> int`,
   that holds the rule loops once. With `dry_run=True` it runs only the read queries and returns 1
   at the first pending change (so the order of steps does not matter, since it never needs the
   state after a rename). With `dry_run=False` it executes the `ALTER`/`UPDATE` statements as
@@ -46,8 +46,12 @@ alone, so they cannot catch either problem.
 - `needs_migration` keeps its guards (missing, empty, `:memory:`, `sqlite3.Error` gives False) and
   calls `_apply_migrations(readonly_connection, dry_run=True)`. `Store._migrate` calls
   `_apply_migrations(self.database, dry_run=False)` and commits.
-- No change to `TABLE_RENAMES` and friends, the public signature of `needs_migration`, or
-  `Store.__init__`.
+- No change to `TABLE_RENAMES` and friends (`COLUMN_ADDITIONS` now also holds `label`, `static` and
+  `next_hole` on `systems`), the public signature of `needs_migration`, or `Store.__init__`.
+- Not part of the shared walk, on purpose: `Store.__init__` runs `schema.sql` after `_migrate` (this
+  creates missing tables such as `zkill_kills`, which holds nothing to back up) and sets the one-time
+  `legacy_names` marker for a file that had no `label` column. A missing table is therefore never
+  "pending"; a missing `label` column is, via `COLUMN_ADDITIONS`.
 
 ### Tests (write first, watch them fail)
 
@@ -57,11 +61,12 @@ In `tests/test_backup.py`, next to the existing migration tests:
    `signature_sort` both present. Assert `needs_migration` is False after the first `Store` open,
    and that `before_migration` is called at most once across two opens. Fails today (True both
    times).
-2. `test_needs_migration_agrees_with_migrate`: for each case (current file, old `kv` table,
-   renamed column, dropped column, old key only, both keys), assert
-   `needs_migration(path) == (Store(path)._migrate() > 0)` run on a copy. This is the guard
-   against future drift. It may already pass for every case except the both-keys one; that is
-   fine, it is there for the next rule someone adds.
+2. `test_every_migration_step_is_seen_before_and_gone_after`: parametrised over every entry of
+   `TABLE_RENAMES`, `COLUMN_RENAMES`, `COLUMN_ADDITIONS` and `KEY_RENAMES`: undo that one step on a
+   current file, assert `needs_migration` is True, open the `Store`, assert it is False. Because it
+   reads the tables, a new entry is covered without a new test. (Replaces the planned
+   `needs_migration(path) == (Store(path)._migrate() > 0)` check, which cannot work: opening a
+   `Store` already runs `_migrate`.)
 
 Existing tests must still pass unchanged.
 

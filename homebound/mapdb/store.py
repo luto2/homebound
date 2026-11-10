@@ -320,6 +320,64 @@ def _table_columns(database: sqlite3.Connection, table: str) -> set[str]:
     return {row[1] for row in database.execute(f"PRAGMA table_info({table})")}
 
 
+def _apply_migrations(database: sqlite3.Connection, dry_run: bool) -> int:
+    """Walk the migration rules once, either asking what is pending or doing it.
+
+    Renames abbreviated tables, columns and settings keys, then adds the columns older files lack
+    (``CREATE TABLE IF NOT EXISTS`` won't). ``needs_migration`` and ``Store._migrate`` both run this,
+    so a new kind of rule only has to be written here to be backed up before it changes a file.
+    Nothing is committed.
+
+    Args:
+        database: An open connection to the map file.
+        dry_run: True to only read: the result is 1 as soon as one change is pending, and nothing is
+            written. False to make every change.
+
+    Returns:
+        The number of changes made, or with ``dry_run`` 1 if any change is pending and 0 if none is.
+    """
+    changes = 0
+    tables = {row[0] for row in database.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    for old, new in TABLE_RENAMES:
+        if old in tables and new not in tables:
+            if dry_run:
+                return 1
+            database.execute(f"ALTER TABLE {old} RENAME TO {new}")
+            changes += 1
+    for table, old, new in COLUMN_RENAMES:
+        have = _table_columns(database, table)
+        if old in have and new not in have:
+            if dry_run:
+                return 1
+            database.execute(f"ALTER TABLE {table} RENAME COLUMN {_quoted(old)} TO {_quoted(new)}")
+            changes += 1
+    for table, column, declaration in COLUMN_ADDITIONS:
+        have = _table_columns(database, table)
+        if have and column not in have:
+            if dry_run:
+                return 1
+            database.execute(f"ALTER TABLE {table} ADD COLUMN {_quoted(column)} {declaration}")
+            changes += 1
+            if (table, column) == ("systems", "next_hole"):
+                # count on from the highest number in use, so the next hole doesn't take a freed one
+                database.execute("""
+                    UPDATE systems SET next_hole = max(
+                        coalesce((SELECT max(hole_index) FROM signatures WHERE system_id = systems.id), 0),
+                        coalesce((SELECT max(child.hole_index) FROM systems child
+                                  WHERE child.parent_id = systems.id), 0))""")
+    if "key" in _table_columns(database, "key_value"):
+        for old, new in KEY_RENAMES:
+            if dry_run:
+                # an old key next to the new one stays (UPDATE OR IGNORE below), so it is not pending
+                if database.execute("SELECT count(*) FROM key_value WHERE key=? AND NOT EXISTS "
+                                    "(SELECT 1 FROM key_value WHERE key=?)", (old, new)).fetchone()[0]:
+                    return 1
+            else:
+                changes += database.execute("UPDATE OR IGNORE key_value SET key=? WHERE key=?",
+                                            (new, old)).rowcount
+    return changes
+
+
 def needs_migration(path: Path | str) -> bool:
     """Return whether opening a map file would change its schema, without changing anything.
 
@@ -334,21 +392,7 @@ def needs_migration(path: Path | str) -> bool:
     try:
         database = sqlite3.connect(read_only_uri(path), uri=True)
         try:
-            tables = {row[0] for row in database.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-            if any(old in tables and new not in tables for old, new in TABLE_RENAMES):
-                return True
-            for table, old, new in COLUMN_RENAMES:
-                have = _table_columns(database, table)
-                if old in have and new not in have:
-                    return True
-            for table, column, _ in COLUMN_ADDITIONS:
-                have = _table_columns(database, table)
-                if have and column not in have:
-                    return True
-            old_keys = [old for old, _ in KEY_RENAMES]
-            return "key" in _table_columns(database, "key_value") and database.execute(
-                f"SELECT count(*) FROM key_value WHERE key IN ({','.join('?' * len(old_keys))})",
-                old_keys).fetchone()[0] > 0
+            return _apply_migrations(database, dry_run=True) > 0
         finally:
             database.close()
     except sqlite3.Error:
@@ -406,41 +450,12 @@ class Store:
         return _table_columns(self.database, table)
 
     def _migrate(self) -> int:
-        """Bring an older map file up to the current schema.
-
-        Renames abbreviated tables, columns and settings keys, then adds the columns older files
-        lack (``CREATE TABLE IF NOT EXISTS`` won't).
+        """Bring an older map file up to the current schema (see ``_apply_migrations``).
 
         Returns:
             The number of changes made.
         """
-        changes = 0
-        tables = {row[0] for row in self.database.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        for old, new in TABLE_RENAMES:
-            if old in tables and new not in tables:
-                self.database.execute(f"ALTER TABLE {old} RENAME TO {new}")
-                changes += 1
-        for table, old, new in COLUMN_RENAMES:
-            have = self._columns(table)
-            if old in have and new not in have:
-                self.database.execute(f"ALTER TABLE {table} RENAME COLUMN {_quoted(old)} TO {_quoted(new)}")
-                changes += 1
-        for table, column, declaration in COLUMN_ADDITIONS:
-            have = self._columns(table)
-            if have and column not in have:
-                self.database.execute(f"ALTER TABLE {table} ADD COLUMN {_quoted(column)} {declaration}")
-                changes += 1
-                if (table, column) == ("systems", "next_hole"):
-                    # count on from the highest number in use, so the next hole doesn't take a freed one
-                    self.database.execute("""
-                        UPDATE systems SET next_hole = max(
-                            coalesce((SELECT max(hole_index) FROM signatures WHERE system_id = systems.id), 0),
-                            coalesce((SELECT max(child.hole_index) FROM systems child
-                                      WHERE child.parent_id = systems.id), 0))""")
-        if "key" in self._columns("key_value"):
-            for old, new in KEY_RENAMES:
-                changes += self.database.execute("UPDATE OR IGNORE key_value SET key=? WHERE key=?",
-                                                 (new, old)).rowcount
+        changes = _apply_migrations(self.database, dry_run=False)
         self.database.commit()
         return changes
 
