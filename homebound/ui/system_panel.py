@@ -374,7 +374,11 @@ class SystemPanel(QWidget):
         if not parsed:
             self.toast.emit("err", "Clipboard has no scanner rows. Expected lines like ABC-123<tab>Cosmic Signature …")
             return None
+        before = {signature.signature_id: signature.state for signature in self.state.store.signatures(self.system_id)}
         result = signature_parser.merge_signatures(self.state.store, self.system_id, parsed)
+        # a paste opens the groups it changed: new rows, and rows that became missing (not ones already missing)
+        newly_missing = [signature_id for signature_id in result.missing if before.get(signature_id) != "missing"]
+        self.table.signature_model.open_groups(result.added + newly_missing)
         anomalies = sum(1 for row in parsed if row.kind == "anom")
         what = f"{len(parsed) - anomalies} sigs" + (f" + {anomalies} anoms" if anomalies else "")
         self.toast.emit("ok", f"{what} · {len(result.added)} new · {len(result.updated)} updated · "

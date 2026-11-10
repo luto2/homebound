@@ -173,7 +173,7 @@ The summary above the table says when you last pasted, for example "last paste 2
 ### The table
 
 - Rows are grouped: Wormholes, Combat, Data, Relic, Gas, Ore, Ice and Unscanned, then *Anomalies · Combat*, *Anomalies · Ore* and so on.
-- Click a group header to collapse it. Homebound remembers this per map. A group with new or missing rows always opens, so you never miss a change.
+- Click a group header to collapse it, even when its rows are new or missing. Homebound remembers this per map. A paste opens the groups it changed (new sigs, and sigs that just went missing), so you see them once; collapse them again if you like.
 - The header shows the count, plus `· 1 −` / `· 1 +` when rows are missing or new.
 - Click a column header (Sig, Type, Name, Seen, Age) to sort the rows inside every group; click it again to reverse. Homebound remembers the order per map.
 - Drag the rules between the column headers to resize them. The widths are remembered.

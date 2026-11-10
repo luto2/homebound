@@ -147,6 +147,19 @@ class SignatureModel(QAbstractTableModel):
         self.load(self.system_id)
         return key in collapsed
 
+    def open_groups(self, signature_ids: list[str]) -> None:
+        """Expand the groups of the given signatures and reload; a paste uses it for the groups it changed.
+
+        Args:
+            signature_ids: IDs of signatures of the shown system, as stored now.
+        """
+        require_type(signature_ids, list, "signature_ids")
+        changed = set(signature_ids)
+        keys = {group_key(signature) for signature in self.state.store.signatures(self.system_id)
+                if signature.signature_id in changed}
+        self.state.store.put_value("signature_collapsed", json.dumps(sorted(self.collapsed() - keys)))
+        self.load(self.system_id)
+
     def load(self, system_id: int) -> int:
         """Load the signatures of a system (0 for none).
 
@@ -170,7 +183,7 @@ class SignatureModel(QAbstractTableModel):
         return len(self.rows)
 
     def _grouped_rows(self) -> list[Signature | GroupHeader]:
-        """Return header and signature rows; a group with new or missing rows always stays open."""
+        """Return header and signature rows; a collapsed group shows only its header."""
         groups: dict[str, list[Signature]] = {}
         for signature in self.signatures:
             groups.setdefault(group_key(signature), []).append(signature)
@@ -184,7 +197,7 @@ class SignatureModel(QAbstractTableModel):
             if kind == "anom":
                 title = ANOMALY_PREFIX + title
             members = sorted(groups[key], key=sort_key, reverse=descending)
-            shut = key in collapsed and not any(signature.state for signature in members)
+            shut = key in collapsed
             rows.append(GroupHeader(key, title, len(members), shut, sum(signature.state == "missing" for signature in members),
                                     sum(signature.state == "new" for signature in members)))
             if not shut:

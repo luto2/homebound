@@ -318,6 +318,31 @@ def test_paste_merges_the_clipboard(state, panel, qt_application) -> None:
     assert panel.delete_missing_button.text() == "✕ Delete 1"
 
 
+def test_paste_opens_the_group_it_changed(state, panel, qt_application) -> None:
+    """A paste that adds or misses a row in a collapsed group opens that group once; a paste that changes nothing
+    in it leaves it as the user collapsed it."""
+    without_ghi = "".join(line + "\n" for line in SCAN.splitlines() if not line.startswith("GHI-789"))
+    gas_row = "JKL-111\tCosmic Signature\tGas Site\tBarren Perimeter Reservoir\t50.0%\t2 AU\n"
+    QApplication.clipboard().setText(SCAN)
+    panel.paste()
+    model = panel.table.signature_model
+    assert model.toggle("sig:gas") is True
+    QApplication.clipboard().setText(SCAN + gas_row)          # JKL-111 is new in the collapsed gas group
+    panel.paste()
+    assert "sig:gas" not in model.collapsed() and model.rowCount() > 1
+    assert model.toggle("sig:gas") is True                    # the user collapses it again
+    QApplication.clipboard().setText(SCAN + gas_row)          # the same paste: nothing changed in the group
+    panel.paste()
+    assert "sig:gas" in model.collapsed()
+    QApplication.clipboard().setText(without_ghi + gas_row)   # GHI-789 now missing
+    panel.paste()
+    assert "sig:gas" not in model.collapsed()
+    assert model.toggle("sig:gas") is True
+    QApplication.clipboard().setText(without_ghi + gas_row)   # missing again: no change
+    panel.paste()
+    assert "sig:gas" in model.collapsed()
+
+
 def test_paste_flashes_the_pasted_rows(state, panel, qt_application) -> None:
     """Every row in a paste flashes (new, updated or unchanged); a row gone missing doesn't."""
     QApplication.clipboard().setText(SCAN)
@@ -617,13 +642,38 @@ def test_collapse_toggle_is_persisted(state, model) -> None:
         model.toggle(1)
 
 
-def test_collapsed_group_with_new_rows_stays_open(state, model) -> None:
-    """A group with new or missing rows is never hidden, and its header counts them."""
+def test_collapsed_group_with_new_rows_collapses(state, model) -> None:
+    """A group with new or missing rows collapses like any other; its header still counts them."""
     add_signature(state, "NEW-001", group="gas", state="new")
     add_signature(state, "OLD-001", group="gas", state="missing")
     model.toggle("sig:gas")
     header = model.rows[0]
-    assert not header.collapsed and (header.new, header.missing, header.count) == (1, 1, 2)
+    assert header.collapsed and (header.new, header.missing, header.count) == (1, 1, 2)
+    assert model.rowCount() == 1
+
+
+def test_all_missing_group_collapses_on_header_click(state, model) -> None:
+    """A group whose rows are all missing collapses on a header click and opens on the next one."""
+    add_signature(state, "OLD-001", group="gas", state="missing")
+    add_signature(state, "OLD-002", group="gas", state="missing")
+    model.load(HOME.id)
+    rows_open = model.rowCount()
+    assert model.toggle("sig:gas") is True
+    assert model.rows[0].collapsed and model.rowCount() == 1
+    assert model.toggle("sig:gas") is False
+    assert model.rowCount() == rows_open
+
+
+def test_all_new_group_collapses_on_header_click(state, model) -> None:
+    """A group whose rows are all new collapses on a header click and opens on the next one."""
+    add_signature(state, "NEW-001", group="gas", state="new")
+    add_signature(state, "NEW-002", group="gas", state="new")
+    model.load(HOME.id)
+    rows_open = model.rowCount()
+    assert model.toggle("sig:gas") is True
+    assert model.rows[0].collapsed and model.rowCount() == 1
+    assert model.toggle("sig:gas") is False
+    assert model.rowCount() == rows_open
 
 
 def test_collapsed_value_survives_garbage(state, model) -> None:
