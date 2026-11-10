@@ -29,7 +29,6 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 
 | Plan | To do item | State |
 |---|---|---|
-| [plan-duplicated-logic.md](plan-duplicated-logic.md) | 9. Duplicated logic that can drift | not started |
 | [plan-system-sender.md](plan-system-sender.md) | 12. Any `EVE…` sender counts as the system | not started |
 | [plan-small-fixes.md](plan-small-fixes.md) | "Small items" | partly done (`3d65485`) |
 | [plan-test-cleanup.md](plan-test-cleanup.md) | Weak tests and test structure | not started |
@@ -71,4 +70,5 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [done/plan-corrupt-map-lockout.md](done/plan-corrupt-map-lockout.md) | 2026-11-10 | the wording of the new warnings; decisions 2, 4, 5 as proposed |
 | [done/plan-test-segfault.md](done/plan-test-segfault.md) | 2026-11-10 | — (test-only; the app can't hit it) |
 | [done/plan-stable-hole-names.md](done/plan-stable-hole-names.md) | 2026-11-10 | syncing `label`/`static`/`next_hole` (needs a protocol version gate) |
+| [done/plan-duplicated-logic.md](done/plan-duplicated-logic.md) | 2026-11-10 | which home ID the callers use (not confirmed) |
 

@@ -119,7 +119,7 @@ is. The Effort line uses the same scale and models as the human-added tasks.
    `done/plan-test-fixes.md` accepts this limit, but six docstrings claim more than "doesn't raise". Fix
    those docstrings, and add pixel checks for edges and route rows.
    Effort: 3/5 · Sonnet.
-9. **[3] Duplicated logic that can drift (D2, D1).** `needs_migration` and `_migrate` repeat the
+9. **Done 2026-11-10 (`2dfa959`).** **[3] Duplicated logic that can drift (D2, D1).** `needs_migration` and `_migrate` repeat the
    migration rules, and a drift skips the safety backup. Orphan cleanup in `tracker.py:429-433` and
    `map_window.py:1139-1144` already differs on systems with a character in them. Check that
    difference is intended.

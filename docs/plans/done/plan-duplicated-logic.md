@@ -1,6 +1,6 @@
 # Plan: duplicated logic that can drift (TODO item 9, findings D1 and D2)
 
-Status: done 2026-11-10 (both parts).
+Status: implemented (2026-11-10, commits `9ecbf07`, `2dfa959`). Deviations: the `needs_migration == _migrate() > 0` test can't work (opening a Store migrates), replaced by a per-step before/after test; a stale old key next to the new one no longer counts as a migration (fixes a repeated backup); collapse now keeps a system a character is in (owner decision 2026-11-06). The home-ID question stays open.
 
 Check before building: is `state.home_id` always equal to `namer.home_id`? `state.home_id` is a
 property read from `settings.home_system`; `namer.home_id` is a copy set at start, in `switch_map` and in
