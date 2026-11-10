@@ -102,23 +102,28 @@ def _unique_path(folder: Path, stem: str) -> Path:
     return path
 
 
-def create_backup(reason: str, settings: Settings) -> Path:
+def create_backup(reason: str, settings: Settings, warnings: list[str] | None = None) -> Path:
     """Back up every map file and the settings into a new zip, then prune old backups.
 
-    Map files that don't exist yet (a map never opened) are left out.
+    Map files that don't exist yet (a map never opened) are left out. Old backups that can't be
+    deleted are added to ``warnings``; the backup still counts.
 
     Args:
         reason: One of :data:`REASONS`.
         settings: The current settings (the map list comes from here).
+        warnings: Collects ``"<file>: <error>"`` for each old backup that couldn't be deleted, or None
+            to drop them.
 
     Returns:
         The new zip.
 
     Raises:
-        BackupError: If a map can't be copied or the zip can't be written; nothing is left behind.
+        BackupError: If a map can't be copied or the zip can't be written; nothing is left behind
+            (unless the half-written file can't be deleted either).
     """
     require_choice(reason, REASONS, "reason")
     require_type(settings, Settings, "settings")
+    require_type(warnings, (list, type(None)), "warnings")
     folder = backups_directory()
     now = datetime.now(timezone.utc)
     maps = {}
@@ -150,29 +155,36 @@ def create_backup(reason: str, settings: Settings) -> Path:
     except (OSError, zipfile.BadZipFile) as error:
         partial_cleanup(folder)
         raise BackupError(f"The backup couldn't be written to {folder}: {error}") from error
-    prune(folder)
+    prune(folder, warnings)
     return path
 
 
 def partial_cleanup(folder: Path) -> int:
-    """Delete half-written backups (``*.partial``) in a folder.
+    """Delete half-written backups (``*.partial``) in a folder; files that won't delete are left.
 
     Returns:
         The number of files deleted.
     """
     removed = 0
     for partial in folder.glob("*.partial") if folder.is_dir() else ():
-        partial.unlink(missing_ok=True)
+        try:
+            partial.unlink(missing_ok=True)
+        except OSError:
+            continue   # a locked leftover must not hide the error that stopped the backup
         removed += 1
     return removed
 
 
-def copy_to_folder(path: Path, folder: str) -> Path | None:
+def copy_to_folder(path: Path, folder: str, warnings: list[str] | None = None) -> Path | None:
     """Copy a backup to the extra folder from the settings and prune the backups there.
+
+    Old backups there that can't be deleted are added to ``warnings``; the copy still counts.
 
     Args:
         path: The backup zip.
         folder: The extra folder; empty means no extra copy.
+        warnings: Collects ``"<file>: <error>"`` for each old backup that couldn't be deleted, or None
+            to drop them.
 
     Returns:
         The copy, or None when no folder is set.
@@ -182,6 +194,7 @@ def copy_to_folder(path: Path, folder: str) -> Path | None:
     """
     require_type(path, Path, "path")
     require_type(folder, str, "folder")
+    require_type(warnings, (list, type(None)), "warnings")
     if not folder.strip():
         return None
     target_folder = Path(folder.strip()).expanduser()
@@ -191,7 +204,7 @@ def copy_to_folder(path: Path, folder: str) -> Path | None:
         copy = Path(shutil.copy2(path, target_folder / path.name))
     except OSError as error:
         raise BackupError(f"The backup couldn't be copied to {target_folder}: {error}") from error
-    prune(target_folder)
+    prune(target_folder, warnings)
     return copy
 
 
@@ -246,18 +259,33 @@ def list_backups(folder: Path | None = None) -> list[BackupInfo]:
     return sorted(found, key=lambda info: info.created_at, reverse=True)
 
 
-def prune(folder: Path | None = None) -> int:
+def prune(folder: Path | None = None, failed: list[str] | None = None) -> int:
     """Delete old backups: keep the newest 7 ``auto``, the newest 10 safety backups and every ``manual`` one.
+
+    A backup that can't be deleted (read-only folder, a file a sync client holds) is skipped, and the
+    others are still deleted.
+
+    Args:
+        folder: The folder to prune, the backups folder by default.
+        failed: Collects ``"<file>: <error>"`` for each backup that couldn't be deleted, or None.
 
     Returns:
         The number of backups deleted.
     """
+    require_type(failed, (list, type(None)), "failed")
     backups = list_backups(folder)
     old = ([info for info in backups if info.reason == "auto"][KEEP_AUTO:]
            + [info for info in backups if info.reason in SAFETY_REASONS][KEEP_SAFETY:])
+    removed = 0
     for info in old:
-        info.path.unlink(missing_ok=True)
-    return len(old)
+        try:
+            info.path.unlink(missing_ok=True)
+        except OSError as error:
+            if failed is not None:
+                failed.append(f"{info.path.name}: {error}")
+            continue
+        removed += 1
+    return removed
 
 
 def auto_backup_due(now: datetime | None = None) -> bool:

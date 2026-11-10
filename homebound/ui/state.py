@@ -22,6 +22,11 @@ EXPIRY_INTERVAL_MS = 5 * 60 * 1000
 SCAN_AGE_INTERVAL_MS = 60 * 1000
 
 
+def _first_of(problems: list[str]) -> str:
+    """Return the first of several problems for a one-line status, e.g. ``a.zip: denied (+2 more)``."""
+    return problems[0] + (f" (+{len(problems) - 1} more)" if len(problems) > 1 else "")
+
+
 class AppState(QObject):
     """Owns the map, the trackers and the background workers, and tells the views what changed."""
 
@@ -219,8 +224,9 @@ class AppState(QObject):
             The new backup, or None if it failed.
         """
         require_choice(reason, backup.REASONS, "reason")
+        undeleted: list[str] = []   # old backups prune couldn't remove; the backup still counts
         try:
-            path = backup.create_backup(reason, self.settings)
+            path = backup.create_backup(reason, self.settings, undeleted)
         except backup.BackupError as error:
             self.last_backup_error = str(error)
             if report_failure:
@@ -228,11 +234,15 @@ class AppState(QObject):
             return None
         self.last_backup_error = ""
         try:
-            backup.copy_to_folder(path, self.settings.backup_copy_directory)
+            backup.copy_to_folder(path, self.settings.backup_copy_directory, undeleted)
         except backup.BackupError as error:
-            self._report_backup("warn", f"Backed up, but not copied: {error}")
+            either = f". Old backups couldn't be removed either: {_first_of(undeleted)}" if undeleted else ""
+            self._report_backup("warn", f"Backed up, but not copied: {error}{either}")
             return path
-        self._report_backup("ok", f"Backed up {datetime.now():%H:%M}")
+        if undeleted:
+            self._report_backup("warn", f"Backed up, but old backups couldn't be removed: {_first_of(undeleted)}")
+        else:
+            self._report_backup("ok", f"Backed up {datetime.now():%H:%M}")
         return path
 
     def restore_backup(self, path: Path, names: list[str], replace: bool, restore_settings: bool = False) -> dict[str, str]:

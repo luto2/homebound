@@ -14,7 +14,7 @@ import pytest
 import homebound.backup as backup_module
 import homebound.settings as settings_module
 from conftest import HOME, UNIVERSE, pick_system
-from homebound.backup import (BackupError, auto_backup_due, backup_info, backups_directory, copy_to_folder,
+from homebound.backup import (KEEP_AUTO, KEEP_SAFETY, BackupError, auto_backup_due, backup_info, backups_directory, copy_to_folder,
                               create_backup, list_backups, prune, read_manifest, restore_maps, restore_settings,
                               restored_name)
 from homebound.mapdb.store import Store, needs_migration
@@ -227,6 +227,139 @@ def test_retention_per_reason(settings) -> None:
     auto = [info for info in kept if info.reason == "auto"]
     assert len(auto) == 7 and min(info.created_at for info in auto) == start + timedelta(hours=5)
     assert sum(info.reason in ("migration", "delete", "restore") for info in kept) == 10
+
+
+def lock_backups(monkeypatch, suffix: str = ".zip", names: set[str] | None = None) -> None:
+    """Make deleting files with a suffix (or only the given names) fail, like a file a sync client holds."""
+    unlink = Path.unlink
+
+    def locked(path: Path, missing_ok: bool = False) -> None:
+        """Refuse the locked files, delete the rest."""
+        if path.suffix == suffix and (names is None or path.name in names):
+            raise PermissionError(13, "Permission denied", str(path))
+        unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", locked)
+
+
+def old_autos(folder: Path, count: int) -> list[Path]:
+    """Write ``count`` auto backups, a day apart and all older than today."""
+    start = datetime.now(timezone.utc) - timedelta(days=count + 1)
+    return [fake_backup(folder, "auto", start + timedelta(days=number), number) for number in range(count)]
+
+
+def test_prune_error_does_not_fail_the_backup(settings, monkeypatch) -> None:
+    """Old backups that can't be deleted are reported in ``warnings``; the new backup still counts."""
+    autos = old_autos(backups_directory(), KEEP_AUTO + 2)
+    lock_backups(monkeypatch)
+    warnings = []
+    path = create_backup("manual", settings, warnings)
+    assert path.exists() and len(warnings) == 2
+    assert sorted(warning.split(": ")[0] for warning in warnings) == sorted(old.name for old in autos[:2])
+    assert all("Permission denied" in warning for warning in warnings)
+    assert create_backup("manual", settings).exists()   # without a list the failure is dropped
+
+
+@pytest.mark.skipif(CANNOT_LOCK_FOLDERS, reason="chmod can't make a folder read-only here")
+def test_prune_in_a_read_only_folder(settings) -> None:
+    """A folder where nothing can be deleted prunes nothing and names every file it couldn't remove."""
+    folder = backups_directory()
+    old_autos(folder, KEEP_AUTO + 1)
+    folder.chmod(0o500)
+    try:
+        failed = []
+        assert prune(folder, failed) == 0 and len(failed) == 1
+    finally:
+        folder.chmod(0o700)
+
+
+def test_prune_skips_the_locked_file_and_deletes_the_rest(settings, monkeypatch) -> None:
+    """One file that won't delete is skipped; the others are pruned as usual."""
+    folder = backups_directory()
+    start = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    locked = fake_backup(folder, "auto", start, 0)
+    for number in range(1, 12):
+        fake_backup(folder, "auto", start + timedelta(hours=number), number)
+    lock_backups(monkeypatch, names={locked.name})
+    failed = []
+    assert prune(folder, failed) == 4
+    assert len(failed) == 1 and failed[0].startswith(f"{locked.name}: ")
+    kept = [info.path for info in list_backups()]
+    assert len(kept) == KEEP_AUTO + 1 and locked in kept
+    with pytest.raises(TypeError):
+        prune(folder, "not a list")
+
+
+def test_partial_cleanup_skips_files_that_wont_delete(settings, monkeypatch) -> None:
+    """A half-written backup that can't be deleted doesn't hide the error that stopped the backup."""
+    folder = backups_directory()
+    folder.mkdir()
+    (folder / "stuck.partial").write_bytes(b"")
+    lock_backups(monkeypatch, suffix=".partial")
+    assert backup_module.partial_cleanup(folder) == 0
+    settings.map_path().write_text("broken")
+    with pytest.raises(BackupError, match="not a map file"):
+        create_backup("manual", settings)
+
+
+def test_copy_to_folder_survives_a_prune_error(settings, monkeypatch, tmp_path) -> None:
+    """The extra copy counts even when old backups in the extra folder can't be deleted."""
+    extra = tmp_path / "extra"
+    old_autos(extra, KEEP_AUTO + 1)
+    path = create_backup("manual", settings)
+    lock_backups(monkeypatch)
+    warnings = []
+    copy = copy_to_folder(path, str(extra), warnings)
+    assert copy.exists() and len(warnings) == 1
+    assert copy_to_folder(path, str(extra)).exists()
+
+
+def test_state_backup_reports_prune_warning(monkeypatch, tmp_path, qt_application) -> None:
+    """A backup whose cleanup failed is a success with a warning: the path comes back, no error is kept."""
+    state = make_state(monkeypatch, tmp_path)
+    old_autos(backups_directory(), KEEP_AUTO + 2)
+    lock_backups(monkeypatch)
+    messages = []
+    state.status.connect(lambda *message: messages.append(message))
+    assert state.backup("manual") is not None and state.last_backup_error == ""
+    [(source, level, text)] = messages
+    assert (source, level) == ("backup", "warn")
+    assert text.startswith("Backed up, but old backups couldn't be removed: ") and text.endswith(" (+1 more)")
+    messages.clear()
+    state.settings.backup_copy_directory = str(tmp_path / "missing")
+    assert state.backup("manual") is not None
+    [(_, level, text)] = messages   # one message for both problems
+    assert level == "warn" and "not copied" in text and "couldn't be removed" in text
+    state.stop()
+
+
+def test_migration_backup_with_prune_error_still_opens_the_map(monkeypatch, tmp_path, qt_application) -> None:
+    """An old map opens and is migrated even when the migration backup can't prune old safety backups."""
+    old_schema_map(tmp_path / "map.db")
+    start = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    for number in range(KEEP_SAFETY):
+        fake_backup(tmp_path / "backups", "migration", start + timedelta(hours=number), number)
+    lock_backups(monkeypatch)
+    state = make_state(monkeypatch, tmp_path)
+    assert not needs_migration(tmp_path / "map.db")
+    assert sum(info.reason == "migration" for info in list_backups()) == KEEP_SAFETY + 1
+    [(level, text)] = state._backup_messages
+    assert level == "warn" and "couldn't be removed" in text
+    state.stop()
+
+
+def test_startup_backup_with_prune_error(monkeypatch, tmp_path, qt_application) -> None:
+    """The start-up auto backup with a failed cleanup doesn't stop the app; the warning waits for start()."""
+    from homebound.ui.state import AppState
+    settings = isolated_settings(monkeypatch, tmp_path)
+    Store(settings.map_path()).close()
+    old_autos(backups_directory(), KEEP_AUTO)
+    lock_backups(monkeypatch)
+    state = AppState(UNIVERSE, settings, auto_backup=True)
+    assert sum(info.reason == "auto" for info in list_backups()) == KEEP_AUTO + 1
+    [(level, text)] = state._backup_messages
+    assert level == "warn" and "couldn't be removed" in text
+    state.stop()
 
 
 def test_auto_backup_due(settings) -> None:
