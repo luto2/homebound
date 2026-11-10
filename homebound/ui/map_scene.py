@@ -112,6 +112,7 @@ class SystemNode(QGraphicsObject):
         self.characters: list[tuple[int, str, int]] = []
         self.unconfirmed = False
         self.scan_status = ScanStatus("fresh")
+        self.cut_off = ""                            # "12m" while this system holds the cut-off mark of its piece
         self.following = False                       # being moved as part of a block: don't snap on your own
         self.block_start: dict[SystemNode, QPointF] = {}   # while dragging: where each selected node started
         self._character_marker_start = 8.0   # where the character markers start on the top edge
@@ -135,22 +136,24 @@ class SystemNode(QGraphicsObject):
             not self.mapped.confirmed
             or any(not connection.confirmed for connection in state.store.connections_of_system(self.system_id))))
         self.scan_status = state.scan_status(self.system_id)
+        self.cut_off = state.cut_off_age(self.system_id)
         self.setToolTip(self._tooltip())
         self.update()
 
     def refresh_scan_status(self) -> bool:
-        """Recompute the rescan status on the clock tick; repaint only if the state or the shown age changed.
+        """Recompute the rescan status and the cut-off age on the clock tick; repaint only if one changed.
 
         Returns:
             True if the node changed.
         """
         status = self.state.scan_status(self.system_id)
         old = self.scan_status
+        cut_off = self.state.cut_off_age(self.system_id)
         if status.state == old.state and (status.state != "due"
-                                          or status.short_age == old.short_age):
+                                          or status.short_age == old.short_age) and cut_off == self.cut_off:
             self.scan_status = status
             return False
-        self.scan_status = status
+        self.scan_status, self.cut_off = status, cut_off
         self.setToolTip(self._tooltip())
         self.update()
         return True
@@ -266,7 +269,7 @@ class SystemNode(QGraphicsObject):
         return bool(self.mapped and self.mapped.parent_id and self.mapped.static)
 
     def _paint_tabs(self, painter: QPainter) -> None:
-        """Draw the HOME or STATIC, UNCONFIRMED and rescan tabs on the top edge; note where the character markers may start.
+        """Draw the HOME or STATIC, UNCONFIRMED, CUT OFF and rescan tabs on the top edge; note where the character markers may start.
 
         Next to both UNCONFIRMED and HOME the rescan tab is compact, so it ends before HOME; if characters are
         here too it is left out, as there would be no room for their markers (the hatch and tooltip remain).
@@ -280,8 +283,11 @@ class SystemNode(QGraphicsObject):
         if self.unconfirmed:
             self._character_marker_start += painting.draw_chip(
                 painter, 8, -7, "▲ UNCONFIRMED", color("warning"), height=13) + 4
+        if self.cut_off:
+            self._character_marker_start += painting.draw_chip(
+                painter, self._character_marker_start, -7, f"CUT OFF {self.cut_off}", color("stale"), height=13) + 4
         crowded = (home or self.static) and self.unconfirmed
-        if (label := scan_tab_label(self.scan_status, compact=crowded)) and not (crowded and self.characters):
+        if (label := scan_tab_label(self.scan_status, compact=crowded or bool(self.cut_off))) and not (crowded and self.characters):
             self._character_marker_start += painting.draw_chip(
                 painter, self._character_marker_start, -7, label, color("stale"), height=13) + 4
 

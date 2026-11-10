@@ -83,6 +83,7 @@ others show or edit it.
 | Mark as confirmed | `mapping/tracker.py` `Tracker.confirm` | `ui/map_window.py` `_confirm` |
 | Removing a system | `mapdb/store.py` `remove_system` | `ui/map_window.py` `_remove` |
 | Collapsing a connection (removes it, its sigs and systems left without a link) | `mapdb/store.py` `remove_connection`, `clear_broken_parents` | `ui/map_window.py` `_collapse`, `_edge_menu`; `ui/dialogs.py` `ConnectionDialog` |
+| Lost connection (removes it and its sigs, keeps both systems; the far piece is cut off and goes an hour after the last pilot left) | `mapping/tracker.py` `Tracker.disconnect`, `cut_off_since`, `_expire_cut_off_pieces`, `CUT_OFF_GRACE`; marks in the local `key_value` row `cut_off` | `ui/map_window.py` `_lost_connection`, `_edge_menu`; `ui/dialogs.py` `ConnectionDialog.lost`; `CUT OFF` tab in `ui/map_scene.py` `SystemNode._paint_tabs`; `ui/state.py` `AppState.cut_off_age` |
 | Editing a connection (type, size, lifetime, mass) | `mapdb/store.py` `update_connection` | `ui/dialogs.py` `ConnectionDialog`; `ui/wormhole_fields.py` `WormholeFields`; `ui/map_window.py` `edit_connection` |
 | Home system | `settings.py` `home_system`; `ui/state.py` `AppState.home_id` | `ui/map_window.py` `_set_home` |
 | Pinning a system so expiry keeps it | `MapSystem.pinned` in `mapdb/store.py` | `ui/map_window.py` `_node_menu` |

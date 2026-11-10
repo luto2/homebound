@@ -1,6 +1,6 @@
 # Plan: remove a connection but keep its systems ("lost connection")
 
-Status: not started. Owner task 5.1 in `TODO.md` (human-added): "add ability to delete connection without
+Status: built (2026-11-10) except the sync of the mark, see "Where it lives". Owner task 5.1 in `TODO.md` (human-added): "add ability to delete connection without
 deleting the systems, allow for exfilling out of a chain if the connection is lost, maybe stop mapping
 additional connections there after ~1h".
 
@@ -34,29 +34,40 @@ Depends on: nothing. Touches `ui/map_window.py`, `mapping/tracker.py`, `mapdb/st
 
 ## Where it lives
 
-- `Store`: a system column `cut_off_at TEXT` (in `COLUMN_ADDITIONS`) set on the root of the cut-off piece.
-  It is part of `MapSystem`, so it is recorded in batches (undo works) and syncs on cloud maps as a normal
-  field; add it to the synced field list in `sync/protocol.py` and to the server's schema.
-- `mapping/tracker.py`: `Tracker.disconnect(connection_id) -> list[int]` (one `@_one_action`): removes the
-  connection and its sigs, finds the component that no longer reaches home (`mapping/chain.py`
-  `connected_component`), sets `cut_off_at` on its root, returns that component.
-  `Tracker.expire` gets a second pass for cut-off pieces past the grace time. `on_system_change` /
-  `add_wormhole` clear `cut_off_at` when a new connection joins the piece back to home's component.
-- `ui/map_window.py`: menu item and handler `_lost_connection`, Undo toast "Lost B2 ↔ B2a · 4 systems stay,
-  removed in 1h unless someone is inside".
-- `ui/map_scene.py`: the `CUT OFF` tab, next to `scan_tab_label`.
+- `mapping/tracker.py`: `Tracker.disconnect(connection_id, now=None) -> list[int]` (one `@_one_action`):
+  deletes the connection and its sigs, detaches the far side (`Store.clear_broken_parents`), finds the
+  piece that no longer reaches home (`mapping/chain.py` `connected_component`), marks it and returns it.
+  A system that loses its parent **keeps its hole number and name** (stable-names rules: only explicit
+  actions rename), so nothing is renamed when a link is lost or when it is found again.
+  `Tracker.expire` gets a second pass, `_expire_cut_off_pieces`, for pieces past `CUT_OFF_GRACE`.
+- **The mark is local, not a system column.** The plan wanted `cut_off_at` on the system and in the
+  sync protocol. A new synced field needs a protocol gate (see the stable-names plan, "As built"), so
+  the mark is a local `key_value` entry (`{system id: time}`, key `cut_off`) on the system at the cut.
+  It lapses by itself: it only counts while the system exists and its piece does not reach home, so
+  a new connection to home, an Undo, or removal of the system clears it without a hook in
+  `add_wormhole`. Cost: on a cloud map other members don't see the tab or run the countdown; every
+  install that gets the removal still keeps the systems (they are just no longer connected).
+- `ui/map_window.py`: menu item and handler `_lost_connection`, Undo toast "Lost B2 ↔ B2a · 4 systems
+  cut off from home, removed in 1h unless someone is inside"; `ui/dialogs.py` `ConnectionDialog` has a
+  plain "Lost connection" button beside the red Collapse.
+- `ui/map_scene.py`: the `CUT OFF 12m` tab before `SCAN`, which turns compact next to it;
+  `AppState.cut_off_age` gives the text.
+- "Gone an hour after the last pilot left": the characters table keeps when each pilot left their
+  previous system (`seen_at` with `previous_system_id`), so the clock is the later of the cut and that.
 
 ## Tests
 
 - `disconnect` keeps both ends and the systems behind, removes the sigs, and marks only the root of the
-  piece away from home. Disconnecting a link inside a piece that doesn't contain home marks nothing new.
+  piece away from home. Disconnecting a link inside a piece that doesn't contain home keeps that piece's countdown; the part
+  that has no mark yet gets its own, so it can go too.
 - With a character inside, `expire` keeps the piece past the grace time; one hour after the character
   leaves (or with nobody inside from the start), it is removed; a pinned system in it stays.
-- A new jump that links the piece back to home clears `cut_off_at`.
+- A new jump that links the piece back to home ends the cut-off mark.
 - Undo restores the connection, the sigs and clears the mark.
-- Old map files get the column on open.
 
 ## Open decisions
+
+Decided as recommended when built: 1 removal, 2 fixed 1 h, 3 keep both items.
 
 1. "Stop mapping additional connections there after ~1h": does that mean the piece is removed after an
    hour (above), or that it stays but new jumps out of it are no longer mapped? Recommended: removal, because
