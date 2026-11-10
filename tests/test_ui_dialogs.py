@@ -559,6 +559,21 @@ def test_build_data_dialog_failure_offers_retry(qt_application) -> None:
     assert dialog.result() == 1
 
 
+def test_build_data_dialog_hints_at_missing_certificates(qt_application) -> None:
+    """A certificate error gets a line about the system's certificates; other errors don't."""
+    def failing(error):
+        def build(progress, keep_cache) -> None:
+            raise OSError(error)
+        return build
+
+    dialog = BuildDataDialog("x", build=failing("[SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer"))
+    run_build(dialog)
+    assert "certificates weren't found" in dialog.status.text()
+    dialog = BuildDataDialog("x", build=failing("no network"))
+    run_build(dialog)
+    assert "certificates" not in dialog.status.text()
+
+
 def test_build_data_dialog_progress_and_cancel(qt_application) -> None:
     """Progress sets the bar (busy when the size is unknown); Quit during a build cancels it at its next step."""
     started, release = threading.Event(), threading.Event()

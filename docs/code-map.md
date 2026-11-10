@@ -146,7 +146,7 @@ others show or edit it.
 | EVE-Scout Thera/Turnur connections | `eve_scout.py` `EveScoutFetcher`, `parse_signatures` |
 | zKillboard activity (kills 1h/24h, pod kills, last kill) | `zkill.py` `ZkillFetcher`, `summarize`; cached in the map's `zkill` table (`mapdb/store.py` `ZkillStats`) |
 | zKill meter and recent-kill mark | `theme/painting.py` `draw_zkill`, `draw_recent_kill`; `ui/map_scene.py` `SystemNode`; `ui/overlay.py` |
-| Shared HTTP client, User-Agent, background fetcher base | `http.py` `make_client`, `BackgroundFetcher` |
+| Shared HTTP client, TLS context (system CAs + certifi), User-Agent, background fetcher base | `http.py` `make_client`, `ssl_context`, `BackgroundFetcher` |
 
 ### Maps, settings and backups
 

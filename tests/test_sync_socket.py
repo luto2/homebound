@@ -71,3 +71,22 @@ def test_the_worker_connects_says_hello_and_reconnects(live_server) -> None:
     finally:
         worker.stop()
     assert states[-1] == "stopped"
+
+
+@pytest.mark.parametrize("server, expects_context", [("https://example.invalid", True), ("http://localhost:1", False)])
+def test_the_worker_passes_the_ssl_context_only_for_wss(monkeypatch, server, expects_context) -> None:
+    """wss:// connections get homebound's context; plain ws:// gets no ssl argument."""
+    from homebound import http
+    seen = {}
+
+    def fake_connect(url, **options):
+        seen.update(options)
+        raise OSError("stop")
+
+    monkeypatch.setattr("homebound.sync.client.connect", fake_connect)
+    worker = SocketWorker(server, lambda: {}, lambda message: None, lambda state: worker.stop())
+    worker.start()
+    worker.thread.join(timeout=5)
+    assert ("ssl" in seen) is expects_context
+    if expects_context:
+        assert seen["ssl"] is http.ssl_context()

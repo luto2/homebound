@@ -13,6 +13,7 @@ from collections.abc import Callable
 from websockets.exceptions import WebSocketException
 from websockets.sync.client import ClientConnection, connect
 
+from ..http import ssl_context
 from .protocol import MAX_MESSAGE_BYTES
 
 log = logging.getLogger("homebound.sync")
@@ -96,7 +97,9 @@ class SocketWorker:
             self.on_state("connecting")
             started = time.monotonic()
             try:
-                with connect(self.url, max_size=MAX_MESSAGE_BYTES * 4, open_timeout=15, close_timeout=2) as connection:
+                options = {"ssl": ssl_context()} if self.url.startswith("wss://") else {}
+                with connect(self.url, max_size=MAX_MESSAGE_BYTES * 4, open_timeout=15, close_timeout=2,
+                             **options) as connection:
                     with self.lock:
                         self.connection = connection
                     connection.send(json.dumps(self.hello()))

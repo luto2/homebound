@@ -1,8 +1,11 @@
 """Shared HTTP plumbing: the User-Agent, the client, ISO time parsing and the background fetcher base class."""
+import functools
+import ssl
 import threading
 from collections.abc import Callable
 from datetime import datetime, timezone
 
+import certifi
 import httpx
 
 from . import app_version
@@ -15,13 +18,27 @@ def user_agent(purpose: str = "personal offline wormhole mapper") -> str:
     return f"homebound/{app_version()} ({purpose})"
 
 
+@functools.cache
+def ssl_context() -> ssl.SSLContext:
+    """Return the one TLS context every Homebound connection uses: the system CAs plus certifi's bundle.
+
+    A packaged app carries its own OpenSSL, whose default CA paths may not exist on the user's distribution
+    (Arch), so certifi's ``cacert.pem`` is loaded on top of the system store. A company proxy CA in the
+    system store keeps working. Built once and shared.
+    """
+    context = ssl.create_default_context()
+    context.load_verify_locations(certifi.where())
+    return context
+
+
 def make_client(purpose: str = "personal offline wormhole mapper") -> httpx.Client:
-    """Return an HTTP client with Homebound's User-Agent, gzip and a 30 second timeout.
+    """Return an HTTP client with Homebound's User-Agent, gzip, a 30 second timeout and :func:`ssl_context`.
 
     Args:
         purpose: The text in parentheses in the User-Agent.
     """
-    return httpx.Client(headers={"User-Agent": user_agent(purpose), "Accept-Encoding": "gzip"}, timeout=30)
+    return httpx.Client(headers={"User-Agent": user_agent(purpose), "Accept-Encoding": "gzip"}, timeout=30,
+                        verify=ssl_context())
 
 
 def parse_utc(text: object) -> datetime | None:

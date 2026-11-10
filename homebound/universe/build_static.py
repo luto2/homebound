@@ -26,7 +26,7 @@ import zipfile
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
-from ..http import user_agent
+from ..http import ssl_context, user_agent
 from ..platform.paths import RESOLVED_FILE, UNIVERSE_FILE, bundled_data_directory, static_build_directory
 from ..validation import require_integer, require_number, require_text, require_type
 
@@ -99,7 +99,8 @@ def fetch(url: str, destination: Path, refresh: bool, progress: Callable[[float 
         return destination
     print(f"  downloading {url}", file=sys.stderr)
     partial = destination.with_name(destination.name + ".part")
-    with urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=600) as response:
+    with urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=600,
+                                context=ssl_context()) as response:
         total = int(response.headers.get("Content-Length") or 0)
         done = 0
         with partial.open("wb") as file:
@@ -186,7 +187,8 @@ def zkill_statics(system_id: int) -> list[str] | None:
     require_integer(system_id, "system_id", minimum=1)
     url = f"https://zkillboard.com/system/{system_id}/"
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=30) as response:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=30,
+                                    context=ssl_context()) as response:
             page = response.read()
     except (urllib.error.URLError, TimeoutError) as error:
         print(f"  zKill page for system {system_id} could not be read: {error}", file=sys.stderr)

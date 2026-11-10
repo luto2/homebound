@@ -230,11 +230,11 @@ def test_fetch_reports_fractions(tmp_path, monkeypatch) -> None:
         headers = {"Content-Length": "6"}
 
     monkeypatch.setattr(build_static, "CHUNK", 4)
-    monkeypatch.setattr(build_static.urllib.request, "urlopen", lambda request, timeout: SizedResponse(b"abcdef"))
+    monkeypatch.setattr(build_static.urllib.request, "urlopen", lambda request, timeout, context: SizedResponse(b"abcdef"))
     fractions = []
     build_static.fetch("https://example.invalid/x", tmp_path / "a", True, fractions.append)
     assert fractions == [4 / 6, 1.0]
-    monkeypatch.setattr(build_static.urllib.request, "urlopen", lambda request, timeout: FakeResponse(b"abc"))
+    monkeypatch.setattr(build_static.urllib.request, "urlopen", lambda request, timeout, context: FakeResponse(b"abc"))
     fractions.clear()
     build_static.fetch("https://example.invalid/x", tmp_path / "b", True, fractions.append)
     assert fractions == [None]
@@ -260,7 +260,7 @@ def test_fetch_downloads_and_caches(tmp_path, monkeypatch) -> None:
     and rejects an empty URL or a target that is not a Path."""
     requested = []
 
-    def fake_urlopen(request, timeout) -> FakeResponse:
+    def fake_urlopen(request, timeout, context) -> FakeResponse:
         """Record the URL, User-Agent and timeout and answer with a fixed payload."""
         requested.append((request.full_url, request.get_header("User-agent"), timeout))
         return FakeResponse(b"payload")
@@ -287,11 +287,11 @@ def test_zkill_statics_parses_page(monkeypatch) -> None:
     page = (b"<html><body><div>Statics: <b>(N110)</b> &amp; (H296)</div> Alltime kills</body></html>")
     seen = []
     monkeypatch.setattr(build_static.urllib.request, "urlopen",
-                        lambda request, timeout: seen.append(request.full_url) or FakeResponse(page))
+                        lambda request, timeout, context: seen.append(request.full_url) or FakeResponse(page))
     assert build_static.zkill_statics(31000001) == ["H296", "N110"]
     assert seen == ["https://zkillboard.com/system/31000001/"]
     monkeypatch.setattr(build_static.urllib.request, "urlopen",
-                        lambda request, timeout: FakeResponse(b"<html>no such line</html>"))
+                        lambda request, timeout, context: FakeResponse(b"<html>no such line</html>"))
     assert build_static.zkill_statics(31000001) is None
     with pytest.raises(ValueError):
         build_static.zkill_statics(0)
@@ -299,7 +299,7 @@ def test_zkill_statics_parses_page(monkeypatch) -> None:
 
 def test_zkill_statics_gives_none_when_zkill_is_unreachable(monkeypatch, capsys) -> None:
     """A failed zKill request is None, with the reason on stderr; the build then falls back to the union."""
-    def unreachable(request, timeout):
+    def unreachable(request, timeout, context):
         """Simulate zKillboard refusing the connection."""
         raise build_static.urllib.error.URLError("connection refused")
 

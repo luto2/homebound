@@ -1,6 +1,9 @@
 """The shared HTTP helpers."""
+import ssl
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
+import certifi
 import httpx
 
 from homebound import app_version, http
@@ -39,3 +42,19 @@ def test_background_fetcher_checks_callbacks() -> None:
         http.BackgroundFetcher("x", lambda: None, "status")
     fetcher = http.BackgroundFetcher("x", lambda: None, None)
     assert fetcher.thread.daemon and fetcher.thread.name == "x"
+
+
+def test_ssl_context_trusts_certifi_and_is_shared() -> None:
+    """The context verifies certificates, has CAs loaded, and is built once."""
+    context = http.ssl_context()
+    assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname
+    assert context.cert_store_stats()["x509_ca"] > 0
+    assert Path(certifi.where()).is_file() and http.ssl_context() is context
+
+
+def test_the_client_verifies_with_the_shared_context(monkeypatch) -> None:
+    """make_client hands httpx the shared context as ``verify``."""
+    seen = {}
+    monkeypatch.setattr(httpx, "Client", lambda **options: seen.update(options))
+    http.make_client("test")
+    assert seen["verify"] is http.ssl_context()

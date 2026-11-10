@@ -8,6 +8,7 @@ from contextlib import closing
 import pytest
 
 from conftest import HOME, UNIVERSE
+from homebound.http import ssl_context
 from homebound.platform.paths import static_data_path
 from homebound.universe import build_static
 from homebound.universe import db
@@ -230,3 +231,35 @@ def test_known_type_ignores_k162_blanks_and_case() -> None:
     assert UNIVERSE.known_type("XXXX") is None
     with pytest.raises(TypeError):
         UNIVERSE.known_type(5)
+
+
+class FakeResponse:
+    """A urlopen result: a context manager with headers and a body."""
+
+    headers = {"Content-Length": "2"}
+
+    def __init__(self) -> None:
+        self.chunks = [b"{}"]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *error) -> None:
+        return None
+
+    def read(self, size: int = -1) -> bytes:
+        return self.chunks.pop(0) if self.chunks else b""
+
+
+def test_downloads_pass_the_shared_ssl_context(tmp_path, monkeypatch) -> None:
+    """fetch and the zKill statics page both hand urlopen homebound's context (certifi's CAs)."""
+    calls = []
+
+    def fake_urlopen(request, **options):
+        calls.append(options)
+        return FakeResponse()
+
+    monkeypatch.setattr(build_static.urllib.request, "urlopen", fake_urlopen)
+    build_static.fetch("https://example.invalid/", tmp_path / "file.json", refresh=True)
+    build_static.zkill_statics(31000005)
+    assert len(calls) == 2 and all(options["context"] is ssl_context() for options in calls)
