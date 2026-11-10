@@ -15,6 +15,7 @@ from ..theme.tokens import PIXELS, color, font
 from ..validation import require_integer, require_type
 from ..zkill import ZKILL_STALE_AFTER, age
 from ..mapping.scan_status import age_text
+from .activity_list import ActivityList
 from .signature_table import SignatureTable
 from .state import AppState
 
@@ -219,6 +220,8 @@ class SystemPanel(QWidget):
         zkill_row.addWidget(self.zkill, 1)
         zkill_row.addWidget(self.zkill_refresh)
         body.addLayout(zkill_row)
+        self.activity = ActivityList(self.state)
+        body.addWidget(self.activity)
 
         self.notes = QPlainTextEdit()
         self.notes.setPlaceholderText("Notes")
@@ -336,6 +339,7 @@ class SystemPanel(QWidget):
             self.notes.setPlainText(mapped.notes or "")
             self.notes.blockSignals(False)
         self.zkill.setText(self.zkill_text())
+        self.activity.load(self.system_id if state.settings.zkill_enabled else 0)
         self.table.load(self.system_id)
         signatures = self.table.signature_model.signatures
         missing = [signature for signature in signatures if signature.state == "missing"]
