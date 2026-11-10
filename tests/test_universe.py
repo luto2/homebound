@@ -230,3 +230,13 @@ def test_known_type_ignores_k162_blanks_and_case() -> None:
     assert UNIVERSE.known_type("XXXX") is None
     with pytest.raises(TypeError):
         UNIVERSE.known_type(5)
+
+
+def test_ship_names() -> None:
+    """A known ship has a name and group, an unknown ID or a non-ship type has none; bad input raises."""
+    assert UNIVERSE.ship_name(587) == "Rifter" and UNIVERSE.ship_group_name(587) == "Frigate"
+    assert UNIVERSE.ship_name(670) == "Capsule"
+    assert UNIVERSE.ship_name(-5) is None and UNIVERSE.ship_name(2) is None      # unknown, a corporation
+    assert UNIVERSE.ship_group_name(34) is None                                   # Tritanium, not a ship
+    with pytest.raises(TypeError):
+        UNIVERSE.ship_name("Rifter")

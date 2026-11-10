@@ -42,6 +42,14 @@ def make_sde(path: Path, with_build: bool = True) -> None:
             {"_key": 30000150, "name": name("Nullish"), "regionID": 2, "constellationID": 20,
              "securityStatus": -0.4},
             {"_key": 32000001, "name": name("Abyssal"), "regionID": 3, "constellationID": 30}),
+        "categories.jsonl": jsonl({"_key": 6, "name": name("Ship")}, {"_key": 7, "name": name("Module")}),
+        "groups.jsonl": jsonl({"_key": 25, "categoryID": 6, "name": name("Frigate")},
+                              {"_key": 832, "categoryID": 6, "name": name("Logistics")},
+                              {"_key": 53, "categoryID": 7, "name": name("Energy Weapon")}),
+        "types.jsonl": jsonl({"_key": 587, "groupID": 25, "published": True, "name": name("Rifter")},
+                             {"_key": 11978, "groupID": 832, "published": True, "name": name("Scimitar")},
+                             {"_key": 999, "groupID": 25, "published": False, "name": name("Old Rifter")},
+                             {"_key": 3001, "groupID": 53, "published": True, "name": name("Laser")}),
         "mapStargates.jsonl": jsonl(
             {"solarSystemID": 30000142, "destination": {"solarSystemID": 30000144}},
             {"solarSystemID": 30000144, "destination": {"solarSystemID": 30000142}}),
@@ -126,6 +134,8 @@ def test_build_end_to_end(fake_sources) -> None:
     assert universe.wormhole_type("B274").destinations == ("DR", "HS")
     assert universe.wormhole_type("B274").wanders_into == ()
     assert universe.wormhole_type("K162").wanders_into is None
+    assert universe.ship_name(587) == "Rifter" and universe.ship_group_name(11978) == "Logistics"
+    assert universe.ship_name(999) is None and universe.ship_name(3001) is None    # unpublished, not a ship
     meta = dict(universe.database.execute("SELECT key, value FROM meta"))
     assert meta["schema_version"] == SCHEMA_VERSION == build_static.SCHEMA_VERSION
     assert meta["sde_build"] == "12345"
