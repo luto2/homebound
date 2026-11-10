@@ -125,6 +125,7 @@ def simulation() -> MapSimulation:
 @pytest.fixture(scope="session")
 def qt_application() -> Iterator[object]:
     """The one QApplication of the test run, offscreen, with the Homebound theme."""
+    from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication
 
     from homebound.theme.qss import apply_theme
@@ -133,9 +134,31 @@ def qt_application() -> Iterator[object]:
     yield application
     for widget in application.topLevelWidgets():
         widget.close()
-        widget.deleteLater()
+        if widget.windowType() != Qt.WindowType.Popup:   # a popup belongs to its QCompleter or menu
+            widget.deleteLater()
     application.processEvents()
     gc.collect()
+
+
+@pytest.fixture(autouse=True)
+def close_widgets() -> Iterator[None]:
+    """Close and delete every top-level widget a test left behind, before its databases are closed.
+
+    A leftover widget keeps painting in later tests on a closed store, and its paint errors put a traceback in
+    ``sys.last_exc`` whose frames keep the test's own widgets alive. When the next paint error replaces it, such
+    a widget can be freed in the middle of its own paintEvent: the segfault of plan-test-segfault.md.
+    """
+    yield
+    from PySide6.QtCore import QCoreApplication, QEvent, Qt
+    from PySide6.QtWidgets import QApplication
+    application = QApplication.instance()
+    if application is None:
+        return
+    for widget in application.topLevelWidgets():
+        widget.close()
+        if widget.windowType() != Qt.WindowType.Popup:   # a popup belongs to its QCompleter or menu
+            widget.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
 class ModalResponder:

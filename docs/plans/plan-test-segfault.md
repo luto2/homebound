@@ -1,14 +1,75 @@
 # Plan: stop the UI test segfault
 
-Status: not implemented. Root cause NOT confirmed: the leading cause is below, and the crash did not
-reproduce in this investigation.
+Status: implemented 2026-11-10. Root cause confirmed with a deterministic reproduction; see the next
+section. The fix is test-only (`close_widgets` in `tests/conftest.py`); the app can't hit it.
 
 Depends on: nothing. Overlaps with `TODO.md` item 1 (corrupt map lockout), see "Can the app hit it".
 
 This covers `TODO.md` item 3, "[8] Test suite segfaults", and section 1 of `docs/findings/findings.md`.
-Everything was run from `582ee55` code (`git diff 582ee55 HEAD -- homebound tests pyproject.toml
-uv.lock` is empty). Instrumentation lived in the scratch folder. Nothing in the repo was changed
-apart from this file.
+The sections after "Root cause, confirmed" are the first investigation (2026-11-06), kept as found. It was
+run from `582ee55` code (`git diff 582ee55 HEAD -- homebound tests pyproject.toml uv.lock` was empty then).
+
+## Root cause, confirmed (2026-11-10)
+
+A test's own `SignatureTable` is freed inside its own `QTableView::paintEvent`. The chain:
+
+1. Widgets outlive their tests. A `SystemPanel` is kept alive for good by its `AppState` signal connections
+   to lambdas that capture the panel (`system_panel.py:171`, `:222`, `:273`), and `close_databases` closes its
+   store at teardown. It stays shown, so later tests paint it, and every row's `SignatureDelegate.paint`
+   raises `sqlite3.ProgrammingError` (510 tracebacks per run of the file before the fix).
+2. PySide reports an error in a Python override with `PyErr_Print`, which stores it in `sys.last_exc`.
+   That traceback's `paint` frame links through `f_back` to the Python frame that called
+   `processEvents()`, and CPython keeps a finished frame's locals as long as its frame object lives.
+3. So when the leftover panel raises during a `processEvents()` in a test body, `sys.last_exc` holds that
+   test's frame, and with it the `table` fixture's table. Pytest drops its own references at teardown,
+   but the table lives on, shown, with its store now closed.
+4. In the next test's `table` fixture `processEvents()` (`test_ui_panels.py:965`, was `:859`), that
+   table paints, its delegate raises, and PySide replaces `sys.last_exc`. That drops the old traceback,
+   the table's last reference, so Shiboken deletes the C++ view right there, inside its own paint.
+   `QTableView::paintEvent` then carries on with freed private data: null headers, a bad selection
+   model, the `QObject` vtable on the widget. That is every stack in the core dump table.
+
+It is plain refcounting, which is why gc off didn't help. It needs a leftover widget to raise during a
+test body's `processEvents()` (point 3), and whether one does depends on timing: a leftover panel's
+`_notes_timer` (600 ms, raises from `_save_notes`), or a flash or other repaint that comes due during that
+call. That explains a rate that changed with no code change (the audit ran many suites side by side), and
+why the crashes clustered in `test_header_click_through_the_connection`: the test before it,
+`test_header_press_toggles_the_group`, is a `table` test with a `processEvents()` in its body.
+
+**Reproduction.** Forcing point 3 makes it deterministic. Three tests with the real fixtures: one uses
+`panel` (it is left behind); one uses `table`, calls `viewport().update()` on every other `SignatureTable`,
+then `processEvents()`; one only requests `table`. Before the fix: exit 139 in 5 of 5 runs, with
+faulthandler in the `table` fixture at `test_ui_panels.py:965`. After it: 5 of 5 pass. A plain-Qt script
+(a raising delegate, a function that holds the view and pumps events while another view raises, then a
+repaint of the view after the function returned, gc disabled) segfaults every time, with gdb showing
+`QHeaderView::logicalIndex` under `QTableView::paintEvent` under `QWidgetPrivate::drawWidget`.
+
+**Crash rate measured before the fix (2026-11-10, current master):** 0 of 40 sequential runs, 0 of 200
+on 12 workers, 0 of 320 on 40 workers (overloaded), 0 of 200 with `PYTHONHASHSEED` 0 to 199. The timing in
+point 3 just doesn't come up on today's machine; the forced sequence above is the real before and after.
+
+**Fix.** `tests/conftest.py`: an autouse `close_widgets` fixture closes every top-level widget after each
+test and deletes it (`deleteLater` + `sendPostedEvents(DeferredDelete)`), skipping popups, which belong to
+their `QCompleter` or menu (deleting them twice segfaults, see below). It is defined after
+`close_databases`, so it tears down first: widgets go while their stores are still open. Nothing is
+left to paint on a closed store, so point 1 is gone and no table can be held by a traceback. The
+`qt_application` teardown loop got the same popup check. There's no `gc.collect()`: the C++ side is
+deleted explicitly, and gc never was the trigger. Regression test: `test_a_table_left_shown` and
+`test_widgets_of_the_last_test_are_deleted` (`test_ui_panels.py`, end of file). The second fails without
+the fixture.
+
+**After the fix:** 0 closed-database tracebacks per run (was 510), `test_ui_panels.py` 89 passed in about
+1.0 s (was 1.8 s), 40 of 40 sequential runs and 460 of 460 on 14 workers exit 0, full suite 1113 passed,
+8 of 8 full-suite runs exit 0.
+
+**Can the app hit it.** No, not this way. It needs a shown, Python-owned, parentless view whose only
+reference is a frame in a stored traceback, and whose own paint raises. The app's one `SignatureTable`
+belongs to the `SystemPanel` in its dock and lives until exit. Its dialogs have parents and are hidden
+after `exec()`; `BuildDataDialog` in `__main__.py` has no parent but is hidden once `exec()` returns, so it
+doesn't paint again. The closed-store paint error itself is still reachable (`TODO.md` item 1); it gives a
+broken window, not this crash. One leftover: when a delegate's paint raises, its `painter.save()` has no
+`restore()` ("QPainter::end: Painter ended with 21 saved states"); harmless now, worth a `try`/`finally`
+if paint errors stay possible in the app.
 
 ## What was run
 
@@ -103,7 +164,9 @@ completer also owns, so it gets deleted twice. Skipping `Qt.WindowType.Popup` ma
 This is a trap for the fix, and it is not the audit's crash. The same loop sits in the `qt_application`
 teardown (`tests/conftest.py:110`), which has not crashed in any run here.
 
-## Root cause
+## Root cause (2026-11-06, superseded)
+
+Now confirmed, with the trigger found: see "Root cause, confirmed" at the top.
 
 **Leading, not verified.** A `SignatureTable` leaked by an earlier test, still visible, is painted
 during a later `processEvents()` and is destroyed around that paint, or paints on private data that
