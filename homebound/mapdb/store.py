@@ -4,7 +4,7 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field as dataclass_field, fields
 from datetime import datetime, timedelta, timezone
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Collection, Iterator
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -763,6 +763,32 @@ class Store:
         require_integer(connection_id, "connection_id", minimum=1)
         return _from_row(Connection, self.database.execute("SELECT * FROM connections WHERE id=?",
                                                            (connection_id,)).fetchone())
+
+    def remove_unlinked_systems(self, system_ids: Collection[int], keep: Collection[int | None]) -> list[int]:
+        """Remove the systems among ``system_ids`` that a connection no longer holds on the map.
+
+        A system goes if it is on the map, not in ``keep``, not pinned and has no connection left.
+        Afterwards systems whose parent link is gone are detached (``clear_broken_parents``).
+
+        Args:
+            system_ids: The systems to look at, e.g. the ends of a connection that was just removed.
+            keep: Systems that stay in any case, e.g. home and the ones a character is in.
+
+        Returns:
+            The IDs removed, in the order of ``system_ids``.
+        """
+        require_type(system_ids, (list, tuple, set, frozenset), "system_ids")
+        require_type(keep, (list, tuple, set, frozenset), "keep")
+        removed = []
+        with self.batch():
+            for system_id in system_ids:
+                system = self.system(system_id)
+                if (system and system_id not in keep and not system.pinned
+                        and not self.connections_of_system(system_id)):
+                    self.remove_system(system_id)
+                    removed.append(system_id)
+            self.clear_broken_parents()
+        return removed
 
     def connections_of_system(self, system_id: int) -> list[Connection]:
         """Return every connection that ends in ``system_id``."""

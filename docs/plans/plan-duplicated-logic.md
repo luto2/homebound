@@ -1,6 +1,6 @@
 # Plan: duplicated logic that can drift (TODO item 9, findings D1 and D2)
 
-Status: part A done (2026-11-10), part B not started.
+Status: done 2026-11-10 (both parts).
 
 Check before building: is `state.home_id` always equal to `namer.home_id`? `state.home_id` is a
 property read from `settings.home_system`; `namer.home_id` is a copy set at start, in `switch_map` and in
@@ -85,19 +85,20 @@ Existing tests must still pass unchanged.
 
 After a connection goes, systems left with no connection are removed in two places.
 
-- Expiry, `Tracker.expire` (`homebound/mapping/tracker.py:429-433`): for each end of an expired
+- Expiry, `Tracker.expire` (`homebound/mapping/tracker.py`, `Tracker.expire`): for each end of an expired
   connection, skip it if a character is in it (`self.store.characters()`) or it is home; otherwise
   remove it if it is not pinned and has no connection left.
-- Collapse, `MapWindow._collapse` (`homebound/ui/map_window.py:1139-1144`): for each end, remove
+- Collapse, `MapWindow._collapse` (`homebound/ui/map_window.py`): for each end, remove
   it if it is not home, not pinned and has no connection left. It never looks at characters.
 
 Both then call `clear_broken_parents()`.
 
 So the difference is exactly the character check. Collapsing a hole whose far end holds a
 character removes that system from the map, and the character's row stays pointing at a system
-that is no longer on it. Expiry keeps it. The same collapse also does not use
-`Tracker.home_id`: it reads `state.home_id` while `expire` reads `self.namer.home_id`. I did not
-check whether they always return the same value, so that part is unverified.
+that is no longer on it. Expiry keeps it. The same collapse reads `state.home_id` while `expire` reads `self.namer.home_id`. Not confirmed
+to be always equal (the writers are `_set_home`, `apply_settings`, `switch_map` and the settings
+dialog, which all update `namer.home_id` or go through `apply_settings`); the refactor keeps each
+caller's own source, so it does not change which one is used.
 
 ### Which behaviour looks correct
 
@@ -116,7 +117,7 @@ Do this only after the owner confirms the rule.
 
 `homebound/mapdb/store.py`:
 
-- Add `Store.remove_unlinked_systems(system_ids, keep: set[int]) -> list[int]`: for each ID not
+- (Done.) Add `Store.remove_unlinked_systems(system_ids, keep: Collection[int | None]) -> list[int]`: for each ID not
   in `keep`, remove the system if it exists, is not pinned and has no connection left; then call
   `clear_broken_parents()`. Returns the IDs removed (collapse needs them for its undo message;
   `expire` can ignore the result).
@@ -137,7 +138,7 @@ removes the duplication: collapse passes `keep={home_id}` and a comment says why
 ### Tests (write first, watch them fail)
 
 1. `tests/test_ui_map_window.py`, next to `test_collapse_keeps_connected_and_deletes_signatures`:
-   `test_collapse_keeps_the_system_a_character_is_in`. Add a child, put a character in it with
+   `test_collapse_keeps_the_system_a_character_is_in` (plus `test_collapse_removes_an_empty_far_end`). Add a child, put a character in it with
    `store.set_character(...)`, collapse the hole, assert `store.has_system(child.id)`. Fails
    today. (Skip this one if the owner picks the other behaviour; write the opposite assertion
    instead, so the difference is pinned.)

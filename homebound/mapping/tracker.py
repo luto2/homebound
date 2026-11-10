@@ -470,11 +470,7 @@ class Tracker:
                 removed += 1
         if removed:
             occupied = {character["system_id"] for character in self.store.characters()}
-            for system_id in expired_ends - occupied - {self.namer.home_id}:
-                system = self.store.system(system_id)
-                if system and not system.pinned and not self.store.connections_of_system(system_id):
-                    self.store.remove_system(system_id)
-            self.store.clear_broken_parents()
+            self.store.remove_unlinked_systems(expired_ends, keep=occupied | {self.namer.home_id})
         return removed
 
     # ------------------------------------------------------------ answers from the UI

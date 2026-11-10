@@ -1015,6 +1015,23 @@ def test_collapse_keeps_connected_and_deletes_signatures(window) -> None:
     assert not store.connection(HOME.id, first.id) and store.connection(first.id, second_child.id)
 
 
+def test_collapse_keeps_the_system_a_character_is_in(window) -> None:
+    """Like an expiring hole: the far end stays on the map while a pilot is in it, and is loose."""
+    child = add_child(window)
+    store = window.state.store
+    store.set_character(1, "Pilot", child.id, "2026-11-01T12:00:00+00:00")
+    window._collapse(edge_id(window, child))
+    assert store.has_system(child.id) and store.system(child.id).parent_id is None
+    assert not store.connection(HOME.id, child.id)
+
+
+def test_collapse_removes_an_empty_far_end(window) -> None:
+    """With nobody in it, the far end of a collapsed hole is removed and home stays."""
+    child = add_child(window)
+    window._collapse(edge_id(window, child))
+    assert not window.state.store.has_system(child.id) and window.state.store.has_system(HOME.id)
+
+
 def test_edge_activated_signal_opens_dialog(window, modal) -> None:
     """Double-clicking an edge (edgeActivated) opens the connection dialog."""
     child = add_child(window)

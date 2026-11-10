@@ -224,6 +224,32 @@ def test_key_values(store) -> None:
         store.put_value("key", 5)
 
 
+def test_remove_unlinked_systems(store) -> None:
+    """Only a mapped system that is not kept, not pinned and has no connection left is removed."""
+    free, kept, pinned, linked = (pick_system("C5", exclude=(HOME.id,)), pick_system("C3"), pick_system("C4"),
+                                  pick_system("C2"))
+    for system in (free, kept, pinned, linked):
+        store.add_system(system.id)
+    store.update_system(pinned.id, pinned=1)
+    store.add_connection(HOME.id, linked.id)
+    missing = max(system.id for system in (free, kept, pinned, linked)) + 1
+    removed = store.remove_unlinked_systems([free.id, kept.id, pinned.id, linked.id, missing], keep={kept.id})
+    assert removed == [free.id]
+    assert [store.has_system(system.id) for system in (free, kept, pinned, linked)] == [False, True, True, True]
+    assert store.remove_unlinked_systems([], keep=set()) == []
+    with pytest.raises(TypeError):
+        store.remove_unlinked_systems(free.id, keep=set())
+
+
+def test_remove_unlinked_systems_detaches_children_it_orphans(store) -> None:
+    """A removed system's children lose their parent (as ``clear_broken_parents`` does after it)."""
+    c5, c3 = pick_system("C5", exclude=(HOME.id,)), pick_system("C3")
+    store.add_system(c5.id, parent_id=HOME.id, hole_index=1)
+    store.add_system(c3.id, parent_id=c5.id, hole_index=2)
+    assert store.remove_unlinked_systems([c5.id], keep=set()) == [c5.id]
+    assert store.system(c3.id).parent_id is None
+
+
 def test_clear_broken_parents(store) -> None:
     """Only systems whose parent connection is gone are detached."""
     c5, c3 = pick_system("C5", exclude=(HOME.id,)), pick_system("C3")

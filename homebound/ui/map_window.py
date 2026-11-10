@@ -1200,15 +1200,10 @@ class MapWindow(QMainWindow):
                 signature = connection.signature_on(side)
                 if signature:
                     state.store.delete_signatures(side, [signature])
-            # drop systems that are no longer connected to anything (except home / pinned)
-            gone = []
-            for system_id in (connection.system_a, connection.system_b):
-                mapped = state.store.system(system_id)
-                if (mapped and system_id != state.home_id and not mapped.pinned
-                        and not state.store.connections_of_system(system_id)):
-                    state.store.remove_system(system_id)
-                    gone.append(names[system_id])
-            state.store.clear_broken_parents()
+            # drop systems that are no longer connected to anything (except home, pinned, with a character in them)
+            keep = {character["system_id"] for character in state.store.characters()} | {state.home_id}
+            gone = [names[system_id] for system_id in state.store.remove_unlinked_systems(
+                (connection.system_a, connection.system_b), keep)]
         state.mapChanged.emit()
         detail = (f"{' and '.join(gone)} {'was' if len(gone) == 1 else 'were'} removed from the map." if gone
                   else "Both systems stay on the map.")
