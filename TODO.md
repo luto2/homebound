@@ -12,7 +12,7 @@ the sync protocol or an unknown cause) and the model suggested for it: Opus for 
 unknown causes or design calls made while coding; Sonnet for a feature the plan pins down; Haiku for
 a small change whose file and fix are named.
 
-1. Show what zKill activity happened, not just how much. Plan: `docs/plans/plan-zkill-details.md`.
+1. **Done 2026-11-10 (`1665163`).** Show what zKill activity happened, not just how much. Plan: `docs/plans/done/plan-zkill-details.md`.
    Effort: 3/5 · Sonnet. The API already returns full killmails; the work is parsing, caching and a popup.
 2. **Icons and cache refresh done 2026-11-10 (`e6b86d3`); cause and desktop test still open.** Image for the app menu. Same as "To do" 14. Plan: `docs/plans/plan-menu-icon.md`.
    Effort: 1/5 · Haiku for the code. Most of it is testing on Plasma by hand.
@@ -110,7 +110,7 @@ is. The Effort line uses the same scale and models as the human-added tasks.
    locked file (Windows, OneDrive) is the likely trigger. During a migration backup it would abort
    opening the map.
    Effort: 1/5 · Sonnet, in the session with 1.
-7. **[4] zKill worker dies silently (E7a, E7, E19).** `_fetch` catches only HTTP errors and
+7. **Done 2026-11-10 (`3241a44`).** **[4] zKill worker dies silently (E7a, E7, E19).** `_fetch` catches only HTTP errors and
    `ValueError`, so `sqlite3.Error` or a non-dict `victim` ends the thread until restart. Report it
    on the status line and keep the worker alive. `client.close()` belongs in a `finally`.
    Effort: 2/5 · Sonnet.

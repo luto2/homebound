@@ -1,7 +1,6 @@
 # Plan: show what the zKill activity was, not just how much
 
-Status: not started. Owner task "show what zkill activity happend not just how much" (`TODO.md`,
-human-added task 1). New feature.
+Status: implemented (2026-11-10, commits `7e99e8d`, `0ae364d`, `1665163`). Deviations: NPC kills no longer count toward the meter by default ("Count NPC kills" setting); the tooltip rows show on any hover of the node; no copy button, double-click/Enter opens the kill; fold state not saved; `tests/data/zkill_sample.json` is hand-built, not recorded. Universe schema 4: every user rebuilds the game data once.
 
 Depends on: nothing. Touches the zKill worker, the map file schema, the universe build, the system panel
 and the node tooltip. Four commits, in the order of the steps below.
@@ -43,14 +42,14 @@ What we can't show without ESI: character, corp and alliance *names*. IDs only, 
    (ships) only, about 500 rows. `universe/db.py` `Universe.ship_name(type_id)` returns `"Loki"` or
    `None`. This is a universe schema change, so bump its version: every user gets the rebuild dialog
    once (`UniverseDataError`). Ship it in the same release as the SSL fix
-   ([`done/plan-appimage-ssl.md`](done/plan-appimage-ssl.md)) so that rebuild works on Arch.
+   ([`done/plan-appimage-ssl.md`](plan-appimage-ssl.md)) so that rebuild works on Arch.
 2. **Keep the kills.** In `zkill.py`, `summarize` also returns a list of `KillSummary` rows
    (`killmail_id, killed_at, victim_ship_id, attacker_count, top_attacker_ship_id, value, npc, solo`).
    `mapdb/store.py` gets a `zkill_kills` table keyed by `(system_id, killmail_id)` (added in
    `COLUMN_ADDITIONS` style, as a new table), replaced per system on each fetch, so it never holds more
    than the last 24 h. Local only: like `zkill` it isn't a synced entity.
    Skip malformed entries the way `summarize` already skips bad times; add a `try` for non-dict
-   `victim`/`attackers` (this overlaps with [`plan-zkill-worker.md`](plan-zkill-worker.md); do that plan
+   `victim`/`attackers` (this overlaps with [`plan-zkill-worker.md`](../plan-zkill-worker.md); do that plan
    first or in the same branch).
 3. **System panel section.** A small model/delegate in `ui/system_panel.py` (or a new
    `ui/activity_list.py` if it grows past ~150 lines), painted with the existing chip and row helpers
