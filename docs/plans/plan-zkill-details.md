@@ -43,7 +43,7 @@ What we can't show without ESI: character, corp and alliance *names*. IDs only, 
    (ships) only, about 500 rows. `universe/db.py` `Universe.ship_name(type_id)` returns `"Loki"` or
    `None`. This is a universe schema change, so bump its version: every user gets the rebuild dialog
    once (`UniverseDataError`). Ship it in the same release as the SSL fix
-   ([`plan-appimage-ssl.md`](plan-appimage-ssl.md)) so that rebuild works on Arch.
+   ([`done/plan-appimage-ssl.md`](done/plan-appimage-ssl.md)) so that rebuild works on Arch.
 2. **Keep the kills.** In `zkill.py`, `summarize` also returns a list of `KillSummary` rows
    (`killmail_id, killed_at, victim_ship_id, attacker_count, top_attacker_ship_id, value, npc, solo`).
    `mapdb/store.py` gets a `zkill_kills` table keyed by `(system_id, killmail_id)` (added in
