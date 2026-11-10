@@ -167,6 +167,7 @@ class SystemPanel(QWidget):
         self._build_details(body)
         self._build_signatures(body)
         state.selectionChanged.connect(self.set_system)
+        state.selectedCountChanged.connect(self.refresh_selected_note)
         state.systemUpdated.connect(lambda system_id: system_id == self.system_id and self.refresh())
         state.mapChanged.connect(self.refresh)
         state.settingsChanged.connect(self.refresh)
@@ -182,7 +183,11 @@ class SystemPanel(QWidget):
         self.name.editingFinished.connect(self._save_name)
         self.system_name_label = QLabel()
         self.system_name_label.setProperty("role", "mono")
+        self.selected_note = QLabel()
+        self.selected_note.setProperty("role", "help")
+        self.selected_note.hide()
         row.addWidget(self.name, 1)
+        row.addWidget(self.selected_note)
         row.addWidget(self.system_name_label)
         body.addLayout(row)
         self.location_label = QLabel()
@@ -280,6 +285,11 @@ class SystemPanel(QWidget):
         body.addLayout(bottom)
 
     # ------------------------------------------------------------ load
+    def refresh_selected_note(self, count: int = 0) -> None:
+        """Say how many more systems are selected besides the one shown ("+2 selected")."""
+        self.selected_note.setText(f"+{count - 1} selected")
+        self.selected_note.setVisible(count > 1 and bool(self.system_id))
+
     def set_system(self, system_id: int) -> int:
         """Show a system (0, or a system not on the map, shows the empty state).
 
@@ -312,6 +322,7 @@ class SystemPanel(QWidget):
             self.system_id = 0
         self.empty.setVisible(not self.system_id)
         self.body.setVisible(bool(self.system_id))
+        self.refresh_selected_note(state.selected_count)
         if not self.system_id:
             return
         system, mapped = state.universe.by_id(self.system_id), state.store.system(self.system_id)

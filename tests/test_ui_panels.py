@@ -1240,3 +1240,12 @@ def test_panel_paints_with_a_full_table(state, panel, qt_application) -> None:
     qt_application.processEvents()
     assert not panel.grab().isNull()
     assert panel.banner.isVisible()
+
+
+def test_header_notes_the_other_selected_systems(state, panel, qt_application) -> None:
+    """With several systems selected the panel says how many more there are besides the shown one."""
+    panel.set_system(HOME.id)
+    state.set_selected_count(3)
+    assert panel.selected_note.text() == "+2 selected" and not panel.selected_note.isHidden()
+    state.set_selected_count(1)
+    assert panel.selected_note.isHidden()
