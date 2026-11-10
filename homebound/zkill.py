@@ -42,17 +42,16 @@ def _ship_type_id(entry: object) -> int | None:
     return ship_type_id if isinstance(ship_type_id, int) and not isinstance(ship_type_id, bool) and ship_type_id > 0 else None
 
 
-def summarize(system_id: int, kills: list[dict], now: datetime | None = None, count_npc: bool = False) -> ZkillStats:
+def summarize(system_id: int, kills: list[dict], now: datetime | None = None) -> ZkillStats:
     """Turn a zKill killmail list into activity numbers.
 
     Killmails without a readable ``killmail_time`` are skipped; a ``victim`` that is not a dict
-    only skips the pod check. NPC kills (``zkb.npc``) are left out unless ``count_npc`` is set.
+    only skips the pod check. NPC kills (``zkb.npc``) count like any other kill.
 
     Args:
         system_id: The system the kills are in.
         kills: The decoded API response.
         now: The current time (UTC), or None for the clock.
-        count_npc: Count NPC kills as well (a rat killing a ratter makes the system look hot).
 
     Returns:
         Kills in the last hour and day, pod kills in the last hour, and the time of the last kill.
@@ -60,13 +59,12 @@ def summarize(system_id: int, kills: list[dict], now: datetime | None = None, co
     require_integer(system_id, "system_id", minimum=1)
     require_type(kills, list, "kills")
     require_type(now, (datetime, type(None)), "now")
-    require_type(count_npc, bool, "count_npc")
     now = now or datetime.now(timezone.utc)
     times = []
     pod_kills_1h = 0
     for kill in kills:
         killed_at = parse_utc(kill.get("killmail_time")) if isinstance(kill, dict) else None
-        if killed_at is None or (_is_npc(kill) and not count_npc):
+        if killed_at is None:
             continue
         times.append(killed_at)
         if now - killed_at <= timedelta(hours=1) and _ship_type_id(kill.get("victim")) in POD_TYPE_IDS:
@@ -159,7 +157,6 @@ class ZkillFetcher(BackgroundFetcher):
         self.forced: set[int] = set()      # queued systems that are to be fetched even if fresh
         self._pending_lock = threading.Lock()
         self.enabled = True
-        self.count_npc = False             # count NPC kills in the meter (off by default)
 
     def stop(self) -> None:
         """Ask the worker thread to finish after its current request."""
@@ -266,7 +263,7 @@ class ZkillFetcher(BackgroundFetcher):
             response.raise_for_status()
             data = response.json()
             data = data if isinstance(data, list) else []
-            store.set_zkill_stats(summarize(system_id, data, count_npc=self.count_npc))
+            store.set_zkill_stats(summarize(system_id, data))
             store.replace_zkill_kills(system_id, summarize_kills(system_id, data))
         except (httpx.HTTPError, ValueError, sqlite3.Error) as error:
             self._status("warn", f"zKill: {type(error).__name__}")

@@ -82,7 +82,6 @@ class AppState(QObject):
         self._zkillStatus.connect(lambda level, text: self.status.emit("zkill", level, text))
         self.zkill = ZkillFetcher(self.database_path, self._zkillUpdated.emit, self._zkillStatus.emit)
         self.zkill.enabled = settings.zkill_enabled
-        self.zkill.count_npc = settings.zkill_count_npc
         self._scoutStatus.connect(lambda level, text: self.status.emit("scout", level, text))
         self.eve_scout = EveScoutFetcher(self.scoutUpdated.emit, self._scoutStatus.emit)
         self.eve_scout.enabled = settings.eve_scout_enabled
@@ -326,7 +325,6 @@ class AppState(QObject):
         self.namer.home_id = self.home_id
         self.tracker.auto_when_certain = settings.auto_name_when_certain
         self.zkill.enabled = settings.zkill_enabled
-        self.zkill.count_npc = settings.zkill_count_npc
         self.eve_scout.enabled = settings.eve_scout_enabled
         self._ensure_home()
         if str(self.watcher.scanner.log_directory) != settings.log_directory:

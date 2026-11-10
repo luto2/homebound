@@ -485,7 +485,6 @@ def test_save_writes_settings(dialog, state, tmp_path) -> None:
     dialog.radius.setValue(4)
     dialog.rescan_due.setValue(6)
     dialog.zkill.setChecked(True)
-    dialog.zkill_count_npc.setChecked(True)
     applied = []
     state.settingsChanged.connect(lambda: applied.append(True))
     dialog.save_button.click()
@@ -502,7 +501,6 @@ def test_save_writes_settings(dialog, state, tmp_path) -> None:
     assert settings.zkill_enabled is True
     assert applied
     assert state.zkill.enabled is True
-    assert settings.zkill_count_npc is True and state.zkill.count_npc is True
     saved = json.loads((tmp_path / "settings.json").read_text())
     assert saved["overlay_text_size"] == 13 and saved["naming_scheme"] == key
     assert saved["rescan_due_hours"] == 6

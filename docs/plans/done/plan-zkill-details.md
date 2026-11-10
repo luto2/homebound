@@ -1,6 +1,6 @@
 # Plan: show what the zKill activity was, not just how much
 
-Status: implemented (2026-11-10, commits `7e99e8d`, `0ae364d`, `1665163`). Deviations: NPC kills no longer count toward the meter by default ("Count NPC kills" setting); the tooltip rows show on any hover of the node; no copy button, double-click/Enter opens the kill; fold state not saved; `tests/data/zkill_sample.json` is hand-built, not recorded. Universe schema 4: every user rebuilds the game data once.
+Status: implemented (2026-11-10, commits `7e99e8d`, `0ae364d`, `1665163`). Deviations: NPC kills count toward the meter and the map like any other kill (owner, 2026-11-10: the "Count NPC kills" setting from the first build was removed; the list still dims NPC rows); the tooltip rows show on any hover of the node; no copy button, double-click/Enter opens the kill; fold state not saved; `tests/data/zkill_sample.json` is hand-built, not recorded. Universe schema 4: every user rebuilds the game data once.
 
 Depends on: nothing. Touches the zKill worker, the map file schema, the universe build, the system panel
 and the node tooltip. Four commits, in the order of the steps below.

@@ -261,15 +261,12 @@ def test_request_does_not_restart_a_stopped_or_unstarted_worker(fetcher) -> None
     assert fetcher.thread is thread            # stopping on purpose
 
 
-def test_summarize_leaves_npc_kills_out_of_the_counts_by_default() -> None:
-    """On the recorded sample, a rat kill is not counted unless count_npc is set; pods and the last kill follow."""
+def test_summarize_counts_npc_kills() -> None:
+    """On the sample, the rat kill counts like any other; pods follow the victims."""
     stats = zkill.summarize(HOME.id, SAMPLE, now=NOW)
-    assert (stats.kills_1h, stats.kills_24h, stats.pod_kills_1h) == (2, 3, 1)
-    assert stats.last_kill_at == "2026-10-30T11:58:30+00:00"
-    counted = zkill.summarize(HOME.id, SAMPLE, now=NOW, count_npc=True)
-    assert (counted.kills_1h, counted.kills_24h) == (3, 4)
+    assert (stats.kills_1h, stats.kills_24h, stats.pod_kills_1h) == (3, 4, 1)
     npc_only = zkill.summarize(HOME.id, [SAMPLE[1]], now=NOW)
-    assert (npc_only.kills_24h, npc_only.last_kill_at) == (0, None)
+    assert npc_only.kills_24h == 1 and npc_only.last_kill_at is not None
 
 
 def test_summarize_kills_lists_every_kill_newest_first() -> None:
@@ -312,12 +309,9 @@ def test_summarize_kills_keeps_the_newest_few() -> None:
 
 
 def test_fetch_stores_the_kill_rows_too(fetcher, tmp_path) -> None:
-    """A good response stores the stats and the kill rows; count_npc follows the fetcher's setting."""
+    """A good response stores the stats (NPC kills included) and the kill rows."""
     client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, json=SAMPLE)))
     store = Store(tmp_path / "map.db")
     assert fetcher._fetch(client, store, HOME.id) is True
     assert [row.killmail_id for row in store.zkill_kills(HOME.id)] == [1003, 1002, 1001, 1004]
-    assert store.zkill_stats(HOME.id).kills_24h == 3
-    fetcher.count_npc = True
-    assert fetcher._fetch(client, store, HOME.id) is True
     assert store.zkill_stats(HOME.id).kills_24h == 4
