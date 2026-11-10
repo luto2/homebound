@@ -372,6 +372,24 @@ def test_needs_migration_and_map_stats_on_an_unreadable_file(tmp_path, monkeypat
     assert map_stats(path) == {"systems": 0, "signatures": 0, "last": None}
 
 
+def test_failed_store_open_closes_the_connection(tmp_path) -> None:
+    """A Store whose migration fails closes its connection, so the file isn't held open (Windows can't rename it)."""
+    kept = []
+
+    class FailingStore(Store):
+        """Fails in the first read, as a damaged file does."""
+
+        def _migrate(self) -> int:
+            """Keep self for the test, then fail."""
+            kept.append(self)
+            raise sqlite3.DatabaseError("file is not a database")
+
+    with pytest.raises(sqlite3.DatabaseError):
+        FailingStore(tmp_path / "map.db")
+    with pytest.raises(sqlite3.ProgrammingError):
+        kept[0].database.execute("SELECT 1")
+
+
 def test_map_stats(tmp_path, store) -> None:
     """Stats count rows of a map file without opening it as a store; missing files give zeros."""
     assert map_stats(tmp_path / "missing.db") == {"systems": 0, "signatures": 0, "last": None}

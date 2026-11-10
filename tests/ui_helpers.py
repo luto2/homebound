@@ -1,4 +1,5 @@
-"""Helpers for the offscreen UI tests: isolated settings, a fake focus tracker and a ready AppState."""
+"""Helpers for the offscreen UI tests: isolated settings, a fake focus tracker, a ready AppState and damaged map files."""
+import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -32,6 +33,29 @@ def isolated_settings(monkeypatch, folder: Path, **values) -> Settings:
     settings = Settings(log_directory=str(folder / "logs"), home_system=HOME.name, zkill_enabled=False, **values)
     settings._ensure_maps()
     return settings
+
+
+GARBAGE = b"not a map, just text\n" * 500   # about 10 KB that SQLite reads as SQLITE_NOTADB
+
+
+def write_garbage(path: Path) -> bytes:
+    """Overwrite a map file with text, so opening it fails with ``SQLITE_NOTADB``."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(GARBAGE)
+    return GARBAGE
+
+
+def damage_systems_table(path: Path) -> None:
+    """Overwrite the root page of a closed map's ``systems`` table: the file opens, reading systems fails."""
+    database = sqlite3.connect(path)
+    try:
+        page_size = database.execute("PRAGMA page_size").fetchone()[0]
+        root = database.execute("SELECT rootpage FROM sqlite_master WHERE name = 'systems'").fetchone()[0]
+    finally:
+        database.close()
+    data = bytearray(path.read_bytes())
+    data[(root - 1) * page_size:root * page_size] = b"\xff" * page_size
+    path.write_bytes(bytes(data))
 
 
 def make_state(monkeypatch, folder: Path, **values) -> "AppState":

@@ -358,9 +358,13 @@ class Store:
         if before_migration and needs_migration(self.path):
             before_migration(Path(self.path))
         self.database = sqlite3.connect(self.path)
-        self.database.row_factory = sqlite3.Row
-        self._migrate()
-        self.database.executescript(files("homebound.mapdb").joinpath("schema.sql").read_text())
+        try:
+            self.database.row_factory = sqlite3.Row
+            self._migrate()
+            self.database.executescript(files("homebound.mapdb").joinpath("schema.sql").read_text())
+        except BaseException:
+            self.database.close()   # a damaged file must not stay open (Windows couldn't rename it)
+            raise
         self.listeners: list[Callable[[Action], object]] = []   # called with every finished action
         self.revision = 0                 # goes up with every action that changed something
         self._depth = 0                   # nesting of batch()

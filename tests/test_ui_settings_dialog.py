@@ -18,7 +18,7 @@ from homebound.mapdb.store import Store
 from homebound.ui.dialogs import RestoreBackupDialog
 from homebound.ui.settings_dialog import PAGES, SettingsDialog
 from homebound.ui.state import AppState
-from ui_helpers import make_state
+from ui_helpers import make_state, write_garbage
 
 LOG_NAME = "Local_20261028_165148_{}.txt"
 
@@ -616,6 +616,16 @@ def test_backups_page_with_damaged_backups(dialog, state, modal) -> None:
     assert dialog.restore_selected_backup() is False
     assert "Nothing restored" in dialog.backup_help.text() and "damaged" in dialog.backup_help.text()
     assert state.settings.maps == maps_before
+
+
+def test_backups_page_shows_the_recovered_map(monkeypatch, tmp_path, kwin, qt_application) -> None:
+    """After a damaged map was set aside, the Backups page says which file was kept and to use Replace."""
+    write_garbage(tmp_path / "map.db")
+    recovered = make_state(monkeypatch, tmp_path)
+    page = SettingsDialog(None, recovered, PAGES.index("Backups"))
+    assert page.backup_help.text().endswith(recovered.damaged_warning) and "map.db.damaged" in page.backup_help.text()
+    assert page.backup_help.property("role") == "help-warn"
+    recovered.stop()
 
 
 def test_backups_page_restoring_settings_closes(dialog, state, modal) -> None:

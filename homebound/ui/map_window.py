@@ -29,6 +29,7 @@ from .map_scene import ConnectionEdge, MapScene, MapView
 from .overlay import Overlay
 from .route_dock import RouteDock
 from .settings_dialog import SettingsDialog
+from .state import MapOpenError
 from .system_panel import SystemPanel
 from .toast import ToastHost
 
@@ -562,7 +563,8 @@ class MapWindow(QMainWindow):
             name: The map name.
 
         Returns:
-            Whether the map changed (False if it was already open).
+            Whether the map changed (False if it was already open, or it can't be opened: an error
+            toast says why and the open map stays).
 
         Raises:
             TypeError: If ``name`` is not a string.
@@ -571,7 +573,11 @@ class MapWindow(QMainWindow):
         require_text(name, "name")
         if name == self.state.settings.active_map:
             return False
-        self.state.switch_map(name)
+        try:
+            self.state.switch_map(name)
+        except MapOpenError as error:
+            self.toasts.show("err", str(error))
+            return False
         self.toasts.show("ok", f"Map “{name}”")
         QTimer.singleShot(0, self.fit_chain)
         return True
@@ -599,7 +605,7 @@ class MapWindow(QMainWindow):
         """Ask for a name, create the map, switch to it and open Settings to set its home.
 
         Returns:
-            Whether a map was created.
+            Whether a map was created and opened.
         """
         settings = self.state.settings
         dialog = PromptDialog(self, "New map", "Each map has its own systems, sigs and home system.", "Map name",
@@ -614,7 +620,8 @@ class MapWindow(QMainWindow):
             self.toasts.show("err", str(error))
             return False
         settings.save()
-        self.switch_map(name.strip())
+        if not self.switch_map(name.strip()):
+            return False   # the toast says why; Settings would open on the old map's Home page
         self.open_settings(1)  # set its home
         return True
 

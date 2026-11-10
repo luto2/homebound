@@ -1,4 +1,5 @@
 """Offscreen tests of the UI building blocks: state, toasts, menus, notifications, overlay, character dock."""
+import json
 from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -17,14 +18,14 @@ from homebound.theme import painting
 from homebound.theme.tokens import OPACITY
 from homebound.logs.parser import SystemChange
 from homebound.logs.watcher import CharacterState
-from homebound.mapdb.store import ZkillStats, utc_now_iso
+from homebound.mapdb.store import Store, ZkillStats, utc_now_iso
 from homebound.mapping.tracker import AutoNamed, MapChanged, Moved, NamingRequest, UnknownJump
 from homebound.ui import menus
 from homebound.ui.character_dock import CharacterDock, CharacterDelegate
 from homebound.ui.overlay import MODE_LABELS, Overlay, OverlayFonts
-from homebound.ui.state import SCAN_AGE_INTERVAL_MS, AppState
+from homebound.ui.state import SCAN_AGE_INTERVAL_MS, AppState, MapOpenError, set_aside_damaged
 from homebound.ui.toast import KINDS, MAX_TOASTS, Toast, ToastHost
-from ui_helpers import FakeFocus, isolated_settings, make_state
+from ui_helpers import FakeFocus, damage_systems_table, isolated_settings, make_state, write_garbage
 
 LOG_HEADER = "\n\n  Channel Name:    Local\n  Listener:        {name}\n  Session started: 2026.10.28 16:51:48\n\n"
 
@@ -228,6 +229,92 @@ def test_switch_map_carries_characters(state, monkeypatch, tmp_path) -> None:
     assert switched == [("Second",)] and len(mapped) == 1 and selection == [(0,)] and state.selected == 0
     assert state.switch_map("Second") is False and state.switch_map("Missing") is False
     assert (tmp_path / "settings.json").exists()
+
+
+def saved_active_map(folder) -> str:
+    """Return the open map that settings.json names."""
+    return json.loads((folder / "settings.json").read_text())["active_map"]
+
+
+def test_switch_to_corrupt_map_stays_on_the_open_map(state, tmp_path) -> None:
+    """A map file that isn't a database can't be switched to; the open map stays open and saved as active."""
+    state.settings.save()
+    path = state.settings.add_map("Second")
+    write_garbage(path)
+    first = state.database_path
+    with pytest.raises(MapOpenError) as raised:
+        state.switch_map("Second")
+    assert raised.value.damaged and "Second" in str(raised.value)
+    assert state.settings.active_map == "Main" and saved_active_map(tmp_path) == "Main"
+    assert state.database_path == first and state.zkill.database_path == first
+    assert state.store.has_system(HOME.id) and state.tracker.store is state.store
+
+
+def test_switch_to_map_with_damaged_table_stays_on_the_open_map(state, tmp_path) -> None:
+    """A map that opens but whose systems table is damaged fails at the home check, before anything is switched."""
+    c5 = pick_system("C5", exclude={HOME.id})
+    state.settings.save()
+    path = state.settings.add_map("Second", home_system=c5.name)
+    with Store(path) as store:
+        store.add_system(c5.id)
+    damage_systems_table(path)
+    with pytest.raises(MapOpenError) as raised:
+        state.switch_map("Second")
+    assert raised.value.damaged
+    assert state.settings.active_map == "Main" and saved_active_map(tmp_path) == "Main"
+    assert state.store.has_system(HOME.id)
+
+
+def test_failed_switch_carries_no_characters_and_emits_nothing(state) -> None:
+    """A failed switch sends no signals and leaves the characters on the open map."""
+    state.store.set_character(9, "Pilot", HOME.id, "2026-10-30T12:00:00+00:00")
+    write_garbage(state.settings.add_map("Second"))
+    switched, mapped, selection = spy(state.mapSwitched), spy(state.mapChanged), spy(state.selectionChanged)
+    with pytest.raises(MapOpenError):
+        state.switch_map("Second")
+    assert switched == [] and mapped == [] and selection == []
+    assert state.character_location(9) == HOME.id
+
+
+def test_switch_to_damaged_map_sets_the_file_aside(state) -> None:
+    """The damaged file is kept as ``.damaged``; then backups work again and Replace brings the map back."""
+    c5 = pick_system("C5", exclude={HOME.id})
+    path = state.settings.add_map("Second")
+    with Store(path) as store:
+        store.add_system(c5.id)
+    good = state.backup("manual")
+    garbage = write_garbage(path)
+    assert state.backup("manual") is None   # one bad map stops every backup
+    with pytest.raises(MapOpenError, match=r"second\.db\.damaged"):
+        state.switch_map("Second")
+    assert path.with_name("second.db.damaged").read_bytes() == garbage and not path.exists()
+    assert state.backup("manual") is not None
+    state.restore_backup(good, ["Second"], replace=True)
+    assert state.switch_map("Second") is True and state.store.has_system(c5.id)
+
+
+def test_set_aside_moves_the_sidecars(tmp_path) -> None:
+    """``-wal`` and ``-shm`` go with the file, so the copy stays openable and no stale WAL is left."""
+    path = tmp_path / "map.db"
+    for suffix, data in (("", b"main"), ("-wal", b"wal"), ("-shm", b"shm")):
+        path.with_name(path.name + suffix).write_bytes(data)
+    assert set_aside_damaged(path) == tmp_path / "map.db.damaged"
+    assert sorted(entry.name for entry in tmp_path.iterdir()) == ["map.db.damaged", "map.db.damaged-shm",
+                                                                  "map.db.damaged-wal"]
+    assert (tmp_path / "map.db.damaged-wal").read_bytes() == b"wal"
+
+
+def test_set_aside_keeps_an_earlier_damaged_file(tmp_path) -> None:
+    """A second damaged file gets ``-2``, so the first one isn't overwritten."""
+    path = tmp_path / "map.db"
+    path.write_bytes(b"first")
+    set_aside_damaged(path)
+    path.write_bytes(b"second")
+    assert set_aside_damaged(path) == tmp_path / "map.db.damaged-2"
+    assert (tmp_path / "map.db.damaged").read_bytes() == b"first"
+    assert (tmp_path / "map.db.damaged-2").read_bytes() == b"second"
+    with pytest.raises(TypeError):
+        set_aside_damaged(str(path))
 
 
 def test_switch_map_skips_legacy_character_rows(state) -> None:

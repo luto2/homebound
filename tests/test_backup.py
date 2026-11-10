@@ -19,7 +19,7 @@ from homebound.backup import (KEEP_AUTO, KEEP_SAFETY, BackupError, auto_backup_d
                               restored_name)
 from homebound.mapdb.store import Store, needs_migration
 from homebound.settings import Settings
-from ui_helpers import isolated_settings, make_state
+from ui_helpers import isolated_settings, make_state, write_garbage
 
 OTHER = pick_system("C3")
 IS_ROOT = getattr(os, "geteuid", lambda: 1)() == 0   # root can write anywhere; Windows has no geteuid
@@ -751,6 +751,86 @@ def test_restore_settings_with_damaged_member(settings) -> None:
     path = damage_member(create_backup("manual", settings), "settings.json")
     with pytest.raises(BackupError, match="no readable settings"):
         restore_settings(path, settings)
+
+
+def test_start_on_corrupt_map_opens_empty_and_keeps_the_file(monkeypatch, tmp_path, qt_application) -> None:
+    """A damaged open map is set aside at start; the app opens on an empty map and warns at every start."""
+    garbage = write_garbage(tmp_path / "map.db")
+    state = make_state(monkeypatch, tmp_path)
+    assert (tmp_path / "map.db.damaged").read_bytes() == garbage
+    assert [system.id for system in state.store.systems()] == [HOME.id]
+    assert "map.db.damaged" in state.recovered_map and "Replace" in state.recovered_map
+    [(level, text)] = state._backup_messages
+    assert level == "warn" and text == state.damaged_warning == state.recovered_map
+    state.stop()
+    again = make_state(monkeypatch, tmp_path)   # the warning comes back while the file is there
+    assert again.recovered_map == "" and "map.db.damaged" in again.damaged_warning
+    assert again._backup_messages == [("warn", again.damaged_warning)]
+    again.stop()
+    (tmp_path / "map.db.damaged").unlink()
+    third = make_state(monkeypatch, tmp_path)
+    assert third.damaged_warning == "" and third._backup_messages == []
+    third.stop()
+
+
+def test_restore_after_start_on_corrupt_map(monkeypatch, tmp_path, qt_application) -> None:
+    """After a recovery at start, Restore "replace" brings the rows back and makes a restore backup first."""
+    settings = isolated_settings(monkeypatch, tmp_path)
+    with Store(settings.map_path()) as store:
+        store.add_system(OTHER.id)
+    path = create_backup("manual", settings)
+    write_garbage(settings.map_path())
+    state = make_state(monkeypatch, tmp_path)
+    assert not state.store.has_system(OTHER.id)
+    state.restore_backup(path, ["Main"], replace=True)
+    assert state.store.has_system(OTHER.id)
+    assert any(info.reason == "restore" for info in list_backups())
+    state.stop()
+
+
+def test_start_on_unopenable_map_moves_nothing(monkeypatch, tmp_path, qt_application) -> None:
+    """A map that can't be opened for another reason (here a folder) stops the start and stays where it is."""
+    from homebound.ui.state import MapOpenError
+    (tmp_path / "map.db").mkdir()
+    with pytest.raises(MapOpenError) as raised:
+        make_state(monkeypatch, tmp_path)
+    assert not raised.value.damaged and "map.db" in str(raised.value)
+    assert (tmp_path / "map.db").is_dir() and not list(tmp_path.glob("*.damaged*"))
+
+
+def test_restore_failure_is_not_hidden_by_the_reopen(monkeypatch, tmp_path, qt_application) -> None:
+    """When the restore fails and the map won't open again either, both reasons are given, from the first."""
+    state = make_state(monkeypatch, tmp_path)
+    path = state.backup("manual")
+    original = BackupError("the restore broke")
+
+    def break_and_fail(*arguments: object) -> NoReturn:
+        """Leave the map file damaged, then fail."""
+        write_garbage(state.settings.map_path())
+        raise original
+
+    monkeypatch.setattr(backup_module, "restore_maps", break_and_fail)
+    with pytest.raises(BackupError) as raised:
+        state.restore_backup(path, ["Main"], replace=True)
+    assert "the restore broke" in str(raised.value) and "couldn't be opened again" in str(raised.value)
+    assert raised.value.__cause__ is original
+    state.stop()
+
+
+def test_restore_reports_a_failed_reopen(monkeypatch, tmp_path, qt_application) -> None:
+    """A restore that went through but leaves a map that won't open is reported as a BackupError."""
+    state = make_state(monkeypatch, tmp_path)
+    path = state.backup("manual")
+
+    def break_quietly(*arguments: object) -> dict:
+        """Leave the map file damaged and report success."""
+        write_garbage(state.settings.map_path())
+        return {"Main": "Main"}
+
+    monkeypatch.setattr(backup_module, "restore_maps", break_quietly)
+    with pytest.raises(BackupError, match="couldn't be opened again"):
+        state.restore_backup(path, ["Main"], replace=True)
+    state.stop()
 
 
 def test_needs_migration_on_damaged_file(tmp_path) -> None:
