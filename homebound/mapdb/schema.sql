@@ -5,7 +5,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS systems (
     id           INTEGER PRIMARY KEY,
     parent_id    INTEGER REFERENCES systems(id) ON DELETE SET NULL,  -- towards home / chain root
-    hole_index   INTEGER,          -- index of the hole in the parent leading here; 1 = static
+    hole_index   INTEGER,          -- number of the hole in the parent leading here (its sig's bookmark number)
     level_index  INTEGER,          -- unused: the order at a depth is derived from (added_at, id), see naming.level_position
     custom_name  TEXT,             -- user override; NULL = scheme name
     x REAL DEFAULT 0, y REAL DEFAULT 0,
@@ -14,7 +14,10 @@ CREATE TABLE IF NOT EXISTS systems (
     added_at     TEXT NOT NULL,
     scanned_at   TEXT,
     pinned       INTEGER DEFAULT 0, -- keep when cleaning up
-    confirmed    INTEGER DEFAULT 1  -- 0: added by hand, no character has been here yet
+    confirmed    INTEGER DEFAULT 1, -- 0: added by hand, no character has been here yet
+    label        TEXT,             -- scheme name given when attached; only explicit renames change it
+    static       INTEGER DEFAULT 0, -- 1: reached through the parent's static (a flag, not a number)
+    next_hole    INTEGER DEFAULT 0  -- highest hole number given out here; numbers are never reused
 );
 
 CREATE TABLE IF NOT EXISTS connections (
@@ -41,7 +44,7 @@ CREATE TABLE IF NOT EXISTS signatures (
     type       TEXT,               -- WH code (B274/K162) or site type text
     name       TEXT,
     scan_percent REAL,
-    hole_index INTEGER,            -- bookmark index reserved for this WH sig
+    hole_index INTEGER,            -- WH: bookmark number, given when the sig is pasted
     state      TEXT DEFAULT '',    -- '' | new | missing
     kind       TEXT DEFAULT 'sig', -- sig (Cosmic Signature) | anom (Cosmic Anomaly)
     destination TEXT,              -- WH: class it leads to (for K162 / unknown types), e.g. C5, HS

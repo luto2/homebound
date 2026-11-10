@@ -338,8 +338,25 @@ def test_old_map_files_are_migrated(tmp_path) -> None:
             connection.confirmed) == ("ABC-123", "H296", 1, 1, 1)
     assert store.get_value("signature_sort") == "[2, true]"
     assert store.system(1).confirmed == 1
+    assert (store.system(1).label, store.system(1).static, store.system(1).next_hole) == (None, 0, 0)
+    assert store.get_value("legacy_names") == "1"     # its names are frozen when the app opens it
     assert store._migrate() == 0          # a second run has nothing left to do
     store.close()
+
+
+def test_next_hole_only_goes_up(store) -> None:
+    """Every hole number put into a system raises its counter; deleting or undoing doesn't lower it."""
+    store.upsert_signature(Signature(HOME.id, "ABC-123", "wormhole", hole_index=3))
+    assert store.system(HOME.id).next_hole == 3
+    with store.batch() as action:
+        store.add_system(JITA, parent_id=HOME.id, hole_index=5)
+    assert store.system(HOME.id).next_hole == 5
+    store.undo(action)
+    store.delete_signatures(HOME.id, ["ABC-123"])
+    assert store.system(HOME.id).next_hole == 5
+    store.add_system(JITA, hole_index=7)                 # no parent: no hole of anyone
+    store.update_signature(HOME.id, "ABC-123", hole_index=1)   # gone: nothing written
+    assert store.system(HOME.id).next_hole == 5
 
 
 def test_map_stats(tmp_path, store) -> None:

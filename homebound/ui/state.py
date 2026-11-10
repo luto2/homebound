@@ -8,9 +8,9 @@ from .. import backup, routing
 from ..eve_scout import EveScoutFetcher
 from ..logs.parser import SystemChange
 from ..logs.watcher import LogWatcher
-from ..mapdb.store import Store, utc_now_iso
+from ..mapdb.store import LEGACY_NAMES_KEY, Store, utc_now_iso
 from ..mapping.chain import Chain, resolve_chain
-from ..mapping.naming import Namer
+from ..mapping.naming import Namer, freeze_legacy_names
 from ..mapping.scan_status import ScanStatus, scan_status
 from ..mapping.tracker import AutoNamed, MapChanged, Moved, NamingRequest, Tracker, UnknownJump
 from ..settings import Settings
@@ -68,6 +68,7 @@ class AppState(QObject):
         self.store = self._open_store()
         self.namer = Namer(self.store, universe, settings.naming_scheme, self.home_id)
         self.tracker = Tracker(self.store, universe, self.namer, settings.auto_name_when_certain)
+        self._freeze_legacy_names()
         self.selected: int = 0
         self.followed: int | None = None  # character whose client is focused
         # other members' shared characters on the open cloud map: char id -> {"name", "system_id", "afk"}
@@ -102,6 +103,17 @@ class AppState(QObject):
             self.store.add_system(self.home_id)
             return True
         return False
+
+    def _freeze_legacy_names(self) -> bool:
+        """Store the names an older map file showed, the first time it is open (see ``freeze_legacy_names``).
+
+        Returns:
+            True if the file needed it.
+        """
+        if self.store.get_value(LEGACY_NAMES_KEY) != "1":
+            return False
+        freeze_legacy_names(self.store, self.universe, self.namer.scheme_key, self.namer.home_id)
+        return True
 
     def store_map_settings(self) -> bool:
         """Write the active map's home and naming scheme from the settings into the map file.
@@ -193,6 +205,7 @@ class AppState(QObject):
         self.namer.store = self.tracker.store = self.store
         self.namer.scheme_key = self.settings.naming_scheme
         self.namer.home_id = self.home_id
+        self._freeze_legacy_names()
         self.zkill.database_path = self.database_path
         self._ensure_home()
         return self.store

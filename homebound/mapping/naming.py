@@ -12,7 +12,7 @@ towards home is "S-0".
 """
 from dataclasses import dataclass
 
-from ..mapdb.store import MapSystem, Signature, Store
+from ..mapdb.store import LEGACY_NAMES_KEY, MapSystem, Signature, Store
 from ..universe.db import Universe
 from ..validation import require_integer, require_type
 
@@ -356,10 +356,25 @@ class Namer:
         return self.scheme_label(system_id)
 
     def scheme_label(self, system_id: int) -> str:
-        """Return the name the naming scheme gives, ignoring a custom name.
+        """Return the scheme name of a system, ignoring a custom name.
 
-        Home is "Home"; a root other than home keeps its real name; systems in a chain that doesn't
-        start at home get a ``~`` prefix.
+        Home is "Home". Otherwise the name stored when the system was attached (``label``) wins, so a
+        name doesn't change when the map around it does; a system without one gets
+        :meth:`computed_label`.
+        """
+        mapped = self.store.system(system_id)
+        root, path = hole_path(self.store, system_id)
+        if not path and root == self.home_id:
+            return HOME_NAME
+        if mapped and mapped.label:
+            return mapped.label
+        return self.computed_label(system_id)
+
+    def computed_label(self, system_id: int) -> str:
+        """Return the name the scheme gives a system where it is now, ignoring any stored name.
+
+        A root other than home keeps its real name; systems in a chain that doesn't start at home get
+        a ``~`` prefix.
         """
         mapped = self.store.system(system_id)
         root, path = hole_path(self.store, system_id)
@@ -422,6 +437,109 @@ class Namer:
     def bookmark_home(self, system_id: int) -> str:
         """Return the bookmark label of the hole leading back home: ``<label>-0``."""
         return f"{self.label(system_id)}-0"
+
+
+# ---------------------------------------------------------------- maps from before stored names
+
+def legacy_label(store: Store, universe: Universe, scheme_key: str, home_id: int | None, system_id: int,
+                 positions: dict[int, int]) -> str | None:
+    """Return the name a placed system showed before names were stored, or None for a root.
+
+    Back then the name was worked out from the map every time: the chain letter counted the root's
+    static slots (A = static, then Z for a one-static root) and the ``a2a`` position came from the
+    order the systems at a depth were added in.
+
+    Args:
+        store: The map.
+        universe: Static data.
+        scheme_key: The map's naming scheme.
+        home_id: The map's home.
+        system_id: The system.
+        positions: :func:`level_positions` of the map.
+    """
+    root, path = hole_path(store, system_id)
+    if not path:
+        return None
+    label = scheme_for_key(scheme_key).name(path, positions.get(system_id), static_slot_count(universe, root))
+    return label if root == home_id or home_id is None else "~" + label
+
+
+def legacy_signature_numbers(store: Store, universe: Universe, system_id: int) -> dict[str, int]:
+    """Return the bookmark numbers unnumbered WH sigs of a system showed before numbers were stored.
+
+    They were a preview: a sig typed as one of the system's statics took that static's slot while
+    it was free, the others counted on after the static slots, in signature ID order. Sigs a
+    connection uses are left out (their bookmark came from the system behind them).
+
+    Returns:
+        Signature ID -> number.
+    """
+    leads = {connection.signature_on(system_id) for connection in store.connections_of_system(system_id)}
+    used = used_hole_indices(store, system_id)
+    unnumbered = [signature for signature in store.signatures(system_id)
+                  if signature.group == "wormhole" and signature.kind != "anom" and not signature.hole_index
+                  and signature.signature_id not in leads]
+    numbers: dict[str, int] = {}
+    remaining = []
+    for signature in unnumbered:
+        known = universe.known_type(signature.type)
+        slot = None
+        if known and is_static_signature(universe, system_id, signature) and static_slot_count(universe, system_id):
+            slot = static_slot_for_class(universe, system_id, known.destinations[0] if known.destinations else None)
+        if slot is not None and slot not in used:
+            numbers[signature.signature_id] = slot
+            used.add(slot)
+        else:
+            remaining.append(signature)
+    number = static_slot_count(universe, system_id) + 1
+    for signature in remaining:
+        while number in used:
+            number += 1
+        numbers[signature.signature_id] = number
+        used.add(number)
+    return numbers
+
+
+def freeze_legacy_names(store: Store, universe: Universe, scheme_key: str, home_id: int | None) -> int:
+    """Store the names and numbers an older map file showed, so nothing visible changes on upgrade.
+
+    Placed systems get their shown name as ``label`` and the static flag when they sat in a static
+    slot; unnumbered WH sigs get the bookmark number they showed. One batch; the file is marked as
+    done (:data:`LEGACY_NAMES_KEY`), so this runs once per file.
+
+    Args:
+        store: The map, just opened.
+        universe: Static data.
+        scheme_key: The map's naming scheme.
+        home_id: The map's home.
+
+    Returns:
+        The number of systems that got a label.
+    """
+    require_type(store, Store, "store")
+    require_type(scheme_key, str, "scheme_key")
+    require_integer(home_id, "home_id", minimum=1, optional=True)
+    positions = level_positions(store)
+    labelled = 0
+    with store.batch():
+        systems = store.systems()
+        labels = {system.id: legacy_label(store, universe, scheme_key, home_id, system.id, positions)
+                  for system in systems if system.parent_id is not None and not system.label}
+        for system in systems:
+            changes: dict = {}
+            if labels.get(system.id):
+                changes["label"] = labels[system.id]
+                labelled += 1
+            if (system.parent_id and system.hole_index
+                    and system.hole_index <= static_slot_count(universe, system.parent_id)):
+                changes["static"] = 1
+            if changes:
+                store.update_system(system.id, **changes)
+        for system in systems:
+            for signature_id, number in legacy_signature_numbers(store, universe, system.id).items():
+                store.update_signature(system.id, signature_id, hole_index=number)
+        store.put_value(LEGACY_NAMES_KEY, "0")
+    return labelled
 
 
 # ---------------------------------------------------------------- static question

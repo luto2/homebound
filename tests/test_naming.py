@@ -1,9 +1,12 @@
 """Naming schemes, hole indices and the static guess."""
+import sqlite3
+
 import pytest
 
 from conftest import HOME, UNIVERSE, MapSimulation, pick_system
 from homebound.mapdb.store import Signature, Store
-from homebound.mapping.naming import (SCHEMES, ChainDepthPositionScheme, Namer, Scheme, chain_letter, guess_static,
+from homebound.mapping.naming import (SCHEMES, ChainDepthPositionScheme, Namer, Scheme, chain_letter,
+                                      freeze_legacy_names, guess_static,
                                       hole_digit, hole_path, is_static_signature, letters_for_number, level_positions,
                                       next_hole_index, next_level_index, scheme_for_key, signature_destination,
                                       static_slot_count, static_slot_for_class)
@@ -231,3 +234,74 @@ def test_names_collects_display_label_and_real_name() -> None:
     assert namer.names(HOME.id) == {"Home", HOME.name}
     assert namer.names(jita) == {"2 Jita", "2", "Jita"}
     assert namer.names(1) == {"1"}
+
+
+def age_map_file(path) -> None:
+    """Turn a map file into one from before stored names: no label, static or next_hole column."""
+    database = sqlite3.connect(path)
+    for column in ("label", "static", "next_hole"):
+        database.execute(f'ALTER TABLE systems DROP COLUMN "{column}"')
+    database.execute("DELETE FROM key_value")
+    database.commit()
+    database.close()
+
+
+def build_legacy_map(path) -> dict[str, int]:
+    """Write a map with derived names into ``path`` and age it; return the systems by role.
+
+    Home (one static) → A (hole 1, the static) → C, D, E (holes 2, 3, 4); home → B (hole 2). Home has two
+    unnumbered WH sigs and the sig of B's connection; B has an unnumbered sig of its static type and an
+    untyped one.
+    """
+    c5 = pick_system("C5", exclude={HOME.id})
+    b = pick_system("C3", statics_to="HS")
+    others = [system for system in UNIVERSE.all_systems() if system.system_class == "C2"][:3]
+    ids = {"A": c5.id, "B": b.id, "C": others[0].id, "D": others[1].id, "E": others[2].id}
+    store = Store(path)
+    store.add_system(HOME.id)
+    for number, (role, parent, hole) in enumerate([("A", HOME.id, 1), ("B", HOME.id, 2), ("C", c5.id, 2),
+                                                   ("D", c5.id, 3), ("E", c5.id, 4)]):
+        store.add_system(ids[role], parent_id=parent, hole_index=hole, added_at=f"2026-01-01T00:00:0{number}+00:00")
+    store.add_connection(HOME.id, b.id, signature_a="CCC-333")
+    for system_id, signature_id, code in [(HOME.id, "AAA-111", "H296"), (HOME.id, "BBB-222", None),
+                                          (HOME.id, "CCC-333", None), (b.id, "DDD-444", UNIVERSE.by_id(b.id).statics[0]),
+                                          (b.id, "EEE-555", None)]:
+        store.upsert_signature(Signature(system_id, signature_id, "wormhole", code))
+    store.close()
+    age_map_file(path)
+    return ids
+
+
+def test_an_old_map_keeps_the_names_it_showed(tmp_path) -> None:
+    """Migration: the names, static slots and sig numbers an old file showed are stored as they were."""
+    path = tmp_path / "old.db"
+    ids = build_legacy_map(path)
+    store = Store(path)
+    assert store.get_value("legacy_names") == "1"
+    assert store.system(HOME.id).next_hole == 2          # from the highest number in use
+    assert freeze_legacy_names(store, UNIVERSE, "a2a", HOME.id) == 5
+    namer = Namer(store, UNIVERSE, "a2a", HOME.id)
+    assert {role: namer.label(system_id) for role, system_id in ids.items()} == {
+        "A": "A1a", "B": "Z1a", "C": "A2a", "D": "A2b", "E": "A2c"}
+    assert [role for role, system_id in ids.items() if store.system(system_id).static] == ["A"]
+    numbers = {signature.signature_id: signature.hole_index
+               for system_id in (HOME.id, ids["B"]) for signature in store.signatures(system_id)}
+    assert numbers == {"AAA-111": 3, "BBB-222": 4, "CCC-333": None, "DDD-444": 1, "EEE-555": 2}
+    assert store.system(HOME.id).next_hole == 4 and store.system(ids["B"]).next_hole == 2
+    assert store.get_value("legacy_names") == "0"
+    store.close()
+    assert Store(path).get_value("legacy_names") == "0"   # once per file
+
+
+def test_an_old_numeric_map_keeps_its_names_and_a_new_file_needs_nothing(tmp_path) -> None:
+    """The numeric names come back the same; a file made now is not marked for the migration."""
+    path = tmp_path / "old.db"
+    ids = build_legacy_map(path)
+    store = Store(path)
+    freeze_legacy_names(store, UNIVERSE, "numeric", HOME.id)
+    namer = Namer(store, UNIVERSE, "numeric", HOME.id)
+    assert [namer.label(ids[role]) for role in "ABCDE"] == ["1", "2", "12", "13", "14"]
+    assert namer.label(HOME.id) == "Home"
+    assert Store(tmp_path / "new.db").get_value("legacy_names") is None
+    with pytest.raises(TypeError):
+        freeze_legacy_names(store, UNIVERSE, 1, HOME.id)

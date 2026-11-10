@@ -52,6 +52,9 @@ class MapSystem:
     scanned_at: str | None = None
     pinned: int = 0
     confirmed: int = 1           # 0: added by hand, no character has been here yet
+    label: str | None = None     # scheme name given when the system was attached; None: not named yet
+    static: int = 0              # 1: reached through its parent's static (a flag, not a hole number)
+    next_hole: int = 0           # highest hole number given out in this system; numbers are never reused
 
 
 @dataclass
@@ -155,8 +158,12 @@ ENTITY_WHERE = {"system": "id=?", "connection": "system_a=? AND system_b=?",
 def key_values(key: Any) -> list:
     """Return an entity key as the parameters of its ``ENTITY_WHERE`` clause."""
     return list(key) if isinstance(key, tuple) else [key]
-# Columns that change on every write and say nothing about the map itself.
-VOLATILE_COLUMNS = {"updated_at"}
+# Columns that change on every write and say nothing about the map itself. ``next_hole`` is a
+# high-water mark: it only goes up (see ``Store._raise_hole_counters``), so undo never puts it back.
+VOLATILE_COLUMNS = {"updated_at", "next_hole"}
+# key_value entry of a map file that predates stored names: its labels are still to be filled in
+# with the names it showed before (``naming.freeze_legacy_names``). "1" pending, "0" done.
+LEGACY_NAMES_KEY = "legacy_names"
 
 
 @dataclass
@@ -250,6 +257,9 @@ COLUMN_ADDITIONS = [
     ("connections", "size", "TEXT"),
     ("connections", "confirmed", "INTEGER DEFAULT 1"),
     ("systems", "confirmed", "INTEGER DEFAULT 1"),
+    ("systems", "label", "TEXT"),
+    ("systems", "static", "INTEGER DEFAULT 0"),
+    ("systems", "next_hole", "INTEGER DEFAULT 0"),
 ]
 
 
@@ -356,8 +366,12 @@ class Store:
             before_migration(Path(self.path))
         self.database = sqlite3.connect(self.path)
         self.database.row_factory = sqlite3.Row
+        legacy_names = bool(self._columns("systems")) and "label" not in self._columns("systems")
         self._migrate()
         self.database.executescript(files("homebound.mapdb").joinpath("schema.sql").read_text())
+        if legacy_names:   # names used to be derived: the ones the map shows are frozen once it is open
+            self.database.execute("INSERT OR REPLACE INTO key_value VALUES (?, '1')", (LEGACY_NAMES_KEY,))
+            self.database.commit()
         self.listeners: list[Callable[[Action], object]] = []   # called with every finished action
         self.revision = 0                 # goes up with every action that changed something
         self._depth = 0                   # nesting of batch()
@@ -394,6 +408,13 @@ class Store:
             if have and column not in have:
                 self.database.execute(f"ALTER TABLE {table} ADD COLUMN {_quoted(column)} {declaration}")
                 changes += 1
+                if (table, column) == ("systems", "next_hole"):
+                    # count on from the highest number in use, so the next hole doesn't take a freed one
+                    self.database.execute("""
+                        UPDATE systems SET next_hole = max(
+                            coalesce((SELECT max(hole_index) FROM signatures WHERE system_id = systems.id), 0),
+                            coalesce((SELECT max(child.hole_index) FROM systems child
+                                      WHERE child.parent_id = systems.id), 0))""")
         if "key" in self._columns("key_value"):
             for old, new in KEY_RENAMES:
                 changes += self.database.execute("UPDATE OR IGNORE key_value SET key=? WHERE key=?",
@@ -460,7 +481,29 @@ class Store:
             change.after = self._row(change.entity, change.key)
             if change.changed_columns():
                 finished.append(change)
+        self._raise_hole_counters(finished)
         return finished
+
+    def _raise_hole_counters(self, changes: list[Change]) -> None:
+        """Move each system's ``next_hole`` up to the highest hole number the changes put into it.
+
+        Every way a number gets into a system ends here: a paste, a link, undo, a remote op from the
+        sync server. So a number once seen is never handed out again, even after its sig or system
+        is gone. The counter only goes up and is not part of the action.
+        """
+        for change in changes:
+            after = change.after or {}
+            hole = after.get("hole_index")
+            if not hole:
+                continue
+            if change.entity == "signature":
+                system_id = after["system_id"]
+            elif change.entity == "system" and after.get("parent_id"):
+                system_id = after["parent_id"]
+            else:
+                continue
+            self.database.execute("UPDATE systems SET next_hole=? WHERE id=? AND coalesce(next_hole, 0) < ?",
+                                  (hole, system_id, hole))
 
     def _touch(self, entity: str, key: Any) -> None:
         """Remember an entity's row before the open batch first changes it."""

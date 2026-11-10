@@ -8,7 +8,7 @@ from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QAction, QCloseEvent, QMouseEvent
 from PySide6.QtWidgets import QApplication, QLineEdit, QMenu, QPlainTextEdit, QSystemTrayIcon
 
-from conftest import HOME, SCAN, pick_system
+from conftest import HOME, SCAN, UNIVERSE, pick_system
 from homebound.backup import list_backups
 from homebound.logs.parser import SystemChange
 from homebound.mapdb.store import Store
@@ -20,7 +20,7 @@ from homebound.ui.dialogs import ConnectionDialog, NamingDialog
 from homebound.ui.map_window import Legend, MapArea, MapWindow, Scrim, app_mark
 from homebound.ui.toast import Glyph
 from homebound.universe.db import System
-from ui_helpers import FakeFocus, make_state
+from ui_helpers import FakeFocus, isolated_settings, make_state
 
 NOW = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
 
@@ -1035,3 +1035,15 @@ def test_raise_window_shows(window) -> None:
     window.hide()
     window.raise_window()
     assert window.isVisible()
+
+
+def test_opening_an_old_map_freezes_the_names_it_showed(qt_application, monkeypatch, tmp_path) -> None:
+    """The app stores an old file's shown names once, under the map's own scheme and home."""
+    from homebound.ui.state import AppState
+    from test_naming import build_legacy_map
+    settings = isolated_settings(monkeypatch, tmp_path, naming_scheme="letter_numeric")
+    ids = build_legacy_map(settings.map_path())
+    state = AppState(UNIVERSE, settings)
+    assert [state.namer.label(ids[role]) for role in "ABCDE"] == ["A", "Z", "A2", "A3", "A4"]
+    assert state.store.get_value("legacy_names") == "0"
+    state.stop()
