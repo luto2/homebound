@@ -23,7 +23,6 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [plan-return-hole.md](plan-return-hole.md) | 12. Mark a sig as the return hole, with its type | not started |
 | [plan-overlay-focus.md](plan-overlay-focus.md) | 15. Overlay shows the nearby part of a big chain | not started |
 | [plan-single-instance.md](plan-single-instance.md) | 16. A second start opens the running app | not started |
-| [plan-multi-delete.md](plan-multi-delete.md) | 17. Delete removes every selected system | not started |
 | [plan-overlay-shortcut.md](plan-overlay-shortcut.md) | Global shortcut to cycle the overlay mode | not started |
 | [plan-code-signing.md](plan-code-signing.md) | Windows code signing | not started |
 
@@ -62,7 +61,7 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [done/plan-bad-settings.md](done/plan-bad-settings.md) | 2026-11-10 | — |
 | [done/plan-naming-scrim.md](done/plan-naming-scrim.md) | 2026-11-10 | — |
 | [done/plan-appimage-ssl.md](done/plan-appimage-ssl.md) | 2026-11-10 | a run of the AppImage on Arch |
-| [done/plan-multi-select-move.md](done/plan-multi-select-move.md) | 2026-11-10 | multi-delete |
+| [done/plan-multi-select-move.md](done/plan-multi-select-move.md) | 2026-11-10 | — |
 | [done/plan-paint-tests.md](done/plan-paint-tests.md) | 2026-11-10 | the old `render()` helper (open decision 4) |
 | [done/plan-zkill-worker.md](done/plan-zkill-worker.md) | 2026-11-10 | — |
 | [done/plan-zkill-details.md](done/plan-zkill-details.md) | 2026-11-10 | a recorded zKill answer for the test data |
@@ -74,4 +73,5 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [done/plan-stable-hole-names.md](done/plan-stable-hole-names.md) | 2026-11-10 | syncing `label`/`static`/`next_hole` (needs a protocol version gate) |
 | [done/plan-duplicated-logic.md](done/plan-duplicated-logic.md) | 2026-11-10 | which home ID the callers use (not confirmed) |
 | [done/plan-system-alias.md](done/plan-system-alias.md) | 2026-11-10 | syncing the alias table (needs the protocol gate) |
+| [done/plan-multi-delete.md](done/plan-multi-delete.md) | 2026-11-11 | — |
 

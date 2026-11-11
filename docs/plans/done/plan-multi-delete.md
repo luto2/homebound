@@ -1,8 +1,6 @@
 # Plan: Delete removes every selected system
 
-Status: not started. Owner task 17 in `TODO.md` (human-added, from a user, 2026-11-11): "if multiple
-systems are selected and you want to delete all of them it only deletes one". Follows the multi-select
-change ([`done/plan-multi-select-move.md`](done/plan-multi-select-move.md), which left multi-delete out).
+Status: implemented (2026-11-11, commit `4885d92`). Deviations: none; HOW_TO describes it too.
 
 Depends on: nothing. Touches `ui/map_window.py`, `ui/map_scene.py` (selection helper exists:
 `MapScene.selected_nodes`) and tests.

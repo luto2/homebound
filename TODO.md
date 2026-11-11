@@ -72,8 +72,8 @@ a small change whose file and fix are named.
 16. Opening two instances by accident breaks both until both are closed (user report, probably Windows).
     Make a second start raise the running window and exit. Plan: `docs/plans/plan-single-instance.md`.
     Effort: 2/5 · Sonnet. `QLockFile` + `QLocalServer`; reproduce on Windows first to learn what broke.
-17. With several systems selected, Delete removes only one (user report, 2026-11-11). Remove all of them
-    in one undo step. Plan: `docs/plans/plan-multi-delete.md`.
+17. **Done 2026-11-11 (`4885d92`).** With several systems selected, Delete removes only one (user report, 2026-11-11). Remove all of them
+    in one undo step. Plan: `docs/plans/done/plan-multi-delete.md`.
     Effort: 1/5 · Haiku.
 
 ## To do
