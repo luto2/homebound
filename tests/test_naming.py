@@ -8,7 +8,7 @@ from homebound.mapdb.store import Signature, Store
 from homebound.mapping.naming import (SCHEMES, rename_system, ChainDepthPositionScheme, Namer, Scheme, chain_letter,
                                       freeze_legacy_names, guess_static, label_unnamed_systems, number_for_letters,
                                       hole_digit, hole_path, is_static_signature, letters_for_number, level_positions,
-                                      next_level_index, scheme_for_key, signature_destination,
+                                      next_level_index, ReturnType, return_type, scheme_for_key, signature_destination,
                                       static_slot_count, static_slot_for_class, take_hole_number)
 
 
@@ -391,3 +391,17 @@ def test_rename_system_remembers_or_forgets_in_one_action() -> None:
     assert (store.system(child.id).custom_name, store.alias(child.id)) == (None, None)
     with pytest.raises(TypeError):
         rename_system(store, child.id, "x", remember="yes")
+
+
+def test_return_type_from_the_other_side() -> None:
+    """A real type on the near side makes the return hole a K162; a K162 there asks for the real type."""
+    c1, c5, c3 = pick_system("C1"), pick_system("C5"), pick_system("C3")
+    assert return_type(UNIVERSE, "H296", None, c5.id, c1.id) == ReturnType("K162")
+    assert return_type(UNIVERSE, None, "H296", c5.id, c1.id) == ReturnType("K162")     # only the connection knows
+    assert return_type(UNIVERSE, "K162", None, c1.id, c5.id) == ReturnType("E004", ("E004",))   # one type leads from C5 to C1
+    assert return_type(UNIVERSE, "K162", None, c5.id, c3.id) == ReturnType(None, ("C008", "N770"))   # two lead from C3 to C5
+    assert return_type(UNIVERSE, "K162", "N770", c5.id, c3.id) == ReturnType("N770", ("N770",))   # the connection knows
+    assert return_type(UNIVERSE, None, None, c5.id, c3.id) == ReturnType()
+    assert return_type(UNIVERSE, "k162", None, c1.id, c5.id).code == "E004"
+    with pytest.raises(TypeError):
+        return_type(UNIVERSE, 5, None, c5.id, c3.id)

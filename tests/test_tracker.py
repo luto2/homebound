@@ -7,7 +7,7 @@ from conftest import HOME, SCAN, UNIVERSE, MapSimulation, pick_system
 from homebound.logs.parser import SystemChange
 from homebound.mapdb.store import LIFETIME_1H, LIFETIME_4H, LIFETIME_REMAINING, Store
 from homebound.mapping import signature_parser
-from homebound.mapping.naming import Namer
+from homebound.mapping.naming import Namer, ReturnType
 from homebound.mapping.tracker import (AutoNamed, MapChanged, Moved, NamingRequest, Tracker, UnknownJump,
                                        expires_at, hole_size, is_wormhole_side)
 from homebound.ui.map_scene import removed_in
@@ -785,3 +785,169 @@ def test_disconnect_is_one_undo_step(simulation) -> None:
     assert simulation.store.connection(HOME.id, c5.id).signature_on(HOME.id) == "ABC-123"
     assert simulation.store.signature(HOME.id, "ABC-123") and simulation.store.system(c5.id).parent_id == HOME.id
     assert simulation.tracker.cut_off_since(c5.id) is None
+
+
+# ---------- return hole ----------
+
+WH_SCAN = ("KLM-111\tCosmic Signature\tWormhole\tUnstable Wormhole\t100,0%\t1 AU\n"
+           "NOP-222\tCosmic Signature\tWormhole\tUnstable Wormhole\t100,0%\t2 AU\n")
+
+
+def jump_with_scans(simulation: MapSimulation, name: str, far_type: str | None = None):
+    """Paste one wormhole into home (typed ``far_type``), jump home -> ``name``, paste two wormholes there.
+
+    Returns:
+        The new system and the connection to home.
+    """
+    paste(simulation)
+    if far_type:
+        simulation.store.update_signature(HOME.id, "ABC-123", type=far_type)
+    system = UNIVERSE.by_name(name)
+    simulation.jump(name)
+    signature_parser.merge_signatures(simulation.store, system.id, signature_parser.parse_scanner_text(WH_SCAN))
+    return system, simulation.store.connection(HOME.id, system.id)
+
+
+def test_return_hole_behind_a_real_type_is_a_k162_to_the_origin(simulation) -> None:
+    """Home's sig is H296: the sig in B becomes K162 towards home's class, linked on B's side, and keeps its number."""
+    b, connection = jump_with_scans(simulation, pick_system("C5", exclude={HOME.id}).name, "H296")
+    assert connection.signature_on(HOME.id) == "ABC-123" and connection.signature_on(b.id) is None
+    number = simulation.store.signature(b.id, "NOP-222").hole_index
+    assert simulation.tracker.mark_return(b.id, "NOP-222", connection.id) == ReturnType("K162")
+    sig = simulation.store.signature(b.id, "NOP-222")
+    assert (sig.type, sig.destination, sig.hole_index) == ("K162", "C5", number)
+    assert simulation.store.connection(HOME.id, b.id).signature_on(b.id) == "NOP-222"
+    assert simulation.store.connection(HOME.id, b.id).wormhole_type == "H296"
+
+
+def test_return_hole_behind_a_k162_takes_the_only_type_that_fits(simulation) -> None:
+    """Origin's sig is K162 and exactly one type leads from B to the origin's class: it is set."""
+    c1 = pick_system("C1")
+    simulation.jump(c1.name)
+    signature_parser.merge_signatures(simulation.store, c1.id, signature_parser.parse_scanner_text(WH_SCAN[:WH_SCAN.index("\n") + 1]))
+    simulation.store.update_signature(c1.id, "KLM-111", type="K162")
+    b = pick_system("C5", exclude={HOME.id})
+    simulation.jump(b.name)
+    signature_parser.merge_signatures(simulation.store, b.id, signature_parser.parse_scanner_text(WH_SCAN))
+    connection = simulation.store.connection(c1.id, b.id)
+    assert simulation.tracker.mark_return(b.id, "NOP-222", connection.id) == ReturnType("E004", ("E004",))
+    sig = simulation.store.signature(b.id, "NOP-222")
+    assert (sig.type, sig.destination) == ("E004", "C1")
+    assert simulation.store.connection(c1.id, b.id).wormhole_type == "E004"
+
+
+def test_return_hole_with_several_candidates_leaves_the_type_empty(simulation) -> None:
+    """Two types lead from B to the origin's class: nothing is guessed, the candidates come back."""
+    b, connection = jump_with_scans(simulation, pick_system("C3").name, "K162")
+    assert simulation.tracker.mark_return(b.id, "NOP-222", connection.id) == ReturnType(None, ("C008", "N770"))
+    sig = simulation.store.signature(b.id, "NOP-222")
+    assert (sig.type, sig.destination) == (None, "C5")
+    assert simulation.store.connection(HOME.id, b.id).signature_on(b.id) == "NOP-222"
+
+
+def test_return_hole_with_an_unknown_origin_side_sets_only_the_destination(simulation) -> None:
+    """Without a type on the origin's side (or the connection) only where it leads is set."""
+    b, connection = jump_with_scans(simulation, pick_system("C3").name)
+    assert simulation.tracker.mark_return(b.id, "NOP-222", connection.id) == ReturnType()
+    sig = simulation.store.signature(b.id, "NOP-222")
+    assert (sig.type, sig.destination) == (None, "C5")
+
+
+def test_return_hole_copies_the_state_of_the_connection(simulation) -> None:
+    """Mass, lifetime, size and frigate-only of the connection show on the sig, so both ends agree."""
+    b, connection = jump_with_scans(simulation, pick_system("C5", exclude={HOME.id}).name, "H296")
+    simulation.store.update_connection(connection.id, mass="reduced", lifetime=LIFETIME_1H, size="L", frigate_only=1)
+    simulation.tracker.mark_return(b.id, "NOP-222", connection.id)
+    sig = simulation.store.signature(b.id, "NOP-222")
+    stored = simulation.store.connection(HOME.id, b.id)
+    assert (sig.mass, sig.lifetime, sig.size, sig.frigate_only) == ("reduced", LIFETIME_1H, "L", 1)
+    assert sig.lifetime_set_at == stored.lifetime_set_at and stored.lifetime == LIFETIME_1H
+
+
+def test_return_hole_takes_what_the_sig_already_knew(simulation) -> None:
+    """Details set on the sig before it was marked carry over to the connection, as link_signature does."""
+    b, connection = jump_with_scans(simulation, pick_system("C5", exclude={HOME.id}).name, "H296")
+    simulation.store.update_signature(b.id, "NOP-222", mass="critical")
+    simulation.tracker.mark_return(b.id, "NOP-222", connection.id)
+    assert simulation.store.connection(HOME.id, b.id).mass == "critical"
+    assert simulation.store.signature(b.id, "NOP-222").mass == "critical"
+
+
+def test_marking_another_sig_unlinks_the_first(simulation) -> None:
+    """A connection has one sig per side: the newly marked one replaces the old one, which stays a sig."""
+    b, connection = jump_with_scans(simulation, pick_system("C5", exclude={HOME.id}).name, "H296")
+    simulation.tracker.mark_return(b.id, "KLM-111", connection.id)
+    number = simulation.store.signature(b.id, "KLM-111").hole_index
+    simulation.tracker.mark_return(b.id, "NOP-222", connection.id)
+    assert simulation.store.connection(HOME.id, b.id).signature_on(b.id) == "NOP-222"
+    assert simulation.store.signature(b.id, "KLM-111").hole_index == number
+
+
+def test_return_hole_from_a_child_takes_the_childs_number(simulation) -> None:
+    """Coming back from a child: the sig is that connection's, and shares the child's hole number, not -0."""
+    c5 = pick_system("C5", exclude={HOME.id})
+    paste(simulation)
+    simulation.jump(c5.name)                       # ABC-123 is linked to it; the child has its number
+    child_number = simulation.store.system(c5.id).hole_index
+    simulation.jump(HOME.name)                     # back through the same hole
+    assert simulation.tracker.return_origin(HOME.id, 1) == c5.id
+    connection = simulation.store.connection(HOME.id, c5.id)
+    simulation.store.update_signature(HOME.id, "DEF-456", group="wormhole")
+    own = simulation.store.signature(HOME.id, "DEF-456").hole_index
+    simulation.tracker.mark_return(HOME.id, "DEF-456", connection.id)
+    assert simulation.store.connection(HOME.id, c5.id).signature_on(HOME.id) == "DEF-456"
+    assert simulation.store.signature(HOME.id, "DEF-456").hole_index == child_number
+    assert simulation.store.signature(HOME.id, "ABC-123").hole_index == own      # swapped, so no number is twice
+
+
+def test_return_origin_prefers_the_jump_then_the_parent(simulation) -> None:
+    """The origin is where the character came from into the system; else the parent; else nothing."""
+    c5 = pick_system("C5", exclude={HOME.id})
+    c3 = pick_system("C3")
+    simulation.jump(c5.name)
+    simulation.jump(c3.name)
+    assert simulation.tracker.return_origin(c3.id, 1) == c5.id
+    assert simulation.tracker.return_origin(c3.id, 99) == c5.id       # another pilot: the parent
+    assert simulation.tracker.return_origin(c3.id, None) == c5.id
+    assert simulation.tracker.return_origin(HOME.id, 1) is None       # home has no parent and nobody jumped in
+    simulation.store.remove_connection(simulation.store.connection(c5.id, c3.id).id)
+    assert simulation.tracker.return_origin(c3.id, 1) is None
+
+
+def test_mark_return_is_one_undoable_action(simulation) -> None:
+    """The link, the type and the copied state come back with one undo."""
+    b, connection = jump_with_scans(simulation, pick_system("C5", exclude={HOME.id}).name, "H296")
+    before = simulation.store.signature(b.id, "NOP-222")
+    actions = record_actions(simulation.store)
+    simulation.tracker.mark_return(b.id, "NOP-222", connection.id)
+    assert len(actions) == 1
+    simulation.store.undo(actions[0])
+    assert simulation.store.signature(b.id, "NOP-222") == before
+    assert simulation.store.connection(HOME.id, b.id).signature_on(b.id) is None
+
+
+def test_mark_return_checks_its_arguments(simulation) -> None:
+    """Only a wormhole sig of an end of the connection can be marked; unknown things do nothing."""
+    b, connection = jump_with_scans(simulation, pick_system("C5", exclude={HOME.id}).name, "H296")
+    signature_parser.merge_signatures(simulation.store, b.id, signature_parser.parse_scanner_text(
+        WH_SCAN + "GHI-789\tCosmic Signature\tGas Site\tBarren Perimeter Reservoir\t100.0%\t2 AU\n"))
+    assert simulation.tracker.mark_return(b.id, "NOP-222", 31337) is None
+    assert simulation.tracker.mark_return(b.id, "ZZZ-999", connection.id) is None
+    with pytest.raises(ValueError):
+        simulation.tracker.mark_return(b.id, "GHI-789", connection.id)
+    with pytest.raises(ValueError):
+        simulation.tracker.mark_return(pick_system("C1").id, "NOP-222", connection.id)
+    with pytest.raises(TypeError):
+        simulation.tracker.mark_return(b.id, 5, connection.id)
+
+
+def test_return_candidates_name_the_sigs_that_fit(simulation) -> None:
+    """Only unlinked wormhole sigs of the right type fit; none once the connection has its side."""
+    b, connection = jump_with_scans(simulation, pick_system("C5", exclude={HOME.id}).name, "H296")
+    assert simulation.tracker.return_candidates(b.id, HOME.id) == []           # two unlinked sigs, neither a K162
+    simulation.store.update_signature(b.id, "NOP-222", type="K162")
+    assert simulation.tracker.return_candidates(b.id, HOME.id) == ["NOP-222"]
+    simulation.store.update_signature(b.id, "KLM-111", type="K162")
+    assert simulation.tracker.return_candidates(b.id, HOME.id) == ["KLM-111", "NOP-222"]
+    simulation.tracker.mark_return(b.id, "KLM-111", connection.id)
+    assert simulation.tracker.return_candidates(b.id, HOME.id) == []           # the connection has its B side now

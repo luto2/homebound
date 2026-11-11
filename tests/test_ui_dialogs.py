@@ -673,6 +673,33 @@ def test_combo_sections(state) -> None:
         WormholeTypeCombo(state, (HOME.id,), None)
 
 
+def test_combo_lists_preferred_types_first(state) -> None:
+    """Preferred codes (the candidates of a return hole) form their own section right after Unknown/K162."""
+    combo = WormholeTypeCombo(state, [HOME.id], "", preferred=("N770", "C008"))
+    codes = [combo.itemData(row) for row in range(combo.count()) if combo.itemData(row) is not None]
+    assert codes[:5] == ["", "K162", "N770", "C008", "H296"]
+    assert len(codes) == len(set(codes))
+    assert WormholeTypeCombo(state, [HOME.id], "", preferred=("NOPE",)).preferred == ()
+    with pytest.raises(TypeError):
+        WormholeTypeCombo(state, [HOME.id], "", preferred=["N770"])
+
+
+def test_return_hole_dialog_lists_the_candidates_first(state) -> None:
+    """A linked sig without a type, whose other side is a K162, opens with the types that fit first."""
+    jump(state, HOME.name, 0)
+    other = pick_system("C3")
+    state.store.add_system(other.id)
+    connection = state.store.add_connection(HOME.id, other.id)
+    add_sig(state, "FAR-111", group="wormhole", type="K162")
+    state.store.upsert_signature(Signature(other.id, "NEAR-22", group="wormhole"))
+    state.store.set_connection_signature(connection.id, HOME.id, "FAR-111")
+    state.store.set_connection_signature(connection.id, other.id, "NEAR-22")
+    dialog = SignatureDialog(None, state, state.store.signature(other.id, "NEAR-22"), state.store.connection_by_id(connection.id))
+    assert dialog.wormhole.type.preferred == ("C008", "N770")
+    unlinked = SignatureDialog(None, state, state.store.signature(other.id, "NEAR-22"), None)
+    assert unlinked.wormhole.type.preferred == ()
+
+
 def test_combo_show_all_expansion(state) -> None:
     """Choosing 'Show all types' lists every type, impossible ones dimmed; a foreign current shows them at once."""
     combo = make_combo(state, "")

@@ -410,7 +410,8 @@ class SignatureDialog(BaseDialog):
         self.group.setCurrentIndex(max(0, self.group.findData(signature.group or "unknown")))
         self.body.addWidget(self.group)
 
-        self.wormhole = WormholeFields(state, [signature.system_id], self.starting_values())
+        self.wormhole = WormholeFields(state, [signature.system_id], self.starting_values(),
+                                       preferred=self.return_candidates())
         self.wormhole.resized.connect(self.adjustSize)
         self.rule = QFrame()
         self.rule.setFixedHeight(1)
@@ -429,6 +430,13 @@ class SignatureDialog(BaseDialog):
         self.group.currentIndexChanged.connect(self._sync_group)
         self._sync_group()
         self.wormhole.type.setFocus()
+
+    def return_candidates(self) -> tuple[str, ...]:
+        """Return the types a return hole without a type can be (the other side is a K162), to list first."""
+        signature, connection = self.signature, self.connection
+        if (connection is None or signature.type or connection.signature_on(signature.system_id) != signature.signature_id):
+            return ()
+        return self.state.tracker.return_type_of(connection, signature.system_id).candidates
 
     def starting_values(self) -> dict:
         """Return the wormhole values to start with: the sig's, filled in from the connection.

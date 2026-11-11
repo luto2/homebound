@@ -9,9 +9,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from PySide6.QtCore import (QAbstractItemModel, QAbstractTableModel, QEvent, QModelIndex, QObject,
-                            QPersistentModelIndex, QPointF, QRect, QRectF, Qt, QTimer, Signal)
-from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPen, QResizeEvent
-from PySide6.QtWidgets import (QAbstractItemView, QApplication, QHeaderView, QStyle, QStyledItemDelegate,
+                            QPersistentModelIndex, QPoint, QPointF, QRect, QRectF, Qt, QTimer, Signal)
+from PySide6.QtGui import (QColor, QContextMenuEvent, QFont, QFontMetricsF, QKeySequence, QPainter, QPen,
+                           QResizeEvent, QShortcut)
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QHeaderView, QMenu, QStyle, QStyledItemDelegate,
                                QStyleOptionViewItem, QTableView, QWidget)
 
 from ..mapdb.store import LIFETIME_CHIPS, Signature
@@ -22,6 +23,7 @@ from ..theme import painting
 from ..theme.tokens import PIXELS, color, font
 from ..validation import require_integer, require_type
 from ..mapping.scan_status import age_text
+from . import menus
 from .state import AppState
 
 COLUMNS = ["", "Sig", "Group", "Type", "Name", "Seen", "Age", ""]
@@ -37,6 +39,8 @@ GROUP_WORDS = {"wormhole": "WH", "combat": "Combat", "data": "Data", "relic": "R
 GROUP_TITLES = {"wormhole": "Wormholes", "combat": "Combat", "data": "Data", "relic": "Relic", "gas": "Gas",
                 "ore": "Ore", "ice": "Ice", "unknown": "Unscanned"}
 ANOMALY_PREFIX = "Anomalies · "
+RETURN_HINT = "↩ Return hole?"
+RETURN_MENU = "Return hole to"
 COPIED_FEEDBACK_MS = 1500
 WIDTH_SAVE_DELAY_MS = 600
 FLASH_IN_SECONDS = 0.12    # pasted rows light up quickly ...
@@ -92,6 +96,9 @@ class SignatureModel(QAbstractTableModel):
         self.leads: dict[str, tuple[int, str]] = {}     # signature id -> (system id, display name)
         self.upcoming: dict[str, int] = {}              # signature id -> number an unnumbered WH sig would get
         self.shared: dict[str, list[str]] = {}          # signature id -> the other WH sigs with the same number
+        self.returns: set[str] = set()                  # linked sigs that are the hole towards the parent
+        self.origin: int | None = None                  # where a return hole here leads, if known
+        self.hint: str | None = None                    # the one sig that looks like the return hole
         self.copied: str | None = None
 
     def sort_state(self) -> tuple[int, bool]:
@@ -172,11 +179,18 @@ class SignatureModel(QAbstractTableModel):
         state = self.state
         self.signatures = state.store.signatures(system_id) if system_id else []
         self.leads = {}
+        self.returns = set()
+        mine = state.store.system(system_id) if system_id else None
         for connection in state.store.connections_of_system(system_id) if system_id else []:
             signature_id = connection.signature_on(system_id)
             if signature_id:
                 other = connection.other_end(system_id)
                 self.leads[signature_id] = (other, state.namer.display(other))
+                if mine and mine.parent_id == other:
+                    self.returns.add(signature_id)   # the hole towards the parent: the return hole
+        self.origin = state.tracker.return_origin(system_id, state.followed) if system_id else None
+        fitting = state.tracker.return_candidates(system_id, self.origin) if self.origin else []
+        self.hint = fitting[0] if len(fitting) == 1 else None
         self.rows = self._grouped_rows()
         self.upcoming = self._upcoming_numbers()
         self.shared = self._shared_numbers()
@@ -301,7 +315,8 @@ class SignatureModel(QAbstractTableModel):
             return signature.type or ""
         if column == COLUMN_NAME:
             if signature.signature_id in self.leads:
-                return "→ " + self.leads[signature.signature_id][1]
+                return "→ " + self.leads[signature.signature_id][1] + (
+                    " · return" if signature.signature_id in self.returns else "")
             if is_wormhole_signature(signature):
                 return " · ".join(self.wormhole_details(signature)) or (signature.name or "")
             return signature.name or ""
@@ -446,6 +461,7 @@ class SignatureDelegate(QStyledItemDelegate):
 
     copyRequested = Signal(int)  # row
     headerClicked = Signal(str)  # group key
+    returnRequested = Signal(int)  # row of the sig whose "Return hole?" hint was clicked
 
     def __init__(self, model: SignatureModel, parent: QWidget | None = None) -> None:
         """Create the delegate for ``model``."""
@@ -457,6 +473,13 @@ class SignatureDelegate(QStyledItemDelegate):
     def button_rect(cell: QRect | QRectF, label: str) -> QRectF:
         """Return where the copy button with this label sits in a cell."""
         width = QFontMetricsF(font("mono-small")).horizontalAdvance("⧉ " + label) + 12
+        rect = QRectF(cell)
+        return QRectF(rect.right() - width - 4, rect.center().y() - 9, width, 18)
+
+    @staticmethod
+    def hint_rect(cell: QRect | QRectF) -> QRectF:
+        """Return where the "Return hole?" button sits in a Name cell."""
+        width = QFontMetricsF(font("mono-small")).horizontalAdvance(RETURN_HINT) + 12
         rect = QRectF(cell)
         return QRectF(rect.right() - width - 4, rect.center().y() - 9, width, 18)
 
@@ -521,6 +544,15 @@ class SignatureDelegate(QStyledItemDelegate):
             painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | horizontal, text)
         elif column == COLUMN_NAME:
             name_font = font("ui-small")
+            if signature.signature_id == self.model.hint:
+                button = self.hint_rect(rect)
+                painter.setPen(QPen(color("accent"), 1))
+                painter.setBrush(color("bg-3"))
+                painter.drawRoundedRect(button, PIXELS["radius-2"], PIXELS["radius-2"])
+                painter.setFont(font("mono-small"))
+                painter.setPen(color("accent"))
+                painter.drawText(button, Qt.AlignmentFlag.AlignCenter, RETURN_HINT)
+                text_rect = text_rect.adjusted(0, 0, -(button.width() + 8), 0)
             painter.setFont(name_font)
             linked = signature.signature_id in self.model.leads
             base = color("accent") if linked else (ink if text.startswith("→") else muted)
@@ -627,6 +659,10 @@ class SignatureDelegate(QStyledItemDelegate):
                 and self.button_rect(option.rect, self.model.button_label(row)).contains(event.position())):
             self.copyRequested.emit(index.row())
             return True
+        if (index.column() == COLUMN_NAME and event.type() == QEvent.Type.MouseButtonRelease
+                and row.signature_id == self.model.hint and self.hint_rect(option.rect).contains(event.position())):
+            self.returnRequested.emit(index.row())
+            return True
         return super().editorEvent(event, model, option, index)
 
 
@@ -635,6 +671,7 @@ class SignatureTable(QTableView):
 
     copied = Signal(str)
     editRequested = Signal(object)  # Signature
+    returnRequested = Signal(str, int)  # signature ID, the system its hole leads to (0: not known)
 
     def __init__(self, state: AppState, parent: QWidget | None = None) -> None:
         """Create the table with saved column widths and sort order."""
@@ -646,6 +683,9 @@ class SignatureTable(QTableView):
         self.signature_delegate.copyRequested.connect(self.copy_row)
         # reset after the event, not inside it
         self.signature_delegate.headerClicked.connect(self.signature_model.toggle, Qt.ConnectionType.QueuedConnection)
+        self.signature_delegate.returnRequested.connect(self._hint_clicked)
+        QShortcut(QKeySequence("R"), self, activated=self.mark_selected_return,
+                  context=Qt.ShortcutContext.WidgetShortcut)
         self.doubleClicked.connect(self._double_clicked)
         self.signature_model.modelReset.connect(self._update_spans)
         self.setItemDelegate(self.signature_delegate)
@@ -783,6 +823,66 @@ class SignatureTable(QTableView):
         signature = self.signature_model.signature_at(index.row())
         if signature and signature.kind != "anom":
             self.editRequested.emit(signature)
+
+    def _hint_clicked(self, row: int) -> None:
+        """Mark the hinted sig as the return hole."""
+        signature = self.signature_model.signature_at(row)
+        if signature:
+            self.returnRequested.emit(signature.signature_id, self.signature_model.origin or 0)
+
+    def mark_selected_return(self) -> bool:
+        """Ask to mark the one selected wormhole sig as the return hole (the ``R`` key).
+
+        Returns:
+            True if a request was sent (origin 0 when it isn't known, so the panel can say so).
+        """
+        selected = [signature for signature_id in self.selected_signatures()
+                    if (signature := next((candidate for candidate in self.signature_model.signatures
+                                           if candidate.signature_id == signature_id), None))]
+        if len(selected) != 1 or not is_wormhole_signature(selected[0]):
+            return False
+        self.returnRequested.emit(selected[0].signature_id, self.signature_model.origin or 0)
+        return True
+
+    def contextMenuEvent(self, event: QContextMenuEvent) -> None:
+        """Right-click on a wormhole sig: mark it as the return hole."""
+        signature = self.signature_model.signature_at(self.rowAt(event.pos().y()))
+        if signature and is_wormhole_signature(signature):
+            self.show_menu(signature, event.globalPos())
+
+    def show_menu(self, signature: Signature, position: QPoint) -> QMenu:
+        """Show the menu of a wormhole sig: "Return hole to A", or a list of the connections to pick from.
+
+        Args:
+            signature: A wormhole signature of the loaded system.
+            position: Where to show it (global).
+
+        Returns:
+            The menu.
+        """
+        require_type(signature, Signature, "signature")
+        state, model = self.state, self.signature_model
+        menu = menus.menu(self)
+        already = signature.signature_id in model.leads and model.leads[signature.signature_id][0]
+        if model.origin:
+            menus.item(menu, f"{RETURN_MENU} {state.namer.display(model.origin)}",
+                       lambda: self.returnRequested.emit(signature.signature_id, model.origin), "R",
+                       enabled=already != model.origin, why="This sig is already that hole")
+        else:
+            choices = [connection.other_end(model.system_id)
+                       for connection in state.store.connections_of_system(model.system_id)
+                       if not connection.signature_on(model.system_id)]
+            submenu = menus.menu(menu)
+            submenu.setTitle(f"{RETURN_MENU} …")
+            for other in choices:
+                menus.item(submenu, state.namer.display(other),
+                           lambda other=other: self.returnRequested.emit(signature.signature_id, other))
+            menu.addMenu(submenu)
+            submenu.setEnabled(bool(choices))
+            if not choices:
+                submenu.menuAction().setToolTip("Every connection here has its sig already")
+        menu.exec(position)
+        return menu
 
     def copy_row(self, row: int) -> str | None:
         """Copy the bookmark text of a row, reserving its index first.

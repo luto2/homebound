@@ -124,3 +124,4 @@ No open decisions left.
 - A system that comes back without a sig keeps its old number while no hole of the new parent
   has it, even if the parent is a different one.
 - A scheme change from another cloud member asks the rename question too.
+- Marking a return hole ([`plan-return-hole.md`](../plan-return-hole.md)) is the one explicit rename of a sig: its bookmark reads `-0` (towards the parent) while linked, but its stored number is kept, so nothing is lost on undo.

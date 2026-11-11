@@ -13,7 +13,7 @@ from ..mapping.naming import rename_system
 from ..theme import painting
 from ..theme.qss import repolish
 from ..theme.tokens import PIXELS, color, font
-from ..validation import require_integer, require_type
+from ..validation import require_integer, require_text, require_type
 from ..zkill import ZKILL_STALE_AFTER, age
 from ..mapping.scan_status import age_text
 from .activity_list import ActivityList
@@ -282,6 +282,7 @@ class SystemPanel(QWidget):
         self.table = SignatureTable(self.state)
         self.table.copied.connect(lambda label: self.toast.emit("ok", f"Copied bookmark name {label}"))
         self.table.editRequested.connect(self.edit_signature)
+        self.table.returnRequested.connect(self.mark_return)
         self.table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         QShortcut(QKeySequence.StandardKey.Delete, self.table, activated=self.delete_selected,
                   context=Qt.ShortcutContext.WidgetShortcut)
@@ -440,6 +441,36 @@ class SystemPanel(QWidget):
         state.systemUpdated.emit(self.system_id)
         if linked or connection:
             state.mapChanged.emit()
+        return True
+
+    def mark_return(self, signature_id: str, origin_id: int) -> bool:
+        """Mark a signature of the shown system as the hole back to ``origin_id`` (with an Undo toast).
+
+        Args:
+            signature_id: The signature.
+            origin_id: The system the hole leads to; 0 if it isn't known, which only says so.
+
+        Returns:
+            True if the signature was marked.
+        """
+        require_text(signature_id, "signature_id")
+        require_integer(origin_id, "origin_id", minimum=0)
+        state = self.state
+        connection = state.store.connection(origin_id, self.system_id) if origin_id else None
+        if connection is None:
+            self.toast.emit("err", "Right-click the sig and pick the system its hole leads to")
+            return False
+        with state.store.batch() as action:
+            found = state.tracker.mark_return(self.system_id, signature_id, connection.id)
+        if found is None:
+            return False
+        self.refresh()
+        state.systemUpdated.emit(self.system_id)
+        state.mapChanged.emit()
+        origin = state.namer.display(origin_id)
+        self.undoable.emit(f"{signature_id} is the hole back to {origin}", state.namer.display(self.system_id), action)
+        if found.candidates and not found.code:
+            self.toast.emit("ok", f"Pick its type: {', '.join(found.candidates)} lead to {origin}")
         return True
 
     def keep_missing(self) -> int:

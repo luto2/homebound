@@ -185,6 +185,7 @@ The summary above the table says when you last pasted, for example "last paste 2
 - Click a column header (Sig, Type, Name, Seen, Age) to sort the rows inside every group; click it again to reverse. Homebound remembers the order per map.
 - Drag the rules between the column headers to resize them. The widths are remembered.
 - Select rows and click *Delete selected* (or press Del) to remove them.
+- Right-click a wormhole sig (or select it and press **R**) → **Return hole to A**: it marks that sig as the hole in this system that leads back to the system you jumped in from (A; if you didn't jump in, the parent, else you pick from the connections that have no sig on this side yet). Homebound links the sig to that connection, sets where it leads, and fills in its type from the other side: K162 when A's side is a real type, the real type when A's side is a K162 (set only when exactly one type fits, otherwise the editor lists the candidates first). Mass, lifetime and size are copied from the connection. One Undo takes it all back. After a paste, if exactly one unlinked sig looks like that hole, its row shows a **↩ Return hole?** button; nothing is linked until you click it. When A is the parent, its bookmark reads `S-0` and the row says `→ A · return`.
 - For a wormhole sig, the Name column shows where it leads (`→ A2`) or what you entered in the editor (`→ C3 · M · ◷ <1h · R`).
 
 ### The signature editor
@@ -347,6 +348,7 @@ While the main window is hidden, toasts are also sent as desktop notifications.
 | F2 | map | Rename the selected system |
 | Del | map | Remove the selected system |
 | Del | sig table | Delete the selected sigs |
+| R | sig table | Mark the selected wormhole sig as the return hole |
 | Ins | map | Add a system |
 | F | map | Fit the chain into view |
 | Enter | map | Edit the selected connection |

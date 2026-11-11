@@ -21,8 +21,8 @@ from ..mapdb.store import LIFETIME_REMAINING, Connection, Store
 from ..universe.db import Universe
 from ..validation import require_integer, require_text, require_type
 from .chain import connected_component, wormhole_adjacency
-from .naming import (Namer, StaticGuess, guess_static, hole_path, number_signature, static_slot_count,
-                     take_hole_number, used_hole_indices)
+from .naming import (Namer, ReturnType, StaticGuess, guess_static, hole_path, is_numbered_kind, number_signature,
+                     return_type, static_slot_count, take_hole_number, used_hole_indices)
 
 GRID = 62 / 3                          # map grid cell = 1/3 of the node height (token size-node-h)
 CHILD_OFFSET_X, CHILD_OFFSET_Y = 12 * GRID, 5 * GRID  # offset of a new child from its parent, in whole grid cells
@@ -151,6 +151,7 @@ class Tracker:
         require_type(namer, Namer, "namer")
         self.store, self.universe, self.namer = store, universe, namer
         self.auto_when_certain = bool(auto_when_certain)
+        self._origins: dict[tuple[int, int], int] = {}   # (character, system) -> where it came from into it, by wormhole
 
     # ------------------------------------------------------------ log events
     @_one_action
@@ -178,6 +179,7 @@ class Tracker:
             return events
         if is_wormhole_side(self.universe, previous) or is_wormhole_side(self.universe, system_id):
             events[0].wormhole = True
+            self._origins[(change.character_id, system_id)] = previous
             events += self.add_wormhole(previous, system_id, change.character_name)
         else:
             events.append(UnknownJump(change.character_id, change.character_name, previous, system_id))
@@ -444,6 +446,127 @@ class Tracker:
         if changes:
             self.store.update_connection(connection.id, **changes)
         return connection.id
+
+    # ------------------------------------------------------------ return hole
+    def return_origin(self, system_id: int, character_id: int | None = None) -> int | None:
+        """Return the system a return hole in ``system_id`` leads to: where you jumped in from.
+
+        That is the system the character came from on their last wormhole jump into this one, if the
+        two are still connected; else the system's parent; else None (the caller asks).
+
+        Args:
+            system_id: The system the hole is in.
+            character_id: The character, or None for none.
+
+        Returns:
+            The origin's system ID, or None.
+        """
+        require_integer(system_id, "system_id", minimum=1)
+        require_integer(character_id, "character_id", minimum=0, optional=True)
+        origin = self._origins.get((character_id, system_id))
+        if origin is not None and self.store.connection(origin, system_id):
+            return origin
+        mapped = self.store.system(system_id)
+        if mapped and mapped.parent_id is not None and self.store.connection(mapped.parent_id, system_id):
+            return mapped.parent_id
+        return None
+
+    def _near_type(self, connection: Connection, origin_id: int) -> str | None:
+        """Return the type of the signature on the origin's side of a connection, if there is one."""
+        signature_id = connection.signature_on(origin_id)
+        signature = self.store.signature(origin_id, signature_id) if signature_id else None
+        return signature.type if signature else None
+
+    def return_type_of(self, connection: Connection, system_id: int) -> ReturnType:
+        """Return what the other end of a connection says the hole in ``system_id`` is (see :func:`return_type`)."""
+        require_type(connection, Connection, "connection")
+        origin_id = connection.other_end(system_id)
+        return return_type(self.universe, self._near_type(connection, origin_id), connection.wormhole_type,
+                           origin_id, system_id)
+
+    def return_candidates(self, system_id: int, origin_id: int) -> list[str]:
+        """Return the unlinked wormhole sigs of a system that look like the hole back to ``origin_id``.
+
+        Only while the connection has no sig on this side yet. With a real type on the origin's side
+        the hole here is a K162; with a K162 there it has a type that leads to the origin's class;
+        with nothing known either of the two fits.
+
+        Args:
+            system_id: The system the hole is in.
+            origin_id: The system it leads to.
+
+        Returns:
+            The signature IDs, in signature ID order.
+        """
+        require_integer(system_id, "system_id", minimum=1)
+        require_integer(origin_id, "origin_id", minimum=1)
+        connection, origin = self.store.connection(origin_id, system_id), self.universe.by_id(origin_id)
+        if connection is None or origin is None or connection.signature_on(system_id):
+            return []
+        near = (self._near_type(connection, origin_id) or connection.wormhole_type or "").upper()
+        fitting = []
+        for signature_id in self.unlinked_wormhole_signatures(system_id, origin.system_class):
+            code = (self.store.signature(system_id, signature_id).type or "").upper()
+            leads_there = bool(self.universe.known_type(code))
+            if (code == "K162" and near != "K162") or (leads_there and near in ("", "K162")):
+                fitting.append(signature_id)
+        return fitting
+
+    @_one_action
+    def mark_return(self, system_id: int, signature_id: str, connection_id: int) -> ReturnType | None:
+        """Mark a signature as the hole that leads back along a connection, and set what the other side says.
+
+        The signature is linked to the connection on this side (replacing a sig that was there, which
+        stays a sig), gets the origin's class as its destination, and its type from the other side
+        (see :func:`~homebound.mapping.naming.return_type`; an unsettled type is left as it was).
+        The connection's mass, lifetime, size and frigate-only are copied onto it, after the
+        details the sig already had were carried to the connection (see :meth:`link_signature`).
+        The bookmark shows ``-0`` when the origin is this system's parent, or the origin's own hole
+        number when it is a child; that number moves to this sig (the sig it took it from gets this
+        sig's old number). Otherwise the sig keeps its number.
+
+        Args:
+            system_id: The system the hole is in.
+            signature_id: The signature in it.
+            connection_id: The connection the hole belongs to.
+
+        Returns:
+            The type worked out (with the candidates), or None if the signature or the connection
+            doesn't exist.
+
+        Raises:
+            ValueError: If the signature isn't a wormhole, or the system isn't an end of the connection.
+        """
+        require_integer(system_id, "system_id", minimum=1)
+        require_text(signature_id, "signature_id")
+        require_integer(connection_id, "connection_id", minimum=1)
+        signature = self.store.signature(system_id, signature_id)
+        connection = self.store.connection_by_id(connection_id)
+        if connection is None:
+            return None
+        origin_id = connection.other_end(system_id)
+        if signature is None:
+            return None
+        if not is_numbered_kind(signature):
+            raise ValueError(f"{signature_id} is not a wormhole signature")
+        found = self.return_type_of(connection, system_id)
+        changes: dict[str, Any] = {"destination": self.universe.by_id(origin_id).system_class}
+        if found.code:
+            changes["type"] = found.code
+        self.store.update_signature(system_id, signature_id, **changes)
+        origin = self.store.system(origin_id)
+        if origin and origin.parent_id == system_id and origin.hole_index and signature.hole_index != origin.hole_index:
+            replaced_id = connection.signature_on(system_id)
+            replaced = self.store.signature(system_id, replaced_id) if replaced_id else None
+            if replaced and replaced.signature_id != signature_id and replaced.hole_index == origin.hole_index:
+                self.store.update_signature(system_id, replaced.signature_id, hole_index=signature.hole_index)
+            self.store.update_signature(system_id, signature_id, hole_index=origin.hole_index)
+        self.link_signature(connection_id, system_id, signature_id)
+        connection = self.store.connection_by_id(connection_id)
+        self.store.update_signature(system_id, signature_id, mass=connection.mass, lifetime=connection.lifetime,
+                                    lifetime_set_at=connection.lifetime_set_at, size=connection.size,
+                                    frigate_only=connection.frigate_only)
+        return found
 
     # ------------------------------------------------------------ lost connections
     @_one_action
