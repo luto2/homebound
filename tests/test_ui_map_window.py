@@ -6,7 +6,7 @@ from typing import NoReturn
 import pytest
 from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QAction, QCloseEvent, QMouseEvent
-from PySide6.QtWidgets import QApplication, QLineEdit, QMenu, QPlainTextEdit, QSystemTrayIcon
+from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QMenu, QPlainTextEdit, QSystemTrayIcon
 
 from conftest import HOME, SCAN, UNIVERSE, pick_system
 from homebound.backup import list_backups
@@ -914,6 +914,82 @@ def test_key_remove_ignores_home_and_missing(window) -> None:
     window.state.select(child.id)
     window._key_remove()
     assert not window.state.store.has_system(child.id)
+
+
+def select_systems(window, *system_ids) -> None:
+    """Select the given system nodes on the map; the first one is the state's selection."""
+    window.scene.clearSelection()
+    window.state.select(system_ids[0])
+    for system_id in system_ids[1:]:
+        window.scene.nodes[system_id].setSelected(True)
+
+
+def toast_labels(toast) -> str:
+    """Return every label of a toast (headline and detail) joined into one string."""
+    return " ".join(label.text() for label in toast.findChildren(QLabel))
+
+
+def test_del_removes_every_selected_system_with_one_undo(window) -> None:
+    """Del with three systems selected removes all three in one batch; one Undo brings them back with links and names."""
+    store = window.state.store
+    first = add_child(window)
+    second = add_child(window, exclude=[first.id])
+    third = add_child(window, exclude=[first.id, second.id])
+    store.update_system(second.id, custom_name="Alpha")
+    window.scene.rebuild()
+    select_systems(window, first.id, second.id, third.id)
+    toasts_before = len(window.toasts.toasts)
+    window._key_remove()
+    assert not any(store.has_system(system.id) for system in (first, second, third))
+    assert store.has_system(HOME.id) and window.state.selected == 0
+    assert len(window.toasts.toasts) == toasts_before + 1
+    labels = toast_labels(window.toasts.toasts[-1])
+    assert "Removed 3 systems from the map" in labels and "3 connections went with them" in labels
+    assert window.toasts.trigger_undo() is True
+    for system in (first, second, third):
+        assert store.has_system(system.id) and store.connection(HOME.id, system.id)
+    assert store.system(second.id).custom_name == "Alpha"
+
+
+def test_del_keeps_home_in_the_selection(window) -> None:
+    """Home in a multi-selection is kept, and the toast says so."""
+    store = window.state.store
+    first = add_child(window)
+    second = add_child(window, exclude=[first.id])
+    window.scene.rebuild()
+    select_systems(window, HOME.id, first.id, second.id)
+    window._key_remove()
+    assert store.has_system(HOME.id)
+    assert not store.has_system(first.id) and not store.has_system(second.id)
+    assert "Removed 2 systems from the map (home kept)" in toast_labels(window.toasts.toasts[-1])
+
+
+def test_node_menu_inside_selection_removes_the_selection(window, modal) -> None:
+    """Right-clicking a node of a multi-selection counts the selection and removes all of it."""
+    store = window.state.store
+    first = add_child(window)
+    second = add_child(window, exclude=[first.id])
+    third = add_child(window, exclude=[first.id, second.id])
+    window.scene.rebuild()
+    select_systems(window, first.id, second.id, third.id)
+    modal.menu_handler = pick("Remove 3 systems")
+    window._node_menu(second.id, QPoint(0, 0))
+    assert not any(store.has_system(system.id) for system in (first, second, third))
+    assert store.has_system(HOME.id)
+
+
+def test_node_menu_outside_selection_removes_only_that_node(window, modal) -> None:
+    """Right-clicking a node outside the selection removes only that node."""
+    store = window.state.store
+    first = add_child(window)
+    second = add_child(window, exclude=[first.id])
+    outside = add_child(window, exclude=[first.id, second.id])
+    window.scene.rebuild()
+    select_systems(window, first.id, second.id)
+    modal.menu_handler = pick("Remove from map")
+    window._node_menu(outside.id, QPoint(0, 0))
+    assert not store.has_system(outside.id)
+    assert store.has_system(first.id) and store.has_system(second.id)
 
 
 def test_undo_refreshes_the_selected_system(window) -> None:

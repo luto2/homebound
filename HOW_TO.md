@@ -241,7 +241,7 @@ Right-click a connection for the quick menu:
 - **Draw a connection**: hold Shift and drag from one system to another, or right-click a system → *Draw connection from here*, then click the other system. Esc cancels.
 - **Rename** (F2): sets a custom name. Leave it empty to go back to the scheme name.
 - **Set as home**: makes the system the root of the naming scheme.
-- **Remove from map** (Del): removes the system and its connections. Home can't be removed. Undo is in the toast.
+- **Remove from map** (Del): removes the system and its connections. With several systems selected, Del (or the menu's "Remove N systems") removes them all in one step. Home is kept. Undo is in the toast.
 - **Request zKill now** refreshes its kill activity.
 
 **Unconfirmed.** Systems and connections you add by hand get a dashed orange border and a `▲ UNCONFIRMED` tag, as do both ends of a hand-drawn connection. A character jumping the connection, or arriving in the system, confirms it. Right-click → **✓ Mark as confirmed** does it by hand.
@@ -345,7 +345,7 @@ While the main window is hidden, toasts are also sent as desktop notifications.
 | Ctrl+F | anywhere | Find a system on the map |
 | Ctrl+Z | anywhere | Undo the last removal while its toast is up |
 | F2 | map | Rename the selected system |
-| Del | map | Remove the selected system |
+| Del | map | Remove the selected systems (home is kept) |
 | Del | sig table | Delete the selected sigs |
 | Ins | map | Add a system |
 | F | map | Fit the chain into view |

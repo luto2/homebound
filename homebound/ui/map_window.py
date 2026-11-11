@@ -984,8 +984,11 @@ class MapWindow(QMainWindow):
         menus.item(menu, "Request zKill now", lambda: state.zkill.request([system_id], force=True))
         menus.item(menu, "Add as route destination", lambda: self.route_dock.add_system(system_id))
         menu.addSeparator()
-        menus.item(menu, "Remove from map", lambda: self._remove(system_id), "Del", danger=True,
-                   enabled=not is_home, why="Home can’t be removed. Set another home first.")
+        targets = self._selected_system_ids() if node and node.isSelected() else [system_id]
+        removable = [target for target in targets if target != state.home_id]
+        label = f"Remove {len(removable)} systems" if len(removable) > 1 else "Remove from map"
+        menus.item(menu, label, lambda: self._remove_systems(targets), "Del", danger=True,
+                   enabled=bool(removable), why="Home can’t be removed. Set another home first.")
         menu.exec(position)
 
     def _selected_system(self) -> int | None:
@@ -998,11 +1001,16 @@ class MapWindow(QMainWindow):
         if system_id := self._selected_system():
             self._rename(system_id)
 
+    def _selected_system_ids(self) -> list[int]:
+        """Return the systems selected on the map, or the one selected in the state if the scene has no selection."""
+        system_ids = [node.system_id for node in self.scene.selected_nodes()]
+        if not system_ids and self.state.selected:
+            system_ids = [self.state.selected]
+        return [system_id for system_id in system_ids if self.state.store.has_system(system_id)]
+
     def _key_remove(self) -> None:
-        """Del: remove the selected system (never home)."""
-        system_id = self._selected_system()
-        if system_id and system_id != self.state.home_id:
-            self._remove(system_id)
+        """Del: remove every selected system (home is kept)."""
+        self._remove_systems(self._selected_system_ids())
 
     def _key_add(self) -> None:
         """Ins: add a system at the centre of the view."""
@@ -1118,17 +1126,48 @@ class MapWindow(QMainWindow):
 
     def _remove(self, system_id: int) -> None:
         """Remove a system from the map, with an Undo toast."""
+        self._remove_systems([system_id])
+
+    def _remove_systems(self, system_ids: list[int]) -> None:
+        """Remove systems from the map in one Store batch, with one Undo toast. Home is never removed.
+
+        Args:
+            system_ids: The systems to remove. IDs that are not on the map are skipped.
+
+        Raises:
+            TypeError: If ``system_ids`` is not a list or tuple, or an ID is not an integer.
+        """
+        require_type(system_ids, (list, tuple), "system_ids")
+        for system_id in system_ids:
+            require_integer(system_id, "system_id", minimum=1)
         state = self.state
-        name = state.namer.display(system_id)
-        count = len(state.store.connections_of_system(system_id))
-        with state.store.batch() as action:
-            state.store.remove_system(system_id)
-        if state.selected == system_id:
+        store = state.store
+        removed = [system_id for system_id in dict.fromkeys(system_ids)
+                   if system_id != state.home_id and store.has_system(system_id)]
+        if not removed:
+            return
+        single = len(removed) == 1
+        name = state.namer.display(removed[0]) if single else ""
+        connections = {connection.id for system_id in removed
+                       for connection in store.connections_of_system(system_id)}
+        with store.batch() as action:
+            for system_id in removed:
+                store.remove_system(system_id)
+        if state.selected in removed:
             state.select(0)
         state.mapChanged.emit()
-        self.offer_undo(f"Removed {name} from the map",
-                        f"Its {count} connection{'s' if count != 1 else ''} went with it." if count
-                        else "It had no connections.", action)
+        kept = " (home kept)" if state.home_id in system_ids else ""
+        count = len(connections)
+        title = (f"Removed {name} from the map{kept}" if single
+                 else f"Removed {len(removed)} systems from the map{kept}")
+        plural = "s" if count != 1 else ""
+        if not count:
+            detail = "It had no connections." if single else "They had no connections."
+        elif single:
+            detail = f"Its {count} connection{plural} went with it."
+        else:
+            detail = f"{count} connection{plural} went with them."
+        self.offer_undo(title, detail, action)
 
     def _edge_menu(self, connection_id: int, position) -> None:
         """Show the context menu of a connection."""
