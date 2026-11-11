@@ -1153,6 +1153,7 @@ class MapWindow(QMainWindow):
             menus.item(menu, label, lambda key=key: self._set_connection(connection_id, lifetime=key),
                        checked=connection.lifetime == key, group=group)
         menu.addSeparator()
+        menus.item(menu, "Lost connection", lambda: self._lost_connection(connection_id))
         menus.item(menu, "Collapse", lambda: self._collapse(connection_id), danger=True)
         menu.exec(position)
 
@@ -1179,6 +1180,7 @@ class MapWindow(QMainWindow):
             return False
         dialog = ConnectionDialog(self, self.state, connection)
         dialog.collapse.connect(lambda: self._collapse(connection_id))
+        dialog.lost.connect(lambda: self._lost_connection(connection_id))
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return False
         self._set_connection(connection_id, **dialog.values())
@@ -1210,6 +1212,28 @@ class MapWindow(QMainWindow):
         detail = (f"{' and '.join(gone)} {'was' if len(gone) == 1 else 'were'} removed from the map." if gone
                   else "Both systems stay on the map.")
         self.offer_undo(f"Collapsed {name_a} ↔ {name_b}", detail, action)
+        return True
+
+    def _lost_connection(self, connection_id: int) -> bool:
+        """Remove a connection and its signatures but keep both systems (to find a way out behind a closed hole).
+
+        The piece that no longer reaches home is marked as cut off and goes an hour after the last
+        pilot left it (see ``Tracker.disconnect``).
+
+        Returns:
+            Whether the connection existed.
+        """
+        state = self.state
+        connection = state.store.connection_by_id(connection_id)
+        if not connection:
+            return False
+        name_a, name_b = state.namer.display(connection.system_a), state.namer.display(connection.system_b)
+        with state.store.batch() as action:
+            cut_off = state.tracker.disconnect(connection_id)
+        state.mapChanged.emit()
+        detail = (f"{len(cut_off)} system{'s' if len(cut_off) != 1 else ''} cut off from home, "
+                  f"removed in 1h unless someone is inside." if cut_off else "Both systems stay on the map.")
+        self.offer_undo(f"Lost {name_a} ↔ {name_b}", detail, action)
         return True
 
     def _background_menu(self, scene_position, position) -> None:

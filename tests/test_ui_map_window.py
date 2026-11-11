@@ -1162,3 +1162,26 @@ def test_rename_can_remember_the_name(window, modal) -> None:
     modal.handler = answer("", True)
     window._rename(child.id)
     assert (store.system(child.id).custom_name, store.alias(child.id)) == (None, None)
+
+
+def test_lost_connection_via_menu_keeps_both_systems_and_undo(window, modal) -> None:
+    """Lost connection removes only the link, marks the far piece and offers Undo, which restores the link."""
+    child = add_child(window)
+    connection_id = edge_id(window, child)
+    modal.menu_handler = pick("Lost connection")
+    window._edge_menu(connection_id, QPoint(0, 0))
+    store, tracker = window.state.store, window.state.tracker
+    assert store.has_system(child.id) and store.has_system(HOME.id) and not store.connection(HOME.id, child.id)
+    assert tracker.cut_off_since(child.id) is not None
+    assert window.state.cut_off_age(child.id) == "0m" and window.state.cut_off_age(HOME.id) == ""
+    window.toasts.trigger_undo()
+    assert store.connection(HOME.id, child.id) and tracker.cut_off_since(child.id) is None
+    assert window._lost_connection(31337) is False
+
+
+def test_connection_dialog_lost_button_marks_the_connection_lost(window, modal) -> None:
+    """The dialog's Lost connection button closes the dialog and runs the same action."""
+    child = add_child(window)
+    modal.handler = lambda dialog: (dialog.lost.emit(), 0)[1]
+    assert window.edit_connection(edge_id(window, child)) is False
+    assert not window.state.store.connection(HOME.id, child.id) and window.state.store.has_system(child.id)

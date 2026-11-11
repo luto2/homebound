@@ -12,7 +12,7 @@ from ..logs.watcher import LogWatcher
 from ..mapdb.store import LEGACY_NAMES_KEY, Action, Store, utc_now_iso
 from ..mapping.chain import Chain, resolve_chain
 from ..mapping.naming import Namer, freeze_legacy_names, label_unnamed_systems, needs_label
-from ..mapping.scan_status import ScanStatus, scan_status
+from ..mapping.scan_status import ScanStatus, format_duration, scan_status
 from ..mapping.tracker import AutoNamed, MapChanged, Moved, NamingRequest, Tracker, UnknownJump
 from ..settings import Settings
 from ..universe.db import Universe
@@ -517,6 +517,16 @@ class AppState(QObject):
         return scan_status(mapped.scanned_at if mapped else None, datetime.now(timezone.utc),
                            timedelta(hours=self.settings.rescan_due_hours),
                            wormhole=bool(system and system.wormhole_space))
+
+    def cut_off_age(self, system_id: int) -> str:
+        """Return how long ago the system's piece was cut off from home ("12m", "1h 5m"), or "" if it holds no mark.
+
+        Raises:
+            TypeError: If ``system_id`` is not an integer.
+        """
+        require_integer(system_id, "system_id")
+        since = self.tracker.cut_off_since(system_id) if system_id > 0 else None
+        return format_duration(datetime.now(timezone.utc) - since) if since else ""
 
     def mark_scanned(self, system_id: int) -> bool:
         """Set a system's last paste to now, e.g. for an empty system that gives nothing to paste.

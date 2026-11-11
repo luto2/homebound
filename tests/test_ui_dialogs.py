@@ -946,3 +946,17 @@ def test_prompt_check_box(qt_application) -> None:
     assert dialog.check.text() == "Remember this name" and dialog.is_checked()
     dialog.check.setChecked(False)
     assert not dialog.is_checked()
+
+
+def test_connection_dialog_lost_connection_button(state) -> None:
+    """Lost connection is a plain button next to Collapse; it emits ``lost`` and rejects."""
+    jump(state, HOME.name, 0)
+    other = pick_system("C5", exclude={HOME.id})
+    state.store.add_system(other.id)
+    dialog = ConnectionDialog(None, state, state.store.add_connection(HOME.id, other.id))
+    got = []
+    dialog.lost.connect(lambda: got.append(1))
+    button = next(candidate for candidate in dialog.findChildren(QPushButton) if candidate.text() == "Lost connection")
+    assert button.property("variant") is None
+    button.click()
+    assert got == [1] and dialog.result() == 0

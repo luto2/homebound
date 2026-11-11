@@ -11,6 +11,7 @@ confirm "was this the static?" / "which sig?". The answer sets the flag; only th
 change the number.
 """
 import functools
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -19,12 +20,15 @@ from ..logs.parser import SystemChange
 from ..mapdb.store import LIFETIME_REMAINING, Connection, Store
 from ..universe.db import Universe
 from ..validation import require_integer, require_text, require_type
+from .chain import connected_component, wormhole_adjacency
 from .naming import (Namer, StaticGuess, guess_static, hole_path, number_signature, static_slot_count,
                      take_hole_number, used_hole_indices)
 
 GRID = 62 / 3                          # map grid cell = 1/3 of the node height (token size-node-h)
 CHILD_OFFSET_X, CHILD_OFFSET_Y = 12 * GRID, 5 * GRID  # offset of a new child from its parent, in whole grid cells
 DEFAULT_LIFETIME_HOURS = 48            # for connections whose type (and so lifetime) is unknown
+CUT_OFF_GRACE = timedelta(hours=1)     # a cut-off piece nobody is in goes after this long
+CUT_OFF_KEY = "cut_off"                # local key/value: {system id: when its piece was cut off from home}
 SIGNATURE_EDIT_KEYS = ("group", "type", "name", "destination", "mass", "lifetime", "lifetime_set_at",
                        "frigate_only", "size")
 
@@ -441,10 +445,113 @@ class Tracker:
             self.store.update_connection(connection.id, **changes)
         return connection.id
 
+    # ------------------------------------------------------------ lost connections
+    @_one_action
+    def disconnect(self, connection_id: int, now: datetime | None = None) -> list[int]:
+        """Remove a connection and its two signatures but keep both systems and everything behind them.
+
+        This is for a hole that collapsed with a pilot behind it: the far piece stays on the map so
+        they can find a way out. A system that loses its parent keeps its hole number and name. The
+        piece that no longer reaches home is marked as cut off (see :meth:`cut_off_since`); it goes
+        :data:`CUT_OFF_GRACE` after the last character left it (see :meth:`expire`).
+
+        Args:
+            connection_id: The connection.
+            now: The current time (UTC), or None for the clock.
+
+        Returns:
+            The systems of the piece that is cut off from home, or an empty list if there is none
+            (the connection was in a loop, or home isn't on the map). A piece that was cut off
+            already and is split again: the part without a mark gets its own, so it goes in time too.
+        """
+        require_integer(connection_id, "connection_id", minimum=1)
+        require_type(now, (datetime, type(None)), "now")
+        connection = self.store.connection_by_id(connection_id)
+        if connection is None:
+            return []
+        for side in (connection.system_a, connection.system_b):
+            if signature := connection.signature_on(side):
+                self.store.delete_signatures(side, [signature])
+        self.store.remove_connection(connection_id)
+        self.store.clear_broken_parents()
+        home_id = self.namer.home_id
+        if home_id is None or not self.store.has_system(home_id):
+            return []
+        adjacency = wormhole_adjacency(self.store)
+        reachable = connected_component(adjacency, home_id)
+        marks = self._cut_off_marks()
+        marked_pieces: list[int] = []
+        for end in (connection.system_a, connection.system_b):
+            piece = connected_component(adjacency, end)
+            if end in reachable or any(system_id in marks for system_id in piece):
+                continue   # still joined to home, or in a piece that was cut off (and is counting down) already
+            marks[end] = (now or datetime.now(timezone.utc)).isoformat()
+            marked_pieces += piece
+        self._store_cut_off_marks(marks)
+        return sorted(set(marked_pieces))
+
+    def _cut_off_marks(self) -> dict[int, str]:
+        """Return the marks that still hold: the system exists and its piece doesn't reach home."""
+        marks = {int(system_id): since for system_id, since in json.loads(self.store.get_value(CUT_OFF_KEY, "{}")).items()}
+        home_id = self.namer.home_id
+        if not marks or home_id is None:
+            return {}
+        reachable = connected_component(wormhole_adjacency(self.store), home_id)
+        return {system_id: since for system_id, since in marks.items()
+                if self.store.has_system(system_id) and system_id not in reachable}
+
+    def _store_cut_off_marks(self, marks: dict[int, str]) -> None:
+        """Save the marks (local to this install, so a new field doesn't need a protocol change)."""
+        self.store.put_value(CUT_OFF_KEY, json.dumps({str(system_id): since for system_id, since in marks.items()}))
+
+    def cut_off_since(self, system_id: int) -> datetime | None:
+        """Return when a system's piece was cut off from home, if the system holds that mark.
+
+        The mark sits on one system of the piece (the end of the removed connection). It lapses
+        by itself when a new connection joins the piece to home again, or the system goes.
+
+        Returns:
+            The time (UTC), or None.
+        """
+        require_integer(system_id, "system_id", minimum=1)
+        since = self._cut_off_marks().get(system_id)
+        return datetime.fromisoformat(since) if since else None
+
+    def _expire_cut_off_pieces(self, now: datetime) -> int:
+        """Remove cut-off pieces nobody has been in for :data:`CUT_OFF_GRACE` (pinned systems stay).
+
+        Returns:
+            The number of connections removed with them.
+        """
+        marks = self._cut_off_marks()
+        removed = 0
+        if marks:
+            adjacency = wormhole_adjacency(self.store)
+            characters = self.store.characters()
+            for root, since in marks.items():
+                piece = connected_component(adjacency, root)
+                if any(character["system_id"] in piece for character in characters):
+                    continue
+                last = max([datetime.fromisoformat(since)] + [datetime.fromisoformat(character["seen_at"])
+                                                              for character in characters
+                                                              if character["previous_system_id"] in piece])
+                if now - last < CUT_OFF_GRACE:
+                    continue
+                for system_id in piece:
+                    system = self.store.system(system_id)
+                    if system and not system.pinned:
+                        removed += len(self.store.connections_of_system(system_id))
+                        self.store.remove_system(system_id)
+            self.store.clear_broken_parents()
+        self._store_cut_off_marks(self._cut_off_marks())   # drop the marks that lapsed or went with their system
+        return removed
+
     # ------------------------------------------------------------ expiry
     @_one_action
     def expire(self, now: datetime | None = None) -> int:
         """Drop connections past their lifetime, and the systems they leave without connections.
+
+        Pieces cut off by :meth:`disconnect` go too, an hour after the last character left them.
 
         A connection lives as long as its type says (48h if unknown); < 4h, < 1h and expired count
         from when that state was set. Only an end of an expired connection that has no connection
@@ -471,7 +578,7 @@ class Tracker:
         if removed:
             occupied = {character["system_id"] for character in self.store.characters()}
             self.store.remove_unlinked_systems(expired_ends, keep=occupied | {self.namer.home_id})
-        return removed
+        return removed + self._expire_cut_off_pieces(now)
 
     # ------------------------------------------------------------ answers from the UI
     @_one_action
