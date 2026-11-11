@@ -140,11 +140,17 @@ class WormholeTypeCombo(QComboBox):
 
     typeChanged = Signal(str)
 
-    def __init__(self, state: AppState, system_ids: list[int], current: str | None) -> None:
-        """Fill the dropdown for holes in ``system_ids`` with ``current`` selected."""
+    def __init__(self, state: AppState, system_ids: list[int], current: str | None,
+                 preferred: tuple[str, ...] = ()) -> None:
+        """Fill the dropdown for holes in ``system_ids`` with ``current`` selected.
+
+        ``preferred`` are the codes that fit best (e.g. the types a return hole can be); they come first.
+        """
         super().__init__()
         require_type(system_ids, list, "system_ids")
+        require_type(preferred, tuple, "preferred")
         self.state = state
+        self.preferred = tuple(code for code in preferred if code in state.universe.wormhole_type_names())
         universe = state.universe
         self.statics = [code for system_id in system_ids for code in universe.by_id(system_id).statics]
         self.possible: list[str] = sorted({wormhole_type.name for system_id in system_ids
@@ -171,12 +177,12 @@ class WormholeTypeCombo(QComboBox):
         """
         self.blockSignals(True)
         self.clear()
-        statics = list(dict.fromkeys(self.statics))
-        spawn = [code for code in self.possible if code not in statics]
-        shown = {"", "K162", *statics, *spawn}
+        statics = [code for code in dict.fromkeys(self.statics) if code not in self.preferred]
+        spawn = [code for code in self.possible if code not in statics and code not in self.preferred]
+        shown = {"", "K162", *self.preferred, *statics, *spawn}
         extra = sorted(name for name in self.state.universe.wormhole_type_names() if name not in shown) if self.show_all else []
         first = ["", "K162"] + ([self.unlisted] if self.unlisted else [])
-        for codes in (first, statics, spawn, extra if self.show_all else [SHOW_ALL]):
+        for codes in (first, list(self.preferred), statics, spawn, extra if self.show_all else [SHOW_ALL]):
             if not codes:
                 continue
             if self.count():
@@ -479,7 +485,8 @@ class WormholeFields(QWidget):
 
     resized = Signal()
 
-    def __init__(self, state: AppState, system_ids: list[int], current: dict, ask_destination: bool = True) -> None:
+    def __init__(self, state: AppState, system_ids: list[int], current: dict, ask_destination: bool = True,
+                 preferred: tuple[str, ...] = ()) -> None:
         """Build the fields.
 
         Args:
@@ -488,6 +495,7 @@ class WormholeFields(QWidget):
             current: The values to start with (keys as returned by :meth:`values`, plus
                 ``lifetime_set_at``).
             ask_destination: Offer "Leads to" for a K162 (not for a connection: both ends are known).
+            preferred: Type codes the type picker lists first (see :class:`WormholeTypeCombo`).
         """
         super().__init__()
         require_type(current, dict, "current")
@@ -496,7 +504,7 @@ class WormholeFields(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(PIXELS["sp-8"])
         layout.addWidget(caption("Wormhole type"))
-        self.type = WormholeTypeCombo(state, system_ids, current.get("type"))
+        self.type = WormholeTypeCombo(state, system_ids, current.get("type"), preferred)
         layout.addWidget(self.type)
         self.info = QLabel()
         self.info.setProperty("role", "help")

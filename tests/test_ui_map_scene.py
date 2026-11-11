@@ -291,6 +291,18 @@ class TestSystemNode:
         assert [chip[1] for chip in self._chips(monkeypatch, never)] == ["⌂ HOME", "NO SCAN"]
         assert self._chips(monkeypatch, fresh) == [] and fresh._character_marker_start == 8
 
+    def test_cut_off_tab_drawn_first_and_the_scan_tab_goes_compact(self, monkeypatch, state, scene) -> None:
+        """The system holding the cut-off mark wears "CUT OFF 12m"; the scan tab follows, compact."""
+        state.store.update_system(state.wormhole.id, scanned_at=iso_ago(hours=26))
+        scene.refresh_all()
+        node = scene.nodes[state.wormhole.id]
+        assert node.cut_off == "" and "CUT OFF" not in " ".join(chip[1] for chip in self._chips(monkeypatch, node))
+        state.cut_off_age = lambda system_id: "12m" if system_id == state.wormhole.id else ""
+        assert scene.refresh_scan_status() >= 1 and node.cut_off == "12m"
+        chips = self._chips(monkeypatch, node)
+        assert [chip[1] for chip in chips] == ["CUT OFF 12m", "SCAN"] and chips[0][0] == 8
+        assert node._character_marker_start == chips[1][0] + chips[1][2] + 4
+
     def test_static_badge(self, monkeypatch, state, scene) -> None:
         """A hole flagged as its parent's static wears a STATIC tab where HOME would be, and says so in its tooltip."""
         state.store.update_system(state.wormhole.id, parent_id=HOME.id, hole_index=2, scanned_at=iso_ago(hours=1))

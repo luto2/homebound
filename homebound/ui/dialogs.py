@@ -346,9 +346,10 @@ class NamingDialog(BaseDialog):
 
 
 class ConnectionDialog(BaseDialog):
-    """Edit a connection: type, size (K162), lifetime and mass, or collapse it."""
+    """Edit a connection: type, size (K162), lifetime and mass, collapse it, or mark it lost (keeps both systems)."""
 
     collapse = Signal()
+    lost = Signal()
 
     def __init__(self, parent: QWidget | None, state: AppState, connection: Connection) -> None:
         """Build the editor for a connection."""
@@ -364,6 +365,10 @@ class ConnectionDialog(BaseDialog):
         self.fields.resized.connect(self.adjustSize)
         self.body.addWidget(self.fields)
         self.add_buttons(danger_button("✕ Collapse", lambda: (self.collapse.emit(), self.reject())))
+        lost = QPushButton("Lost connection")
+        lost.setToolTip("Remove the connection but keep both systems, e.g. to find a way out behind a closed hole")
+        lost.clicked.connect(lambda: (self.lost.emit(), self.reject()))
+        self.foot.insertWidget(1, lost)
 
     def values(self) -> dict:
         """Return the connection columns to save."""
@@ -405,7 +410,8 @@ class SignatureDialog(BaseDialog):
         self.group.setCurrentIndex(max(0, self.group.findData(signature.group or "unknown")))
         self.body.addWidget(self.group)
 
-        self.wormhole = WormholeFields(state, [signature.system_id], self.starting_values())
+        self.wormhole = WormholeFields(state, [signature.system_id], self.starting_values(),
+                                       preferred=self.return_candidates())
         self.wormhole.resized.connect(self.adjustSize)
         self.rule = QFrame()
         self.rule.setFixedHeight(1)
@@ -424,6 +430,13 @@ class SignatureDialog(BaseDialog):
         self.group.currentIndexChanged.connect(self._sync_group)
         self._sync_group()
         self.wormhole.type.setFocus()
+
+    def return_candidates(self) -> tuple[str, ...]:
+        """Return the types a return hole without a type can be (the other side is a K162), to list first."""
+        signature, connection = self.signature, self.connection
+        if (connection is None or signature.type or connection.signature_on(signature.system_id) != signature.signature_id):
+            return ()
+        return self.state.tracker.return_type_of(connection, signature.system_id).candidates
 
     def starting_values(self) -> dict:
         """Return the wormhole values to start with: the sig's, filled in from the connection.

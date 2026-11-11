@@ -5,10 +5,11 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, Qt
-from PySide6.QtGui import QKeySequence, QMouseEvent, QShortcut
+from PySide6.QtGui import QContextMenuEvent, QKeySequence, QMouseEvent, QShortcut
 from PySide6.QtWidgets import QApplication, QStyleOptionViewItem
 
 from conftest import HOME, SCAN, UNIVERSE, pick_system
+from homebound.logs.parser import SystemChange
 from homebound.mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, Signature, ZkillStats)
 from homebound.mapping import signature_parser
 from homebound.theme import painting
@@ -1307,3 +1308,149 @@ def test_panel_shows_a_remembered_name_as_remembered(state, panel) -> None:
     state.store.set_alias(HOME.id, "Camp")
     panel.refresh()
     assert panel.remember.isChecked() and "emembered" in panel.remember.toolTip()
+
+
+# ---------------------------------------------------------------- return hole
+def return_scene(state):
+    """Home -> a C5 by a jump of character 1 (followed); the connection is an H296; the C5 has a K162 and an untyped sig.
+
+    Returns:
+        The C5 system and the connection.
+    """
+    at = datetime(2026, 11, 1, 12, tzinfo=timezone.utc)
+    state.tracker.on_system_change(SystemChange(1, "Pilot", HOME.name, at, first=True))
+    child = pick_system("C5", exclude={HOME.id})
+    state.tracker.on_system_change(SystemChange(1, "Pilot", child.name, at + timedelta(minutes=1)))
+    state.set_followed(1)
+    connection = state.store.connection(HOME.id, child.id)
+    state.store.update_connection(connection.id, wormhole_type="H296")
+    add_signature(state, "KKK-001", child.id, group="wormhole", type="K162")
+    add_signature(state, "AAA-111", child.id, group="wormhole")
+    return child, connection
+
+
+def action_named(menu, text):
+    """Return the menu action whose text starts with ``text``."""
+    return next(action for action in menu.actions() if action.text().startswith(text))
+
+
+def test_model_hints_the_one_sig_that_fits(state, table) -> None:
+    """With the origin known, exactly one fitting unlinked sig gets the hint; a second fitting one removes it."""
+    child, _ = return_scene(state)
+    table.load(child.id)
+    model = table.signature_model
+    assert (model.origin, model.hint) == (HOME.id, "KKK-001")
+    add_signature(state, "KKK-002", child.id, group="wormhole", type="K162")
+    table.load(child.id)
+    assert model.hint is None and model.origin == HOME.id
+    table.load(HOME.id)
+    assert (model.origin, model.hint) == (None, None)
+
+
+def test_hint_button_click_asks_to_mark(state, table) -> None:
+    """Only a click on the hint button of the hinted row asks; the request carries the origin."""
+    child, _ = return_scene(state)
+    table.load(child.id)
+    delegate, model = table.signature_delegate, table.signature_model
+    row = row_of(table, "KKK-001")
+    index, option = model.index(row, COLUMN_NAME), option_for(table, row, COLUMN_NAME)
+    asked = collect(table.returnRequested)
+    button = delegate.hint_rect(option.rect)
+    assert delegate.editorEvent(mouse(QEvent.Type.MouseButtonRelease, button.center().toPoint()), model, option, index)
+    assert asked == [("KKK-001", HOME.id)]
+    assert not delegate.editorEvent(mouse(QEvent.Type.MouseButtonRelease, QPoint(option.rect.left() + 1, 1)), model,
+                                    option, index)
+    other = row_of(table, "AAA-111")
+    assert not delegate.editorEvent(mouse(QEvent.Type.MouseButtonRelease, button.center().toPoint()), model,
+                                    option_for(table, other, COLUMN_NAME), model.index(other, COLUMN_NAME))
+    table.grab()   # paints the button
+
+
+def test_context_menu_offers_the_return_hole_and_the_r_key_asks(state, table, modal) -> None:
+    """Right-click names the origin; picking asks; R asks for the one selected wormhole sig."""
+    child, _ = return_scene(state)
+    table.load(child.id)
+    asked = collect(table.returnRequested)
+    modal.menu_handler = lambda menu: action_named(menu, "Return hole to")
+    table.show_menu(state.store.signature(child.id, "AAA-111"), QPoint(0, 0))
+    assert asked == [("AAA-111", HOME.id)]
+    assert state.namer.display(HOME.id) in modal.menus[-1].actions()[0].text()
+    assert not table.mark_selected_return()                       # nothing selected
+    table.selectRow(row_of(table, "AAA-111"))
+    assert table.mark_selected_return() and asked[-1] == ("AAA-111", HOME.id)
+
+
+def test_context_menu_greys_out_the_hole_the_sig_already_is(state, table, modal) -> None:
+    """A sig that is already linked to the origin can't be marked again."""
+    child, connection = return_scene(state)
+    state.store.set_connection_signature(connection.id, child.id, "KKK-001")
+    table.load(child.id)
+    table.show_menu(state.store.signature(child.id, "KKK-001"), QPoint(0, 0))
+    assert not action_named(modal.menus[-1], "Return hole to").isEnabled()
+
+
+def test_context_menu_without_an_origin_lists_the_connections_without_a_sig(state, table, modal) -> None:
+    """Nobody jumped in and there is no parent: pick among the connections whose sig here is missing."""
+    child, _ = return_scene(state)
+    add_signature(state, "HHH-001", HOME.id, group="wormhole")
+    table.load(HOME.id)
+    assert table.signature_model.origin is None
+    asked = collect(table.returnRequested)
+    modal.menu_handler = lambda menu: next(action for action in menu.actions()[0].menu().actions())
+    table.show_menu(state.store.signature(HOME.id, "HHH-001"), QPoint(0, 0))
+    assert asked == [("HHH-001", child.id)]
+    table.selectRow(row_of(table, "HHH-001"))
+    assert table.mark_selected_return() and asked[-1] == ("HHH-001", 0)   # R without an origin: the panel says so
+
+
+def test_context_menu_event_only_for_wormhole_sigs(state, table, modal) -> None:
+    """The menu opens on a wormhole row, not on a gas row or empty space."""
+    child, _ = return_scene(state)
+    add_signature(state, "GAS-001", child.id, group="gas")
+    table.load(child.id)
+    for signature_id, shown in (("AAA-111", 1), ("GAS-001", 1)):
+        row = row_of(table, signature_id)
+        point = table.visualRect(table.model().index(row, COLUMN_SIGNATURE)).center()
+        table.contextMenuEvent(QContextMenuEvent(QContextMenuEvent.Reason.Mouse, point, table.mapToGlobal(point)))
+        assert len(modal.menus) == shown
+    table.contextMenuEvent(QContextMenuEvent(QContextMenuEvent.Reason.Mouse, QPoint(1, 390), table.mapToGlobal(QPoint(1, 390))))
+    assert len(modal.menus) == 1
+
+
+def test_panel_marks_the_return_hole_with_one_undo(state, panel) -> None:
+    """The table's request marks the sig, redraws, offers one Undo, and the row shows the return marker."""
+    child, connection = return_scene(state)
+    state.select(child.id)
+    panel.set_system(child.id)
+    undo, toasts, changed = collect(panel.undoable), collect(panel.toast), collect(state.mapChanged)
+    assert panel.mark_return("KKK-001", HOME.id) is True
+    assert state.store.connection(HOME.id, child.id).signature_on(child.id) == "KKK-001"
+    assert len(undo) == 1 and "KKK-001" in undo[0][0] and changed and not toasts
+    model = panel.table.signature_model
+    signature = state.store.signature(child.id, "KKK-001")
+    assert model.hint is None and model.button_label(signature).endswith("-0")
+    assert model._display_text(signature, COLUMN_NAME).endswith("· return")
+    state.store.undo(undo[0][2])
+    assert state.store.connection(HOME.id, child.id).signature_on(child.id) is None
+    assert state.store.signature(child.id, "KKK-001").destination is None
+
+
+def test_panel_tells_the_candidates_and_refuses_without_an_origin(state, panel) -> None:
+    """Several types fit: the type stays empty and a toast names them. No origin: an error toast, nothing changes."""
+    other = pick_system("C3")
+    state.tracker.add_wormhole(HOME.id, other.id)
+    link = state.store.connection(HOME.id, other.id)
+    add_signature(state, "FAR-111", HOME.id, group="wormhole", type="K162")
+    state.store.set_connection_signature(link.id, HOME.id, "FAR-111")
+    add_signature(state, "ZZZ-999", other.id, group="wormhole")
+    state.select(other.id)
+    panel.set_system(other.id)
+    toasts = collect(panel.toast)
+    assert panel.mark_return("ZZZ-999", HOME.id) is True
+    assert toasts[-1][0] == "ok" and "C008, N770" in toasts[-1][1]
+    assert state.store.signature(other.id, "ZZZ-999").type is None
+    assert panel.mark_return("ZZZ-999", 0) is False and toasts[-1][0] == "err"
+    assert panel.mark_return("ZZZ-999", 31337) is False
+    assert panel.mark_return("NOPE-000", HOME.id) is False
+    with pytest.raises(TypeError):
+        panel.mark_return(5, HOME.id)

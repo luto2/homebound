@@ -803,3 +803,50 @@ def guess_static(store: Store, universe: Universe, parent_id: int, child_id: int
                 if is_numbered_kind(signature) and signature.signature_id not in linked and signature.state != "missing"]
     certain = len(unlinked) == 1 and (unlinked[0].type or "").upper() in static_names
     return StaticGuess(True, True, certain, f"Static {names} matches this {child.system_class}")
+
+
+# ---------------------------------------------------------------- return hole
+
+@dataclass(frozen=True)
+class ReturnType:
+    """The wormhole type of a return hole, worked out from the other side of the connection."""
+
+    code: str | None = None             # the type to set, or None when the other side doesn't settle it
+    candidates: tuple[str, ...] = ()    # the types that fit (the type picker lists them first)
+
+
+def return_type(universe: Universe, near_type: str | None, connection_type: str | None, origin_id: int,
+                system_id: int) -> ReturnType:
+    """Return the type of the hole in ``system_id`` that leads back to ``origin_id``.
+
+    A hole has a real type on one end and K162 on the other. So a real type on the origin's side makes
+    this side K162; a K162 there makes this side the real type: the connection's type if it has one, else
+    the types found in this system that lead to the origin's class, which settles it only when exactly
+    one does.
+
+    Args:
+        universe: Static data.
+        near_type: The type of the signature on the origin's side, if there is one.
+        connection_type: The type stored on the connection, if any.
+        origin_id: The system the hole leads to.
+        system_id: The system the hole is in.
+
+    Returns:
+        The type to set (None if unknown) and the candidates (empty when the origin's side is unknown or real).
+    """
+    require_type(near_type, (str, type(None)), "near_type")
+    require_type(connection_type, (str, type(None)), "connection_type")
+    near = (near_type or "").strip().upper()
+    stored = (connection_type or "").strip().upper()
+    if near and near != "K162":
+        return ReturnType("K162")
+    if not near and stored and stored != "K162":
+        return ReturnType("K162")
+    if not near:
+        return ReturnType()
+    if stored and stored != "K162":
+        return ReturnType(stored, (stored,))
+    origin = universe.by_id(origin_id)
+    candidates = tuple(wormhole_type.name for wormhole_type in universe.wormhole_types_in(system_id)
+                       if origin and origin.system_class in wormhole_type.destinations)
+    return ReturnType(candidates[0] if len(candidates) == 1 else None, candidates)
