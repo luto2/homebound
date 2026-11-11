@@ -120,12 +120,38 @@ class LocalReplica:
         for op in ops:
             state, _ = apply_op(self.entity(op.entity, op.key), op)
             self._save_entity(op.entity, op.key, state)
+        for op in self._raised_counters(action, hlc, client_id):
+            state, _ = apply_op(self.entity(op.entity, op.key), op)
+            self._save_entity(op.entity, op.key, state)
+            ops.append(op)
         batch_id = f"{client_id}-{uuid.uuid4().hex[:12]}"
         payload = [op.to_json() for op in ops]
         self.database.execute("INSERT INTO sync_outbox (batch_id, payload, created_at) VALUES (?,?,?)",
                               (batch_id, json.dumps(payload), utc_now_iso()))
         self.set_meta("hlc", hlc)
         return {"t": "push", "map": self.map_id, "batch_id": batch_id, "ops": payload}
+
+    def _raised_counters(self, action: Action, hlc: str, client_id: str) -> list[Op]:
+        """Return ops for the hole counters an action raised (``Store._raise_hole_counters``).
+
+        The store raises a system's ``next_hole`` after the action's changes are taken, so the
+        change of a sig or a placed system doesn't show it. Each system whose counter is now above
+        what sync knows gets an op with the new value.
+        """
+        systems = set()
+        for change in action.changes:
+            after = change.after or {}
+            if change.entity == "signature" and after.get("hole_index"):
+                systems.add(after["system_id"])
+            elif change.entity == "system" and after.get("parent_id") and after.get("hole_index"):
+                systems.add(after["parent_id"])
+        ops = []
+        for system_id in sorted(systems):
+            state, row = self.entity("system", system_id), self.store._row("system", system_id)
+            counter = (row or {}).get("next_hole") or 0
+            if state is not None and state.exists and counter > (state.fields.get("next_hole") or 0):
+                ops.append(Op("system", system_id, {"next_hole": counter}, hlc, client_id))
+        return ops
 
     def outbox(self) -> list[dict]:
         """Return the unacknowledged batches as ``push`` messages, oldest first."""
@@ -238,14 +264,14 @@ class LocalReplica:
         state = self.state()
         visible = {key: entity for key, entity in state.entities.items() if entity.exists}
         for entity, table in (("signature", "signatures"), ("connection", "connections"), ("system", "systems"),
-                              ("setting", "map_settings")):
+                              ("setting", "map_settings"), ("alias", "aliases")):
             for row in [dict(row) for row in self.database.execute(f"SELECT * FROM {table}")]:
                 key = row_key(entity, row)
                 if entity == "setting" and key not in MAP_SETTING_KEYS:
                     continue
                 if (entity, key) not in visible:
                     self._write(entity, key, None)
-        order = {"setting": 0, "system": 1, "connection": 2, "signature": 3}
+        order = {"setting": 0, "system": 1, "connection": 2, "signature": 3, "alias": 4}
         for (entity, key), entity_state in sorted(visible.items(), key=lambda item: (order[item[0][0]], str(item[0][1]))):
             self._materialise(entity, key, entity_state, placement=False)
         self._fix_placements(force=True)
@@ -299,10 +325,17 @@ class LocalReplica:
         if current is not None:
             changes = {name: value for name, value in values.items()
                        if current.get(name) != value and not (entity == "system" and name in LAYOUT_FIELDS)}
+            if entity == "system":
+                if changes.get("next_hole") is not None and changes["next_hole"] < (current.get("next_hole") or 0):
+                    del changes["next_hole"]      # the counter only goes up (Store._raise_hole_counters)
+                if "label" in changes and changes["label"] is None and current.get("label"):
+                    del changes["label"]          # a name never goes away on its own (an older client's re-add)
             if entity in ("connection", "signature") and changes:
                 changes["updated_at"] = utc_now_iso()
             if entity == "setting":
                 changes = {"value": values.get("value")} if current.get("value") != values.get("value") else {}
+            if entity == "alias" and not changes.get("set_at", True):
+                del changes["set_at"]             # the column is required; keep the time we have
             if changes:
                 store._update_row(entity, key, changes)
             return
@@ -316,6 +349,8 @@ class LocalReplica:
             row = {"system_id": key[0], "signature_id": key[1], "created_at": now, "updated_at": now,
                    "seen_at": now, **values}
             row["seen_at"] = row["seen_at"] or now
+        elif entity == "alias":
+            row = {"system_id": key, "name": values.get("name"), "set_at": values.get("set_at") or now}
         else:
             row = {"key": key, "value": values.get("value")}
         row = {name: value for name, value in row.items() if value is not None or name in ("parent_id", "hole_index")}

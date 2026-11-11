@@ -136,6 +136,20 @@ def test_joining_adds_a_map_that_fills_in_the_background(cloud) -> None:
     assert spin(lambda: kira.state.store.system(C5).notes == "from bob")
 
 
+def test_names_and_remembered_names_reach_the_other_app(cloud) -> None:
+    """The uploaded map carries its stored names; a later alias and rename follow (protocol 2 on both)."""
+    harness, kira, bob, code, statuses = cloud
+    label = kira.state.store.system(C5).label
+    assert label and kira.engine.server_protocol == 2
+    name = bob.join_with_code(code)
+    bob.state.switch_map(name)
+    assert spin(lambda: bob.state.store.has_system(C5))
+    assert bob.state.store.system(C5).label == label
+    kira.state.store.set_alias(C5, "Staging")
+    kira.state.store.update_system(C5, label="Farm")
+    assert spin(lambda: bob.state.store.alias(C5) == "Staging" and bob.state.store.system(C5).label == "Farm")
+
+
 def test_remote_home_change_updates_the_settings(cloud) -> None:
     """The owner moves home: the other member's settings follow."""
     harness, kira, bob, code, statuses = cloud

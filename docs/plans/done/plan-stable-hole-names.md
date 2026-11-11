@@ -125,3 +125,9 @@ No open decisions left.
   has it, even if the parent is a different one.
 - A scheme change from another cloud member asks the rename question too.
 - Marking a return hole ([`plan-return-hole.md`](plan-return-hole.md)) is the one explicit rename of a sig: its bookmark reads `-0` (towards the parent) while linked, but its stored number is kept, so nothing is lost on undo.
+- **2026-11-11: change 8 is done.** Protocol 2 has the version gate (`docs/plans/done/sync-protocol.md` §3),
+  and `label`, `static` and `next_hole` sync with servers and clients that speak it. `next_hole` merges as
+  the highest value. A system from an older client still arrives without a label and is named by each
+  install itself; that name stays local (not pushed), and a remote `null` label never clears one. Labels
+  that existed before the upgrade stay local until someone renames the system: nothing is backfilled, so
+  no install's names change at the upgrade.

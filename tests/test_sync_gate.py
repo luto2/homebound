@@ -5,6 +5,7 @@ old server, and new on new. The old side is simulated by pinning what it did: an
 ``protocol: 1`` in its hello, an old server says ``protocol: 1`` (or nothing) in its welcome.
 """
 import contextlib
+import json
 
 import pytest
 
@@ -149,7 +150,9 @@ class Install:
         self.replica = LocalReplica(self.store)
         self.replica.link(map_id, "test")
         self.joins = 0
+        self.notices: list[tuple[str, str]] = []
         self.engine = SyncEngine(client_id, self._send, self._open, lambda: [map_id], HybridClock())
+        self.engine.on_notice = lambda level, text: self.notices.append((level, text))
         self.store.listeners.append(lambda action: self.engine.local_action(map_id, self.replica, action))
 
     @contextlib.contextmanager
@@ -279,3 +282,100 @@ def test_a_map_is_uploaded_with_what_the_server_knows(gated_note) -> None:
     harness = Harness()
     token = harness.login(91000001, "Kira")
     assert harness.api("GET", "/api/account", token).json()["protocol"] == PROTOCOL
+
+
+# ---------------------------------------------------------------- what protocol 2 added: names and aliases
+
+def named_batch(client: str, ms: int) -> list[dict]:
+    """A protocol 2 batch: a system with a label and the static flag, and an alias."""
+    return [system_op(C5, ms, client, HOME.id, 1, label="1", static=1, next_hole=0),
+            {"e": "alias", "k": C3, "f": {"name": "Staging", "set_at": None}, "full": True,
+             "hlc": format_hlc(ms, 0), "c": client}]
+
+
+def test_an_old_client_gets_names_and_aliases_stripped(caplog) -> None:
+    """Old client on a new server: label, static, next_hole and aliases never reach it, live or in a snapshot."""
+    harness = Harness()
+    map_id, kira, bob = setup_map(harness)
+    new = Socket(harness, kira, A, protocol=2)
+    new.join(map_id)
+    old = Install(harness, bob, B, map_id, protocol=1)
+    old.connect()
+    seq = new.push(map_id, named_batch(A, 10))["seq"]
+    old.pump()
+    assert old.store.system(C5).parent_id == HOME.id and old.replica.last_seq == seq
+    assert old.store.system(C5).label is None and old.store.aliases() == []
+    later = Install(harness, bob, B, map_id, protocol=1)
+    later.connect()
+    assert later.store.system(C5).hole_index == 1 and later.store.aliases() == []
+    assert later.replica.entity("system", C5).fields.keys().isdisjoint({"label", "static", "next_hole"})
+    assert later.replica.entity("alias", C3) is None and old.joins == later.joins == 1
+    assert "could not handle" not in caplog.text
+
+
+def test_a_system_an_old_client_brings_back_has_no_old_name() -> None:
+    """Old client re-adds a deleted system: its label starts over (the new client names it again itself)."""
+    harness = Harness()
+    map_id, kira, bob = setup_map(harness)
+    new, old = Socket(harness, kira, A, protocol=2), Socket(harness, bob, B, protocol=1)
+    new.join(map_id)
+    old.join(map_id)
+    new.push(map_id, named_batch(A, 10))
+    old.push(map_id, [{"e": "system", "k": C5, "del": True, "hlc": format_hlc(11, 0), "c": B}])
+    old.push(map_id, [system_op(C5, 12, B, HOME.id, 1, notes="back")])
+    state = harness.service.hub.state(map_id).get("system", C5)
+    assert state.exists and (state.fields["label"], state.fields["static"], state.fields["notes"]) == (None, 0, "back")
+    assert harness.service.hub.state(map_id).get("alias", C3).exists       # aliases outlive the system
+
+
+def test_an_old_clients_full_upsert_of_a_live_system_keeps_its_name() -> None:
+    """Old client adds a system a new client already named (both jumped it): the name stays."""
+    harness = Harness()
+    map_id, kira, bob = setup_map(harness)
+    new, old = Socket(harness, kira, A, protocol=2), Socket(harness, bob, B, protocol=1)
+    new.join(map_id)
+    new.push(map_id, named_batch(A, 10))
+    old.join(map_id)
+    assert old.push(map_id, [system_op(C5, 12, B, HOME.id, 1)])["t"] == "ack"
+    assert harness.service.hub.state(map_id).get("system", C5).fields["label"] == "1"
+
+
+@pytest.fixture
+def old_server(monkeypatch):
+    """The server as it was before the gate: welcome says protocol 1, it checks pushes against protocol 1
+    (an unknown field or entity is ``invalid``) and sends everything to everyone as it is."""
+    from homebound_server import app, hub
+
+    def protocol_1_batch(ops, client_id=None):
+        for op in ops if isinstance(ops, list) else []:
+            if op_for_peer(op, 1) != op:
+                raise protocol.InvalidOp(f"unknown field or entity in {op!r}")
+        return protocol.batch_from_json(ops, client_id)
+    from homebound.sync import merge
+    monkeypatch.setattr(merge, "defaults_left_out", lambda op: {})
+    monkeypatch.setattr(app, "PROTOCOL", 1)
+    monkeypatch.setattr(hub, "batch_from_json", protocol_1_batch)
+    monkeypatch.setattr(hub.Connection, "send", lambda connection, message: connection.deliver(message))
+
+
+def test_a_new_client_syncs_with_an_old_server_without_names(old_server, caplog) -> None:
+    """New client on an old server: nothing is rejected, the names stay local, an alias isn't sent at all."""
+    harness = Harness()
+    map_id, kira, bob = setup_map(harness)
+    writer, reader = Install(harness, kira, A, map_id, protocol=2), Install(harness, bob, B, map_id, protocol=2)
+    writer.connect()
+    reader.connect()
+    assert writer.engine.server_protocol == 1
+    with writer.store.batch():
+        writer.store.add_system(C5, parent_id=HOME.id, hole_index=1, label="1", static=1)
+        writer.store.add_connection(HOME.id, C5)
+    writer.store.update_system(C5, label="Farm")
+    writer.store.set_alias(C3, "Staging")
+    writer.pump()
+    reader.pump()
+    assert writer.replica.outbox() == []
+    assert reader.store.system(C5).parent_id == HOME.id and reader.store.system(C5).label is None
+    assert reader.store.aliases() == [] and writer.store.system(C5).label == "Farm"
+    assert not any(op_for_peer(op, 1) != op for batch in harness.service.db.all("SELECT payload FROM ops")
+                   for op in json.loads(batch["payload"]))
+    assert "could not handle" not in caplog.text and writer.notices == []

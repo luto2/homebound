@@ -52,6 +52,11 @@ def _text(limit: int):
     return lambda value: isinstance(value, str) and len(value) <= limit
 
 
+def _text_between(shortest: int, limit: int):
+    """A check for a string of ``shortest`` to ``limit`` characters."""
+    return lambda value: isinstance(value, str) and shortest <= len(value) <= limit
+
+
 def _integer(low: int, high: int):
     """A check for an int (not bool) in ``low..high``."""
     return lambda value: isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
@@ -81,6 +86,7 @@ FIELDS: dict[str, dict[str, Any]] = {
         "owner_slot": _optional(_integer(0, 1000)), "owner_note": _optional(_text(MAX_TEXT)),
         "notes": _optional(_text(MAX_TEXT)), "added_at": _time, "scanned_at": _time,
         "pinned": _flag, "confirmed": _flag, "x": _coordinate, "y": _coordinate,
+        "label": _optional(_text(MAX_SHORT_TEXT)), "static": _flag, "next_hole": _integer(0, 1000),
     },
     "connection": {
         "signature_a": _signature_id, "signature_b": _signature_id,
@@ -97,19 +103,13 @@ FIELDS: dict[str, dict[str, Any]] = {
         "size": _optional(_choice(SIZES)), "created_at": _time, "seen_at": _time,
     },
     "setting": {"value": _optional(_text(MAX_SHORT_TEXT))},
+    # a remembered name of a solar system, keyed by its ID (plan-system-alias.md); it outlives the system's place
+    "alias": {"name": _text_between(1, MAX_SHORT_TEXT), "set_at": _time},
 }
 LAYOUT_FIELDS = ("x", "y")                     # only sent with a full upsert
-# Naming columns of a system that stay on this computer for now (plan-stable-hole-names.md, change 8).
-# TODO(sync): sync them once the protocol has a version gate. op_from_json refuses a field it doesn't
-# know, so sending one would break the clients and the server that are out there: the server
-# rejects the whole batch as ``invalid`` (the client drops it and reloads the map), and an older
-# client fails on every ``ops`` message that has one, misses that batch and asks for it again
-# forever. The gate: bump PROTOCOL, let the server strip these fields from what it sends to
-# connections that said hello with an older protocol, and let the client send them only when the
-# welcome says the server knows them. Until then each install names systems placed by others
-# itself (``AppState._name_new_systems``); hole numbers do sync (signature ``hole_index`` and the
-# system placement), so the numeric names agree.
-LOCAL_SYSTEM_FIELDS = ("label", "static", "next_hole")
+# Fields that merge as the highest value instead of the newest: a counter that only goes up.
+# ``next_hole`` is the highest hole number given out in a system, so a number is never given twice.
+MAX_FIELDS = {("system", "next_hole")}
 CREATED_FIELD = {"system": "added_at", "connection": "created_at", "signature": "created_at"}
 
 
@@ -126,8 +126,11 @@ class GatedField(NamedTuple):
 # refuses a field or entity it doesn't know (``op_from_json``), so each side sends these only to a
 # peer whose protocol is at least ``since``: the client takes the server's version from ``welcome``,
 # the server keeps what each socket said in ``hello`` and strips the rest (:func:`message_for_peer`).
-GATED_FIELDS: dict[str, dict[str, GatedField]] = {}
-GATED_ENTITIES: dict[str, int] = {}                 # entity -> the version that added it
+GATED_FIELDS: dict[str, dict[str, GatedField]] = {
+    # the stored scheme name, the static flag and the hole counter (plan-stable-hole-names.md, change 8)
+    "system": {"label": GatedField(2, None), "static": GatedField(2, 0), "next_hole": GatedField(2, 0)},
+}
+GATED_ENTITIES: dict[str, int] = {"alias": 2}       # entity -> the version that added it
 
 
 def peer_protocol(value: Any) -> int:
@@ -290,7 +293,7 @@ def key_from_json(entity: str, value: Any) -> Any:
         InvalidOp: If the key doesn't fit the entity.
     """
     system_id = _integer(1, 2**31 - 1)
-    if entity == "system" and system_id(value):
+    if entity in ("system", "alias") and system_id(value):
         return value
     if (entity == "connection" and isinstance(value, list) and len(value) == 2
             and all(system_id(end) for end in value) and value[0] < value[1]):
@@ -423,10 +426,10 @@ def full_ops_for_rows(rows: dict[str, list[dict]], hlc: str, client_id: str) -> 
     """Build full upserts for every entity of a map, e.g. to upload it as a new cloud map.
 
     Args:
-        rows: ``{"system": [...], "connection": [...], "signature": [...], "setting": [...]}`` rows.
+        rows: ``{"system": [...], "connection": [...], "signature": [...], "setting": [...], "alias": [...]}`` rows.
     """
     ops = []
-    for entity in ("setting", "system", "connection", "signature"):
+    for entity in ("setting", "system", "connection", "signature", "alias"):
         for row in rows.get(entity, []):
             ops.append(Op(entity, row_key(entity, row), synced_values(entity, row), hlc, client_id,
                           placement_of(row) if entity == "system" else None, entity == "system", full=True))
@@ -441,4 +444,6 @@ def row_key(entity: str, row: dict) -> Any:
         return (row["system_a"], row["system_b"])
     if entity == "signature":
         return (row["system_id"], row["signature_id"])
+    if entity == "alias":
+        return row["system_id"]
     return row["key"]

@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 from ..mapdb.store import LEGACY_NAMES_KEY, Change, MapSystem, Signature, Store
 from ..universe.db import Universe
-from ..validation import require_integer, require_text, require_type
+from ..validation import require_choice, require_integer, require_text, require_type
 
 HOME_NAME = "Home"
 
@@ -547,25 +547,27 @@ def needs_label(change: Change) -> bool:
     return change.entity == "system" and after.get("parent_id") is not None and not after.get("label")
 
 
-def label_unnamed_systems(namer: "Namer") -> int:
+def label_unnamed_systems(namer: "Namer", origin: str = "local") -> int:
     """Store a label for every placed system that has none, as if it had just been attached.
 
-    The tracker names what it attaches itself; this catches systems placed some other way: by
-    another member of a cloud map (labels don't sync yet), or hung under a new home by "Make home".
+    The tracker names what it attaches itself; this catches systems placed some other way: by a
+    cloud client from before protocol 2 (it sends no label), or hung under a new home by "Make home".
     Parents go before their children and older systems before newer ones, so ``a2a`` positions
     count on in the order the systems came. One batch.
 
     Args:
         namer: The namer of the map, with its scheme and home.
+        origin: The batch's origin; ``"remote"`` keeps the labels on this computer (not synced, not undone).
 
     Returns:
         The number of systems labelled.
     """
     require_type(namer, Namer, "namer")
+    require_choice(origin, ("local", "remote"), "origin")
     store = namer.store
     unnamed = [system for system in store.systems() if system.parent_id is not None and not system.label]
     unnamed.sort(key=lambda system: (len(hole_path(store, system.id)[1]), system.added_at or "", system.id))
-    with store.batch():
+    with store.batch(origin):
         for system in unnamed:
             store.update_system(system.id, label=namer.attach_label(system.id))
     return len(unnamed)

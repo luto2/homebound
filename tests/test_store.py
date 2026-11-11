@@ -543,8 +543,8 @@ def test_alias_does_not_touch_the_stored_label(store) -> None:
     assert (system.custom_name, system.label) == ("Staging", "1")
 
 
-def test_alias_is_an_undoable_local_entity(store) -> None:
-    """A batch records an alias change, undo puts the old alias back, and it is never a synced entity."""
+def test_alias_is_an_undoable_synced_entity(store) -> None:
+    """A batch records an alias change, undo puts the old alias back, and it is a synced entity (protocol 2)."""
     with store.batch() as action:
         store.set_alias(JITA, "Staging")
     assert [(change.entity, change.key, change.created) for change in action.changes] == [("alias", JITA, True)]
@@ -560,16 +560,22 @@ def test_alias_is_an_undoable_local_entity(store) -> None:
         store.delete_alias(JITA)
     store.undo(forgetting)
     assert store.alias(JITA) == "Staging"
-    assert "alias" not in store_module.ENTITIES and "alias" not in store_module.ENTITY_TABLES
-    assert "alias" in store_module.LOCAL_ENTITIES
+    assert "alias" in store_module.ENTITIES and store_module.ENTITY_TABLES["alias"] == "aliases"
+    assert "alias" not in store_module.LOCAL_ENTITIES
 
 
-def test_aliases_are_not_sent_to_the_sync_server(store) -> None:
-    """A local action that only changed an alias has nothing left for sync once the local entities are dropped."""
-    from homebound.sync.protocol import ops_from_action
+def test_aliases_are_sent_to_a_server_that_knows_them(store) -> None:
+    """An alias change is one op; the version gate keeps it from a protocol 1 server."""
+    from homebound.sync.protocol import ops_for_peer, ops_from_action
     with store.batch() as action:
         store.set_alias(JITA, "Staging")
-    assert action.changes and ops_from_action(action.synced(), "hlc", "client") == []
+    with store.batch() as forgetting:
+        store.delete_alias(JITA)
+    ops = [op.to_json() for op in ops_from_action(action.synced(), "0193a1b2c3d4-0000", "aaaaaaaa")]
+    assert [(op["e"], op["k"], op["f"]["name"], op["full"]) for op in ops] == [("alias", JITA, "Staging", True)]
+    assert ops_for_peer(ops, 1) == []
+    deleted = ops_from_action(forgetting.synced(), "0193a1b2c3d4-0001", "aaaaaaaa")
+    assert [(op.entity, op.key, op.delete) for op in deleted] == [("alias", JITA, True)]
 
 
 def test_aliases_are_kept_in_the_file_and_old_files_get_the_empty_table(tmp_path) -> None:

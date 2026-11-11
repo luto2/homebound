@@ -171,22 +171,21 @@ class KillSummary:
 
 
 # The entities a map action changes, and how each is keyed: system -> id, connection -> (low id, high id),
-# signature -> (system id, signature id), setting -> key. Characters, zKill and key_value are local only.
-ENTITIES = ("system", "connection", "signature", "setting")
+# signature -> (system id, signature id), setting -> key, alias -> system id. Characters, zKill and key_value
+# are local only. An alias syncs only with a server of protocol 2 or newer (``protocol.GATED_ENTITIES``).
+ENTITIES = ("system", "connection", "signature", "setting", "alias")
 # each entity's table and the WHERE clause that finds one row by its key
 ENTITY_TABLES = {"system": "systems", "connection": "connections", "signature": "signatures",
-                 "setting": "map_settings"}
+                 "setting": "map_settings", "alias": "aliases"}
 ENTITY_WHERE = {"system": "id=?", "connection": "system_a=? AND system_b=?",
-                "signature": "system_id=? AND signature_id=?", "setting": "key=?"}
+                "signature": "system_id=? AND signature_id=?", "setting": "key=?", "alias": "system_id=?"}
 
 
 # Entities that are undoable like the others but stay on this computer: sync never sends them
-# (``ops_from_action`` is given an action without them, see ``Action.synced``). alias -> system ID.
-# TODO(sync): sync aliases once the protocol has a version gate (docs/plans/done/plan-system-alias.md, decision 2); an
-# unknown entity is refused by older clients and by the server out there (see ``protocol.LOCAL_SYSTEM_FIELDS``).
-LOCAL_ENTITIES = ("alias",)
-ALL_ENTITY_TABLES = ENTITY_TABLES | {"alias": "aliases"}
-ALL_ENTITY_WHERE = ENTITY_WHERE | {"alias": "system_id=?"}
+# (``ops_from_action`` is given an action without them, see ``Action.synced``). None at the moment.
+LOCAL_ENTITIES: tuple[str, ...] = ()
+ALL_ENTITY_TABLES = dict(ENTITY_TABLES)
+ALL_ENTITY_WHERE = dict(ENTITY_WHERE)
 
 
 def key_values(key: Any) -> list:

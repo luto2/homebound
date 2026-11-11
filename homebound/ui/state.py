@@ -223,14 +223,17 @@ class AppState(QObject):
             self.store.listeners.append(self._name_new_systems)
 
     def _name_new_systems(self, action: Action) -> int:
-        """Store the label of systems an action placed without one (a cloud member's, a new home's chain).
+        """Store the label of systems an action placed without one (an older cloud client's, a new home's chain).
+
+        The labels share the action's origin: those for a remote placement stay on this computer, so
+        two installs that each name the same system can't rename each other through sync.
 
         Returns:
             The number of systems labelled.
         """
         if not any(needs_label(change) for change in action.changes):
             return 0
-        return label_unnamed_systems(self.namer)
+        return label_unnamed_systems(self.namer, action.origin)
 
     def store_map_settings(self) -> bool:
         """Write the active map's home and naming scheme from the settings into the map file.

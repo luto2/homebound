@@ -96,7 +96,7 @@ What a version added to the ops is listed in `protocol.GATED_FIELDS` and `GATED_
 
 | field | meaning |
 |---|---|
-| `e` | entity: `system`, `connection`, `signature`, `setting` |
+| `e` | entity: `system`, `connection`, `signature`, `setting`, and since protocol 2 `alias` |
 | `k` | natural key (plan §3). Connections use `[min, max]`. |
 | `f` | changed plain fields only |
 | `placement` | the structural compound field (systems only) |
@@ -104,6 +104,10 @@ What a version added to the ops is listed in `protocol.GATED_FIELDS` and `GATED_
 | `del` | tombstone |
 | `hlc` | `<48-bit ms hex>-<16-bit counter hex>`. Every op in a batch may share one HLC. |
 
+- The fields of each entity are `protocol.FIELDS`. **Protocol 2 added** (`protocol.GATED_FIELDS`, `GATED_ENTITIES`):
+  - `system.label` (the scheme name stored when the system was attached, plan-stable-hole-names.md), `system.static` (reached through the parent's static, 0/1) and `system.next_hole` (the highest hole number given out in the system). A full upsert from an older client that brings a system back sets them to `null`, `0`, `0`. `next_hole` is a counter: it merges as the **highest** value, not the newest (`protocol.MAX_FIELDS`), and a client never writes a lower one into its map.
+  - The `alias` entity (plan-system-alias.md): `{"e": "alias", "k": <solar system ID>, "f": {"name", "set_at"}}`, a remembered custom name that outlives the system's place on the map. The key must be a real solar system; it needn't be on the map. Removed with `del`; auto-prune never touches it.
+  - A label never goes away through sync: a remote op whose label is `null` leaves a label the client already has. A system that arrives without a label (placed by an older client) is named by each install itself, and that name stays local (it isn't pushed), so two installs can't rename each other.
 - A batch is **atomic**: either all of its ops apply, or the whole batch is rejected.
 - One user action is one batch. A sig paste of 30 rows is one batch, and so is a system delete together with its cascades.
 

@@ -355,12 +355,20 @@ def test_apply_settings(state, tmp_path) -> None:
 
 
 def test_a_system_placed_from_elsewhere_gets_a_name_once(state) -> None:
-    """A placement the tracker didn't make (a cloud member's, labels don't sync yet) is named when it lands, then kept."""
+    """A placement without a name (an older cloud client's) is named here when it lands, then kept.
+
+    That name stays on this computer like the placement's own change: a remote action's follow-up is
+    remote too, so it isn't pushed, and two installs naming the same system can't rename each other.
+    """
     first, second = pick_system("C2"), pick_system("C4")
+    labelled: list[Action] = []
+    state.store.listeners.append(lambda action: labelled.append(action) if action.changes and any(
+        change.entity == "system" and (change.after or {}).get("label") for change in action.changes) else None)
     with state.store.batch(origin="remote"):
         state.store.add_system(first.id, parent_id=HOME.id, hole_index=3)
         state.store.add_system(second.id, parent_id=first.id, hole_index=1)
     assert (state.store.system(first.id).label, state.store.system(second.id).label) == ("3", "31")
+    assert [action.origin for action in labelled] == ["remote"]
     state.store.update_system(first.id, hole_index=4)       # a later move from elsewhere doesn't rename it
     assert state.namer.display(first.id) == "3"
     assert state._name_new_systems(Action()) == 0

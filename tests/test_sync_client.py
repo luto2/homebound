@@ -215,10 +215,79 @@ def test_numbers_from_the_other_side_count_too(pair) -> None:
     pump_all(kira, bob)
     merge_signatures(bob.store, C5, parse_scanner_text("ZZZ-999\tCosmic Signature\tWormhole\t\t100%\t1 AU\n"))
     assert bob.store.signature(C5, "ZZZ-999").hole_index == 3
-    kira.store.update_system(C5, label="Farm chain", static=1)    # local only for now: nothing to send
-    assert kira.replica.outbox() == []
+
+
+def test_stored_names_and_the_static_flag_sync(pair) -> None:
+    """A label and the static flag reach the other member (protocol 2); a rename does too."""
+    harness, kira, bob = pair
+    kira.store.update_system(C5, label="Farm chain", static=1)
     pump_all(kira, bob)
-    assert bob.store.system(C5).label is None and bob.store.system(C5).static == 0
+    assert (bob.store.system(C5).label, bob.store.system(C5).static) == ("Farm chain", 1)
+    bob.store.update_system(C5, label="Farm")
+    pump_all(kira, bob)
+    assert kira.store.system(C5).label == "Farm" and kira.replica.outbox() == bob.replica.outbox() == []
+
+
+def test_a_system_placed_by_the_other_member_keeps_its_name(pair) -> None:
+    """Kira's tracker names what it attaches; Bob shows that name and doesn't name it himself."""
+    harness, kira, bob = pair
+    with kira.store.batch():
+        kira.store.add_system(C3, parent_id=C5, hole_index=1, label="12")
+        kira.store.add_connection(C5, C3)
+    pump_all(kira, bob)
+    assert bob.store.system(C3).label == "12"
+    assert bob.replica.outbox() == []
+
+
+def test_a_name_that_arrives_empty_doesnt_clear_ours(pair) -> None:
+    """A remote op without a label (an older client's re-add) never wipes a name this install has."""
+    harness, kira, bob = pair
+    bob.store.update_system(C5, label="Mine")
+    pump_all(kira, bob)
+    kira.store.update_system(C5, label=None, notes="cleared")
+    pump_all(kira, bob)
+    assert bob.store.system(C5).label == "Mine" and bob.store.system(C5).notes == "cleared"
+
+
+def test_the_hole_counter_only_goes_up_and_reaches_a_new_member(pair) -> None:
+    """next_hole merges as the highest value: a lower one never wins, and a fresh copy gets it from the server."""
+    harness, kira, bob = pair
+    merge_signatures(kira.store, C5, parse_scanner_text(
+        "AAA-100\tCosmic Signature\tWormhole\t\t100%\t1 AU\nBBB-200\tCosmic Signature\tWormhole\t\t100%\t1 AU\n"))
+    kira.store.delete_signatures(C5, ["AAA-100", "BBB-200"])
+    pump_all(kira, bob)
+    assert kira.store.system(C5).next_hole == 2
+    late = Install(harness, harness.login(91000003, "Late"), "cccccccc")
+    code = harness.api("POST", f"/api/maps/{kira.replica.map_id}/invites", kira.token, json={"role": "editor"}).json()["code"]
+    harness.api("POST", f"/api/invites/{code}/accept", late.token)
+    late.replica.link(kira.replica.map_id, "test")
+    late.connect()
+    pump_all(kira, bob, late)
+    assert late.store.system(C5).next_hole == 2 and late.store.signatures(C5) == []
+    bob.store.update_system(C5, next_hole=1)       # a stale counter from somewhere
+    pump_all(kira, bob, late)
+    assert kira.store.system(C5).next_hole == 2
+    late.disconnect()
+
+
+def test_remembered_names_sync_and_undo_syncs_too(pair) -> None:
+    """An alias reaches the other member, outlives the system there, and its delete and undo follow."""
+    harness, kira, bob = pair
+    with kira.store.batch() as remembered:
+        kira.store.set_alias(C3, "Staging")
+    pump_all(kira, bob)
+    assert bob.store.alias(C3) == "Staging"
+    bob.store.add_system(C3)
+    assert bob.store.system(C3).custom_name == "Staging"
+    kira.store.undo(remembered)
+    pump_all(kira, bob)
+    assert bob.store.alias(C3) is None
+    bob.store.set_alias(C2, "Hostile")
+    bob.store.delete_alias(C2)
+    bob.store.set_alias(C2, "Farm")
+    pump_all(kira, bob)
+    assert [(alias.system_id, alias.name) for alias in kira.store.aliases()] == [(C2, "Farm")]
+    assert kira.replica.outbox() == bob.replica.outbox() == []
 
 
 def test_a_conflict_puts_the_server_version_back(pair) -> None:

@@ -4,7 +4,8 @@ Every entity keeps, per field, the value and the stamp (``<hlc>@<client_id>``) o
 it, plus the newest full-upsert stamp (``alive``) and the newest tombstone stamp (``dead``). An
 entity exists while ``alive > dead``. Applying an op only ever keeps the higher stamp of each of
 these, so it is commutative, associative and idempotent: replicas that saw the same ops agree,
-whatever order they saw them in.
+whatever order they saw them in. The counters in ``protocol.MAX_FIELDS`` keep the highest value
+instead of the newest, which has the same three properties.
 
 On top of that the server checks a batch before it applies it (:func:`check_batch`): references
 to systems that don't exist, cycles and taken ``(parent_id, hole_index)`` slots are rejected (first
@@ -15,7 +16,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
-from .protocol import CREATED_FIELD, Op, defaults_left_out, key_text
+from .protocol import CREATED_FIELD, MAX_FIELDS, Op, defaults_left_out, key_text
 
 PLACEMENT = "placement"
 
@@ -95,7 +96,14 @@ def apply_op(state: EntityState | None, op: Op) -> tuple[EntityState, Effect]:
         if op.has_placement:
             values[PLACEMENT] = tuple(op.placement) if op.placement else (None, None)
         for name, value in values.items():
-            if op_stamp > new.clocks.get(name, ""):
+            if (op.entity, name) in MAX_FIELDS:
+                # a counter that only goes up: the highest value wins, whatever its stamp
+                highest = max(value or 0, new.fields.get(name) or 0)
+                if highest != new.fields.get(name):
+                    changed[name] = highest
+                new.fields[name] = highest
+                new.clocks[name] = max(op_stamp, new.clocks.get(name, ""))
+            elif op_stamp > new.clocks.get(name, ""):
                 if new.fields.get(name) != value or name not in new.fields:
                     changed[name] = value
                 new.fields[name] = value
@@ -224,7 +232,9 @@ def check_batch(state: MapState, ops: list[Op], system_exists: Callable[[int], b
 def referenced_systems(op: Op) -> list[int]:
     """Return the solar system IDs an op names (its key, ends and parent)."""
     ids = []
-    if op.entity == "system":
+    if op.entity == "alias":
+        ids.append(op.key)
+    elif op.entity == "system":
         ids.append(op.key)
         if op.placement and op.placement[0] is not None:
             ids.append(op.placement[0])

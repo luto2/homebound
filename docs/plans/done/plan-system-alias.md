@@ -88,3 +88,7 @@ restored with the map without extra work. `Store.remove_system` must not touch i
 - **Not done**: the naming dialog ("was this the static?") doesn't show the alias as its resulting name,
   and has no remember box; it keeps the name the system already has.
 - Decisions taken as recommended: 1 per map, 2 sync later, 3 bookmarks keep following the scheme.
+- **2026-11-11: aliases sync** (decision 2, step 4). `alias` is a synced entity (`ENTITIES`, `protocol.FIELDS`),
+  sent only to servers and clients of protocol 2 (`protocol.GATED_ENTITIES`, see `sync-protocol.md` §3).
+  `LOCAL_ENTITIES` is empty but stays for the next local-only entity. Aliases made while the server spoke
+  protocol 1 stayed local and are not sent later; the next change to one sends it.

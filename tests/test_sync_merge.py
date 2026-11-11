@@ -7,8 +7,8 @@ from conftest import HOME, UNIVERSE, pick_system
 from homebound.mapdb.store import Signature, Store
 from homebound.sync.hlc import HybridClock, format_hlc, hlc_milliseconds, is_hlc, parse_hlc, stamp
 from homebound.sync.merge import BatchRejected, MapState, apply_op, check_batch, stamp_server_times
-from homebound.sync.protocol import (FIELDS, LOCAL_SYSTEM_FIELDS, InvalidOp, Op, batch_from_json, full_ops_for_rows,
-                                     op_from_json, ops_from_action)
+from homebound.sync.protocol import (FIELDS, GATED_FIELDS, InvalidOp, Op, batch_from_json, full_ops_for_rows,
+                                     op_from_json, ops_for_peer, ops_from_action)
 
 CLIENTS = ["aaaaaaaa", "bbbbbbbb", "cccccccc"]
 
@@ -302,24 +302,55 @@ def test_every_naming_scheme_of_the_app_is_a_valid_setting(scheme) -> None:
     assert op.fields["value"] == scheme
 
 
-def test_stored_names_and_the_static_flag_stay_local() -> None:
-    """label, static and next_hole are not sent: an older client or server would refuse a field it doesn't know.
+def test_stored_names_and_the_static_flag_go_only_to_a_peer_that_knows_them() -> None:
+    """label, static and next_hole are ops of protocol 2; a protocol 1 peer gets the op without them.
 
-    That refusal is why: op_from_json raises InvalidOp for an unknown field, which drops the whole
-    batch (and an old client keeps asking for it again). See the TODO at ``protocol.LOCAL_SYSTEM_FIELDS``.
+    A protocol 1 peer refuses a field it doesn't know (op_from_json raises InvalidOp, which drops the
+    whole batch, and an old client keeps asking for it again), so the version gate strips them.
     """
-    assert not set(LOCAL_SYSTEM_FIELDS) & set(FIELDS["system"])
+    gated = set(GATED_FIELDS["system"])
+    assert gated == {"label", "static", "next_hole"} and gated <= set(FIELDS["system"])
     store = Store(":memory:")
     actions: list = []
     store.listeners.append(actions.append)
     store.add_system(HOME.id)
     store.add_system(31000001, parent_id=HOME.id, hole_index=2, label="2", static=1)
     store.update_system(31000001, label="Z", static=0)
-    created, renamed = (ops_from_action(action, format_hlc(1, 0), CLIENTS[0]) for action in actions[1:])
-    assert not {"label", "static", "next_hole"} & set(created[0].fields) and created[0].placement == (HOME.id, 2)
-    assert renamed == []
+    created, renamed = ([op.to_json() for op in ops_from_action(action, format_hlc(1, 0), CLIENTS[0])]
+                        for action in actions[1:])
+    assert (created[0]["f"]["label"], created[0]["f"]["static"], created[0]["f"]["next_hole"]) == ("2", 1, 0)
+    assert renamed[0]["f"] == {"label": "Z", "static": 0}
+    assert not gated & set(ops_for_peer(created, 1)[0]["f"]) and ops_for_peer(renamed, 1) == []
+    assert op_from_json(renamed[0]).fields == {"label": "Z", "static": 0}
     with pytest.raises(InvalidOp):
-        op_from_json({"e": "system", "k": 31000001, "f": {"label": "2"}, "hlc": format_hlc(1, 0), "c": "aaaaaaaa"})
+        op_from_json({"e": "system", "k": 31000001, "f": {"static": 2}, "hlc": format_hlc(1, 0), "c": "aaaaaaaa"})
+
+
+def test_the_hole_counter_merges_as_the_highest_value() -> None:
+    """next_hole keeps the highest value whatever order the ops come in, and a lower one changes nothing."""
+    ops = [op_from_json({"e": "system", "k": HOME.id, "f": {"next_hole": value}, "hlc": format_hlc(ms, 0),
+                         "c": CLIENTS[0]}) for ms, value in ((1, 4), (2, 2), (3, 3))]
+    results = set()
+    for order in (ops, ops[::-1], [ops[1], ops[0], ops[2]]):
+        state = MapState()
+        state.apply_batch(order)
+        results.add(state.get("system", HOME.id).fields["next_hole"])
+    assert results == {4}
+    state = MapState()
+    state.apply(ops[0])
+    assert not state.apply(ops[1]).changed
+
+
+def test_aliases_are_checked_like_other_ops() -> None:
+    """An alias is keyed by a solar system ID, has a name, and must name a real system."""
+    good = {"e": "alias", "k": HOME.id, "f": {"name": "Staging", "set_at": None}, "full": True,
+            "hlc": format_hlc(1, 0), "c": CLIENTS[0]}
+    assert op_from_json(good).key == HOME.id
+    for bad in ({"k": "J123"}, {"f": {"name": ""}}, {"f": {"name": "x" * 101}}, {"placement": {"parent_id": None}}):
+        with pytest.raises(InvalidOp):
+            op_from_json(good | bad)
+    with pytest.raises(BatchRejected):
+        check_batch(MapState(), [op_from_json(good | {"k": 1})], lambda system_id: UNIVERSE.by_id(system_id) is not None)
 
 
 def test_an_unknown_naming_scheme_is_refused() -> None:
