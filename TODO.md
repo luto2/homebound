@@ -65,6 +65,17 @@ a small change whose file and fix are named.
     Effort: 4/5 · Opus. New synced fields (`label`, `static`, `next_hole`), a migration that keeps
     today's names, and paste-time numbering that two cloud clients must agree on.
 
+15. The overlay keeps growing with the chain (user report, 2026-11-10). Show the systems 1–2 jumps
+    around the character plus the path home, fold other branches into summary rows, mark branches with a
+    k-space or home exit, and cap the height. Plan: `docs/plans/plan-overlay-focus.md`.
+    Effort: 3/5 · Sonnet. A pure folding function in `chain.py` plus overlay painting and two settings.
+16. Opening two instances by accident breaks both until both are closed (user report, probably Windows).
+    Make a second start raise the running window and exit. Plan: `docs/plans/plan-single-instance.md`.
+    Effort: 2/5 · Sonnet. `QLockFile` + `QLocalServer`; reproduce on Windows first to learn what broke.
+17. With several systems selected, Delete removes only one (user report, 2026-11-11). Remove all of them
+    in one undo step. Plan: `docs/plans/plan-multi-delete.md`.
+    Effort: 1/5 · Haiku.
+
 ## To do
 
 From the audit of `582ee55` (2026-11-06). IDs match `docs/findings/findings.md`. The list

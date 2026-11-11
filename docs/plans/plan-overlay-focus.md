@@ -1,0 +1,60 @@
+# Plan: the overlay shows the nearby part of a big chain
+
+Status: not started. Owner task 15 in `TODO.md` (human-added, from a user, 2026-11-10): "does the overlay
+stop expanding at some point? the window gets quite big with a growing chain". The user's answer to what
+it should show: "like 1–2 jumps away, maybe with some highlight on chains that have connections towards
+k-space or home".
+
+Depends on: nothing. Touches `mapping/chain.py`, `ui/overlay.py`, `settings.py`, the settings dialog's
+overlay page and their tests.
+
+## What there is now
+
+`resolve_chain` (`mapping/chain.py`) returns every system of the character's chain as tree rows
+(`_chain_rows`). Only depth is limited (`max_depth`, deeper rows fold into `…`); breadth is not.
+`Overlay._layout` sizes the window to `len(chain.rows)`, so a chain of 30 systems is a 30-row window
+over the game.
+
+## Behaviour
+
+- **Focus around the character.** By default the overlay shows:
+  - the systems within **2 jumps** of the character's system (setting: 1, 2 or "whole chain");
+  - the **path to home** (or to the chain's root), always, so you can see the way out. Systems on it
+    beyond the radius are folded into one `⋯ 3 jumps` row;
+  - every other branch as **one summary row** where it leaves the shown part: `├ ⋯ B-chain · 7 systems`
+    plus markers (below). The summary row's text follows the stored names.
+- **Highlights**, on a shown row or a summary row whose hidden part contains it:
+  - **k-space exit**: a hole into high-, low- or nullsec (class from the universe), shown with the
+    security colour dot already used for k-space;
+  - **home**: the branch that leads home (the path above already shows it; the marker is for when home
+    is reached through a summary row);
+  - optionally **activity**: zKill kills in the last hour (reuses the existing zKill mark).
+- **Height cap.** Even with "whole chain", the window stops growing at a maximum row count (setting,
+  default 15) and folds the farthest rows into summary rows first, so it never covers the screen.
+- The map window is unchanged; this is only the overlay.
+
+## Where it lives
+
+- `mapping/chain.py`: a pure function `focus_rows(rows, store, universe, current, radius, max_rows)` that
+  takes today's full rows and returns the folded list with `ChainRow` gaining `summary_count`,
+  `kspace_exit` and `leads_home` fields. Testable without Qt.
+- `ui/overlay.py`: paint summary rows (muted, `⋯`), the markers, and size from the folded rows.
+- `settings.py`: `overlay_focus_radius` (1, 2, 0 = whole chain; default 2) and `overlay_max_rows`
+  (default 15), with range checks like the other overlay settings; the overlay settings page gets both.
+
+## Tests
+
+- A 30-system chain with the character 3 deep: rows are the radius-2 neighbourhood, the path to home
+  folded, and one summary row per other branch with the right counts.
+- A hidden branch with a hole to highsec: its summary row has the k-space marker; same for a nullsec
+  exit two systems down.
+- Radius "whole chain" with 40 systems: no more than `overlay_max_rows` rows.
+- Character in k-space next to the chain (the virtual row): still shown, with its entrance.
+- Overlay height follows the folded row count.
+
+## Open decisions
+
+1. Default radius 2? Recommended: 2 (the user said "1–2 jumps").
+2. Should the summary row be clickable to unfold it while the overlay is unlocked? Recommended: later.
+3. Count wormhole-to-wormhole holes leading to C1–C6 as "exits"? Recommended: no, only k-space and home,
+   as the user asked.

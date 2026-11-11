@@ -21,6 +21,9 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [plan-combat-scan.md](plan-combat-scan.md) | 8. Combat-scanned ships (and the paste bug behind it) | not started |
 | [plan-structure-list.md](plan-structure-list.md) | 9. Structure list, fed by combat scans | not started, after 8 |
 | [plan-return-hole.md](plan-return-hole.md) | 12. Mark a sig as the return hole, with its type | not started |
+| [plan-overlay-focus.md](plan-overlay-focus.md) | 15. Overlay shows the nearby part of a big chain | not started |
+| [plan-single-instance.md](plan-single-instance.md) | 16. A second start opens the running app | not started |
+| [plan-multi-delete.md](plan-multi-delete.md) | 17. Delete removes every selected system | not started |
 | [plan-overlay-shortcut.md](plan-overlay-shortcut.md) | Global shortcut to cycle the overlay mode | not started |
 | [plan-code-signing.md](plan-code-signing.md) | Windows code signing | not started |
 
