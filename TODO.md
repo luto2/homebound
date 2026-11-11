@@ -24,9 +24,9 @@ a small change whose file and fix are named.
 5. Add systems without a connection, to see if a chain connects to them. Open question: monetization,
    and how to stop people mapping from those systems as well. Could be a separate feature that doesn't
    allow new systems, just the connection alert. Plan: `docs/plans/plan-watched-systems.md`.
-   1. Delete a connection without deleting the systems, to allow exfilling out of a chain if the
+   1. **Done 2026-11-11 (`530ad2d`).** Delete a connection without deleting the systems, to allow exfilling out of a chain if the
       connection is lost; maybe stop mapping additional connections there after ~1h. Plan:
-      `docs/plans/plan-disconnect-connection.md`.
+      `docs/plans/done/plan-disconnect-connection.md`.
    Effort: 3/5 · Sonnet. New setting, a check on new connections and a toast; 5.1 is 2/5 · Sonnet (Store
    batch, undo and sync must stay right).
 6. Overhaul the online indicator in the character list; maybe check if the client is open. Plan:
@@ -48,9 +48,9 @@ a small change whose file and fix are named.
 11. **Done 2026-11-10 (`915fc63`).** The wormhole name copy button should also copy the sig ID, and the class if one is known, as
     "<number> <sig> <class>". Plan: `docs/plans/done/plan-copy-bookmark-text.md`.
     Effort: 1/5 · Haiku. `SignatureModel.bookmark_for` plus the class from `lead_class`.
-12. Option to mark a sig or WH as the return wormhole right away, and set its WH type from the other
+12. **Done 2026-11-11 (`216ee79`).** Option to mark a sig or WH as the return wormhole right away, and set its WH type from the other
     side and the classes. "Return" means back to the system you jumped in from, not towards home. Plan:
-    `docs/plans/plan-return-hole.md`.
+    `docs/plans/done/plan-return-hole.md`.
     Effort: 3/5 · Sonnet. Needs the K162/static type rules for both sides; Opus if those get unclear.
 13. **Done 2026-11-10 (`1fe3fd2`).** Multi-select systems to move them together. Found while planning: Ctrl+click may already select
     two nodes, but a drag then stores only the grabbed one. Plan: `docs/plans/done/plan-multi-select-move.md`.

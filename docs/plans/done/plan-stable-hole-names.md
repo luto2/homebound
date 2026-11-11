@@ -2,7 +2,7 @@
 
 Status: implemented (2026-11-10, commits `06f76b7`…`8495554`), see "As built". Deviations: `label`, `static` and `next_hole` are local-only until the protocol gets a version gate (`protocol.LOCAL_SYSTEM_FIELDS`), so a2a/letter names and STATIC badges can differ between cloud members; numbers sync. The a2a position letter is never given twice. Open owner questions are in the session report (migration numbers on cloud maps, a remote scheme change asking to rename, renumber action for duplicate numbers, k-space home's first chain is A).
 
-Depends on: nothing. Do it before [`plan-disconnect-connection.md`](../plan-disconnect-connection.md)
+Depends on: nothing. Do it before [`plan-disconnect-connection.md`](plan-disconnect-connection.md)
 (task 5.1), which removes connections and would hit path 5 below. Touches `mapping/naming.py`,
 `mapping/tracker.py`, `mapping/signature_parser.py`, `mapdb/store.py` (schema and sync fields),
 `sync/protocol.py`, `ui/signature_table.py` and `ui/map_window.py`.
@@ -13,7 +13,7 @@ Depends on: nothing. Do it before [`plan-disconnect-connection.md`](../plan-disc
    pasted, and a system gets its name the moment it is attached. Nothing later (another paste, a
    static guess, a removed connection or system, a sibling added or removed) changes either. Only an
    explicit user action may: a rename, a scheme change in Settings, "Make home", marking a sig as the
-   return hole ([`plan-return-hole.md`](../plan-return-hole.md), it becomes `-0`).
+   return hole ([`plan-return-hole.md`](plan-return-hole.md), it becomes `-0`).
 2. **No slot is reserved for the static.** Holes are numbered in the order they are found, from 1. The
    static is whatever number it got when it was pasted; it never moves to -1 later.
 
@@ -124,4 +124,4 @@ No open decisions left.
 - A system that comes back without a sig keeps its old number while no hole of the new parent
   has it, even if the parent is a different one.
 - A scheme change from another cloud member asks the rename question too.
-- Marking a return hole ([`plan-return-hole.md`](../plan-return-hole.md)) is the one explicit rename of a sig: its bookmark reads `-0` (towards the parent) while linked, but its stored number is kept, so nothing is lost on undo.
+- Marking a return hole ([`plan-return-hole.md`](plan-return-hole.md)) is the one explicit rename of a sig: its bookmark reads `-0` (towards the parent) while linked, but its stored number is kept, so nothing is lost on undo.

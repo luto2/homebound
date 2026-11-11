@@ -16,11 +16,9 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 |---|---|---|
 | [plan-menu-icon.md](plan-menu-icon.md) | 2. App menu icon (To do 14) | icons and cache refresh done; cause and desktop test open |
 | [plan-watched-systems.md](plan-watched-systems.md) | 5. Watched systems with a connection alert | not started |
-| [plan-disconnect-connection.md](plan-disconnect-connection.md) | 5.1. Remove a connection, keep the systems | not started |
 | [plan-online-indicator.md](plan-online-indicator.md) | 6. Online indicator from open clients | not started |
 | [plan-combat-scan.md](plan-combat-scan.md) | 8. Combat-scanned ships (and the paste bug behind it) | not started |
 | [plan-structure-list.md](plan-structure-list.md) | 9. Structure list, fed by combat scans | not started, after 8 |
-| [plan-return-hole.md](plan-return-hole.md) | 12. Mark a sig as the return hole, with its type | not started |
 | [plan-overlay-focus.md](plan-overlay-focus.md) | 15. Overlay shows the nearby part of a big chain | not started |
 | [plan-single-instance.md](plan-single-instance.md) | 16. A second start opens the running app | not started |
 | [plan-overlay-shortcut.md](plan-overlay-shortcut.md) | Global shortcut to cycle the overlay mode | not started |
@@ -74,4 +72,6 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [done/plan-duplicated-logic.md](done/plan-duplicated-logic.md) | 2026-11-10 | which home ID the callers use (not confirmed) |
 | [done/plan-system-alias.md](done/plan-system-alias.md) | 2026-11-10 | syncing the alias table (needs the protocol gate) |
 | [done/plan-multi-delete.md](done/plan-multi-delete.md) | 2026-11-11 | — |
+| [done/plan-disconnect-connection.md](done/plan-disconnect-connection.md) | 2026-11-11 | cut-off tab on other cloud members |
+| [done/plan-return-hole.md](done/plan-return-hole.md) | 2026-11-11 | origin memory survives restart? marker for child-origin return holes (needs a synced flag) |
 

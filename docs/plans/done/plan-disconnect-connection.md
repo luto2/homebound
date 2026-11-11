@@ -1,8 +1,6 @@
 # Plan: remove a connection but keep its systems ("lost connection")
 
-Status: built (2026-11-10) except the sync of the mark, see "Where it lives". Owner task 5.1 in `TODO.md` (human-added): "add ability to delete connection without
-deleting the systems, allow for exfilling out of a chain if the connection is lost, maybe stop mapping
-additional connections there after ~1h".
+Status: implemented (2026-11-11, commit `530ad2d`). Deviations: the cut-off mark is a local key_value entry (not synced); a cut-off piece is removed an hour after the last pilot left, pinned systems stay.
 
 Depends on: nothing. Touches `ui/map_window.py`, `mapping/tracker.py`, `mapdb/store.py` and their tests.
 

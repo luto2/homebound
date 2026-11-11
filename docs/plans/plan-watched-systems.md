@@ -3,7 +3,7 @@
 Status: not started. Owner task 5 in `TODO.md` (human-added): "add ability to add systems without a
 connection, to be able to see if a chain connects to them … could use a separate feature that doesn't allow
 new systems, just the connection alert". The sub-task 5.1 (removing a connection but keeping its systems)
-has its own plan: [`plan-disconnect-connection.md`](plan-disconnect-connection.md).
+has its own plan: [`plan-disconnect-connection.md`](done/plan-disconnect-connection.md).
 
 Depends on: nothing. Touches `mapping/`, `routing.py`, `ui/state.py`, the route dock and toasts/notify.
 

@@ -1,10 +1,8 @@
 # Plan: mark a sig as the return hole in one click
 
-Status: built (2026-11-11), see "As built" for where it differs from the first plan. Owner task 12 in
-`TODO.md` (human-added): "option to instantly mark a sig or WH as return wormhole and set the WH type for
-that WH with regard to the other side and the classes".
+Status: implemented (2026-11-11, commit `216ee79`). Deviations: the sig keeps its stored number (the `-0` bookmark comes from the link); when the origin is a child the sig shows the child's number; an unsettled type keeps the sig's type; the "return" marker only shows for a link to the parent. See "As built".
 
-Depends on: nothing. Ties into [`plan-stable-hole-names.md`](done/plan-stable-hole-names.md) (task 14):
+Depends on: nothing. Ties into [`plan-stable-hole-names.md`](plan-stable-hole-names.md) (task 14):
 marking a sig as the return hole is an explicit user action, so it may rename (to `-0`, see below), and
 that plan's rule 1 lists it. Touches `mapping/tracker.py`, `mapping/naming.py`, `ui/signature_table.py`,
 `ui/system_panel.py`, `ui/wormhole_fields.py`, `ui/dialogs.py` and their tests.
