@@ -10,6 +10,8 @@ from ..mapping.scan_status import age_text
 from .state import AppState
 
 ROW_HEIGHT = 44
+# the colour of each presence ("● online" client open, "◐ recent" log only, "○ offline")
+PRESENCE_TOKENS = {"online": "success", "recent": "warning", "offline": "ink-faint"}
 
 
 class CharacterDelegate(QStyledItemDelegate):
@@ -26,7 +28,7 @@ class CharacterDelegate(QStyledItemDelegate):
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
         """Draw the row."""
-        character_id, name, system_id, online, slot = index.data(Qt.ItemDataRole.UserRole)
+        character_id, name, system_id, presence, slot = index.data(Qt.ItemDataRole.UserRole)
         state = self.state
         rect = QRectF(option.rect)
         painter.save()
@@ -41,24 +43,27 @@ class CharacterDelegate(QStyledItemDelegate):
         name_font = font("ui-body")
         name_font.setBold(True)
         painter.setFont(name_font)
-        painter.setPen(color("ink") if online else color("ink-muted"))
+        painter.setPen(color("ink") if presence != "offline" else color("ink-muted"))
         painter.drawText(QRectF(x + 20, y, rect.width() - 110, 16), Qt.AlignmentFlag.AlignVCenter,
                          painter.fontMetrics().elidedText(name or str(character_id), Qt.TextElideMode.ElideRight,
                                                           int(rect.width() - 110)))
         painter.setFont(font("ui-small", 11))
-        painter.setPen(color("success") if online else color("ink-faint"))
+        painter.setPen(color(PRESENCE_TOKENS[presence]))
         painter.drawText(QRectF(rect.right() - 96, y, 90, 16),
                          Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                         self.online_text(character_id, online))
+                         self.online_text(character_id, presence))
         self._paint_location(painter, rect, x + 20, rect.top() + 24, system_id)
         painter.restore()
 
-    def online_text(self, character_id: int, online: bool) -> str:
-        """Return "● online", or "○ offline" with how long ago the character was last seen."""
-        if online:
+    def online_text(self, character_id: int, presence: str) -> str:
+        """Return "● online" (client open), "◐ recent" (log only), or "○ offline" with the time since the log was written."""
+        if presence == "online":
             return "● online"
+        if presence == "recent":
+            return "◐ recent"
         scanned = self.state.watcher.characters.get(character_id)
-        return "○ offline" + (f" {age_text(scanned.last_seen.isoformat())}" if scanned and scanned.last_seen else "")
+        last = (scanned.last_written or scanned.last_seen) if scanned else None
+        return "○ offline" + (f" {age_text(last.isoformat())}" if last else "")
 
     def _paint_location(self, painter: QPainter, rect: QRectF, x: float, y: float, system_id: int | None) -> None:
         """Draw the class badge and the map name (plus the real name) of where the character is."""
@@ -115,7 +120,7 @@ class CharacterDock(QListWidget):
         for row in rows:
             list_item = QListWidgetItem()
             list_item.setData(Qt.ItemDataRole.UserRole, row)
-            list_item.setToolTip(f"{row[1]} ({row[0]})")
+            list_item.setToolTip(f"{row[1]} ({row[0]}) · {self.state.presence_detail(row[0])}")
             self.addItem(list_item)
         return len(rows)
 

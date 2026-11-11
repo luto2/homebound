@@ -360,7 +360,7 @@ def test_opacity_roundtrip_has_no_float_error(monkeypatch, tmp_path, kwin, qt_ap
 def test_pinned_character_from_rows(monkeypatch, tmp_path, kwin, qt_application) -> None:
     """The pinned-character list has one entry per character (the ID when the name is blank) and selects the saved one."""
     state = make_state(monkeypatch, tmp_path)
-    monkeypatch.setattr(state, "character_rows", lambda: [(7, "Alice", None, True, 0), (8, "", None, False, 0)])
+    monkeypatch.setattr(state, "character_rows", lambda: [(7, "Alice", None, "online", 0), (8, "", None, "offline", 0)])
     state.settings.overlay_pinned_character = 8
     dialog = SettingsDialog(None, state)
     assert dialog.pinned.itemText(1) == "Alice"

@@ -522,6 +522,9 @@ class CloudMenu(QObject):
                     menus.item(menu, character["name"],
                                lambda char_id=character["char_id"], on=character["char_id"] not in shared:
                                sync.set_sharing(map_id, char_id, on), checked=character["char_id"] in shared)
+                share_state = sync.state.settings.sync_presence_state
+                menus.item(menu, "Also share whether the game is open",
+                           lambda on=not share_state: sync.set_share_state(on), checked=share_state)
         menu.addSeparator()
         menus.item(menu, "Join with invite code …", self.join)
         menus.item(menu, "Account and billing …", lambda: AccountDialog(self.window, sync).exec())

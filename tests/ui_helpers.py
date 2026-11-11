@@ -17,6 +17,7 @@ class FakeFocus(QObject):
     """Stands in for FocusTracker, so tests never touch the session D-Bus or xprop."""
 
     focusChanged = Signal(object, QRect)
+    openCharactersChanged = Signal(object)
     status = Signal(str, str)
 
     def start(self) -> str:

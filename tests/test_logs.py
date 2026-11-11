@@ -1,5 +1,5 @@
 """Local log parsing, tailing, the Qt watcher and the replay tool (synthetic logs only)."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -8,7 +8,7 @@ from conftest import HOME, UNIVERSE
 from homebound.logs import replay
 from homebound.logs.parser import (LogFile, decode_log_bytes, parse_header, parse_log_file, parse_log_text,
                                    parse_system_change, parse_timestamp)
-from homebound.logs.watcher import LogScanner, LogWatcher
+from homebound.logs.watcher import RECENT_WINDOW, LogScanner, LogWatcher
 
 HEADER = """
 
@@ -112,6 +112,24 @@ def test_scanner_tail(tmp_path) -> None:
     assert scanner.poll().changes == []
     with pytest.raises(TypeError):
         scanner.poll(now="now")
+
+
+def test_scanner_keeps_when_each_log_was_last_written(tmp_path) -> None:
+    """last_written is the newer of the file time and the session start; "recent" means the last 30 minutes."""
+    import os
+    path = tmp_path / "Local_20261028_165148_7.txt"
+    write_log(path, HEADER + line("2026.10.28 16:51:53", "Channel changed to Local : Jita"))
+    written = datetime(2026, 10, 28, 17, 0, tzinfo=timezone.utc)
+    os.utime(path, (written.timestamp(), written.timestamp()))
+    scanner = LogScanner(tmp_path)
+    result = scanner.poll(now=written + RECENT_WINDOW / 2)
+    character = scanner.characters[7]
+    assert character.last_written == written and character.recent and result.characters_changed
+    assert not scanner.poll(now=written + RECENT_WINDOW / 2).characters_changed
+    result = scanner.poll(now=written + RECENT_WINDOW * 2)
+    assert not character.recent and result.characters_changed      # the change from recent to quiet is news
+    assert character.last_written == written
+    assert RECENT_WINDOW == timedelta(minutes=30)
 
 
 def test_scanner_skips_a_bad_file_name(tmp_path) -> None:

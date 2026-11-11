@@ -379,3 +379,51 @@ def test_a_new_client_syncs_with_an_old_server_without_names(old_server, caplog)
     assert not any(op_for_peer(op, 1) != op for batch in harness.service.db.all("SELECT payload FROM ops")
                    for op in json.loads(batch["payload"]))
     assert "could not handle" not in caplog.text and writer.notices == []
+
+
+# ---------------------------------------------------------------- presence state (protocol 2)
+
+def test_presence_state_reaches_new_clients_only() -> None:
+    """A new client's "online"/"recent" reaches new sockets; old ones get the presence without it."""
+    harness = Harness()
+    map_id, kira, bob = setup_map(harness)
+    sender, new, old = (Socket(harness, kira, A, protocol=2), Socket(harness, bob, B, protocol=2),
+                        Socket(harness, bob, B, protocol=1))
+    for socket in (sender, new, old):
+        socket.join(map_id)
+    sender.send({"t": "presence", "map": map_id, "char_id": 91000001, "system_id": C5, "state": "recent"})
+    assert new.until("presence")["state"] == "recent"
+    assert "state" not in old.until("presence")
+    late_new, late_old = Socket(harness, bob, B, protocol=2), Socket(harness, bob, B, protocol=1)
+    for socket, has_state in ((late_new, True), (late_old, False)):
+        socket.send({"t": "join", "id": 2, "map": map_id, "last_seq": 0})
+        entries = socket.until("presence_all")["entries"]
+        assert [("state" in entry) for entry in entries] == [has_state]
+    sender.send({"t": "presence", "map": map_id, "char_id": 91000001, "system_id": C5, "state": "asleep"})
+    assert new.until("presence")["state"] is None                # an unknown state counts as not said
+
+
+def test_an_old_clients_presence_has_no_state() -> None:
+    """Old client sharing a location: new clients get it with state null (unknown)."""
+    harness = Harness()
+    map_id, kira, bob = setup_map(harness)
+    old, new = Socket(harness, kira, A, protocol=1), Socket(harness, bob, B, protocol=2)
+    old.join(map_id)
+    new.join(map_id)
+    old.send({"t": "presence", "map": map_id, "char_id": 91000001, "system_id": C5})
+    seen = new.until("presence")
+    assert (seen["system_id"], seen["state"]) == (C5, None)
+
+
+@pytest.mark.parametrize("server, sends_state", [(1, False), (2, True)])
+def test_a_new_client_sends_the_presence_state_only_to_a_new_server(server, sends_state) -> None:
+    """The engine adds the state for a protocol 2 server, and only when it is given."""
+    sent: list[dict] = []
+    engine, replica = engine_on({"protocol": server}, sent)
+    engine.presence("m_1", 91000001, C5, "online")
+    assert ("state" in sent[-1]) is sends_state and sent[-1]["system_id"] == C5
+    engine.presence("m_1", 91000001, C5)
+    assert "state" not in sent[-1]
+    engine.handle({"t": "presence", "map": "m_1", "char_id": 7, "name": "Bob", "system_id": C5, "afk": False,
+                   "at": "x", "state": "recent"})
+    assert engine.info("m_1").presence[7]["state"] == "recent"

@@ -38,18 +38,18 @@ def write_log(path: Path, body: str) -> None:
 
 
 def test_scanner_survives_a_log_that_vanishes_between_listing_and_reading(tmp_path, monkeypatch) -> None:
-    """A log deleted after the folder listing yields no changes, no error, and keeps the online state."""
+    """A log deleted after the folder listing yields no changes, no error, and keeps the recent state."""
     path = tmp_path / "Local_20261028_165148_7.txt"
     write_log(path, HEADER + log_line("2026.10.28 16:51:53", "Jita"))
     scanner = LogScanner(tmp_path)
     first = scanner.poll(now=datetime.now(timezone.utc))
-    assert [change.system for change in first.changes] == ["Jita"] and scanner.characters[7].online
+    assert [change.system for change in first.changes] == ["Jita"] and scanner.characters[7].recent
     listing = scanner.newest_files()
     path.unlink()
     monkeypatch.setattr(scanner, "newest_files", lambda: listing)  # the listing still has the file
     result = scanner.poll(now=datetime.now(timezone.utc))
     assert result.changes == [] and not result.characters_changed
-    assert scanner.characters[7].online and scanner.characters[7].system == "Jita"
+    assert scanner.characters[7].recent and scanner.characters[7].system == "Jita"
 
 
 def test_scanner_registers_a_character_whose_first_log_cannot_be_read(tmp_path, monkeypatch) -> None:
@@ -60,7 +60,8 @@ def test_scanner_registers_a_character_whose_first_log_cannot_be_read(tmp_path, 
     result = scanner.poll(now=datetime(2026, 10, 28, 17, tzinfo=timezone.utc))
     assert result.changes == [] and result.characters_changed
     state = scanner.characters[9]
-    assert state.file == missing and state.offset == 0 and state.system is None and not state.online
+    assert state.file == missing and state.offset == 0 and state.system is None
+    assert not state.recent and state.last_written is None
 
 
 def test_replay_quiet_prints_only_the_summary_and_tree(tmp_path, capsys) -> None:

@@ -14,7 +14,7 @@ from typing import Any
 from ..mapdb.store import Action
 from .hlc import HybridClock
 from .local import LocalReplica
-from .protocol import MIN_PROTOCOL, PROTOCOL, ops_for_peer, peer_protocol
+from .protocol import GATED_PRESENCE_FIELDS, MIN_PROTOCOL, PROTOCOL, ops_for_peer, peer_protocol
 
 log = logging.getLogger("homebound.sync")
 REVERT_CODES = ("conflict", "read_only", "forbidden", "invalid", "too_large")
@@ -258,7 +258,8 @@ class SyncEngine:
         if message.get("system_id") is None:
             info.presence.pop(message.get("char_id"), None)
         else:
-            info.presence[message["char_id"]] = {key: message.get(key) for key in ("char_id", "name", "system_id", "afk", "at")}
+            info.presence[message["char_id"]] = {key: message.get(key)
+                                                 for key in ("char_id", "name", "system_id", "afk", "at", "state")}
         self.on_info(info.map_id)
 
     def _on_error(self, message: dict) -> None:
@@ -280,10 +281,20 @@ class SyncEngine:
         self.on_unlinked(map_id, reason)
 
     # ------------------------------------------------------------ presence
-    def presence(self, map_id: str, char_id: int, system_id: int | None) -> None:
-        """Share (or stop sharing, ``None``) where one of our characters is."""
+    def presence(self, map_id: str, char_id: int, system_id: int | None, state: str | None = None) -> None:
+        """Share (or stop sharing, ``None``) where one of our characters is.
+
+        Args:
+            map_id: The cloud map.
+            char_id: Our character.
+            system_id: Where it is, or None to stop sharing.
+            state: ``"online"`` or ``"recent"``, sent only when given and only to a protocol 2 server.
+        """
         if self.connected and self.info(map_id).joined:
-            self.send({"t": "presence", "map": map_id, "char_id": char_id, "system_id": system_id})
+            message = {"t": "presence", "map": map_id, "char_id": char_id, "system_id": system_id}
+            if state is not None and self.server_protocol >= GATED_PRESENCE_FIELDS["state"]:
+                message["state"] = state
+            self.send(message)
 
 
 @contextlib.contextmanager

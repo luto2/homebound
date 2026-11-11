@@ -42,6 +42,30 @@ def test_eve_character_captions() -> None:
         focus_module.eve_character(None)
 
 
+def test_open_characters_from_captions() -> None:
+    """Two clients count, character select, the launcher and other windows don't."""
+    captions = ["EVE - Kira", "EVE - Bob Two", "EVE", "EVE Launcher", "EVE Online Launcher", "Firefox", "EVE - Kira"]
+    assert focus_module.eve_characters(captions) == {"Kira", "Bob Two"}
+    assert focus_module.eve_characters([]) == set()
+    with pytest.raises(TypeError):
+        focus_module.eve_characters("EVE - Kira")
+
+
+def test_tracker_polls_the_open_clients(tracker) -> None:
+    """A backend that can list windows feeds open_characters; a change emits once; None means "can't tell"."""
+    changes = spy(tracker.openCharactersChanged)
+    assert tracker.open_characters is None and tracker.poll_windows() is False   # the idle backend can't tell
+    tracker.backend.open_eve_characters = lambda: {"Kira"}
+    assert tracker.poll_windows() is True and tracker.open_characters == {"Kira"}
+    assert tracker.poll_windows() is False
+    tracker.backend.open_eve_characters = lambda: None
+    assert tracker.poll_windows() is True and tracker.open_characters is None
+    assert changes == [({"Kira"},), (None,)]
+    tracker.start()
+    assert tracker.window_timer.isActive() and tracker.window_timer.interval() == focus_module.WINDOW_POLL_MS
+    tracker.window_timer.stop()
+
+
 def test_set_detects_changes(tracker) -> None:
     """Only a different character or rectangle emits."""
     changes = spy(tracker.focusChanged)
@@ -121,6 +145,55 @@ class FakeUser32:
         """Remember the call."""
         self.topmost.append(arguments)
         return 1
+
+
+class ListingUser32(FakeUser32):
+    """A user32 with several top-level windows: ``{handle: (title, visible)}``."""
+
+    def __init__(self, windows: dict[int, tuple[str, bool]], fail: bool = False) -> None:
+        """Script the windows EnumWindows walks through."""
+        super().__init__()
+        self.windows, self.fail = windows, fail
+
+    def EnumWindows(self, callback, parameter) -> int:  # noqa: N802
+        """Call back for every window, as Windows does (stop when the callback says so)."""
+        if self.fail:
+            return 0
+        for window in self.windows:
+            if not callback(window, parameter):
+                break
+        return 1
+
+    def IsWindowVisible(self, window: int) -> bool:  # noqa: N802
+        """Return the scripted visibility."""
+        return self.windows[window][1]
+
+    def GetWindowTextLengthW(self, window: int) -> int:  # noqa: N802
+        """Return the length of the window's title."""
+        return len(self.windows[window][0])
+
+    def GetWindowTextW(self, window: int, buffer, size: int) -> int:  # noqa: N802
+        """Copy the window's title into the buffer."""
+        buffer.value = self.windows[window][0][:size - 1]
+        return len(buffer.value)
+
+
+def test_window_titles_lists_the_visible_top_level_windows() -> None:
+    """Titles of visible windows; a failing EnumWindows gives None (can't tell), not an empty list."""
+    user32 = ListingUser32({1: ("EVE - Kira", True), 2: ("EVE - Hidden", False), 3: ("EVE", True), 4: ("", True),
+                            5: ("EVE - Bob", True)})
+    assert windows_module.window_titles(user32) == ["EVE - Kira", "EVE", "EVE - Bob"]
+    assert windows_module.window_titles(ListingUser32({}, fail=True)) is None
+    assert windows_module.window_titles(ListingUser32({})) == []
+
+
+def test_windows_backend_lists_open_clients(tracker) -> None:
+    """open_eve_characters names the open clients; no user32 or an error is None."""
+    backend = windows_module.WindowsFocus(tracker, ListingUser32({1: ("EVE - Kira", True), 2: ("Notepad", True)}))
+    assert backend.open_eve_characters() == {"Kira"}
+    assert windows_module.WindowsFocus(tracker, ListingUser32({}, fail=True)).open_eve_characters() is None
+    backend.user32 = None
+    assert backend.open_eve_characters() is None
 
 
 def test_foreground_window_reads_title_process_and_rect() -> None:

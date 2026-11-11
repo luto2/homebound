@@ -131,6 +131,10 @@ GATED_FIELDS: dict[str, dict[str, GatedField]] = {
     "system": {"label": GatedField(2, None), "static": GatedField(2, 0), "next_hole": GatedField(2, 0)},
 }
 GATED_ENTITIES: dict[str, int] = {"alias": 2}       # entity -> the version that added it
+# Fields of a presence entry (``presence``, ``presence_all``) a version added: ``state`` says whether the
+# character's client window is open ("online") or only its log was written lately ("recent").
+GATED_PRESENCE_FIELDS: dict[str, int] = {"state": 2}
+PRESENCE_STATES = ("online", "recent")
 
 
 def peer_protocol(value: Any) -> int:
@@ -214,6 +218,12 @@ def message_for_peer(message: dict, protocol: int) -> dict:
         part = "entities" if kind == "snapshot" else "current"
         return message | {part: [entry for item in message.get(part, [])
                                  if (entry := entity_for_peer(item, protocol)) is not None]}
+    hidden = {name for name, since in GATED_PRESENCE_FIELDS.items() if protocol < since}
+    if kind == "presence":
+        return {name: value for name, value in message.items() if name not in hidden}
+    if kind == "presence_all":
+        return message | {"entries": [{name: value for name, value in entry.items() if name not in hidden}
+                                      for entry in message.get("entries", [])]}
     return message
 
 

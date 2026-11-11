@@ -304,6 +304,7 @@ class MapWindow(QMainWindow):
         state.mapChanged.connect(self._refresh_find)
         state.status.connect(self._status)
         focus.status.connect(lambda level, text: self._status("kwin", level, text))
+        focus.openCharactersChanged.connect(state.set_open_characters)    # the dock's "● online"
 
         QShortcut(QKeySequence.StandardKey.Paste, self, activated=self._paste_shortcut,
                   context=Qt.ShortcutContext.WindowShortcut)

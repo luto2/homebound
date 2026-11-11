@@ -170,6 +170,51 @@ def test_poll_x11(tracker, backend, monkeypatch) -> None:
     assert tracker.character == "Keep"
 
 
+def test_x11_window_titles(monkeypatch) -> None:
+    """wmctrl -l when it is there; else the client list and one xprop per window; a failure is None."""
+    monkeypatch.setattr(linux_module.shutil, "which", lambda name: "/usr/bin/" + name)
+    wmctrl = ("0x04a00007  0 host EVE - Kira\n0x04a0000a -1 host EVE - Bob Two\n"
+              "0x05000001  0 host Firefox — page\nbroken line\n")
+    commands = []
+
+    def run(command, **options):
+        commands.append(command)
+        return SimpleNamespace(returncode=0, stdout=wmctrl)
+    monkeypatch.setattr(linux_module.subprocess, "run", run)
+    assert linux_module.x11_window_titles() == ["EVE - Kira", "EVE - Bob Two", "Firefox — page"]
+    assert commands == [["wmctrl", "-l"]]
+    monkeypatch.setattr(linux_module.shutil, "which", lambda name: "/usr/bin/xprop" if name == "xprop" else None)
+    answers = {("xprop", "-root"): "_NET_CLIENT_LIST(WINDOW): window id # 0x4a00007, 0x4a0000a\n",
+               "0x4a00007": '_NET_WM_NAME(UTF8_STRING) = "EVE - Kira"\n',
+               "0x4a0000a": "_NET_WM_NAME:  not found.\n"}
+    monkeypatch.setattr(linux_module.subprocess, "run", lambda command, **options: SimpleNamespace(
+        returncode=0, stdout=answers[tuple(command[:2])] if command[1] == "-root" else answers[command[2]]))
+    assert linux_module.x11_window_titles() == ["EVE - Kira"]
+
+    def failing(*arguments, **options) -> NoReturn:
+        raise subprocess.TimeoutExpired("xprop", 1)
+    monkeypatch.setattr(linux_module.subprocess, "run", failing)
+    assert linux_module.x11_window_titles() is None
+    monkeypatch.setattr(linux_module.subprocess, "run", lambda *arguments, **options: SimpleNamespace(
+        returncode=1, stdout=""))
+    assert linux_module.x11_window_titles() is None
+    monkeypatch.setattr(linux_module.shutil, "which", lambda name: None)
+    assert linux_module.x11_window_titles() is None
+
+
+def test_open_clients_come_from_kwin_or_x11(tracker, backend, monkeypatch) -> None:
+    """The KWin script's caption list wins once it has sent one; else the X11 list; else None."""
+    monkeypatch.setattr(linux_module, "x11_window_titles", lambda: ["EVE - Bob", "Konsole"])
+    assert backend.open_eve_characters() == {"Bob"}
+    backend._adaptor.Windows(["EVE - Kira", "EVE", "Dolphin"])
+    assert backend.open_eve_characters() == {"Kira"}
+    backend._adaptor.Windows([])
+    assert backend.open_eve_characters() == set()
+    other = linux_module.LinuxFocus(tracker)
+    monkeypatch.setattr(linux_module, "x11_window_titles", lambda: None)
+    assert other.open_eve_characters() is None
+
+
 @pytest.mark.parametrize("script, dbus_ok, xprop, polling, level, text", [
     ("active", True, "/usr/bin/xprop", False, "ok", "KWin focus script active"),
     ("missing", True, "/usr/bin/xprop", True, "warn", "KWin focus script not installed · using X11 fallback"),

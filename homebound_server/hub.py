@@ -14,7 +14,8 @@ from typing import Any
 
 from homebound.sync.hlc import HybridClock
 from homebound.sync.merge import BatchRejected, EntityState, MapState, check_batch, stamp_server_times
-from homebound.sync.protocol import (MAX_BATCH_OPS, MAX_ENTITIES_PER_MAP, PROTOCOL, InvalidOp, Op, batch_from_json,
+from homebound.sync.protocol import (MAX_BATCH_OPS, MAX_ENTITIES_PER_MAP, PRESENCE_STATES, PROTOCOL, InvalidOp, Op,
+                                     batch_from_json,
                                      key_from_text, key_text, key_to_json, message_for_peer)
 
 from .db import Database, iso, utc_now
@@ -69,6 +70,7 @@ class Presence:
     connection_id: str
     gone_since: float | None = None                      # its socket closed at this time
     afk_sent: bool = False                               # the AFK change was announced
+    state: str | None = None                             # "online" | "recent" | None (not said; protocol 2)
 
 
 class Hub:
@@ -348,18 +350,20 @@ class Hub:
             return
         entries = self.presence.setdefault(map_id, {})
         previous = entries.get(char_id)
+        state = message.get("state") if message.get("state") in PRESENCE_STATES else None
         if previous and previous.connection_id == connection.id and time.monotonic() - previous.at < 1 \
-                and previous.system_id == system_id:
+                and previous.system_id == system_id and previous.state == state:
             return   # 1 update per second per character
         if system_id is None:
             if entries.pop(char_id, None) is not None:
                 self._broadcast_presence(map_id, {"char_id": char_id, "name": names[char_id], "system_id": None,
-                                                  "at": iso(utc_now()), "afk": False})
+                                                  "at": iso(utc_now()), "afk": False, "state": None})
             return
         if not isinstance(system_id, int) or isinstance(system_id, bool) or (
                 self.system_exists and not self.system_exists(system_id)):
             return
-        entry = Presence(char_id, names[char_id], system_id, time.monotonic(), iso(utc_now()), connection.id)
+        entry = Presence(char_id, names[char_id], system_id, time.monotonic(), iso(utc_now()), connection.id,
+                         state=state)
         entries[char_id] = entry
         self._broadcast_presence(map_id, self._presence_json(entry))
 
@@ -367,7 +371,7 @@ class Hub:
         """Return a presence entry as it goes over the wire."""
         now = time.monotonic() if now is None else now
         return {"char_id": entry.char_id, "name": entry.name, "system_id": entry.system_id, "at": entry.at_iso,
-                "afk": now - entry.at > PRESENCE_AFK_SECONDS}
+                "afk": now - entry.at > PRESENCE_AFK_SECONDS, "state": entry.state}
 
     def presence_entries(self, map_id: str) -> list[dict]:
         """Return everyone shown on a map now."""
@@ -392,7 +396,7 @@ class Hub:
                     del entries[char_id]
                     dropped += 1
                     self._broadcast_presence(map_id, {"char_id": char_id, "name": entry.name, "system_id": None,
-                                                      "at": iso(utc_now()), "afk": False})
+                                                      "at": iso(utc_now()), "afk": False, "state": None})
                 elif now - entry.at > PRESENCE_AFK_SECONDS and not entry.afk_sent:
                     entry.afk_sent = True
                     self._broadcast_presence(map_id, self._presence_json(entry, now))
@@ -404,5 +408,5 @@ class Hub:
         for char_id in names:
             if self.presence.get(map_id, {}).pop(char_id, None) is not None:
                 self._broadcast_presence(map_id, {"char_id": char_id, "name": names[char_id], "system_id": None,
-                                                  "at": iso(utc_now()), "afk": False})
+                                                  "at": iso(utc_now()), "afk": False, "state": None})
 

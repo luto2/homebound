@@ -60,7 +60,7 @@ so it can be tested without a window.
 | Settings loaded, active map opened (with migration and a safety backup) | `settings.py` `Settings`; `ui/state.py` `AppState.__init__`; `mapdb/store.py` `Store`, `needs_migration` |
 | Log watcher, zKill and EVE-Scout workers started | `ui/state.py` `AppState.start` |
 | Main window, tray icon and overlay built | `ui/map_window.py` `MapWindow` |
-| Focus tracking (which EVE client is active) | `ui/focus.py` `FocusTracker`, backend in `platform/focus_linux.py` or `platform/focus_windows.py` |
+| Focus tracking (which EVE client is active, which are open) | `ui/focus.py` `FocusTracker` (`poll_windows`), backend in `platform/focus_linux.py` or `platform/focus_windows.py` (`open_eve_characters`) |
 
 ## 3. Features and where they live
 
@@ -72,7 +72,7 @@ others show or edit it.
 | Feature | Logic | UI |
 |---|---|---|
 | Reading Local chat logs (UTF-16, header, system changes) | `logs/parser.py` | — |
-| Following the newest log per character, online state | `logs/watcher.py` `LogScanner`, `LogWatcher` (`ONLINE_WINDOW`) | `ui/character_dock.py` |
+| Following the newest log per character, when it was last written ("recent": 30 min) | `logs/watcher.py` `LogScanner`, `LogWatcher` (`RECENT_WINDOW`) | `ui/character_dock.py` |
 | Log folder detection (Steam/Proton, Lutris, wine, Windows, OneDrive) | `settings.py` `detect_log_directories` and the `*_log_candidates` helpers | `ui/settings_dialog.py` (Log folder page) |
 | Turning a jump into map changes (new system, new connection, unknown k-space jump) | `mapping/tracker.py` `Tracker.on_system_change`, `add_wormhole` | `ui/state.py` `AppState.dispatch`; `ui/map_window.py` `_unknown_jump` |
 | Is a jump a wormhole? (w-space, Thera, Pochven) | `mapping/tracker.py` `is_wormhole_side` | — |
@@ -128,7 +128,7 @@ others show or edit it.
 | Legend, map tag, toasts over the map | `ui/map_window.py` `Legend`, `MapArea`; `ui/toast.py` |
 | Context menus (node, edge, background, character, route) | `ui/map_window.py` `_node_menu`, `_edge_menu`, `_background_menu`; helpers in `ui/menus.py` |
 | Find system (Ctrl+F) | `ui/map_window.py` `_refresh_find`, `_do_find` |
-| Character dock (marker, online/offline, current system, pin for overlay) | `ui/character_dock.py`; data from `ui/state.py` `AppState.character_rows`; pin in `ui/map_window.py` `pin_character` |
+| Character dock (marker, online / recent / offline, current system, pin for overlay) | `ui/character_dock.py`; data from `ui/state.py` `AppState.character_rows`, `presence`, `presence_detail`; open clients from `ui/focus.py` `FocusTracker.openCharactersChanged`; pin in `ui/map_window.py` `pin_character` |
 | System panel (details, owner, notes, signatures) | `ui/system_panel.py` |
 | Status bar (log, zKill, EVE-Scout, backup, sync labels) | `ui/map_window.py` `_build_statusbar`, `_status` |
 | Settings dialog (one page per nav item) | `ui/settings_dialog.py` `SettingsDialog`; saved through `ui/state.py` `AppState.apply_settings` |
@@ -233,8 +233,8 @@ detail.
 | Module | Owns |
 |---|---|
 | `paths.py` | Data, Documents and universe paths; packaged or checkout; read-only SQLite URIs |
-| `focus_linux.py` | KWin script install and D-Bus calls, xprop polling |
-| `focus_windows.py` | Foreground window polling, keep-on-top |
+| `focus_linux.py` | KWin script install and D-Bus calls, xprop polling, open-window list (`x11_window_titles`) |
+| `focus_windows.py` | Foreground window polling, open-window list (`window_titles`), keep-on-top |
 | `kwin/homebound-focus/` | The KWin script itself (JavaScript) |
 
 ### `homebound/theme/`

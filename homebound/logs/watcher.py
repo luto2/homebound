@@ -13,8 +13,9 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from ..validation import require_integer, require_type
 from .parser import BYTE_ORDER_MARK, LogFile, SystemChange, decode_log_bytes, parse_header, parse_system_change
 
-# Logs older than this are not "online"; their last system is still used as last known location.
-ONLINE_WINDOW = timedelta(hours=24)
+# A log written within this is "recent": the character was probably playing. An older log's last system is
+# still the last known location. Whether the client is open comes from its window (``ui/focus.py``), not the log.
+RECENT_WINDOW = timedelta(minutes=30)
 
 
 @dataclass
@@ -27,9 +28,10 @@ class CharacterState:
     offset: int = 0              # bytes consumed (always even, after BOM)
     pending: str = ""            # incomplete last line
     system: str | None = None
-    last_seen: datetime | None = None
+    last_seen: datetime | None = None    # time of the last system change in the log
     session_seen_change: bool = False
-    online: bool = False
+    last_written: datetime | None = None  # the newer of the log's file time and its session start
+    recent: bool = False                 # last_written is within RECENT_WINDOW
 
 
 @dataclass
@@ -72,7 +74,7 @@ class LogScanner:
         history doesn't create connections.
 
         Args:
-            now: The current time (UTC) for the online check, or None for the clock.
+            now: The current time (UTC) for the recent check, or None for the clock.
 
         Returns:
             The new system changes and whether the character list changed.
@@ -95,9 +97,10 @@ class LogScanner:
                 modified = datetime.fromtimestamp(log_file.path.stat().st_mtime, timezone.utc)
             except OSError:
                 continue
-            online = now - max(modified, log_file.started) < ONLINE_WINDOW
-            if online != state.online:
-                state.online = online
+            state.last_written = max(modified, log_file.started)
+            recent = now - state.last_written < RECENT_WINDOW
+            if recent != state.recent:
+                state.recent = recent
                 result.characters_changed = True
         return result
 
@@ -202,8 +205,8 @@ class LogWatcher(QObject):
             self.systemChanged.emit(change)
         if result.characters_changed:
             self.charactersChanged.emit()
-        online = sum(1 for character in self.scanner.characters.values() if character.online)
-        self.statusChanged.emit("ok", f"Logs: {len(self.scanner.characters)} characters, {online} online")
+        recent = sum(1 for character in self.scanner.characters.values() if character.recent)
+        self.statusChanged.emit("ok", f"Logs: {len(self.scanner.characters)} characters, {recent} active")
         return result
 
     @property

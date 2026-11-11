@@ -23,6 +23,7 @@ from ..sync.hlc import HybridClock
 from ..sync.local import LocalReplica
 from ..sync.protocol import peer_protocol
 from ..sync.token import TokenStore
+from ..validation import require_type
 
 log = logging.getLogger("homebound.sync")
 PING_MS = 30_000
@@ -69,7 +70,7 @@ class SyncManager(QObject):
         self.received.connect(self.engine.handle)
         self.socketState.connect(self._socket_state)
         self.replica: LocalReplica | None = None
-        self._shared: dict[tuple[str, int], int | None] = {}     # (map id, char id) -> system last sent
+        self._shared: dict[tuple[str, int], tuple] = {}     # (map id, char id) -> (system, state) last sent
         self._warned: set[str] = set()
         self._attach()
         state.mapSwitched.connect(lambda _name: self._attach())
@@ -195,7 +196,7 @@ class SyncManager(QObject):
 
     def stop(self) -> None:
         """Stop sharing locations and disconnect (app quit or sign-out)."""
-        for (map_id, char_id), system in list(self._shared.items()):
+        for (map_id, char_id), (system, _) in list(self._shared.items()):
             if system is not None:
                 self.engine.presence(map_id, char_id, None)
         self._shared.clear()
@@ -354,22 +355,41 @@ class SyncManager(QObject):
         shared = shared | {char_id} if on else shared - {char_id}
         self.state.settings.sync_presence[map_id] = sorted(shared)
         self.state.settings.save()
-        if not on and self._shared.pop((map_id, char_id), None) is not None:
+        if not on and self._shared.pop((map_id, char_id), (None, None))[0] is not None:
             self.engine.presence(map_id, char_id, None)
         self.update_presence()
 
+    def set_share_state(self, on: bool) -> None:
+        """Turn on or off telling others whether a shared character's client is open (off by default)."""
+        require_type(on, bool, "on")
+        self.state.settings.sync_presence_state = on
+        self.state.settings.save()
+        self.update_presence()
+
+    def playing(self) -> dict[int, tuple[int | None, str]]:
+        """Return the characters that count as playing now: ``{character id: (system id, presence)}``.
+
+        With a window list, only an open client counts: a closed one ends sharing at once, however
+        fresh its log. Without one (some Wayland setups) a log written in the last 30 minutes counts.
+        """
+        windows_known = self.state.open_characters is not None
+        return {character_id: (system_id, presence)
+                for character_id, _, system_id, presence, _ in self.state.character_rows()
+                if presence == "online" or (presence == "recent" and not windows_known)}
+
     def update_presence(self) -> None:
-        """Send the location of every shared, online character; ``null`` for those gone offline."""
+        """Send the location of every shared character that is playing; ``null`` for those that stopped."""
         if not self.engine.connected:
             return
-        online = {character_id: system_id for character_id, _, system_id, is_online, _ in self.state.character_rows()
-                  if is_online}
+        playing = self.playing()
+        share_state = self.state.settings.sync_presence_state
         for map_id in self.cloud_map_ids():
             for char_id in self.shared_characters(map_id):
-                system = online.get(char_id)
-                if self._shared.get((map_id, char_id), "unsent") != system:
-                    self.engine.presence(map_id, char_id, system)
-                    self._shared[(map_id, char_id)] = system
+                system, presence = playing.get(char_id, (None, None))
+                state = presence if share_state and system is not None else None
+                if self._shared.get((map_id, char_id), "unsent") != (system, state):
+                    self.engine.presence(map_id, char_id, system, state)
+                    self._shared[(map_id, char_id)] = (system, state)
 
     def _apply_presence_view(self) -> None:
         """Show other members' characters on the open map."""

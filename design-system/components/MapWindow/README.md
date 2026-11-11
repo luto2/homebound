@@ -3,7 +3,7 @@
 The main window at its 1600×1000 default: toolbar, character and routes docks (left, characters above routes), map canvas, system dock (right), status bar.
 
 - **Toolbar** (`size-toolbar`), left to right: app mark + `HOMEBOUND` wordmark · map button · home button (shows the home system, opens Settings → Home system) · naming scheme combo · `OVERLAY` caption + overlay mode as a segmented control (it's switched mid-session) · find field ("Find system (Ctrl+F)", 220px) · spacer · `Fit chain` · `⚙ Settings`.
-- **Character dock** (`size-panel-left`): marker + name + online state as text ("● online", "○ offline 2h"), and the current system as class badge + custom name + J-name. The row the overlay follows gets `accent-dim`. Full spec: CharacterDock in `missing-mockups/README.md` §10.
+- **Character dock** (`size-panel-left`): marker + name + presence as text ("● online", "◐ recent", "○ offline 2h"), and the current system as class badge + custom name + J-name. The row the overlay follows gets `accent-dim`. Full spec: CharacterDock in `missing-mockups/README.md` §10.
 - **Routes dock**: below the characters, see RoutesDock.
 - **Map button**: `▦ Main ▾` left of the home combo opens the MapMenu; with more than one map the window title becomes `Homebound · Main` and the canvas shows a `MAP Main` tag top-right.
 - **Canvas**: `bg-0` with a line grid: hairline cells of node height / 3 (≈ 20.7px) in `grid-dot`, every 3rd line (one node height) in `line-1`; minor lines drop out below 45% zoom, the whole grid below 20%. Nodes snap to the cell. Nodes and edges as specified in SystemNode and ConnectionEdge. A legend (collapsible) bottom-left, zoom bottom-right, toasts stack above the zoom.

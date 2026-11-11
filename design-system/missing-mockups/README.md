@@ -210,10 +210,10 @@ The design asks for a dot grid at `sp-24` pitch (MapWindow README, `qt-implement
 **What it does:** lists every character the log watcher has seen, where each one is, and which one the overlay follows.
 
 **Row** (44px, `size-panel-left` wide), painted by a delegate:
-- Line 1: CharacterMarker in the character's slot colour and shape · name in `ui-body` bold (`ink` online, `ink-muted` offline; elided) · online state right-aligned in `ui-small` 11px: `● online` in `success`, or `○ offline 2h` in `ink-faint` (age since last seen, left out when unknown).
+- Line 1: CharacterMarker in the character's slot colour and shape · name in `ui-body` bold (`ink` online or recent, `ink-muted` offline; elided) · presence right-aligned in `ui-small` 11px: `● online` in `success` (its client window is open), `◐ recent` in `warning` (no window seen, or no window list on this platform, but its log was written in the last 30 minutes), or `○ offline 2h` in `ink-faint` (time since the log was written, left out when unknown). Online first, then recent, then offline, each by name.
 - Line 2, indented under the name: class badge · the map name (`A2`, custom name, or the real name if not on the map) in `ink`, then the J-name in `mono-small` `ink-muted` when it differs (not for k-space). Unknown location: "Location unknown" in `ink-faint`.
 - The row the overlay follows: `accent-dim` fill and a 2px `accent` bar on the left edge. Hover: `bg-4`.
-- Tooltip: `Name (character id)`.
+- Tooltip: `Name (character id) · <where the state comes from>`: "client window open", "no client window · log written 12m ago", or "log written 3h ago" where windows can't be listed.
 
 **Behaviour:**
 - Double-click or Space selects the character's system on the map, if it's on this map.

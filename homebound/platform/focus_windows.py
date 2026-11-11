@@ -1,6 +1,7 @@
 """Focus tracking on Windows: poll the foreground window's title and rectangle through user32.
 
-Only the title is read, the same information the task bar shows; nothing touches the EVE client.
+It also lists the open EVE clients from all window titles. Only titles are read, the same information
+the task bar shows; nothing touches the EVE client.
 Homebound's own windows are recognised by process id.
 """
 import ctypes
@@ -9,6 +10,8 @@ from ctypes import wintypes
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QRect, QTimer
+
+from ..ui.focus import eve_characters
 
 if TYPE_CHECKING:
     from ..ui.focus import FocusTracker
@@ -45,6 +48,33 @@ def foreground_window(user32) -> tuple[str, int, QRect] | None:
     if not user32.GetWindowRect(window, ctypes.byref(rect)):
         return title.value, process_id.value, QRect()
     return title.value, process_id.value, QRect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top)
+
+
+def window_titles(user32) -> list[str] | None:
+    """Return the titles of all visible top-level windows (the task bar's view), to find open EVE clients.
+
+    Args:
+        user32: The user32 library (or a stand-in).
+
+    Returns:
+        The non-empty titles, or None if the windows couldn't be listed.
+    """
+    titles: list[str] = []
+
+    def collect(window, parameter) -> bool:
+        if user32.IsWindowVisible(window):
+            length = user32.GetWindowTextLengthW(window)
+            if length:
+                title = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(window, title, length + 1)
+                titles.append(title.value)
+        return True
+
+    callback_type = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)
+    callback = callback_type(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(collect)
+    if not user32.EnumWindows(callback, 0):
+        return None
+    return titles
 
 
 def keep_on_top(window_id: int, user32=None) -> bool:
@@ -90,6 +120,16 @@ class WindowsFocus(QObject):
         self._timer.start()
         self.tracker.status.emit("ok", "Windows focus: active")
         return "windows"
+
+    def open_eve_characters(self) -> set[str] | None:
+        """Return the characters whose EVE client window is open, or None if the windows can't be listed."""
+        if self.user32 is None:
+            return None
+        try:
+            titles = window_titles(self.user32)
+        except OSError:
+            return None
+        return None if titles is None else eve_characters(titles)
 
     def _poll(self) -> None:
         """Report the current foreground window."""

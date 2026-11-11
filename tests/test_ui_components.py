@@ -68,12 +68,17 @@ def test_map_settings_follow_the_app_settings(state) -> None:
 def test_remote_members_show_in_systems_and_afk_is_marked(state) -> None:
     """Shared characters of other members are listed; AFK gets a mark; a character already listed isn't doubled."""
     system = HOME.id
-    state.character_rows = lambda: [(91000001, "Kira", system, True, 1)]
+    state.character_rows = lambda: [(91000001, "Kira", system, "online", 1)]
     state.remote_presence = {91000001: {"name": "Kira", "system_id": system, "afk": False},
                              91000002: {"name": "Bob", "system_id": system, "afk": True},
                              91000003: {"name": "Elsewhere", "system_id": system + 1, "afk": False}}
     names = [name for _, name, _ in state.characters_in(system)]
     assert names == ["Kira", "Bob (AFK)"]
+    state.remote_presence[91000002] |= {"afk": False, "state": "recent"}
+    state.remote_presence[91000004] = {"name": "Cat", "system_id": system, "afk": False, "state": "online"}
+    assert [name for _, name, _ in state.characters_in(system)] == ["Kira", "Bob (recent)", "Cat"]
+    state.character_rows = lambda: [(91000001, "Kira", system, "recent", 1), (5, "Gone", system, "offline", 2)]
+    assert [name for _, name, _ in state.characters_in(system)][0] == "Kira"      # recent counts, offline doesn't
 
 
 def test_state_construction(state, tmp_path) -> None:
@@ -374,6 +379,34 @@ def test_a_system_placed_from_elsewhere_gets_a_name_once(state) -> None:
     assert state._name_new_systems(Action()) == 0
 
 
+def test_presence_comes_from_the_client_window_then_the_log(state, tmp_path) -> None:
+    """An open client is online whatever the log says; without one a fresh log is recent, an old one offline.
+
+    Without a window list (None) the log alone decides. The detail says where the state comes from.
+    """
+    write_character_log(tmp_path, 3, "Amy", HOME.name)
+    write_character_log(tmp_path, 4, "Bob", "Jita")
+    state.watcher.poll()
+    amy, bob = state.watcher.characters[3], state.watcher.characters[4]
+    now = datetime.now(timezone.utc)
+    amy.recent, amy.last_written = False, now - timedelta(hours=3)
+    bob.recent, bob.last_written = True, now - timedelta(minutes=12)
+    changes = spy(state.charactersChanged)
+    state.set_open_characters({"Amy"})
+    assert len(changes) == 1 and state.open_characters == {"Amy"}
+    state.set_open_characters({"Amy"})
+    assert len(changes) == 1                                   # no change, no signal
+    assert (state.presence(3), state.presence(4)) == ("online", "recent")
+    assert state.presence_detail(3) == "client window open"
+    assert state.presence_detail(4) == "no client window · log written 12m ago"
+    state.set_open_characters(None)                            # this platform can't list windows
+    assert (state.presence(3), state.presence(4)) == ("offline", "recent")
+    assert state.presence_detail(4) == "log written 12m ago" and state.presence_detail(3) == "log written 3h ago"
+    assert state.presence(99) == "offline" and state.presence_detail(99) == "no log seen"
+    with pytest.raises(TypeError):
+        state.set_open_characters(["Amy"])
+
+
 def test_character_rows_merge_database_and_logs(state, tmp_path) -> None:
     """Rows combine mapped characters and scanned logs: online first, then by name."""
     c5 = pick_system("C5", exclude={HOME.id})
@@ -383,17 +416,20 @@ def test_character_rows_merge_database_and_logs(state, tmp_path) -> None:
     write_character_log(tmp_path, 4, "Bob", "Jita")
     state.watcher.poll()
     for character in state.watcher.characters.values():
-        character.online = character.character_id == 4
+        character.recent = character.character_id == 4
     rows = state.character_rows()
     jita = UNIVERSE.by_name("Jita")
     # the polled logs also moved Amy and Bob through the tracker, so their locations are the log ones
-    assert [row[:4] for row in rows] == [(4, "Bob", jita.id, True), (3, "Amy", HOME.id, False),
-                                         (2, "Zed", c5.id, False)]
+    assert [row[:4] for row in rows] == [(4, "Bob", jita.id, "recent"), (3, "Amy", HOME.id, "offline"),
+                                         (2, "Zed", c5.id, "offline")]
     assert rows[0][4] == state.settings.slot_for(4)
+    state.set_open_characters({"Amy"})
+    assert [row[3] for row in state.character_rows()] == ["online", "recent", "offline"]
+    state.set_open_characters(None)
     state.watcher.characters[4].name = None  # the stored name stays
     assert state.character_rows()[0][1] == "Bob"
-    state.watcher.characters[6] = CharacterState(6, online=True)  # scanned but nameless and unmapped
-    assert state.character_rows()[0][:4] == (6, "6", None, True)
+    state.watcher.characters[6] = CharacterState(6, recent=True)  # scanned but nameless and unmapped
+    assert state.character_rows()[0][:4] == (6, "6", None, "recent")
     assert state.character_location(6) is None
     assert state.character_by_name(" zed ") == 2 and state.character_by_name("nobody") is None
     assert state.character_location(2) == c5.id and state.character_location(77) is None
@@ -404,10 +440,14 @@ def test_character_rows_merge_database_and_logs(state, tmp_path) -> None:
 
 
 def test_characters_in_only_online(state) -> None:
-    """Only online characters count as being in a system."""
+    """Only online (client open) or recent (fresh log) characters count as being in a system."""
     state.store.set_character(2, "Zed", HOME.id, "2026-10-30T12:00:00+00:00")
     assert state.characters_in(HOME.id) == []
-    state.watcher.characters[2] = SimpleNamespace(character_id=2, name="Zed", online=True, last_seen=None)
+    state.watcher.characters[2] = SimpleNamespace(character_id=2, name="Zed", recent=True, last_seen=None)
+    assert state.characters_in(HOME.id) == [(2, "Zed", state.settings.slot_for(2))]
+    state.watcher.characters[2].recent = False
+    assert state.characters_in(HOME.id) == []
+    state.set_open_characters({"Zed"})
     assert state.characters_in(HOME.id) == [(2, "Zed", state.settings.slot_for(2))]
 
 
@@ -999,17 +1039,23 @@ def test_dock_reload_and_paint_states(dock_setup, tmp_path) -> None:
     put_character(state, 4, "Bob", None)
     put_character(state, 6, "Cat", UNIVERSE.by_name("Jita").id)
     state.watcher.poll()
-    state.watcher.characters[3].online = True
+    state.set_open_characters({"Amy"})
     state.set_followed(3)
-    assert dock.count() == 3 and dock.item(0).toolTip() == "Amy (3)"
+    assert dock.count() == 3 and dock.item(0).toolTip() == "Amy (3) · client window open"
     assert dock.grab().width() > 0
-    state.watcher.characters[3].online = False
+    state.set_open_characters(set())
+    state.watcher.characters[3].recent = True
+    dock.reload()
+    assert dock.item(0).toolTip().startswith("Amy (3) · no client window · log written ")
+    assert dock.grab().width() > 0                            # the recent row paints too
+    state.watcher.characters[3].recent = False
     dock.reload()
     delegate = dock.itemDelegate()
     assert isinstance(delegate, CharacterDelegate)
-    assert delegate.online_text(3, True) == "● online"
-    assert delegate.online_text(3, False).startswith("○ offline ")
-    assert delegate.online_text(4, False) == "○ offline"
+    assert delegate.online_text(3, "online") == "● online"
+    assert delegate.online_text(3, "recent") == "◐ recent"
+    assert delegate.online_text(3, "offline").startswith("○ offline ")
+    assert delegate.online_text(4, "offline") == "○ offline"
     assert delegate.sizeHint(None, None).height() == 44
     dock.setCurrentRow(1)
     dock.grab()

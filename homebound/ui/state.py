@@ -12,7 +12,7 @@ from ..logs.watcher import LogWatcher
 from ..mapdb.store import LEGACY_NAMES_KEY, Action, Store, utc_now_iso
 from ..mapping.chain import Chain, resolve_chain
 from ..mapping.naming import Namer, freeze_legacy_names, label_unnamed_systems, needs_label
-from ..mapping.scan_status import ScanStatus, format_duration, scan_status
+from ..mapping.scan_status import ScanStatus, age_text, format_duration, scan_status
 from ..mapping.tracker import AutoNamed, MapChanged, Moved, NamingRequest, Tracker, UnknownJump
 from ..settings import Settings
 from ..universe.db import Universe
@@ -21,6 +21,7 @@ from ..zkill import ZkillFetcher
 
 EXPIRY_INTERVAL_MS = 5 * 60 * 1000
 SCAN_AGE_INTERVAL_MS = 60 * 1000
+PRESENCE_ORDER = {"online": 0, "recent": 1, "offline": 2}    # how character_rows sorts
 
 
 # SQLite errors that mean the file itself is damaged; locked, read-only or missing-folder errors don't count
@@ -175,6 +176,8 @@ class AppState(QObject):
         self.followed: int | None = None  # character whose client is focused
         # other members' shared characters on the open cloud map: char id -> {"name", "system_id", "afk"}
         self.remote_presence: dict[int, dict] = {}
+        # names of the characters whose client window is open; None: this platform can't list windows
+        self.open_characters: set[str] | None = None
         self.watcher = LogWatcher(settings.log_directory)
         self.watcher.systemChanged.connect(self.on_system_change)
         self.watcher.charactersChanged.connect(self.charactersChanged)
@@ -684,23 +687,67 @@ class AppState(QObject):
         self.followedChanged.emit(character_id)
         return True
 
-    def character_rows(self) -> list[tuple[int, str, int | None, bool, int]]:
+    def set_open_characters(self, names: set[str] | None) -> bool:
+        """Take the characters whose client window is open (``FocusTracker.openCharactersChanged``).
+
+        Args:
+            names: Character names, or None when this platform can't list windows (then the log decides).
+
+        Returns:
+            True if it changed (``charactersChanged`` was emitted).
+
+        Raises:
+            TypeError: If ``names`` is neither a set nor None.
+        """
+        require_type(names, (set, frozenset, type(None)), "names")
+        if names == self.open_characters:
+            return False
+        self.open_characters = None if names is None else set(names)
+        self.charactersChanged.emit()
+        return True
+
+    def presence(self, character_id: int, name: str | None = None) -> str:
+        """Return ``"online"`` (client window open), ``"recent"`` (log written in the last 30 minutes) or ``"offline"``.
+
+        Args:
+            character_id: The character.
+            name: Its name, if the caller knows it better than the watcher.
+        """
+        require_integer(character_id, "character_id")
+        scanned = self.watcher.characters.get(character_id)
+        name = name or (scanned.name if scanned else None)
+        if self.open_characters is not None and name and name in self.open_characters:
+            return "online"
+        return "recent" if scanned and scanned.recent else "offline"
+
+    def presence_detail(self, character_id: int) -> str:
+        """Return where a character's presence comes from, for the tooltip: "client window open", "log written 12m ago"."""
+        require_integer(character_id, "character_id")
+        if self.presence(character_id) == "online":
+            return "client window open"
+        scanned = self.watcher.characters.get(character_id)
+        if scanned is None or scanned.last_written is None:
+            return "no log seen"
+        written = f"log written {age_text(scanned.last_written.isoformat())} ago"
+        return written if self.open_characters is None else f"no client window · {written}"
+
+    def character_rows(self) -> list[tuple[int, str, int | None, str, int]]:
         """Return every character, merged from the watcher and the map.
 
         Returns:
-            ``(character_id, name, system_id, online, marker slot)``, online characters first, then by name.
+            ``(character_id, name, system_id, presence, marker slot)`` with the presence of :meth:`presence`;
+            online characters first, then recent, then offline, each by name.
         """
         merged = {}
         for row in self.store.characters():
-            merged[row["id"]] = [row["id"], row["name"], row["system_id"], False]
+            merged[row["id"]] = [row["id"], row["name"], row["system_id"]]
         for character_id, scanned in self.watcher.characters.items():
-            row = merged.setdefault(character_id, [character_id, scanned.name or str(character_id), None, False])
-            row[3] = scanned.online
+            row = merged.setdefault(character_id, [character_id, scanned.name or str(character_id), None])
             if scanned.name:
                 row[1] = scanned.name
-        rows = [(character_id, name, system_id, online, self.settings.slot_for(character_id))
-                for character_id, name, system_id, online in merged.values()]
-        return sorted(rows, key=lambda row: (not row[3], (row[1] or "").lower()))
+        rows = [(character_id, name, system_id, self.presence(character_id, name), self.settings.slot_for(character_id))
+                for character_id, name, system_id in merged.values()]
+        return sorted(rows, key=lambda row: (PRESENCE_ORDER[row[3]], (row[1] or "").lower()))
 
     def character_location(self, character_id: int) -> int | None:
         """Return the system a character is in, or None if unknown."""
@@ -711,18 +758,18 @@ class AppState(QObject):
         return None
 
     def characters_in(self, system_id: int) -> list[tuple[int, str, int]]:
-        """Return the online characters in a system as ``(character_id, name, marker slot)``.
+        """Return the characters in a system that are online or recent, as ``(character_id, name, marker slot)``.
 
-        On a cloud map, other members' shared characters are included; an AFK one is marked.
+        On a cloud map, other members' shared characters are included; an AFK or log-only (recent) one is marked.
         """
-        here = [(character_id, name, slot) for character_id, name, location, online, slot in self.character_rows()
-                if location == system_id and online]
+        here = [(character_id, name, slot) for character_id, name, location, presence, slot in self.character_rows()
+                if location == system_id and presence != "offline"]
         mine = {character_id for character_id, *_ in here}
         for character_id, entry in self.remote_presence.items():
             if entry.get("system_id") == system_id and character_id not in mine:
                 name = entry.get("name") or str(character_id)
-                here.append((character_id, f"{name} (AFK)" if entry.get("afk") else name,
-                             self.settings.slot_for(character_id)))
+                mark = " (AFK)" if entry.get("afk") else " (recent)" if entry.get("state") == "recent" else ""
+                here.append((character_id, name + mark, self.settings.slot_for(character_id)))
         return here
 
     def character_by_name(self, name: str) -> int | None:

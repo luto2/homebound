@@ -76,10 +76,12 @@ What a version added to the ops is listed in `protocol.GATED_FIELDS` and `GATED_
 
 | dir | message | fields |
 |---|---|---|
-| C→S | `presence` | `map`, `char_id`, `system_id` (null = offline / stop sharing) |
-| S→C | `presence` | `map`, `char_id`, `name`, `system_id`, `at` |
+| C→S | `presence` | `map`, `char_id`, `system_id` (null = offline / stop sharing), `state` (protocol 2, optional) |
+| S→C | `presence` | `map`, `char_id`, `name`, `system_id`, `at`, `afk`, `state` (protocol 2) |
 | S→C | `presence_all` | `map`, `entries[]` (sent on join) |
 
+- **Protocol 2** adds `state` to both directions (`protocol.GATED_PRESENCE_FIELDS`): `"online"` (the character's client window is open) or `"recent"` (no window list on that computer, but the log was written in the last 30 minutes). The client sends it only to a protocol 2 server and only when the user turned on "Also share whether the game is open" (off by default); the server relays `null` for "not said" (an old client, or the switch off) and strips the field for protocol 1 sockets. Any other value counts as `null`.
+- A client shares a character while it is playing: its client window is open, or, where windows can't be listed, its log was written in the last 30 minutes. A client that is seen to close sends `system_id: null` at once (before protocol 2 the client kept sharing for 24 hours after the last log write).
 - Presence is kept in memory only. After 1 h without an update the character shows as AFK. `system_id: null`, or the client's socket being gone for 10 minutes, drops it (plan §3).
 - The S→C `presence` also carries `afk: true|false`.
 - The server only accepts presence for characters linked to the sending account.

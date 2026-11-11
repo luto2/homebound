@@ -92,6 +92,14 @@ def test_scrim_paints(qt_application) -> None:
     assert image.pixelColor(5, 5).alpha() > 0
 
 
+def test_open_clients_reach_the_character_list(window) -> None:
+    """The focus tracker's list of open clients is what the character dock's "● online" shows."""
+    window.focus.openCharactersChanged.emit({"Kira"})
+    assert window.state.open_characters == {"Kira"}
+    window.focus.openCharactersChanged.emit(None)
+    assert window.state.open_characters is None
+
+
 def test_map_area_zoom_label_and_tag(window) -> None:
     """Zoom changes update the label, and the map tag only shows for a name."""
     area = window.area

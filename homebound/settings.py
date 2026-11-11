@@ -83,6 +83,9 @@ class Settings:
     sync_server: str = "https://homebound.luthopian.de"
     sync_client_id: str = ""              # random per install, the LWW tie-breaker; made on first use
     sync_presence: dict = field(default_factory=dict)   # cloud map id -> character IDs whose location is shared
+    # also tell others whether a shared character's client window is open ("online") or only its log is fresh
+    # ("recent"); off by default: only the location leaves the computer (plan-online-indicator.md)
+    sync_presence_state: bool = False
     # Separate maps, each its own SQLite file with its own home and naming scheme.
     # home_system / naming_scheme above always hold the active map's values.
     maps: dict = field(default_factory=dict)            # name -> {"file", "home_system", "naming_scheme"}
