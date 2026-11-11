@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
-from .protocol import CREATED_FIELD, Op, key_text
+from .protocol import CREATED_FIELD, Op, defaults_left_out, key_text
 
 PLACEMENT = "placement"
 
@@ -260,8 +260,13 @@ def stamp_server_times(state: MapState, ops: list[Op], now_iso: str) -> tuple[li
     stamped_ops, stamped = [], {}
     for op in ops:
         values = {}
+        current = state.get(op.entity, op.key)
+        if op.full and not (current and current.exists):
+            # an older sender's full upsert lacks the newer fields: they start over, not where the delete left them
+            left_out = defaults_left_out(op)
+            if left_out:
+                op = op.with_fields(**left_out)
         if op.full and op.entity in CREATED_FIELD:
-            current = state.get(op.entity, op.key)
             created_field = CREATED_FIELD[op.entity]
             if current and current.exists and current.fields.get(created_field):
                 values[created_field] = current.fields[created_field]

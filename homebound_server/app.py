@@ -13,7 +13,7 @@ from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Re
 from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from homebound.sync.protocol import CLIENT_ID, MAX_MESSAGE_BYTES, MIN_PROTOCOL, PROTOCOL
+from homebound.sync.protocol import CLIENT_ID, MAX_MESSAGE_BYTES, MIN_PROTOCOL, PROTOCOL, peer_protocol
 
 from .auth import AuthError
 from .billing import BillingError
@@ -353,7 +353,7 @@ def create_app(service: Service) -> Starlette:
                                            "detail": "too many sockets"})
                         break
                     connection = Connection(current["account_id"], client_id, deliver,
-                                            web=bool(message.get("web")))
+                                            web=bool(message.get("web")), protocol=peer_protocol(message["protocol"]))
                     sockets[current["account_id"]].add(connection.id)
                     outbox.put_nowait({"t": "welcome", "re": request_id, "account_id": current["account_id"],
                                        "protocol": PROTOCOL,

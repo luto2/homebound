@@ -21,6 +21,7 @@ from ..sync.client import SocketWorker
 from ..sync.engine import MapInfo, SyncEngine
 from ..sync.hlc import HybridClock
 from ..sync.local import LocalReplica
+from ..sync.protocol import peer_protocol
 from ..sync.token import TokenStore
 
 log = logging.getLogger("homebound.sync")
@@ -278,7 +279,10 @@ class SyncManager(QObject):
         """
         settings = self.state.settings
         replica = LocalReplica(self.state.store)
-        ops = replica.snapshot_ops(self.engine.clock, self.engine.client_id)
+        # the version gate: upload only what the server knows (an old server refuses the rest)
+        server_protocol = (self.engine.server_protocol if self.engine.connected
+                           else peer_protocol(self.api.account().get("protocol")))
+        ops = replica.snapshot_ops(self.engine.clock, self.engine.client_id, server_protocol)
         result = self.api.create_map(settings.active_map, self.engine.client_id, ops, corp, char_id)
         replica.link(result["map_id"], self.server)
         replica.seed(ops)

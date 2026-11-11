@@ -15,7 +15,7 @@ import json
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, NamedTuple
 
 from ..mapdb.store import MAP_SETTING_KEYS, MASS_STATES, Action, Change
 from ..mapping.naming import SCHEMES
@@ -23,7 +23,7 @@ from ..mapping.signature_parser import GROUP_ORDER, SIGNATURE_ID_PATTERN
 from ..universe.db import SIZES
 from .hlc import is_hlc
 
-PROTOCOL = 1
+PROTOCOL = 2
 MIN_PROTOCOL = 1               # the oldest protocol version the server still accepts
 
 CLIENT_ID = re.compile(r"^[0-9a-f]{8,32}$")
@@ -111,6 +111,118 @@ LAYOUT_FIELDS = ("x", "y")                     # only sent with a full upsert
 # system placement), so the numeric names agree.
 LOCAL_SYSTEM_FIELDS = ("label", "static", "next_hole")
 CREATED_FIELD = {"system": "added_at", "connection": "created_at", "signature": "created_at"}
+
+
+# ---------------------------------------------------------------- the version gate
+
+class GatedField(NamedTuple):
+    """A field that a protocol version added: who may get it, and its value when an older sender leaves it out."""
+
+    since: int
+    default: Any
+
+
+# What each protocol version added on top of version 1 (protocol §3, "Versioning"). An older peer
+# refuses a field or entity it doesn't know (``op_from_json``), so each side sends these only to a
+# peer whose protocol is at least ``since``: the client takes the server's version from ``welcome``,
+# the server keeps what each socket said in ``hello`` and strips the rest (:func:`message_for_peer`).
+GATED_FIELDS: dict[str, dict[str, GatedField]] = {}
+GATED_ENTITIES: dict[str, int] = {}                 # entity -> the version that added it
+
+
+def peer_protocol(value: Any) -> int:
+    """Return the protocol version a peer speaks, from the number it sent (``hello`` or ``welcome``).
+
+    A missing or odd value counts as version 1 (the servers and clients from before the gate); a
+    newer one than ours counts as ours, since we can't send what we don't know.
+    """
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        return 1
+    return min(value, PROTOCOL)
+
+
+def knows_entity(entity: Any, protocol: int) -> bool:
+    """Return whether a peer that speaks ``protocol`` knows an entity."""
+    return protocol >= GATED_ENTITIES.get(entity, 1)
+
+
+def unknown_fields(entity: Any, protocol: int) -> set[str]:
+    """Return the fields of an entity that a peer speaking ``protocol`` doesn't know."""
+    return {name for name, gated in GATED_FIELDS.get(entity, {}).items() if protocol < gated.since}
+
+
+def op_for_peer(message: dict, protocol: int) -> dict | None:
+    """Return a wire op as a peer speaking ``protocol`` may get it, or None if nothing of it is left.
+
+    An op of an entity the peer doesn't know goes; fields it doesn't know are taken out. A plain
+    update that is left with nothing to change goes too (a full upsert, a placement or a delete stays).
+    """
+    entity = message.get("e")
+    if not knows_entity(entity, protocol):
+        return None
+    hidden = unknown_fields(entity, protocol)
+    values = message.get("f")
+    if not hidden or not isinstance(values, dict) or not hidden & set(values):
+        return message
+    stripped = dict(message)
+    stripped["f"] = {name: value for name, value in values.items() if name not in hidden}
+    if not stripped["f"]:
+        del stripped["f"]
+        if not (stripped.get("full") or stripped.get("del") or "placement" in stripped):
+            return None
+    return stripped
+
+
+def ops_for_peer(ops: list[dict], protocol: int) -> list[dict]:
+    """Return the ops of a batch as a peer speaking ``protocol`` may get them (see :func:`op_for_peer`)."""
+    return [op for message in ops if (op := op_for_peer(message, protocol)) is not None]
+
+
+def entity_for_peer(item: dict, protocol: int) -> dict | None:
+    """Return a merged-state entry (``{"e", "k", "f", "clocks", "alive", "dead"}``) for a peer, or None.
+
+    An entity the peer doesn't know goes; fields it doesn't know leave both ``f`` and ``clocks``.
+    """
+    entity = item.get("e")
+    if not knows_entity(entity, protocol):
+        return None
+    hidden = unknown_fields(entity, protocol)
+    if not hidden:
+        return item
+    return item | {part: {name: value for name, value in (item.get(part) or {}).items() if name not in hidden}
+                   for part in ("f", "clocks")}
+
+
+def message_for_peer(message: dict, protocol: int) -> dict:
+    """Return a server message as a socket speaking ``protocol`` may get it (the input isn't changed).
+
+    Ops, batches, snapshots and conflict states lose what the peer doesn't know. A batch is never
+    dropped, only emptied, so an older client sees no ``seq`` gap and doesn't ask for it again.
+    """
+    if protocol >= PROTOCOL:
+        return message
+    kind = message.get("t")
+    if kind == "ops":
+        return message | {"ops": ops_for_peer(message.get("ops", []), protocol)}
+    if kind == "ops_since":
+        return message | {"batches": [batch | {"ops": ops_for_peer(batch.get("ops", []), protocol)}
+                                      for batch in message.get("batches", [])]}
+    if kind in ("snapshot", "reject"):
+        part = "entities" if kind == "snapshot" else "current"
+        return message | {part: [entry for item in message.get(part, [])
+                                 if (entry := entity_for_peer(item, protocol)) is not None]}
+    return message
+
+
+def defaults_left_out(op: "Op") -> dict:
+    """Return the gated fields a full upsert left out, with their default values (empty for other ops).
+
+    A full upsert from an older sender doesn't carry the fields it doesn't know. When it brings an
+    entity (back) to life, those fields must not keep the values the entity had before its delete.
+    """
+    if not op.full:
+        return {}
+    return {name: gated.default for name, gated in GATED_FIELDS.get(op.entity, {}).items() if name not in op.fields}
 
 
 # ---------------------------------------------------------------- ops

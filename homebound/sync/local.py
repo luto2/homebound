@@ -17,8 +17,8 @@ from typing import Any
 from ..mapdb.store import ENTITY_TABLES, ENTITY_WHERE, MAP_SETTING_KEYS, Action, Store, key_values, utc_now_iso
 from .hlc import HybridClock
 from .merge import Effect, EntityState, MapState, apply_op
-from .protocol import (FIELDS, LAYOUT_FIELDS, Op, full_ops_for_rows, key_from_json, key_from_text, key_text,
-                       op_from_json, ops_from_action, row_key)
+from .protocol import (FIELDS, LAYOUT_FIELDS, PROTOCOL, Op, full_ops_for_rows, key_from_json, key_from_text, key_text,
+                       op_from_json, ops_for_peer, ops_from_action, row_key)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sync_meta (key TEXT PRIMARY KEY, value TEXT);
@@ -132,13 +132,19 @@ class LocalReplica:
         return [{"t": "push", "map": self.map_id, "batch_id": row[0], "ops": json.loads(row[1])}
                 for row in self.database.execute("SELECT batch_id, payload FROM sync_outbox ORDER BY seq")]
 
-    def snapshot_ops(self, clock: HybridClock, client_id: str) -> list[dict]:
-        """Return full upserts of the whole map, to upload it as a new cloud map (plan §15)."""
+    def snapshot_ops(self, clock: HybridClock, client_id: str, protocol: int = PROTOCOL) -> list[dict]:
+        """Return full upserts of the whole map, to upload it as a new cloud map (plan §15).
+
+        Args:
+            clock: The HLC.
+            client_id: This install's client ID.
+            protocol: What the server speaks; what it doesn't know is left out (the version gate).
+        """
         rows: dict[str, list[dict]] = {}
         for entity, table in ENTITY_TABLES.items():
             rows[entity] = [dict(row) for row in self.database.execute(f"SELECT * FROM {table}")]
         rows["setting"] = [row for row in rows["setting"] if row["key"] in MAP_SETTING_KEYS]
-        return [op.to_json() for op in full_ops_for_rows(rows, clock.tick(), client_id)]
+        return ops_for_peer([op.to_json() for op in full_ops_for_rows(rows, clock.tick(), client_id)], protocol)
 
     def seed(self, ops: list[dict]) -> None:
         """Take the uploaded snapshot into the local clocks (the map was just made from it)."""

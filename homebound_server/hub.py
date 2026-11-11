@@ -14,8 +14,8 @@ from typing import Any
 
 from homebound.sync.hlc import HybridClock
 from homebound.sync.merge import BatchRejected, EntityState, MapState, check_batch, stamp_server_times
-from homebound.sync.protocol import (MAX_BATCH_OPS, MAX_ENTITIES_PER_MAP, InvalidOp, Op, batch_from_json,
-                                     key_from_text, key_text, key_to_json)
+from homebound.sync.protocol import (MAX_BATCH_OPS, MAX_ENTITIES_PER_MAP, PROTOCOL, InvalidOp, Op, batch_from_json,
+                                     key_from_text, key_text, key_to_json, message_for_peer)
 
 from .db import Database, iso, utc_now
 from .maps import EDIT_ROLES, Maps
@@ -34,12 +34,17 @@ class Connection:
 
     account_id: int
     client_id: str
-    send: Callable[[dict], object]
+    deliver: Callable[[dict], object]                   # writes a message to the socket as it is
     web: bool = False                                   # the read-only web view (receive only)
+    protocol: int = PROTOCOL                            # what the client said in hello (protocol.peer_protocol)
     maps: set[str] = field(default_factory=set)
     tokens: float = BURST
     refilled: float = field(default_factory=time.monotonic)
     id: str = field(default_factory=lambda: uuid.uuid4().hex)
+
+    def send(self, message: dict) -> None:
+        """Send a message, without what the client's protocol doesn't know (the version gate)."""
+        self.deliver(message_for_peer(message, self.protocol))
 
     def allow_batch(self) -> bool:
         """Token bucket: 20 batches burst, 5 per second sustained."""

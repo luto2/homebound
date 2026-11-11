@@ -11,7 +11,7 @@ from pathlib import Path
 import httpx
 
 from homebound.sync.merge import BatchRejected, MapState, check_batch
-from homebound.sync.protocol import InvalidOp, batch_from_json
+from homebound.sync.protocol import PROTOCOL, InvalidOp, batch_from_json
 from homebound.universe.db import Universe, load_universe
 
 from .access import Access
@@ -109,7 +109,7 @@ class Service:
         row = self.billing.row(payer_id)
         total, prices = self.billing.total(payer_id)
         account = self.db.one("SELECT * FROM accounts WHERE id=?", (account_id,))
-        return {"account_id": account_id, "characters": self.auth.characters(account_id),
+        return {"account_id": account_id, "characters": self.auth.characters(account_id), "protocol": PROTOCOL,
                 "payer_code": row["code"], "balance": round(row["balance_isk"]), "paid_until": row["paid_until"],
                 "state": self.billing.evaluate(payer_id), "price_month": total, "prices": prices,
                 "map_limit": account["map_limit"], "free_maps": self.billing.free_maps_of(payer_id),

@@ -14,7 +14,7 @@ from typing import Any
 from ..mapdb.store import Action
 from .hlc import HybridClock
 from .local import LocalReplica
-from .protocol import PROTOCOL
+from .protocol import MIN_PROTOCOL, PROTOCOL, ops_for_peer, peer_protocol
 
 log = logging.getLogger("homebound.sync")
 REVERT_CODES = ("conflict", "read_only", "forbidden", "invalid", "too_large")
@@ -68,6 +68,7 @@ class SyncEngine:
         self.account_id: int | None = None
         self.characters: list[dict] = []
         self.connected = False
+        self.server_protocol = MIN_PROTOCOL     # what the server's welcome said it speaks (the version gate)
         self.request_id = 100
         # callbacks for the UI
         self.on_changed: Callable[[str, Action], object] = lambda map_id, action: None
@@ -89,6 +90,7 @@ class SyncEngine:
     def hello(self, token: str) -> dict:
         """Return the ``hello`` message for a new socket."""
         self.connected = False
+        self.server_protocol = MIN_PROTOCOL
         for info in self.maps.values():
             info.joined = False
         return {"t": "hello", "id": 1, "token": token, "protocol": PROTOCOL, "app": self.app_version,
@@ -117,15 +119,32 @@ class SyncEngine:
         """Record a local action of a cloud map and push it (it waits in the outbox when offline)."""
         message = replica.record(action, self.clock, self.client_id)
         if message is not None and self.connected and self.info(map_id).joined:
-            self.send(message | {"id": self._next_id()})
+            self._push(replica, message)
         return message
 
+    def _push(self, replica: LocalReplica, batch: dict) -> bool:
+        """Send an outbox batch with only what the server's protocol knows.
+
+        A batch with nothing left for this server is taken out of the outbox: the server can't take
+        it, so it would wait there forever. Its values stay on this computer.
+
+        Returns:
+            Whether anything was sent.
+        """
+        ops = ops_for_peer(batch["ops"], self.server_protocol)
+        if not ops:
+            replica.drop_batch(batch["batch_id"])
+            return False
+        self.send(batch | {"ops": ops, "id": self._next_id()})
+        return True
+
     def _resend(self, map_id: str, replica: LocalReplica) -> int:
-        """Push the whole outbox again, in order (protocol §9)."""
-        batches = replica.outbox()
-        for batch in batches:
-            self.send(batch | {"id": self._next_id()})
-        return len(batches)
+        """Push the whole outbox again, in order (protocol §9).
+
+        Returns:
+            The number of batches sent.
+        """
+        return sum(self._push(replica, batch) for batch in replica.outbox())
 
     # ------------------------------------------------------------ incoming
     def handle(self, message: dict) -> None:
@@ -141,6 +160,7 @@ class SyncEngine:
 
     def _on_welcome(self, message: dict) -> None:
         self.connected = True
+        self.server_protocol = peer_protocol(message.get("protocol"))
         self.account_id = message.get("account_id")
         self.characters = message.get("characters", [])
         for map_id in self.map_ids():

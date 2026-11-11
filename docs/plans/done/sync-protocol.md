@@ -28,9 +28,18 @@ The server ignores unknown fields, and so does the client. That lets each side a
 
 ## 3. Versioning
 
-- `hello` carries `protocol: 1` and `app: "0.4.2"`.
+- `hello` carries `protocol: 2` and `app: "0.4.2"`; `welcome` carries the server's `protocol` too. The current version is **2** (since 2026-11-11); version 1 is everything from before the version gate.
 - The server supports the current protocol version and the one before it. An older client gets `error{code: "upgrade_required", min_app: "…"}` and the app shows "Please update Homebound to keep syncing". Local editing keeps working.
-- A breaking change bumps `protocol`. Adding optional fields doesn't.
+- A breaking change bumps `protocol`. Adding optional fields to a message doesn't, but adding a field or entity to the **ops** does: `op_from_json` refuses what it doesn't know, so an old server would reject the batch as `invalid` and an old client would fail on it and ask for it again forever.
+
+### The version gate
+
+What a version added to the ops is listed in `protocol.GATED_FIELDS` and `GATED_ENTITIES`, with the version that added it. Each side only sends those to a peer that speaks at least that version:
+
+- **The server** keeps each socket's `hello.protocol` (`protocol.peer_protocol`: a missing or odd value is 1, a higher one than its own is its own). Everything it sends a socket goes through `protocol.message_for_peer`: `ops`, `ops_since` batches, `snapshot` entities and `reject.current` lose the fields and entities that socket doesn't know (from `f` and `clocks`). A batch is never dropped, only emptied, so an old client's `seq` has no gap.
+- **The client** takes the server's version from `welcome.protocol` (missing: 1, a server from before the gate). It strips its pushes the same way (`protocol.ops_for_peer`), the outbox resend too; a batch with nothing left is taken out of the outbox instead of being sent (its values stay local). The upload of a new cloud map (`POST /api/maps`) is stripped by the same rule; `GET /api/account` says the server's `protocol` for when the socket isn't up yet.
+- **A full upsert from an older sender** doesn't carry the new fields. When it brings an entity (back) to life, the server fills them with their defaults (`GatedField.default`, in `merge.stamp_server_times`), so a deleted system that an old client re-adds doesn't come back with the label it had before. A full upsert of a live entity leaves them alone.
+- An op that reaches a server from an older client never has gated parts, so the server always checks ops against the full current schema.
 
 ## 4. Messages
 
@@ -38,7 +47,7 @@ The server ignores unknown fields, and so does the client. That lets each side a
 
 | dir | message | fields | reply |
 |---|---|---|---|
-| C→S | `hello` | `token`, `protocol`, `app`, `client_id` (a random ID, stable per install) | `welcome{account_id, characters[], server_time}` or `error` |
+| C→S | `hello` | `token`, `protocol`, `app`, `client_id` (a random ID, stable per install) | `welcome{account_id, protocol, characters[], server_time}` or `error` |
 | C→S | `ping` | — | `pong{server_time}` |
 | S→C | `bye` | `reason` (`session_revoked`, `server_restart`, `upgrade_required`) | the socket then closes |
 
