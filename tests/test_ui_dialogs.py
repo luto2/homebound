@@ -935,3 +935,14 @@ def test_completer_delegate_paints_selected_and_reasons(state) -> None:
                 option.state |= QStyle.StateFlag.State_Selected
             delegate.paint(painter, option, index)
     painter.end()
+
+
+def test_prompt_check_box(qt_application) -> None:
+    """A prompt can carry a check box with its own start state; without one there is none."""
+    plain = make_prompt("ok")
+    assert plain.check is None and plain.is_checked() is False
+    dialog = PromptDialog(None, "T", "s", "F", "x", validate=lambda text: (True, ""), primary="Go",
+                          check_text="Remember this name", checked=True)
+    assert dialog.check.text() == "Remember this name" and dialog.is_checked()
+    dialog.check.setChecked(False)
+    assert not dialog.is_checked()

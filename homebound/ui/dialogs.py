@@ -468,7 +468,8 @@ class PromptDialog(BaseDialog):
 
     def __init__(self, parent: QWidget | None, title: str, subtitle: str, field_caption: str, text: str = "", *,
                  validate: Validator, primary: str | Callable[[str], str], placeholder: str = "", hint: str = "",
-                 foot_note: str = "", mono: bool = False, end_text: str = "") -> None:
+                 foot_note: str = "", mono: bool = False, end_text: str = "", check_text: str = "",
+                 checked: bool = False) -> None:
         """Build the prompt.
 
         Args:
@@ -484,6 +485,8 @@ class PromptDialog(BaseDialog):
             foot_note: Faint text in the footer.
             mono: Use the mono font in the field.
             end_text: Faint text inside the right end of the empty field.
+            check_text: Text of a check box under the field; empty for none.
+            checked: Whether the check box starts checked.
         """
         super().__init__(parent, title, subtitle)
         if not callable(validate):
@@ -503,6 +506,10 @@ class PromptDialog(BaseDialog):
         self.help.setProperty("role", "help")
         self.help.setWordWrap(True)
         self.body.addWidget(self.help)
+        self.check = QCheckBox(check_text) if check_text else None
+        if self.check:
+            self.check.setChecked(checked)
+            self.body.addWidget(self.check)
         note = QLabel(foot_note)
         note.setStyleSheet(f"background: transparent; border: 0; color: {color('ink-faint').name()}; font-size: 12px;")
         self.foot.addWidget(note)
@@ -519,6 +526,10 @@ class PromptDialog(BaseDialog):
     def text(self) -> str:
         """Return the entered text without surrounding spaces."""
         return self.field.text().strip()
+
+    def is_checked(self) -> bool:
+        """Return whether the check box is checked (False if the prompt has none)."""
+        return bool(self.check and self.check.isChecked())
 
     def _sync_primary(self) -> None:
         """Update the primary button text."""

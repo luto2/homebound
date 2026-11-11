@@ -1279,3 +1279,31 @@ def test_widgets_of_the_last_test_are_deleted(qt_application) -> None:
     import shiboken6
     assert LEFT_BEHIND and not shiboken6.isValid(LEFT_BEHIND[0])
     assert [widget for widget in qt_application.topLevelWidgets() if widget.isVisible()] == []
+
+
+def test_panel_remember_toggle_follows_and_sets_the_alias(state, panel) -> None:
+    """The remember button shows whether the custom name is an alias, and sets or forgets it."""
+    assert not panel.remember.isEnabled() and not panel.remember.isChecked()
+    panel.name.setText("Base")
+    panel._save_name()
+    assert state.store.system(HOME.id).custom_name == "Base" and state.store.alias(HOME.id) is None
+    assert panel.remember.isEnabled() and not panel.remember.isChecked()
+    panel.remember.click()
+    assert state.store.alias(HOME.id) == "Base" and panel.remember.isChecked()
+    panel.name.setText("Camp")                      # renaming while remembered keeps remembering
+    panel._save_name()
+    assert state.store.alias(HOME.id) == "Camp"
+    panel.remember.click()
+    assert state.store.alias(HOME.id) is None and state.store.system(HOME.id).custom_name == "Camp"
+    panel.remember.click()
+    panel.name.setText("")
+    panel._save_name()
+    assert state.store.alias(HOME.id) is None and not panel.remember.isEnabled()
+
+
+def test_panel_shows_a_remembered_name_as_remembered(state, panel) -> None:
+    """A system that came back with its alias shows the button checked."""
+    state.store.update_system(HOME.id, custom_name="Camp")
+    state.store.set_alias(HOME.id, "Camp")
+    panel.refresh()
+    assert panel.remember.isChecked() and "emembered" in panel.remember.toolTip()

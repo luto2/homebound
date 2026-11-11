@@ -657,3 +657,18 @@ def test_expiry_is_one_undoable_action(simulation) -> None:
     assert len(actions) == 1
     simulation.store.undo(actions[0])
     assert simulation.store.has_system(c5.id) and simulation.store.connection(HOME.id, c5.id) is not None
+
+
+def test_alias_survives_expiry_and_names_the_system_when_tracked_again(simulation) -> None:
+    """A remembered name outlives the system's place on the map and comes back when it is mapped again."""
+    c5 = pick_system("C5", exclude={HOME.id})
+    simulation.tracker.apply_naming(simulation.naming_request(simulation.jump(c5.name)), is_static=True)
+    simulation.jump(HOME.name)
+    simulation.store.set_alias(c5.id, "Staging")
+    connection = simulation.store.connection(HOME.id, c5.id)
+    assert simulation.tracker.expire(datetime.fromisoformat(connection.created_at) + timedelta(days=3)) == 1
+    assert not simulation.store.has_system(c5.id) and simulation.store.alias(c5.id) == "Staging"
+    request = simulation.naming_request(simulation.jump(c5.name))
+    assert simulation.store.system(c5.id).custom_name == "Staging"
+    simulation.tracker.apply_naming(request, is_static=True)       # an answer without a typed name keeps it
+    assert simulation.store.system(c5.id).custom_name == "Staging"

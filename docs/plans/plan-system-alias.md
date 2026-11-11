@@ -1,6 +1,6 @@
 # Plan: persistent system aliases
 
-Status: not started. Owner task "persistent system alias" (`TODO.md`, human-added task 7).
+Status: implemented locally (2026-11-10), see "As built". Owner task "persistent system alias" (`TODO.md`, human-added task 7).
 
 Depends on: nothing. Touches `mapdb/store.py`, `mapping/naming.py`, the rename dialog and the system
 panel. If the alias should sync on cloud maps, it also touches `sync/protocol.py` and the server (see
@@ -8,10 +8,16 @@ open decision 2).
 
 ## What there is now
 
-A system can get a custom name (`MapSystem.custom_name`, set from Rename, the naming dialog or the
-system panel's name field). It lives in the `systems` row, so it is lost when the system leaves the map:
-on expiry, collapse or removal. Next time the same system is mapped it gets the scheme name again, and
-names like "Staging", "Farm C5" or "Hostile static" have to be typed again.
+A system gets its scheme name once, when it is attached, and stores it in `MapSystem.label`
+([`done/plan-stable-hole-names.md`](done/plan-stable-hole-names.md)); the user's own name is
+`MapSystem.custom_name` (set from Rename, the naming dialog or the system panel's name field) and wins
+over the label. Both live in the `systems` row, so both are lost when the system leaves the map: on
+expiry, collapse or removal. Next time the same system is mapped it gets a new scheme name and no
+custom name, and names like "Staging", "Farm C5" or "Hostile static" have to be typed again.
+
+An alias is only ever a remembered **custom name**. It never writes `label`: the label stays what the
+scheme gave the system when it was attached, so the numbers and the "names never change on their own"
+rule are untouched, and clearing the custom name still shows the scheme name.
 
 ## Behaviour
 
@@ -21,7 +27,8 @@ names like "Staging", "Farm C5" or "Hostile static" have to be typed again.
   well as the custom name. The system panel shows a small ⟲ mark next to a remembered name, with a
   tooltip saying so.
 - When a system is added to the map (`Store.add_system`, from tracking or by hand) and it has an alias,
-  the alias becomes its `custom_name`. The naming dialog shows it as the resulting name.
+  the alias becomes its `custom_name` (a given `custom_name` wins). That is the moment the system is
+  named, so it fits the stable-names rule. An answer to the naming dialog without a typed name keeps it.
 - **Forget**: Rename with the box unchecked deletes the alias; clearing the name deletes both.
 - Aliases are listed in Settings → Naming (a new "Remembered names" table: system, alias, delete button), so
   stale ones can be cleaned up without the system being on the map.
@@ -37,9 +44,9 @@ restored with the map without extra work. `Store.remove_system` must not touch i
 
 1. `Store`: table, accessors, and `add_system` filling `custom_name` from the alias when none is given.
    Undo only covers the entities in `ENTITIES` (`Store.batch` records changes per entity), so a rename's
-   undo would leave the alias behind. Either add `alias` to `ENTITIES` with a flag that keeps it out of
-   sync (`protocol.ops_from_change` skips it) or record the old alias in the batch by hand. Check how
-   `Change`/`Action` are built before choosing; the first is cleaner and makes step 4 small.
+   undo would leave the alias behind. Done as a second tuple, `LOCAL_ENTITIES = ("alias",)`, that the
+   store's batch, undo and row helpers know but `ENTITIES`/`ENTITY_TABLES` (what sync iterates) don't;
+   `Action.synced()` drops those changes before `ops_from_action`.
 2. UI: the check box in the rename `PromptDialog` (`ui/map_window.py` `_rename`) and in the system panel
    (a small toggle next to the name field); the ⟲ mark.
 3. Settings → Naming: the "Remembered names" table (`ui/settings_dialog.py` `_build_naming_page`).
@@ -62,3 +69,22 @@ restored with the map without extra work. `Store.remove_system` must not touch i
    knowledge; but as a second step, since it changes the protocol on client and server.
 3. Should an alias also replace the scheme name in bookmark names (the copy-bookmark button)? Recommended:
    no; bookmarks follow the scheme so they sort in the client.
+
+## As built
+
+- **Alias and naming**: the alias fills `custom_name` only, never `label` (see "What there is now").
+  `naming.rename_system(store, system_id, name, remember)` is the one action behind Rename and the
+  system panel (name, alias and Undo in one batch); `Tracker.apply_naming` no longer overwrites an
+  existing `custom_name` with None when the dialog had no typed name.
+- **Storage**: table `aliases` in `schema.sql`, `Store.alias/aliases/set_alias/delete_alias`,
+  `Alias` dataclass. A new table needs no `COLUMN_ADDITIONS` entry: `CREATE TABLE IF NOT EXISTS` gives
+  an old file the empty table when it is opened, nothing is rewritten, so no migration backup is made.
+- **Sync (decision 2)**: local only for now. `LOCAL_ENTITIES` in `mapdb/store.py` carries a TODO; the
+  custom name that an alias produces does sync like any custom name. Adding the entity needs the
+  protocol version gate first (same reason as `protocol.LOCAL_SYSTEM_FIELDS`).
+- **UI**: the Rename dialog has the check box (starts checked when the system has an alias); the system
+  panel has a checkable ⟲ button next to the name; Settings → Naming scheme has a "Remembered names"
+  table whose Delete acts at once (map data, not a setting).
+- **Not done**: the naming dialog ("was this the static?") doesn't show the alias as its resulting name,
+  and has no remember box; it keeps the name the system already has.
+- Decisions taken as recommended: 1 per map, 2 sync later, 3 bookmarks keep following the scheme.

@@ -675,3 +675,16 @@ def test_routes_page_saves_and_resets(dialog, state) -> None:
     assert (settings.eve_scout_enabled, settings.route_preference, settings.route_ship_size, settings.route_use_eol,
             settings.route_use_mass_critical) == (False, "less_secure", "XL", False, True)
     assert settings.route_destinations[0] == "Jita" and not state.eve_scout.enabled
+
+
+def test_remembered_names_table_lists_and_deletes(state, kwin) -> None:
+    """The naming page lists the map's aliases with the system name and deletes one without the system on the map."""
+    jita = UNIVERSE.by_name("Jita")
+    state.store.set_alias(jita.id, "Staging")
+    dialog = SettingsDialog(None, state)
+    assert dialog.alias_table.rowCount() == 1
+    assert dialog.alias_table.item(0, 0).text() == jita.name and dialog.alias_table.item(0, 1).text() == "Staging"
+    assert not state.store.has_system(jita.id)
+    dialog.alias_table.cellWidget(0, 2).click()
+    assert state.store.alias(jita.id) is None and dialog.alias_table.rowCount() == 0
+    assert dialog.alias_empty.isVisibleTo(dialog.stack.widget(2)) and not dialog.alias_table.isVisibleTo(dialog.stack.widget(2))

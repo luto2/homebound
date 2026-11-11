@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 
 from .. import app_version
 from ..mapdb.store import Action, map_stats
-from ..mapping.naming import SCHEMES, guess_static, hole_path, rename_systems, renames
+from ..mapping.naming import SCHEMES, guess_static, hole_path, rename_system, rename_systems, renames
 from ..mapping.tracker import NamingRequest
 from ..settings import MAP_NAME_LIMIT
 from ..theme import painting
@@ -1031,10 +1031,12 @@ class MapWindow(QMainWindow):
             f"<b>{state.namer.label(system_id)}</b> · {universe_system.name} · {universe_system.system_class}",
             "Custom name", mapped.custom_name or "", validate=lambda text: (True, ""),
             primary=lambda text: "Rename" if text else "Use scheme name", placeholder=automatic,
-            end_text="scheme name", hint=f"Leave empty to use the scheme name ({automatic}).")
+            end_text="scheme name", hint=f"Leave empty to use the scheme name ({automatic}).",
+            check_text=f"Remember this name for {universe_system.name}",
+            checked=state.store.alias(system_id) is not None)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return False
-        state.store.update_system(system_id, custom_name=dialog.text() or None)
+        rename_system(state.store, system_id, dialog.text(), dialog.is_checked())
         state.mapChanged.emit()
         return True
 

@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 from ..mapdb.store import LEGACY_NAMES_KEY, Change, MapSystem, Signature, Store
 from ..universe.db import Universe
-from ..validation import require_integer, require_type
+from ..validation import require_integer, require_text, require_type
 
 HOME_NAME = "Home"
 
@@ -617,6 +617,32 @@ def rename_systems(namer: "Namer", system_ids: list[int] | None = None) -> int:
         for system_id, (_, new) in changes.items():
             namer.store.update_system(system_id, label=new)
     return len(changes)
+
+
+def rename_system(store: Store, system_id: int, name: str, remember: bool) -> None:
+    """Give a system a custom name by hand; one action, so one Undo puts name and alias back.
+
+    The alias is the remembered custom name of the solar system (it outlives the system's place on
+    the map and fills ``custom_name`` when it is added again). It never touches ``label``, the stored
+    scheme name. Checked, the name becomes the alias; unchecked, the alias is forgotten; an empty
+    name goes back to the scheme name and forgets the alias.
+
+    Args:
+        store: The map.
+        system_id: The system.
+        name: The new custom name; empty or blank for the scheme name.
+        remember: Whether to keep the name as the system's alias.
+    """
+    require_integer(system_id, "system_id", minimum=1)
+    require_text(name, "name", allow_empty=True)
+    require_type(remember, bool, "remember")
+    name = name.strip()
+    with store.batch():
+        store.update_system(system_id, custom_name=name or None)
+        if name and remember:
+            store.set_alias(system_id, name)
+        else:
+            store.delete_alias(system_id)
 
 
 # ---------------------------------------------------------------- maps from before stored names
