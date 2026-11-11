@@ -1,6 +1,6 @@
 # Plan: persistent system aliases
 
-Status: implemented locally (2026-11-10), see "As built". Owner task "persistent system alias" (`TODO.md`, human-added task 7).
+Status: implemented (2026-11-10, commit `34c17f6`), see "As built". Deviations: an alias is a remembered `custom_name` and never touches `label`; aliases are local-only until the protocol gate exists (TODO at `LOCAL_ENTITIES` in `mapdb/store.py`); Delete in Settings acts at once, not on Save.
 
 Depends on: nothing. Touches `mapdb/store.py`, `mapping/naming.py`, the rename dialog and the system
 panel. If the alias should sync on cloud maps, it also touches `sync/protocol.py` and the server (see
@@ -9,7 +9,7 @@ open decision 2).
 ## What there is now
 
 A system gets its scheme name once, when it is attached, and stores it in `MapSystem.label`
-([`done/plan-stable-hole-names.md`](done/plan-stable-hole-names.md)); the user's own name is
+([`done/plan-stable-hole-names.md`](plan-stable-hole-names.md)); the user's own name is
 `MapSystem.custom_name` (set from Rename, the naming dialog or the system panel's name field) and wins
 over the label. Both live in the `systems` row, so both are lost when the system leaves the map: on
 expiry, collapse or removal. Next time the same system is mapped it gets a new scheme name and no

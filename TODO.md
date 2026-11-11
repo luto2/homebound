@@ -32,7 +32,7 @@ a small change whose file and fix are named.
 6. Overhaul the online indicator in the character list; maybe check if the client is open. Plan:
    `docs/plans/plan-online-indicator.md`.
    Effort: 4/5 · Opus. Presence on the server, a protocol message and compatibility with old clients.
-7. Persistent system alias. Plan: `docs/plans/plan-system-alias.md`.
+7. **Done 2026-11-10 (`34c17f6`); local-only until the protocol gate.** Persistent system alias. Plan: `docs/plans/done/plan-system-alias.md`.
    Effort: 3/5 · Sonnet. New table, Naming page, lookups in several places; undo only covers `ENTITIES`.
 8. Category for combat-scanned ships. Found while planning: combat-probe rows are stored as cosmic
    signatures under wrong groups (`Customs Office` → Ice), and a combat-only paste marks every real

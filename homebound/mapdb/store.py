@@ -182,7 +182,7 @@ ENTITY_WHERE = {"system": "id=?", "connection": "system_a=? AND system_b=?",
 
 # Entities that are undoable like the others but stay on this computer: sync never sends them
 # (``ops_from_action`` is given an action without them, see ``Action.synced``). alias -> system ID.
-# TODO(sync): sync aliases once the protocol has a version gate (plan-system-alias.md, decision 2); an
+# TODO(sync): sync aliases once the protocol has a version gate (docs/plans/done/plan-system-alias.md, decision 2); an
 # unknown entity is refused by older clients and by the server out there (see ``protocol.LOCAL_SYSTEM_FIELDS``).
 LOCAL_ENTITIES = ("alias",)
 ALL_ENTITY_TABLES = ENTITY_TABLES | {"alias": "aliases"}

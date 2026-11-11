@@ -18,7 +18,6 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [plan-watched-systems.md](plan-watched-systems.md) | 5. Watched systems with a connection alert | not started |
 | [plan-disconnect-connection.md](plan-disconnect-connection.md) | 5.1. Remove a connection, keep the systems | not started |
 | [plan-online-indicator.md](plan-online-indicator.md) | 6. Online indicator from open clients | not started |
-| [plan-system-alias.md](plan-system-alias.md) | 7. Persistent system aliases | not started |
 | [plan-combat-scan.md](plan-combat-scan.md) | 8. Combat-scanned ships (and the paste bug behind it) | not started |
 | [plan-structure-list.md](plan-structure-list.md) | 9. Structure list, fed by combat scans | not started, after 8 |
 | [plan-return-hole.md](plan-return-hole.md) | 12. Mark a sig as the return hole, with its type | not started |
@@ -71,4 +70,5 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [done/plan-test-segfault.md](done/plan-test-segfault.md) | 2026-11-10 | — (test-only; the app can't hit it) |
 | [done/plan-stable-hole-names.md](done/plan-stable-hole-names.md) | 2026-11-10 | syncing `label`/`static`/`next_hole` (needs a protocol version gate) |
 | [done/plan-duplicated-logic.md](done/plan-duplicated-logic.md) | 2026-11-10 | which home ID the callers use (not confirmed) |
+| [done/plan-system-alias.md](done/plan-system-alias.md) | 2026-11-10 | syncing the alias table (needs the protocol gate) |
 

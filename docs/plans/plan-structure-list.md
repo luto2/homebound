@@ -29,7 +29,7 @@ the combat-scan plan).
 - The owner plate stays: it is the *system* owner. Offer "Use as system owner" on a structure row to set
   it from the structure's ticker.
 - **Persistence**: structures survive the system leaving the map (like aliases in
-  [`plan-system-alias.md`](plan-system-alias.md)): when the system is mapped again, its known structures
+  [`plan-system-alias.md`](done/plan-system-alias.md)): when the system is mapped again, its known structures
   are there.
 
 ## Where it lives
