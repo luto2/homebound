@@ -16,7 +16,6 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 |---|---|---|
 | [plan-menu-icon.md](plan-menu-icon.md) | 2. App menu icon (To do 14) | icons and cache refresh done; cause and desktop test open |
 | [plan-watched-systems.md](plan-watched-systems.md) | 5. Watched systems with a connection alert | not started |
-| [plan-online-indicator.md](plan-online-indicator.md) | 6. Online indicator from open clients | not started |
 | [plan-combat-scan.md](plan-combat-scan.md) | 8. Combat-scanned ships (and the paste bug behind it) | not started |
 | [plan-structure-list.md](plan-structure-list.md) | 9. Structure list, fed by combat scans | not started, after 8 |
 | [plan-overlay-focus.md](plan-overlay-focus.md) | 15. Overlay shows the nearby part of a big chain | not started |
@@ -68,10 +67,11 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [done/plan-damaged-backup-restore.md](done/plan-damaged-backup-restore.md) | 2026-11-10 | decision 2 (`list_backups` catch) and 3 (a "damaged" marker in the list) |
 | [done/plan-corrupt-map-lockout.md](done/plan-corrupt-map-lockout.md) | 2026-11-10 | the wording of the new warnings; decisions 2, 4, 5 as proposed |
 | [done/plan-test-segfault.md](done/plan-test-segfault.md) | 2026-11-10 | — (test-only; the app can't hit it) |
-| [done/plan-stable-hole-names.md](done/plan-stable-hole-names.md) | 2026-11-10 | syncing `label`/`static`/`next_hole` (needs a protocol version gate) |
+| [done/plan-stable-hole-names.md](done/plan-stable-hole-names.md) | 2026-11-10 | — (fields sync with protocol 2) |
 | [done/plan-duplicated-logic.md](done/plan-duplicated-logic.md) | 2026-11-10 | which home ID the callers use (not confirmed) |
-| [done/plan-system-alias.md](done/plan-system-alias.md) | 2026-11-10 | syncing the alias table (needs the protocol gate) |
+| [done/plan-system-alias.md](done/plan-system-alias.md) | 2026-11-10 | — (aliases sync with protocol 2) |
 | [done/plan-multi-delete.md](done/plan-multi-delete.md) | 2026-11-11 | — |
 | [done/plan-disconnect-connection.md](done/plan-disconnect-connection.md) | 2026-11-11 | cut-off tab on other cloud members |
 | [done/plan-return-hole.md](done/plan-return-hole.md) | 2026-11-11 | origin memory survives restart? marker for child-origin return holes (needs a synced flag) |
+| [done/plan-online-indicator.md](done/plan-online-indicator.md) | 2026-11-11 | overlay follow skipping closed clients (step 5) |
 

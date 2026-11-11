@@ -29,10 +29,10 @@ a small change whose file and fix are named.
       `docs/plans/done/plan-disconnect-connection.md`.
    Effort: 3/5 · Sonnet. New setting, a check on new connections and a toast; 5.1 is 2/5 · Sonnet (Store
    batch, undo and sync must stay right).
-6. Overhaul the online indicator in the character list; maybe check if the client is open. Plan:
-   `docs/plans/plan-online-indicator.md`.
+6. **Done 2026-11-11 (`3fcafca`, protocol 2: deploy the server first, then release the client).** Overhaul the online indicator in the character list; maybe check if the client is open. Plan:
+   `docs/plans/done/plan-online-indicator.md`.
    Effort: 4/5 · Opus. Presence on the server, a protocol message and compatibility with old clients.
-7. **Done 2026-11-10 (`34c17f6`); local-only until the protocol gate.** Persistent system alias. Plan: `docs/plans/done/plan-system-alias.md`.
+7. **Done 2026-11-10 (`34c17f6`); syncs with protocol 2 (`b25df0b`).** Persistent system alias. Plan: `docs/plans/done/plan-system-alias.md`.
    Effort: 3/5 · Sonnet. New table, Naming page, lookups in several places; undo only covers `ENTITIES`.
 8. Category for combat-scanned ships. Found while planning: combat-probe rows are stored as cosmic
    signatures under wrong groups (`Customs Office` → Ice), and a combat-only paste marks every real
@@ -56,7 +56,7 @@ a small change whose file and fix are named.
     two nodes, but a drag then stores only the grabbed one. Plan: `docs/plans/done/plan-multi-select-move.md`.
     Effort: 2/5 · Sonnet. Qt already moves selected items together; add rubber-band selection and save all
     positions in one Store batch (one undo step, one set of sync ops).
-14. **Done 2026-11-10 (`8495554`); the new name fields don't sync yet (needs a protocol version gate).** Names must never change once given, but a user reported one that did. Neither a system nor a WH sig
+14. **Done 2026-11-10 (`8495554`); the name fields sync with protocol 2 (`b25df0b`).** Names must never change once given, but a user reported one that did. Neither a system nor a WH sig
     may get a new name once it has one. No slot is reserved for the static: a hole keeps the number it
     got when pasted, even if it later turns out to be the static. Found while planning: six ways names
     change today (preview-only sig numbers, the link overwriting the sig's number, the static slot,
@@ -75,6 +75,11 @@ a small change whose file and fix are named.
 17. **Done 2026-11-11 (`4885d92`).** With several systems selected, Delete removes only one (user report, 2026-11-11). Remove all of them
     in one undo step. Plan: `docs/plans/done/plan-multi-delete.md`.
     Effort: 1/5 · Haiku.
+
+18. Leftovers from tasks 5.1 and 6 (2026-11-11): the overlay's "follow" mode should skip characters whose
+    client is closed (online-indicator plan step 5), and the lost-connection "CUT OFF" mark could sync
+    through the protocol 2 gate (it is local-only now).
+    Effort: 2/5 · Sonnet.
 
 ## To do
 

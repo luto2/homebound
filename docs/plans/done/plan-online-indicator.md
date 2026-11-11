@@ -1,7 +1,6 @@
 # Plan: a truthful online indicator in the character list
 
-Status: implemented (2026-11-11), see "As built". Owner task "overhaul online indicator in the character
-list - maybe check if client is open" (`TODO.md`, human-added task 6).
+Status: implemented (2026-11-11, commits `6e0006c`, `b25df0b`, `3fcafca`, with the protocol 2 version gate). Deviations: step 5 (overlay "follow" skips closed clients) not done; location sharing now stops when the client window closes; sharing the online state is off by default; the KWin script is 1.1 (users press Install again).
 
 Depends on: nothing. Touches `logs/watcher.py`, the focus backends, `ui/state.py` and
 `ui/character_dock.py`.
