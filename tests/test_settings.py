@@ -156,6 +156,10 @@ def test_bad_file_is_kept_before_the_next_save(data_dir) -> None:
     {"x": {"file": " "}},
     {"x": {"file": "../../x.db"}},
     {"x": {"file": "/etc/x.db"}},
+    {"x": {"file": "C:/x.db"}},
+    {"x": {"file": "C:x.db"}},
+    {"x": {"file": "\\\\server\\share\\x.db"}},
+    {"x": {"file": "maps\\..\\..\\x.db"}},
     {"": {"file": "maps/x.db"}},
     {"x": "maps/x.db"},
 ])

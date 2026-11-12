@@ -5,7 +5,7 @@ import re
 import shutil
 from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
-from pathlib import Path, PurePath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from .platform.paths import data_directory, documents_directory, is_windows
 from .universe.db import SIZES
@@ -269,13 +269,16 @@ class Settings:
 
         The optional fields of a kept entry (home system, naming scheme) are reset to their defaults when
         they have the wrong type. Entries are otherwise kept as they are, with any extra keys.
-        ``load_problem`` says how many entries were dropped.
+        ``load_problem`` says how many entries were dropped. A file with a root or a drive (``/etc/x.db``,
+        ``C:x.db``, ``\\\\server\\x.db``) is dropped on every platform: on Windows ``/etc/x.db`` isn't
+        "absolute", but it still points outside the data folder.
         """
         usable, dropped = {}, 0
         for name, entry in maps.items():
             file = entry.get("file") if isinstance(entry, dict) else None
             if (not isinstance(name, str) or not name.strip() or not isinstance(file, str) or not file.strip()
-                    or PurePath(file).is_absolute() or ".." in PurePath(file).parts):
+                    or PurePosixPath(file).anchor or PureWindowsPath(file).anchor
+                    or ".." in PureWindowsPath(file).parts):
                 dropped += 1
                 continue
             entry = dict(entry)

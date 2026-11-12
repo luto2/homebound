@@ -117,7 +117,9 @@ def test_file_uri_handles_windows_paths() -> None:
 def test_read_only_uri_escapes_uri_syntax(tmp_path) -> None:
     """``#``, ``?`` and ``%`` are escaped, so the only query is the ``mode=ro`` we add."""
     uri = paths.read_only_uri(Path("/x/a#b?c%20d/e%23f/100%/sp ace/ü.db"))
-    assert uri == "file:///x/a%23b%3Fc%2520d/e%2523f/100%25/sp%20ace/%C3%BC.db?mode=ro"
+    # On Windows the path gets the current drive in front ("file:///D:/x/..."), which is right.
+    assert uri.startswith("file:///")
+    assert uri.endswith("/x/a%23b%3Fc%2520d/e%2523f/100%25/sp%20ace/%C3%BC.db?mode=ro")
     assert paths.read_only_uri("relative.db") == paths.read_only_uri(Path.cwd() / "relative.db")
     with pytest.raises(TypeError):
         paths.read_only_uri(None)

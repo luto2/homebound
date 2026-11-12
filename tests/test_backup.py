@@ -13,7 +13,7 @@ import pytest
 
 import homebound.backup as backup_module
 import homebound.settings as settings_module
-from conftest import HOME, UNIVERSE, pick_system
+from conftest import HOME, UNIVERSE, drop_columns, pick_system
 from homebound.backup import (KEEP_AUTO, KEEP_SAFETY, BackupError, auto_backup_due, backup_info, backups_directory, copy_to_folder,
                               create_backup, list_backups, prune, read_manifest, restore_maps, restore_settings,
                               restored_name)
@@ -412,7 +412,7 @@ def undo_one_step(path: Path, step: tuple[str, tuple]) -> None:
         database.execute(f'ALTER TABLE {table} RENAME COLUMN "{new}" TO "{old}"')
     elif kind == "addition":
         table, column, _ = details
-        database.execute(f'ALTER TABLE {table} DROP COLUMN "{column}"')
+        drop_columns(database, table, (column,))
     else:
         database.execute("INSERT INTO key_value VALUES (?, 'x')", (details[0],))
     database.commit()

@@ -3,7 +3,7 @@ import sqlite3
 
 import pytest
 
-from conftest import HOME, UNIVERSE, MapSimulation, pick_system
+from conftest import HOME, UNIVERSE, MapSimulation, drop_columns, pick_system
 from homebound.mapdb.store import Signature, Store
 from homebound.mapping.naming import (SCHEMES, rename_system, ChainDepthPositionScheme, Namer, Scheme, chain_letter,
                                       freeze_legacy_names, guess_static, label_unnamed_systems, number_for_letters,
@@ -291,8 +291,7 @@ def test_names_collects_display_label_and_real_name() -> None:
 def age_map_file(path) -> None:
     """Turn a map file into one from before stored names: no label, static or next_hole column."""
     database = sqlite3.connect(path)
-    for column in ("label", "static", "next_hole"):
-        database.execute(f'ALTER TABLE systems DROP COLUMN "{column}"')
+    drop_columns(database, "systems", ("label", "static", "next_hole"))
     database.execute("DELETE FROM key_value")
     database.commit()
     database.close()

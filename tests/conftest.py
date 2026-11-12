@@ -1,6 +1,8 @@
 """Shared fixtures: the real universe data, a scripted map, and an offscreen Qt application."""
 import gc
 import os
+import re
+import sqlite3
 from collections.abc import Callable, Collection, Iterator
 from datetime import datetime, timedelta, timezone
 
@@ -32,6 +34,39 @@ def pick_system(system_class: str, statics_to: str | None = None, exclude: Colle
             continue
         return system
     raise LookupError(system_class)
+
+
+def drop_columns(database: sqlite3.Connection, table: str, columns: Collection[str]) -> None:
+    """Remove columns from a table by rebuilding it, to fake a map file from before they existed.
+
+    ``ALTER TABLE ... DROP COLUMN`` would be shorter, but SQLite before 3.46 (Ubuntu 24.04, the Windows
+    runner) misparses the table text when a comment sits next to a dropped column. Indexes that don't
+    use a dropped column are kept.
+    """
+    sql = database.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)).fetchone()[0]
+    sql = re.sub(r"--[^\n]*", "", sql)
+    body = sql[sql.index("(") + 1:sql.rindex(")")]
+    parts, depth, start = [], 0, 0
+    for position, character in enumerate(body):
+        depth += {"(": 1, ")": -1}.get(character, 0)
+        if character == "," and depth == 0:
+            parts.append(body[start:position])
+            start = position + 1
+    parts.append(body[start:])
+    kept = [part.strip() for part in parts if part.split()[0].strip('"') not in columns]
+    names = [row[1] for row in database.execute(f'PRAGMA table_info("{table}")') if row[1] not in columns]
+    indexes = [row[0] for row in database.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL", (table,))
+        if not any(column in row[0] for column in columns)]
+    listed = ", ".join(f'"{name}"' for name in names)
+    database.execute("PRAGMA foreign_keys = OFF")
+    database.execute(f'CREATE TABLE "{table}__rebuilt" ({", ".join(kept)})')
+    database.execute(f'INSERT INTO "{table}__rebuilt" ({listed}) SELECT {listed} FROM "{table}"')
+    database.execute(f'DROP TABLE "{table}"')
+    database.execute(f'ALTER TABLE "{table}__rebuilt" RENAME TO "{table}"')
+    for index in indexes:
+        database.execute(index)
+    database.commit()
 
 
 class MapSimulation:
