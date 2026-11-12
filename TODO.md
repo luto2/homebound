@@ -21,9 +21,9 @@ a small change whose file and fix are named.
 4. **Done 2026-11-10 (`82d0d14`).** The tray icon's right-click menu doesn't have the overlay Off option, just the other 3. Plan:
    `docs/plans/done/plan-tray-overlay-off.md`.
    Effort: 1/5 · Haiku. One menu built from `MODES`.
-5. Add systems without a connection, to see if a chain connects to them. Open question: monetization,
+5. **Done 2026-11-12 (`d1fed36`).** Add systems without a connection, to see if a chain connects to them. Open question: monetization,
    and how to stop people mapping from those systems as well. Could be a separate feature that doesn't
-   allow new systems, just the connection alert. Plan: `docs/plans/plan-watched-systems.md`.
+   allow new systems, just the connection alert. Plan: `docs/plans/done/plan-watched-systems.md`.
    1. **Done 2026-11-11 (`530ad2d`).** Delete a connection without deleting the systems, to allow exfilling out of a chain if the
       connection is lost; maybe stop mapping additional connections there after ~1h. Plan:
       `docs/plans/done/plan-disconnect-connection.md`.
@@ -35,9 +35,9 @@ a small change whose file and fix are named.
    Effort: 4/5 · Opus. Presence on the server, a protocol message and compatibility with old clients.
 7. **Done 2026-11-10 (`34c17f6`); syncs with protocol 2 (`b25df0b`).** Persistent system alias. Plan: `docs/plans/done/plan-system-alias.md`.
    Effort: 3/5 · Sonnet. New table, Naming page, lookups in several places; undo only covers `ENTITIES`.
-8. Category for combat-scanned ships. Found while planning: combat-probe rows are stored as cosmic
+8. **Done 2026-11-12 (`0402ae7`).** Category for combat-scanned ships. Found while planning: combat-probe rows are stored as cosmic
    signatures under wrong groups (`Customs Office` → Ice), and a combat-only paste marks every real
-   signature in the system missing. Plan: `docs/plans/plan-combat-scan.md`.
+   signature in the system missing. Plan: `docs/plans/done/plan-combat-scan.md`.
    Effort: 5/5 · Opus. Parser, merge rules, expiring ships and a protocol change. Record real pastes first.
    Real paste from the owner (2026-11-12, tab-separated: type ID, name, type, distance; this is the
    directional/combat scan result format, not the probe scanner's):
@@ -48,8 +48,8 @@ a small change whose file and fix are named.
    2233	Customs Office (J161940 II)	Customs Office	6.5 AU
    2233	Customs Office (J161940 I)	Customs Office	5.0 AU
    ```
-9. Rework/add a structure list; combat-scanned structures go in there automatically. Plan:
-   `docs/plans/plan-structure-list.md` (after 8).
+9. **Done 2026-11-12 (`0402ae7`).** Rework/add a structure list; combat-scanned structures go in there automatically. Plan:
+   `docs/plans/done/plan-structure-list.md` (after 8).
    Effort: 4/5 · Opus for the table and sync entity, Sonnet for the list widget and timer tab.
 10. **Done 2026-11-10 (`3ee53e2`).** Some sig types don't like getting collapsed. Likely cause: a group with any "new" or "missing" row
     refuses to collapse, and despawned anomalies stay "missing" for good. Plan:
@@ -86,14 +86,14 @@ a small change whose file and fix are named.
     in one undo step. Plan: `docs/plans/done/plan-multi-delete.md`.
     Effort: 1/5 · Haiku.
 
-18. **Follow-mode part done 2026-11-12 (`48a1e2e`).** Leftovers from tasks 5.1 and 6 (2026-11-11): the overlay's "follow" mode should skip characters whose
+18. **Done 2026-11-12 (`48a1e2e` follow mode, `c60afea` CUT OFF sync).** Leftovers from tasks 5.1 and 6 (2026-11-11): the overlay's "follow" mode should skip characters whose
     client is closed (online-indicator plan step 5), and the lost-connection "CUT OFF" mark could sync
     through the protocol 2 gate (it is local-only now). Owner (2026-11-12): sync it, so every member sees
     the mark and the 1-hour removal happens for everyone; the watched-systems rule (stop mapping 1 hour
     after a cut) builds on it.
     Effort: 2/5 · Sonnet.
 
-19. Follow-ups from the owner's answers (2026-11-12). No plan yet; most are small.
+19. **Done 2026-11-12, except the refactor pass (`d5bbec6`…`8c719a5` local, `213e308`…`ccf22c8` sync; the server parts need a deploy).** Follow-ups from the owner's answers (2026-11-12).
     - Cloud map upgrade: also sync the bookmark numbers the upgrade fills in for unlinked sigs.
     - Changing a cloud map's naming scheme needs map admin or owner; other members then get the rename
       question (that is fine).

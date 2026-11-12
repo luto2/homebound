@@ -1,7 +1,6 @@
 # Plan: combat-probe results (ships, structures, deployables) in the paste
 
-Status: not started. Owner task 8 in `TODO.md` (human-added): "category for combat scanned ships". It is
-also the groundwork for task 9, the structure list ([`plan-structure-list.md`](plan-structure-list.md)).
+Status: implemented (2026-11-12, `0402ae7`). Deviations: no universe schema bump (generated scan_type_table.py); ships in their own section; unknown scan groups still become sigs; the probe-scanner combat format is a guess.
 
 Depends on: nothing. Do it before the structure list. Touches `mapping/signature_parser.py`,
 `mapdb/store.py`, `sync/protocol.py` (and so the server), `ui/signature_table.py` and

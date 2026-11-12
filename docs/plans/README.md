@@ -15,10 +15,6 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | Plan | Task | State |
 |---|---|---|
 | [plan-menu-icon.md](plan-menu-icon.md) | 2. App menu icon (To do 14) | icons and cache refresh done; cause and desktop test open |
-| [plan-watched-systems.md](plan-watched-systems.md) | 5. Watched systems with a connection alert | not started |
-| [plan-combat-scan.md](plan-combat-scan.md) | 8. Combat-scanned ships (and the paste bug behind it) | not started |
-| [plan-structure-list.md](plan-structure-list.md) | 9. Structure list, fed by combat scans | not started, after 8 |
-| [plan-overlay-shortcut.md](plan-overlay-shortcut.md) | Global shortcut to cycle the overlay mode | not started |
 | [plan-code-signing.md](plan-code-signing.md) | Windows code signing | not started |
 
 ### Audit fixes (`TODO.md` "To do", findings in `docs/findings/findings.md`)
@@ -75,3 +71,7 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [done/plan-gate-connections.md](done/plan-gate-connections.md) | 2026-11-12 (`3dfeb27`) | line colour/token and corner look by eye |
 | [done/plan-system-sender.md](done/plan-system-sender.md) | 2026-11-12 (`b913596`) | real logs for other client languages (later) |
 | [done/plan-overlay-focus.md](done/plan-overlay-focus.md) | 2026-11-12 (`48a1e2e`) | look on screen at 11 and 14 px; follow-mode hide on X11/KWin and Windows |
+| [done/plan-watched-systems.md](done/plan-watched-systems.md) | 2026-11-12 (`d1fed36`) | Watch section look, hit toast and desktop notification; removal of a cut-off piece while a member is inside without sharing |
+| [done/plan-combat-scan.md](done/plan-combat-scan.md) | 2026-11-12 (`0402ae7`) | a real combat-probe paste (English and German) |
+| [done/plan-structure-list.md](done/plan-structure-list.md) | 2026-11-12 (`0402ae7`) | timer toast in the running app |
+| [done/plan-overlay-shortcut.md](done/plan-overlay-shortcut.md) | 2026-11-12 (`d28cf66`) | a real key press on KDE/Wayland and Windows |

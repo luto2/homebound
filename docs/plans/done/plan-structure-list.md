@@ -1,7 +1,6 @@
 # Plan: structure list per system
 
-Status: not started. Owner task 9 in `TODO.md` (human-added): "rework/add structure list, combat scanned
-structures automatically go in there".
+Status: implemented (2026-11-12, `0402ae7`). Deviations: built with the combat scan; structures outlive the system; 'not in the last scan' is local.
 
 Depends on: [`plan-combat-scan.md`](plan-combat-scan.md) (the parser has to recognise structure rows
 first).
@@ -29,7 +28,7 @@ the combat-scan plan).
 - The owner plate stays: it is the *system* owner. Offer "Use as system owner" on a structure row to set
   it from the structure's ticker.
 - **Persistence**: structures survive the system leaving the map (like aliases in
-  [`plan-system-alias.md`](done/plan-system-alias.md)): when the system is mapped again, its known structures
+  [`plan-system-alias.md`](plan-system-alias.md)): when the system is mapped again, its known structures
   are there.
 
 ## Where it lives

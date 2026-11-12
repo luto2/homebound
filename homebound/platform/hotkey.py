@@ -1,4 +1,4 @@
-"""The global overlay shortcut: a key that works while EVE has the focus (docs/plans/plan-overlay-shortcut.md).
+"""The global overlay shortcut: a key that works while EVE has the focus (docs/plans/done/plan-overlay-shortcut.md).
 
 ``QShortcut`` only fires while Homebound has the focus and Qt has no global hotkey API, so each platform has
 a backend: ``RegisterHotKey`` on Windows, the KDE global shortcut service (``org.kde.kglobalaccel``) on Linux.

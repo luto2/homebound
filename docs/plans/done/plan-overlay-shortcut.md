@@ -1,6 +1,6 @@
 # Plan: global shortcut to cycle the overlay mode
 
-Status: not started. Owner request, 2026-11-06. This is a new feature, not an audit finding.
+Status: implemented (2026-11-12, `d28cf66`). Deviations: Linux only through KDE's KGlobalAccel (the XDG portal can't be called from PySide6); other desktops say 'not available'.
 
 Depends on: nothing.
 

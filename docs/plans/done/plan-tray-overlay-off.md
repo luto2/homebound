@@ -20,7 +20,7 @@ mode offer different choices.
    iterated in `MODES` order.
 2. Drop the "Show overlay" check item. With Off in the group it says the same thing twice. Keep
    `last_overlay_mode` and `_toggle_overlay`: the planned global shortcut
-   ([`plan-overlay-shortcut.md`](../plan-overlay-shortcut.md)) and the tray icon's dimmed state still use
+   ([`plan-overlay-shortcut.md`](plan-overlay-shortcut.md)) and the tray icon's dimmed state still use
    them.
 3. `_sync_tray`: check the action of the current mode, including `off`; disable "Unlock overlay" while
    the mode is off (as now).

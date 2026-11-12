@@ -1,9 +1,6 @@
 # Plan: watched systems (alert when a chain reaches them)
 
-Status: not started. Owner task 5 in `TODO.md` (human-added): "add ability to add systems without a
-connection, to be able to see if a chain connects to them … could use a separate feature that doesn't allow
-new systems, just the connection alert". The sub-task 5.1 (removing a connection but keeping its systems)
-has its own plan: [`plan-disconnect-connection.md`](done/plan-disconnect-connection.md).
+Status: implemented (2026-11-12, `d1fed36`). Deviations: one per-user range setting (1, 2, 5, 10 jumps; default 5) from the Watch section's ⚙ menu; the map list is one synced value (two simultaneous edits: last wins); systems removed 1 h–2 days ago are not mapped from either.
 
 Depends on: nothing. Touches `mapping/`, `routing.py`, `ui/state.py`, the route dock and toasts/notify.
 
@@ -78,7 +75,7 @@ What can be held back is what needs the server. Options:
 
 - Build the owner's suggestion: a watched system is not mapped from. Mapping from a watched hole is only
   allowed once it is connected to the chain.
-- When a chain is deleted (or cut off, see `done/plan-disconnect-connection.md`), stop mapping new
+- When a chain is deleted (or cut off, see `plan-disconnect-connection.md`), stop mapping new
   connections there after 1 hour.
 - Two watch lists: a **private** one (per user, never synced) and the **normal** one, which is a map
   setting and syncs on cloud maps.
