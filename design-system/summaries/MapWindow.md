@@ -19,4 +19,3 @@ Implemented by:
 - `CharacterDock` in `homebound/ui/character_dock.py`
 - `RouteDock` in `homebound/ui/route_dock.py`
 
-Note: The mockup says "Find system or sig…". The app says "Find system (Ctrl+F)" and only finds systems.

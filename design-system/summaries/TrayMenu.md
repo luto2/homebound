@@ -14,4 +14,3 @@ Implemented by:
 - `_sync_tray` in `homebound/ui/map_window.py`
 - `app_mark` in `homebound/ui/map_window.py`
 
-Note: The mockup shows a Ctrl+Shift+O shortcut and "Open map". The app has no such shortcut and says "Show map window".
