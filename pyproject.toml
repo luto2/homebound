@@ -24,7 +24,12 @@ server = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8", "pytest-cov>=7", "homebound[server]"]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=7",
+    "homebound[server]",
+    "mypy>=2.4.1",
+]
 packaging = ["pyinstaller>=6.16"]
 
 [build-system]
@@ -39,3 +44,16 @@ testpaths = ["tests"]
 
 [tool.coverage.report]
 exclude_also = ['if __name__ == "__main__":']
+
+[tool.mypy]
+python_version = "3.12"
+files = ["homebound"]
+ignore_missing_imports = true
+warn_unused_ignores = false
+
+# PySide6's stubs reject things Qt accepts: keyword signals (QTimer(timeout=...)), float margins, delegate
+# overrides with QModelIndex narrower than the stub, Optional returns for widgets that exist after setup.
+# Silence those classes of error in the Qt-facing packages only; the data layer stays fully checked.
+[[tool.mypy.overrides]]
+module = ["homebound.ui.*", "homebound.theme.*", "homebound.platform.*", "homebound.__main__"]
+disable_error_code = ["override", "call-overload", "call-arg", "union-attr", "attr-defined", "func-returns-value", "method-assign", "misc"]

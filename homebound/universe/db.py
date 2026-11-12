@@ -68,7 +68,7 @@ class System:
     @property
     def empire(self) -> str | None:
         """The empire whose space a high- or low-sec system is in (amarr, caldari, gallente, minmatar), or None."""
-        return EMPIRE_FACTIONS.get(self.faction_id) if self.system_class in EMPIRE_CLASSES else None
+        return EMPIRE_FACTIONS.get(self.faction_id) if self.faction_id is not None and self.system_class in EMPIRE_CLASSES else None
 
 
 @dataclass(frozen=True)

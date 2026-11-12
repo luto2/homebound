@@ -192,7 +192,7 @@ def parse_log_text(text: str, character_id: int, listener: str | None = None) ->
     require_text(listener, "listener", optional=True)
     if listener is None:
         listener, _ = parse_header(text)
-    changes = []
+    changes: list[SystemChange] = []
     for line in text.splitlines():
         if found := parse_system_change(line):
             changes.append(SystemChange(character_id, listener or str(character_id), found[1], found[0],

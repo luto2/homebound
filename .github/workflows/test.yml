@@ -40,3 +40,7 @@ jobs:
       - name: Build static data (the tests use the real universe)
         run: uv run python -m homebound.universe.build_static
       - run: uv run pytest -q
+      - name: Type check (informational until the error count reaches zero)
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
+        continue-on-error: true
+        run: uv run mypy

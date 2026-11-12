@@ -8,7 +8,7 @@ All of them raise ``TypeError`` for a value of the wrong type and ``ValueError``
 the right type that is out of range, so callers get the same errors everywhere.
 """
 from collections.abc import Collection
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar, overload
 
 Value = TypeVar("Value")
 
@@ -43,6 +43,10 @@ def require_type(value: Value, expected: type | tuple[type, ...], name: str) -> 
     return value
 
 
+@overload
+def require_integer(value: Any, name: str, minimum: int | None = None, optional: Literal[False] = False) -> int: ...
+@overload
+def require_integer(value: Any, name: str, minimum: int | None = None, *, optional: bool) -> int | None: ...
 def require_integer(value: Any, name: str, minimum: int | None = None, optional: bool = False) -> int | None:
     """Check that a value is an integer (``bool`` doesn't count), optionally with a lower bound.
 
@@ -91,6 +95,10 @@ def require_number(value: Any, name: str, minimum: float | None = None, maximum:
     return value
 
 
+@overload
+def require_text(value: Any, name: str, allow_empty: bool = False, optional: Literal[False] = False) -> str: ...
+@overload
+def require_text(value: Any, name: str, allow_empty: bool = False, *, optional: bool) -> str | None: ...
 def require_text(value: Any, name: str, allow_empty: bool = False, optional: bool = False) -> str | None:
     """Check that a value is a string, by default a non-blank one.
 

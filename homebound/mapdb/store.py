@@ -571,6 +571,7 @@ class Store:
         if self._depth:
             self._depth += 1
             try:
+                assert self._action is not None  # set by the outermost batch
                 yield self._action
             finally:
                 self._depth -= 1
@@ -665,8 +666,10 @@ class Store:
                         self._delete_entity(change.entity, change.key)
                 elif change.deleted:
                     if current is None:
+                        assert change.before is not None  # a deletion has the row it removed
                         self._insert_row(change.entity, change.key, change.before)
                 elif current is not None:
+                    assert change.before is not None and change.after is not None  # an update has both
                     restore = {column: change.before.get(column) for column in change.changed_columns()
                                if current.get(column) == change.after.get(column) and column != "id"}
                     if restore:
@@ -770,7 +773,9 @@ class Store:
                     f"INSERT INTO systems ({','.join(map(_quoted, SYSTEM_COLUMNS))}) "
                     f"VALUES ({','.join('?' * len(SYSTEM_COLUMNS))})",
                     [getattr(new_system, column) for column in SYSTEM_COLUMNS])
-        return self.system(system_id)
+        created = self.system(system_id)
+        assert created is not None  # just inserted or already present
+        return created
 
     def update_system(self, system_id: int, **changes: Any) -> bool:
         """Change columns of a mapped system.
@@ -796,6 +801,7 @@ class Store:
             return False
         if self.layout_local and {"x", "y"} & set(changes):
             current = self.system(system_id)
+            assert current is not None  # has_system() checked above
             self.database.execute("INSERT OR REPLACE INTO layout_override (system_id, x, y) VALUES (?,?,?)",
                                   (system_id, changes.pop("x", current.x), changes.pop("y", current.y)))
             self._commit()
@@ -971,7 +977,9 @@ class Store:
             self.database.execute(
                 f"INSERT INTO connections ({','.join(map(_quoted, columns))}) VALUES ({','.join('?' * len(columns))})",
                 [low, high, now, now, *values.values()])
-        return self.connection(system_a, system_b)
+        saved = self.connection(system_a, system_b)
+        assert saved is not None  # just written
+        return saved
 
     def _connection_key(self, connection_id: int) -> tuple[int, int] | None:
         """Return the ``(system_a, system_b)`` key of a connection row, or None."""
@@ -1125,7 +1133,9 @@ class Store:
                 ON CONFLICT (system_id, signature_id) DO UPDATE SET
                     {', '.join(f'{_quoted(column)}=excluded.{_quoted(column)}' for column in SIGNATURE_COLUMNS if column not in keep)}
             """, list(values.values()))
-        return self.signature(signature.system_id, signature.signature_id)
+        saved = self.signature(signature.system_id, signature.signature_id)
+        assert saved is not None  # just written
+        return saved
 
     def update_signature(self, system_id: int, signature_id: str, **changes: Any) -> bool:
         """Change columns of one signature; ``lifetime`` behaves as in :meth:`update_connection`.
@@ -1298,7 +1308,9 @@ class Store:
                 f"INSERT INTO structures ({','.join(map(_quoted, STRUCTURE_COLUMNS))})"
                 f" VALUES ({','.join('?' * len(STRUCTURE_COLUMNS))})"
                 f" ON CONFLICT (system_id, type_name, name) DO UPDATE SET {updated}", list(values.values()))
-        return self.structure(*key)
+        saved = self.structure(*key)
+        assert saved is not None  # just written
+        return saved
 
     def update_structure(self, system_id: int, type_name: str, name: str, **changes: Any) -> bool:
         """Change columns of one structure (not its key: delete it and add it again for that).
