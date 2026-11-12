@@ -194,7 +194,7 @@ is. The Effort line uses the same scale and models as the human-added tasks.
     stays up and `naming_open` stays True. It needs the connection to expire during the dialog with
     no character left in the system.
     Effort: 1/5 · Haiku.
-12. **[3] Any sender starting with `EVE` counts as the system (E14).** A player named "EVE Fan"
+12. **Done 2026-11-12 (`b913596`).** **[3] Any sender starting with `EVE` counts as the system (E14).** A player named "EVE Fan"
     saying `anyone in local : Amarr` is read as a jump to Amarr (`parser.py:124`). Check the
     localized sender names, then match `SYSTEM_SENDERS` exactly.
     Effort: 1/5 · Haiku.
@@ -224,11 +224,11 @@ Small items (partly done 2026-11-10 in `3d65485`; what was skipped is in `docs/p
 Effort for the small items and the graphify list: 1–2/5 · Haiku, batched in one or two sessions;
 P1 and P2 filtering (3/5) · Sonnet.
 
-- [1] `SignatureDelegate.paint` (and other delegates) don't restore `painter.save()` when paint raises ("Painter ended with N saved states"). Harmless today; use `try`/`finally` if paint errors stay possible (found with the test segfault, 2026-11-10).
+- **Done 2026-11-12 (`6c2c164`).** [1] `SignatureDelegate.paint` (and other delegates) don't restore `painter.save()` when paint raises ("Painter ended with N saved states"). Harmless today; use `try`/`finally` if paint errors stay possible (found with the test segfault, 2026-11-10).
 
-- [2] `store.py:486`: `add_connection` skips `_check_wormhole_values`, `update_connection(mass=None)`
+- **Done earlier (`3d65485`).** [2] `store.py:486`: `add_connection` skips `_check_wormhole_values`, `update_connection(mass=None)`
   stores None, and the tooltip at `map_scene.py:457` would raise on it. No UI path found (E13, E13a).
-- [2] `focus_linux.py:120`: `FileNotFoundError` and `TimeoutExpired` are uncaught, and
+- **Done earlier (`3d65485`; test `85f21e6`).** [2] `focus_linux.py:120`: `FileNotFoundError` and `TimeoutExpired` are uncaught, and
   `kwin_available` checks only `kpackagetool6` (E10).
 - [2] `universe.by_id(...)` used without a None check in the places listed under E20.
 - [2] `test_ui_map_scene.py:118` and `test_tracker.py:488` loosen the result to dodge timing. Give

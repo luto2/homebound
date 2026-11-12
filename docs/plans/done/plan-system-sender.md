@@ -1,6 +1,6 @@
 # Plan: match the system sender exactly
 
-Status: not started. TODO.md "To do" item 12, finding E14 in `docs/findings/findings.md`.
+Status: implemented (2026-11-12, `b913596`). Deviations: an unlisted EVE-prefixed sender is ignored with a once-per-session toast and a log warning; names are compared after NFKC and whitespace collapse.
 
 Depends on: nothing.
 

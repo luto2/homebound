@@ -26,7 +26,6 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 
 | Plan | To do item | State |
 |---|---|---|
-| [plan-system-sender.md](plan-system-sender.md) | 12. Any `EVE…` sender counts as the system | not started |
 | [plan-small-fixes.md](plan-small-fixes.md) | "Small items" | partly done (`3d65485`) |
 | [plan-test-cleanup.md](plan-test-cleanup.md) | Weak tests and test structure | not started |
 | [plan-tooling.md](plan-tooling.md) | Type checker, graphify | not started |
@@ -75,3 +74,4 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [done/plan-online-indicator.md](done/plan-online-indicator.md) | 2026-11-11 | overlay follow skipping closed clients (step 5) |
 | [done/plan-single-instance.md](done/plan-single-instance.md) | 2026-11-12 (`45398b0`) | a run on Windows |
 | [done/plan-gate-connections.md](done/plan-gate-connections.md) | 2026-11-12 (`3dfeb27`) | line colour/token and corner look by eye |
+| [done/plan-system-sender.md](done/plan-system-sender.md) | 2026-11-12 (`b913596`) | real logs for other client languages (later) |
