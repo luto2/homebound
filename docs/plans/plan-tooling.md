@@ -1,6 +1,6 @@
 # Plan: tooling (type checker, graphify)
 
-Status: not started. Checked against the repo on 2026-11-06.
+Status: done in the repo on 2026-11-12 except the owner's hand steps (hooks path check, `uv.lock` review) and the upstream graphify issues; mypy is at 112 errors and non-blocking in CI. Checked against the repo on 2026-11-06.
 
 Depends on: nothing. Each step stands alone and can be its own commit. Nothing here touches app
 behaviour, so none of it is urgent; the order is by value for the effort.
@@ -138,7 +138,7 @@ Worth doing as one short section in `HOW_TO.md` ("Using the graph"), effort 20 m
 ## Dropped
 
 - `graphify-out/` untracked and not in `.gitignore`: stale, see above.
-- `focus_windows.py` import guard: checked, it is under `TYPE_CHECKING`.
+- `focus_windows.py` import guard: checked. Only `FocusTracker` (a type-only name) is under `TYPE_CHECKING`; `eve_characters` is a real top-level import of `ui.focus`, as in `focus_linux.py`. That is safe: `ui.focus` imports only PySide6 and `validation`, so there is no cycle. It is a layering oddity (platform imports from ui), not a bug; closed.
 
 ## Order
 

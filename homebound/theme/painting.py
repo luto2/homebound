@@ -13,7 +13,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtSvg import QSvgRenderer
 
-from ..mapdb.store import LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED
+from ..lifetime import LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED
 from ..validation import require_integer, require_number, require_type
 from .tokens import OPACITY, PIXELS, color, font
 

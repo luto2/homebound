@@ -12,16 +12,12 @@ from typing import Any
 from ..platform.paths import read_only_uri
 from ..validation import require_choice, require_integer, require_text, require_type
 
-# Wormhole lifetime state, stored in the `lifetime` column of connections and signatures.
-# lifetime_set_at is when the current state was set; the hole is gone LIFETIME_REMAINING after that.
-LIFETIME_STABLE, LIFETIME_4H, LIFETIME_1H, LIFETIME_EXPIRED = 0, 1, 2, 3
-LIFETIME_STATES = (LIFETIME_STABLE, LIFETIME_4H, LIFETIME_1H, LIFETIME_EXPIRED)
-LIFETIME_LABELS = {LIFETIME_STABLE: "Stable", LIFETIME_4H: "< 4h", LIFETIME_1H: "< 1h", LIFETIME_EXPIRED: "Expired"}
-# (chip text, colour token) of the lifetime states that show a chip
-LIFETIME_CHIPS = {LIFETIME_4H: ("◷ <4h", "edge-eol"), LIFETIME_1H: ("◷ <1h", "edge-eol"),
-                  LIFETIME_EXPIRED: ("✕ EXP", "danger")}
-LIFETIME_REMAINING = {LIFETIME_4H: timedelta(hours=4), LIFETIME_1H: timedelta(hours=1),
-                      LIFETIME_EXPIRED: timedelta(minutes=10)}  # expired: keep it visible for a few minutes
+# Re-exported: the lifetime constants live in homebound.lifetime so theme code can use them without the store.
+from ..lifetime import (  # noqa: F401
+    LIFETIME_1H, LIFETIME_4H, LIFETIME_CHIPS, LIFETIME_EXPIRED, LIFETIME_LABELS, LIFETIME_REMAINING, LIFETIME_STABLE,
+    LIFETIME_STATES,
+)
+
 MASS_STATES = ("fresh", "reduced", "critical", "unknown")
 
 
