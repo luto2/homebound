@@ -396,7 +396,8 @@ def level_positions(store: Store) -> dict[int, int]:
     systems = {system.id: system for system in store.systems()}
     groups: dict[tuple[int, int, int], list] = {}
     for system in systems.values():
-        path, seen, current = [], set(), system
+        path, seen = [], set()
+        current: MapSystem | None = system
         while current is not None and current.parent_id is not None and current.id not in seen:
             seen.add(current.id)
             path.append(current.hole_index or 0)

@@ -197,22 +197,22 @@ def parse_paste(text: str, universe: Universe | None = None, include_anomalies: 
         columns += [""] * (6 - len(columns))
         signature_id, scan_group, group_text, name, percent, distance = columns[:6]
         if scan_group.lower() in SCAN_GROUP_KINDS:
-            kind = SCAN_GROUP_KINDS[scan_group.lower()]
-            if kind is None:
+            scan_kind = SCAN_GROUP_KINDS[scan_group.lower()]
+            if scan_kind is None:
                 paste.noise += 1
             else:
                 type_name = name or group_text or scan_group
-                paste.objects.append(ScannedObject(kind, type_name, group_text or None, name or None, None,
+                paste.objects.append(ScannedObject(scan_kind, type_name, group_text or None, name or None, None,
                                                    distance or None, signature_id))
             continue
         kind = "anom" if scan_group.lower() in ANOMALY_WORDS else "sig"
         if kind == "anom" and not include_anomalies:
             continue
-        group = group_for_text(group_text)
+        sig_group = group_for_text(group_text)
         code = None
-        if group == "wormhole" and (match := WORMHOLE_CODE_PATTERN.search(name)):
+        if sig_group == "wormhole" and (match := WORMHOLE_CODE_PATTERN.search(name)):
             code = match.group(1)
-        parsed[signature_id] = ParsedSignature(signature_id, group, name or None, parse_percent(percent), code, kind)
+        parsed[signature_id] = ParsedSignature(signature_id, sig_group, name or None, parse_percent(percent), code, kind)
     paste.signatures = list(parsed.values())
     return paste
 

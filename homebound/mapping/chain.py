@@ -263,7 +263,9 @@ def focus_rows(rows: list[ChainRow], store: Store, universe: Universe, current: 
         """The position where the way from ``index`` joins the path, and the jumps from the character."""
         steps, node = 0, index
         while node not in position:
-            node, steps = parent[node], steps + 1
+            up = parent[node]
+            assert up is not None   # the root is on the path to here, so the climb stops there
+            node, steps = up, steps + 1
         return position[node], steps + position[node]
 
     reached = {index: reach(index) for index in range(len(rows))}
@@ -297,7 +299,9 @@ def focus_rows(rows: list[ChainRow], store: Store, universe: Universe, current: 
                 return None
             farthest = max(leaves, key=lambda node: (reached[node][1], node))
             keep.discard(farthest)
-            merged.add(parent[farthest])
+            up = parent[farthest]
+            assert up is not None   # only the root has no parent, and the root is protected
+            merged.add(up)
         resume = ancestors[window - 1] if window else here
         return render(keep, folded, merged, hidden_of, resume)
 
