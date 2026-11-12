@@ -165,7 +165,7 @@ others show or edit it.
 | Several maps: new, rename, delete, switch | `ui/map_window.py` `new_map`, `rename_map`, `delete_map`, `switch_map`, `_fill_map_menu`; `ui/state.py` `AppState.switch_map`; `ui/dialogs.py` `ConfirmDeleteMapDialog`, `PromptDialog` |
 | Settings that belong to a map (home, naming scheme) | `mapdb/store.py` `MAP_SETTING_KEYS`; `ui/state.py` `store_map_settings` |
 | Settings file, defaults, allowed values and ranges | `settings.py` `Settings`, `SETTING_CHOICES`, `clamp_to_range` |
-| Automatic, manual and safety backups; pruning | `backup.py` `create_backup`, `prune`, `auto_backup_due`; `ui/state.py` `AppState.backup` |
+| Automatic, manual and safety backups; pruning; a damaged map is left out (`skipped`), a damaged backup is listed with `damaged` | `backup.py` `create_backup`, `list_backups`, `BackupInfo`, `prune`, `auto_backup_due`; `ui/state.py` `AppState.backup`, `last_backup_skipped`; `ui/settings_dialog.py` `refresh_backups` |
 | Restore | `backup.py` `restore_maps`, `restore_settings`; `ui/state.py` `restore_backup`; `ui/dialogs.py` `RestoreBackupDialog` |
 | Damaged map file set aside at start or on a switch | `ui/state.py` `MapOpenError`, `set_aside_damaged`, `damaged_map_files`, `AppState._load_map`; `__main__.py` |
 | Schema migration of old map files | `mapdb/store.py` `COLUMN_RENAMES`, `TABLE_RENAMES`, `COLUMN_ADDITIONS`, `needs_migration` |

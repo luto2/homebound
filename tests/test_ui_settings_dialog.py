@@ -537,8 +537,21 @@ def test_backups_page_lists_and_backs_up(dialog, state, tmp_path) -> None:
     assert dialog.backup_now() is True
     assert dialog.backup_list.topLevelItemCount() == 1 and dialog.restore_button.isEnabled()
     assert dialog.backup_list.topLevelItem(0).text(1) == "by hand"
-    state.settings.map_path().write_text("broken")
-    assert dialog.backup_now() is False and "not a map file" in dialog.backup_help.text()
+    state.settings.map_path().write_text("broken")       # a damaged map is left out, the backup still counts
+    assert dialog.backup_now() is True and dialog.backup_list.topLevelItemCount() == 2
+    assert "damaged map “Main” was left out" in dialog.backup_help.text()
+    assert dialog.backup_help.property("role") == "help-warn"
+    newest = state.last_backup_skipped
+    assert list(newest) == ["Main"]
+    skipped_item = next(dialog.backup_list.topLevelItem(row) for row in range(2) if dialog.backups[row].skipped)
+    dialog.backup_list.setCurrentItem(next(item for item in map(dialog.backup_list.topLevelItem, range(2)) if item is not skipped_item))
+    assert dialog.backup_help.text().startswith("▲ Backed up")                # selecting a fine backup says nothing new
+    dialog.backup_list.setCurrentItem(skipped_item)
+    assert "Left out of this backup because the map file was damaged: Main" in dialog.backup_help.text()
+    assert "damaged map file" in skipped_item.toolTip(2) or "damaged" in skipped_item.toolTip(2)
+    state.backup = lambda *arguments, **keywords: None
+    state.last_backup_error = "disk full"
+    assert dialog.backup_now() is False and "disk full" in dialog.backup_help.text()
 
 
 def test_backups_page_restores_as_new_map(dialog, state, modal) -> None:
@@ -607,9 +620,19 @@ def test_backups_page_with_damaged_backups(dialog, state, modal) -> None:
     broken_backup(folder / "2026-11-01_1200_manual.zip", "manifest.json")
     broken_backup(folder / "2026-11-02_1200_manual.zip", "map.db",
                   {"Main": {"file": "map.db"}, "Bad": "not an entry"})
-    assert dialog.refresh_backups() == 2
+    assert dialog.refresh_backups() == 3       # the unreadable one is listed too, marked damaged
+    unreadable = next(info for info in dialog.backups if info.path.name.startswith("2026-11-01"))
+    row = dialog.backups.index(unreadable)
+    item = dialog.backup_list.topLevelItem(row)
+    assert unreadable.readable is False and item.text(2).startswith("▲ damaged") and "not a readable backup" in item.toolTip(2)
+    dialog.backup_list.setCurrentItem(item)
+    assert not dialog.restore_button.isEnabled() and dialog.restore_selected_backup() is False
+    assert "can't be restored" in dialog.backup_help.text() and dialog.backup_help.property("role") == "help-warn"
+    good = next(info for info in dialog.backups if info.reason == "manual" and not info.damaged)
+    dialog.backup_list.setCurrentItem(dialog.backup_list.topLevelItem(dialog.backups.index(good)))
+    assert dialog.restore_button.isEnabled() and not dialog.backup_list.topLevelItem(dialog.backups.index(good)).text(2).startswith("▲")
     damaged = next(info for info in dialog.backups if info.path.name.startswith("2026-11-02"))
-    assert list(damaged.maps) == ["Main"]   # the bad entry is left out, so the restore dialog can show the rest
+    assert list(damaged.maps) == ["Main"] and "'Bad'" in damaged.damaged   # the bad entry is left out, the rest can be restored
     dialog.backup_list.setCurrentItem(dialog.backup_list.topLevelItem(dialog.backups.index(damaged)))
     modal.handler = lambda restore: (restore.as_new.setChecked(True), 1)[1]
     maps_before = dict(state.settings.maps)

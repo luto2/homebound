@@ -289,7 +289,7 @@ def test_switch_to_damaged_map_sets_the_file_aside(state) -> None:
         store.add_system(c5.id)
     good = state.backup("manual")
     garbage = write_garbage(path)
-    assert state.backup("manual") is None   # one bad map stops every backup
+    assert state.backup("manual") is not None and list(state.last_backup_skipped) == ["Second"]   # left out, rest backed up
     with pytest.raises(MapOpenError, match=r"second\.db\.damaged"):
         state.switch_map("Second")
     assert path.with_name("second.db.damaged").read_bytes() == garbage and not path.exists()

@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices, QKeySequence
+from PySide6.QtGui import QBrush, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QCompleter, QDialog, QFileDialog, QFrame, QHBoxLayout,
     QHeaderView, QKeySequenceEdit, QLabel, QLineEdit, QListWidget, QPushButton, QSlider, QSpinBox, QStackedWidget, QTableWidget,
@@ -609,6 +609,7 @@ class SettingsDialog(QDialog):
         self.backup_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.backup_list.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.backup_list.currentItemChanged.connect(lambda *_: self._sync_backup_buttons())
+        self.backup_list.currentItemChanged.connect(lambda *_: self._show_backup_damage())
         self.backup_list.itemDoubleClicked.connect(lambda *_: self.restore_selected_backup())
         layout.addWidget(self.backup_list, 1)
         buttons = QHBoxLayout()
@@ -653,18 +654,28 @@ class SettingsDialog(QDialog):
         Returns:
             The number of backups listed.
         """
+        self.refreshing_backups = True       # listing selects the first row; that must not overwrite the help line
         self.backup_list.clear()
-        self.backups = backup.list_backups()
+        self.backups = backup.list_backups(check=True)
         for info in self.backups:
+            maps = ", ".join(info.maps) or "–"
+            if info.damaged:
+                maps = f"▲ damaged · {maps}"
             item = QTreeWidgetItem([f"{info.created_at.astimezone():%Y-%m-%d %H:%M}",
-                                    BACKUP_REASONS.get(info.reason, info.reason), ", ".join(info.maps) or "–",
+                                    BACKUP_REASONS.get(info.reason, info.reason), maps,
                                     f"{max(1, round(info.size / 1024))} KB"])
             item.setData(0, Qt.ItemDataRole.UserRole, str(info.path))
+            if info.damaged:
+                item.setToolTip(2, f"This backup is damaged: {info.damaged}")
+                item.setForeground(2, QBrush(color("warning")))
+            elif info.skipped:
+                item.setToolTip(2, "Left out because the map file was damaged: " + ", ".join(info.skipped))
             self.backup_list.addTopLevelItem(item)
         for column in (0, 1, 3):
             self.backup_list.resizeColumnToContents(column)
         if self.backups:
             self.backup_list.setCurrentItem(self.backup_list.topLevelItem(0))
+        self.refreshing_backups = False
         self._sync_backup_buttons()
         return len(self.backups)
 
@@ -674,9 +685,25 @@ class SettingsDialog(QDialog):
         Returns:
             Whether a backup is selected.
         """
-        selected = self.selected_backup() is not None
-        self.restore_button.setEnabled(selected)
-        return selected
+        info = self.selected_backup()
+        self.restore_button.setEnabled(info is not None and info.readable)
+        return info is not None
+
+    def _show_backup_damage(self) -> str:
+        """Say under the list what is wrong with the selected backup, or that a damaged map was left out of it.
+
+        Returns:
+            The text shown, empty when the backup is fine.
+        """
+        info = self.selected_backup()
+        if getattr(self, "refreshing_backups", False) or info is None or not (info.damaged or info.skipped):
+            return ""
+        if info.damaged:
+            text = f"This backup is damaged: {info.damaged}." + ("" if info.readable else " It can't be restored; delete the file.")
+        else:
+            text = "Left out of this backup because the map file was damaged: " + ", ".join(info.skipped) + "."
+        set_help(self.backup_help, f"▲ {text}", "help-warn")
+        return text
 
     def selected_backup(self) -> backup.BackupInfo | None:
         """Return the backup selected in the list, or None."""
@@ -694,7 +721,12 @@ class SettingsDialog(QDialog):
             set_help(self.backup_help, f"✕ {self.state.last_backup_error}", "help-err")
             return False
         self.refresh_backups()
-        set_help(self.backup_help, f"✓ Backed up to {path.name}", "help-ok")
+        if self.state.last_backup_skipped:
+            names = ", ".join(f"“{name}”" for name in self.state.last_backup_skipped)
+            set_help(self.backup_help, f"▲ Backed up to {path.name}, but the damaged map {names} was left out. "
+                     f"The other maps are in it.", "help-warn")
+        else:
+            set_help(self.backup_help, f"✓ Backed up to {path.name}", "help-ok")
         return True
 
     def restore_selected_backup(self) -> bool:
@@ -706,7 +738,7 @@ class SettingsDialog(QDialog):
             Whether anything was restored.
         """
         info = self.selected_backup()
-        if info is None:
+        if info is None or not info.readable:
             return False
         dialog = RestoreBackupDialog(self, info, self.state.settings.active_map)
         if dialog.exec() != QDialog.DialogCode.Accepted:

@@ -367,8 +367,14 @@ def test_delete_map_blocked_by_failed_backup(window, modal) -> None:
     modal.handler = lambda dialog: 1
     assert window.delete_map("Broken") is False
     assert "Broken" in settings.maps and path.exists()
-    assert "not a map file" in window.state.last_backup_error
-    assert list_backups() == []
+    assert "not a map file" in window.state.last_backup_skipped["Broken"]
+    toast = window.toasts.toasts[-1]
+    assert toast_kind(toast) == "danger" and "damaged" in toast_text(toast) and "not a map file" in toast_text(toast)
+    assert [list(info.skipped) for info in list_backups()] == [["Broken"]]   # the safety backup of the others was made
+    path.unlink()                                                             # a map that isn't damaged still deletes
+    with Store(path) as store:
+        store.add_system(HOME.id)
+    assert window.delete_map("Broken") is True and "Broken" not in settings.maps
 
 
 def test_delete_map_refused(window, modal) -> None:

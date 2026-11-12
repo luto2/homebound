@@ -390,6 +390,13 @@ it can be built again.
 
 If a backup fails at start, Homebound starts anyway and says why in a toast and the status bar.
 
+**A damaged map is left out of a backup**; every other map and the settings are still backed up. The
+status bar says which map was left out and why, and the Backups list shows it when you select that
+backup. A map you want to delete that is damaged is not deleted, because it can't be backed up first.
+A backup file that is itself damaged (an unreadable zip, a map inside that fails its checksum) is
+listed with a "▲ damaged" marker and the reason as a tooltip; one that can't be read at all can't be
+restored, and is left in the folder for you to delete.
+
 **Also copy backups to** (Settings → Backups, off by default) puts a copy of each new backup in a
 second folder, for example one that Nextcloud or Syncthing syncs. Old copies there are pruned the
 same way. If the folder is missing, for example a drive that isn't mounted, the backup is still

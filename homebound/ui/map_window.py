@@ -699,6 +699,10 @@ class MapWindow(QMainWindow):
         if self.state.backup("delete", report_failure=False) is None:
             self.toasts.show("err", f"Map “{name}” not deleted: {self.state.last_backup_error}")
             return False
+        if name in self.state.last_backup_skipped:   # a damaged map is left out of backups, so it has none to fall back on
+            self.toasts.show("err", f"Map “{name}” not deleted: it is damaged and couldn't be backed up first "
+                                    f"({self.state.last_backup_skipped[name]})")
+            return False
         path = settings.remove_map(name)
         settings.save()
         for suffix in ("", "-wal", "-shm"):

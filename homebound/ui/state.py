@@ -147,6 +147,7 @@ class AppState(QObject):
         self._backup_messages: list[tuple[str, str]] = []   # (level, text) until start() can emit them
         self._constructed = False         # nobody can listen to the signals before __init__ returns
         self.last_backup_error = ""
+        self.last_backup_skipped: dict[str, str] = {}   # damaged maps the last backup left out: name -> why
         if auto_backup and backup.has_map_files(settings) and backup.auto_backup_due():
             self.backup("auto")
         self.database_path = str(database_path or settings.map_path())
@@ -415,7 +416,8 @@ class AppState(QObject):
         """Make a backup and copy it to the extra folder, reporting the result on the status line.
 
         A failure never raises: it is reported as a warning (kept in ``last_backup_error``) and None
-        is returned, so the caller decides whether to go on.
+        is returned, so the caller decides whether to go on. A damaged map is left out of the backup,
+        which still counts: it is reported as a warning and kept in ``last_backup_skipped``.
 
         Args:
             reason: One of :data:`homebound.backup.REASONS`.
@@ -426,22 +428,27 @@ class AppState(QObject):
         """
         require_choice(reason, backup.REASONS, "reason")
         undeleted: list[str] = []   # old backups prune couldn't remove; the backup still counts
+        skipped: dict[str, str] = {}
         try:
-            path = backup.create_backup(reason, self.settings, undeleted)
+            path = backup.create_backup(reason, self.settings, undeleted, skipped)
         except backup.BackupError as error:
-            self.last_backup_error = str(error)
+            self.last_backup_error, self.last_backup_skipped = str(error), {}
             if report_failure:
                 self._report_backup("warn", f"Backup failed: {error}")
             return None
-        self.last_backup_error = ""
+        self.last_backup_error, self.last_backup_skipped = "", skipped
+        left_out = "; ".join(f"the map “{name}” is damaged and was left out ({why})" for name, why in skipped.items())
         try:
             backup.copy_to_folder(path, self.settings.backup_copy_directory, undeleted)
         except backup.BackupError as error:
             either = f". Old backups couldn't be removed either: {_first_of(undeleted)}" if undeleted else ""
-            self._report_backup("warn", f"Backed up, but not copied: {error}{either}")
+            self._report_backup("warn", f"Backed up, but not copied: {error}{either}"
+                                        + (f". Also, {left_out}" if left_out else ""))
             return path
-        if undeleted:
-            self._report_backup("warn", f"Backed up, but old backups couldn't be removed: {_first_of(undeleted)}")
+        if undeleted or left_out:
+            problems = [f"old backups couldn't be removed: {_first_of(undeleted)}"] if undeleted else []
+            problems += [left_out] if left_out else []
+            self._report_backup("warn", "Backed up, but " + ". Also ".join(problems))
         else:
             self._report_backup("ok", f"Backed up {datetime.now():%H:%M}")
         return path
