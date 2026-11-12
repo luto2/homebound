@@ -65,6 +65,7 @@ class Settings:
     auto_name_when_certain: bool = False
     overlay_mode: str = "follow"
     overlay_pinned_character: int | None = None
+    overlay_shortcut: str = "Ctrl+Shift+O"   # global key that cycles the overlay mode; empty = none
     overlay_opacity: float = 0.78
     overlay_text_size: int = 12           # px
     overlay_positions: dict = field(default_factory=dict)        # mode -> [x, y]

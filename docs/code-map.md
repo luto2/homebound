@@ -84,7 +84,7 @@ others show or edit it.
 | Removing a system | `mapdb/store.py` `remove_system` | `ui/map_window.py` `_remove` |
 | Collapsing a connection (removes it, its sigs and systems left without a link) | `mapdb/store.py` `remove_connection`, `clear_broken_parents` | `ui/map_window.py` `_collapse`, `_edge_menu`; `ui/dialogs.py` `ConnectionDialog` |
 | Lost connection (removes it and its sigs, keeps both systems; the far piece is cut off and goes an hour after the last pilot left) | `mapping/tracker.py` `Tracker.disconnect`, `cut_off_since`, `_expire_cut_off_pieces`, `CUT_OFF_GRACE`; marks in the local `key_value` row `cut_off` | `ui/map_window.py` `_lost_connection`, `_edge_menu`; `ui/dialogs.py` `ConnectionDialog.lost`; `CUT OFF` tab in `ui/map_scene.py` `SystemNode._paint_tabs`; `ui/state.py` `AppState.cut_off_age` |
-| Return hole (mark a sig as the hole back to the system you came from; type from the other side) | `mapping/tracker.py` `Tracker.mark_return`, `return_origin`, `return_candidates`, `return_type_of`; `mapping/naming.py` `return_type`, `ReturnType` | `ui/signature_table.py` `SignatureTable.show_menu`, `mark_selected_return` (R), the hint button in `SignatureDelegate`; `ui/system_panel.py` `SystemPanel.mark_return`; candidates first in `ui/wormhole_fields.py` `WormholeTypeCombo(preferred=)` |
+| Return hole (mark a sig as the hole back to the system you came from, remembered across restarts in the map file; type from the other side; the type picker opens by itself when several fit) | `mapping/tracker.py` `Tracker.mark_return`, `return_origin`, `return_candidates`, `return_type_of`; `mapping/naming.py` `return_type`, `ReturnType` | `ui/signature_table.py` `SignatureTable.show_menu`, `mark_selected_return` (R), the hint button in `SignatureDelegate`; `ui/system_panel.py` `SystemPanel.mark_return`; candidates first in `ui/wormhole_fields.py` `WormholeTypeCombo(preferred=)` |
 | Editing a connection (type, size, lifetime, mass) | `mapdb/store.py` `update_connection` | `ui/dialogs.py` `ConnectionDialog`; `ui/wormhole_fields.py` `WormholeFields`; `ui/map_window.py` `edit_connection` |
 | Home system | `settings.py` `home_system`; `ui/state.py` `AppState.home_id` | `ui/map_window.py` `_set_home` |
 | Pinning a system so expiry keeps it | `MapSystem.pinned` in `mapdb/store.py` | `ui/map_window.py` `_node_menu` |
@@ -103,7 +103,8 @@ others show or edit it.
 | Names are stored at attach and never change on their own (`MapSystem.label`) | `mapping/naming.py` `Namer.attach_label`, `next_level_index`, `label_unnamed_systems`; `ui/state.py` `AppState._name_new_systems` | — |
 | Explicit renames: scheme change, Make home (asked, one undo step) | `mapping/naming.py` `renames`, `rename_systems` | `ui/map_window.py` `offer_rename`, `_ask_rename_for_scheme`, `_set_home`; `ui/dialogs.py` `RenameSystemsDialog` |
 | Old maps keep the names they showed (once per file) | `mapping/naming.py` `freeze_legacy_names`, `legacy_label`, `legacy_signature_numbers`; `mapdb/store.py` `LEGACY_NAMES_KEY` | `ui/state.py` `AppState._freeze_legacy_names` |
-| Remembered names (alias): outlive the system on the map, fill `custom_name` when it is added again; synced on cloud maps (protocol 2) | `mapdb/store.py` `Alias`, `Store.alias/set_alias/delete_alias`, entity `alias`; `mapping/naming.py` `rename_system` | `ui/map_window.py` `_rename`, `ui/system_panel.py` remember button, `ui/settings_dialog.py` `refresh_aliases` |
+| Remembered names (alias): every custom name is one, no box; it outlives the system on the map, fills `custom_name` when the system is added again; synced on cloud maps (protocol 2). Deleting one in Settings (name typed to confirm) also clears it on the map | `mapdb/store.py` `Alias`, `Store.alias/set_alias/delete_alias`, entity `alias`; `mapping/naming.py` `rename_system`, `forget_alias` | `ui/map_window.py` `_rename`, `ui/system_panel.py` name field, `ui/settings_dialog.py` `refresh_aliases`, `delete_alias` |
+| The number stays beside a custom name (map node subtitle and tooltip, system panel, overlay row) | `mapping/naming.py` `Namer.number_label` | `ui/map_scene.py` `SystemNode._paint_title`, `ui/system_panel.py`, `ui/overlay.py` |
 | Custom name (per map, lost when the system leaves the map) | `MapSystem.custom_name` | `ui/map_window.py` `_rename`; `ui/system_panel.py` name field |
 | Change static / hole of a system | `mapdb/store.py` `update_system(hole_index=…)` | `ui/map_window.py` `_rename_hole` |
 
@@ -112,7 +113,7 @@ others show or edit it.
 | Feature | Logic | UI |
 |---|---|---|
 | Parsing a probe scanner paste and merging it | `mapping/signature_parser.py` `parse_scanner_text`, `merge_signatures` | `ui/map_window.py` `_paste_shortcut` (Ctrl+V) |
-| Signature table (groups, sorting, flash, copy-bookmark button, Delete key) | `ui/signature_table.py` `SignatureModel`, `SignatureDelegate`, `RowFlash` | `ui/system_panel.py` `SystemPanel` |
+| Signature table (groups, sorting, flash, copy-bookmark button, Delete key; the "+" new marker goes after 10 minutes, `is_new`, `SignatureModel.refresh_new` on the minute tick) | `ui/signature_table.py` `SignatureModel`, `SignatureDelegate`, `RowFlash` | `ui/system_panel.py` `SystemPanel` |
 | Editing one signature | `mapping/tracker.py` `save_signature`, `link_signature` | `ui/dialogs.py` `SignatureDialog`; `ui/wormhole_fields.py` |
 | Deleting a wormhole sig removes its connection, systems stay | — | `ui/system_panel.py` `SystemPanel` (delete handler) |
 | Rescan status (`SCAN 26h`, `NO SCAN`) | `mapping/scan_status.py`; `ui/state.py` `AppState.scan_status`, `mark_scanned` | `ui/map_scene.py` `scan_tab_label`; `ui/system_panel.py` |
@@ -140,6 +141,7 @@ others show or edit it.
 |---|---|
 | Overlay window over the EVE client (chain rows, fonts, unlock to move) | `ui/overlay.py` `Overlay` |
 | Overlay modes (`off`, `follow`, `pinned_eve`, `pinned_always`) | `settings.py` `OVERLAY_MODES`; `ui/map_window.py` `set_overlay_mode`, toolbar segments in `_build_toolbar` |
+| Global overlay shortcut (default Ctrl+Shift+O, changeable in Settings; Windows `RegisterHotKey`, KDE global shortcut service; a failed registration shows on the status line, the tray hint hides) | `platform/hotkey.py` `GlobalHotkey`, `parse_shortcut`; `settings.py` `overlay_shortcut`; `ui/map_window.py` `cycle_overlay_mode`, `_apply_hotkey` | `ui/settings_dialog.py` Overlay page |
 | Tray icon and menu | `ui/map_window.py` `_build_tray_menu`, `_sync_tray`, `app_mark` |
 | Which client has focus (KWin script over D-Bus, xprop fallback, Windows user32) | `ui/focus.py`; `platform/focus_linux.py`; `homebound/kwin/homebound-focus/`; `platform/focus_windows.py` |
 | Desktop notifications while the window is hidden | `ui/notify.py` |
@@ -163,7 +165,7 @@ others show or edit it.
 | Several maps: new, rename, delete, switch | `ui/map_window.py` `new_map`, `rename_map`, `delete_map`, `switch_map`, `_fill_map_menu`; `ui/state.py` `AppState.switch_map`; `ui/dialogs.py` `ConfirmDeleteMapDialog`, `PromptDialog` |
 | Settings that belong to a map (home, naming scheme) | `mapdb/store.py` `MAP_SETTING_KEYS`; `ui/state.py` `store_map_settings` |
 | Settings file, defaults, allowed values and ranges | `settings.py` `Settings`, `SETTING_CHOICES`, `clamp_to_range` |
-| Automatic, manual and safety backups; pruning | `backup.py` `create_backup`, `prune`, `auto_backup_due`; `ui/state.py` `AppState.backup` |
+| Automatic, manual and safety backups; pruning; a damaged map is left out (`skipped`), a damaged backup is listed with `damaged` | `backup.py` `create_backup`, `list_backups`, `BackupInfo`, `prune`, `auto_backup_due`; `ui/state.py` `AppState.backup`, `last_backup_skipped`; `ui/settings_dialog.py` `refresh_backups` |
 | Restore | `backup.py` `restore_maps`, `restore_settings`; `ui/state.py` `restore_backup`; `ui/dialogs.py` `RestoreBackupDialog` |
 | Damaged map file set aside at start or on a switch | `ui/state.py` `MapOpenError`, `set_aside_damaged`, `damaged_map_files`, `AppState._load_map`; `__main__.py` |
 | Schema migration of old map files | `mapdb/store.py` `COLUMN_RENAMES`, `TABLE_RENAMES`, `COLUMN_ADDITIONS`, `needs_migration` |
@@ -191,6 +193,7 @@ detail.
 | `__init__.py` | `app_version` |
 | `settings.py` | The settings file, its fields, choices and ranges, log folder detection |
 | `backup.py` | Backup zips: create, list, prune, restore |
+| `hotkey.py` (platform) | Global overlay shortcut: Windows `RegisterHotKey`, KDE global shortcut service |
 | `routing.py` | Route search |
 | `zkill.py` | zKill worker and activity summary |
 | `eve_scout.py` | EVE-Scout worker |

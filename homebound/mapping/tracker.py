@@ -19,7 +19,7 @@ from typing import Any
 from ..logs.parser import SystemChange
 from ..mapdb.store import LIFETIME_REMAINING, Connection, Store
 from ..universe.db import Universe
-from ..validation import require_integer, require_text, require_type
+from ..validation import is_int, require_integer, require_text, require_type
 from .chain import connected_component, wormhole_adjacency
 from .naming import (Namer, ReturnType, StaticGuess, guess_static, hole_path, is_numbered_kind, number_signature,
                      return_type, static_slot_count, take_hole_number, used_hole_indices)
@@ -29,6 +29,7 @@ CHILD_OFFSET_X, CHILD_OFFSET_Y = 12 * GRID, 5 * GRID  # offset of a new child fr
 DEFAULT_LIFETIME_HOURS = 48            # for connections whose type (and so lifetime) is unknown
 CUT_OFF_GRACE = timedelta(hours=1)     # a cut-off piece nobody is in goes after this long
 CUT_OFF_KEY = "cut_off"                # local key/value: {system id: when its piece was cut off from home}
+ORIGINS_KEY = "return_origins"         # local key/value: {"character:system": the system it jumped in from}
 SIGNATURE_EDIT_KEYS = ("group", "type", "name", "destination", "mass", "lifetime", "lifetime_set_at",
                        "frigate_only", "size")
 
@@ -151,7 +152,6 @@ class Tracker:
         require_type(namer, Namer, "namer")
         self.store, self.universe, self.namer = store, universe, namer
         self.auto_when_certain = bool(auto_when_certain)
-        self._origins: dict[tuple[int, int], int] = {}   # (character, system) -> where it came from into it, by wormhole
 
     # ------------------------------------------------------------ log events
     @_one_action
@@ -179,8 +179,8 @@ class Tracker:
             return events
         if is_wormhole_side(self.universe, previous) or is_wormhole_side(self.universe, system_id):
             events[0].wormhole = True
-            self._origins[(change.character_id, system_id)] = previous
             events += self.add_wormhole(previous, system_id, change.character_name)
+            self._remember_origin(change.character_id, system_id, previous)   # after: the system is on the map now
         else:
             events.append(UnknownJump(change.character_id, change.character_name, previous, system_id))
         return events
@@ -448,11 +448,27 @@ class Tracker:
         return connection.id
 
     # ------------------------------------------------------------ return hole
+    def _origin_marks(self) -> dict[str, int]:
+        """Return where each character jumped in from, by ``"character:system"`` (kept in the map file, across restarts)."""
+        try:
+            marks = json.loads(self.store.get_value(ORIGINS_KEY, "{}"))
+        except ValueError:
+            return {}
+        return {key: origin for key, origin in marks.items() if isinstance(key, str) and is_int(origin)} \
+            if isinstance(marks, dict) else {}
+
+    def _remember_origin(self, character_id: int, system_id: int, origin_id: int) -> None:
+        """Keep that a character jumped into a system from ``origin_id``; entries of systems that left the map go."""
+        marks = self._origin_marks()
+        marks[f"{character_id}:{system_id}"] = origin_id
+        marks = {key: origin for key, origin in marks.items() if self.store.has_system(int(key.rpartition(":")[2]))}
+        self.store.put_value(ORIGINS_KEY, json.dumps(marks))
+
     def return_origin(self, system_id: int, character_id: int | None = None) -> int | None:
         """Return the system a return hole in ``system_id`` leads to: where you jumped in from.
 
-        That is the system the character came from on their last wormhole jump into this one, if the
-        two are still connected; else the system's parent; else None (the caller asks).
+        That is the system the character came from on their last wormhole jump into this one (remembered
+        in the map file, so it survives a restart), if the two are still connected; else the system's parent; else None (the caller asks).
 
         Args:
             system_id: The system the hole is in.
@@ -463,7 +479,7 @@ class Tracker:
         """
         require_integer(system_id, "system_id", minimum=1)
         require_integer(character_id, "character_id", minimum=0, optional=True)
-        origin = self._origins.get((character_id, system_id))
+        origin = self._origin_marks().get(f"{character_id}:{system_id}")
         if origin is not None and self.store.connection(origin, system_id):
             return origin
         mapped = self.store.system(system_id)

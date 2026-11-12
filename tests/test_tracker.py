@@ -1,4 +1,5 @@
 """Tracker: jump classification, map building, naming answers, signatures and expiry."""
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -912,6 +913,49 @@ def test_return_origin_prefers_the_jump_then_the_parent(simulation) -> None:
     assert simulation.tracker.return_origin(HOME.id, 1) is None       # home has no parent and nobody jumped in
     simulation.store.remove_connection(simulation.store.connection(c5.id, c3.id).id)
     assert simulation.tracker.return_origin(c3.id, 1) is None
+
+
+def test_return_origin_survives_a_restart(tmp_path) -> None:
+    """Where a character jumped in from is kept in the map file: a new Tracker on the reopened file still knows it."""
+    path = tmp_path / "map.db"
+    c5, c3 = pick_system("C5", exclude={HOME.id}), pick_system("C3")
+    store = Store(path)
+    store.add_system(HOME.id)
+    tracker = Tracker(store, UNIVERSE, Namer(store, UNIVERSE, "numeric", HOME.id))
+    at = datetime(2026, 10, 30, 12, tzinfo=timezone.utc)
+    for minute, name in enumerate((HOME.name, c5.name, c3.name, c5.name, c3.name)):
+        tracker.on_system_change(SystemChange(1, "Pilot", name, at + timedelta(minutes=minute), first=minute == 0))
+    tracker.on_system_change(SystemChange(2, "Other", HOME.name, at, first=True))
+    tracker.on_system_change(SystemChange(2, "Other", c5.name, at + timedelta(minutes=9)))
+    store.close()
+    store = Store(path)
+    tracker = Tracker(store, UNIVERSE, Namer(store, UNIVERSE, "numeric", HOME.id))
+    assert tracker.return_origin(c3.id, 1) == c5.id and tracker.return_origin(c5.id, 2) == HOME.id
+    assert tracker.return_origin(c5.id, 1) == c3.id          # the last jump into c5 came from c3, not from home
+    assert tracker.return_origin(c5.id, 77) == HOME.id       # nobody jumped: the parent
+    store.remove_connection(store.connection(c5.id, c3.id).id)
+    assert tracker.return_origin(c3.id, 1) is None           # no longer connected
+    store.close()
+
+
+def test_return_origin_marks_drop_systems_that_left_the_map_and_survive_bad_values(simulation) -> None:
+    """Marks of a system that is no longer on the map go at the next jump; a damaged value counts as none."""
+    from homebound.mapping.tracker import ORIGINS_KEY
+    c5, c3 = pick_system("C5", exclude={HOME.id}), pick_system("C3")
+    simulation.jump(c5.name)
+    simulation.jump(c3.name)
+    assert set(simulation.tracker._origin_marks()) == {f"1:{c5.id}", f"1:{c3.id}"}
+    unmapped = pick_system("C2")                   # a mark of a system that isn't on the map
+    marks = simulation.tracker._origin_marks()
+    marks[f"1:{unmapped.id}"] = c5.id
+    simulation.store.put_value(ORIGINS_KEY, json.dumps(marks))
+    simulation.jump(HOME.name)
+    assert f"1:{unmapped.id}" not in simulation.tracker._origin_marks()
+    assert simulation.tracker._origin_marks()[f"1:{c3.id}"] == c5.id
+    for bad in ("not json", "[1, 2]", '{"1:5": "x"}'):
+        simulation.store.put_value(ORIGINS_KEY, bad)
+        assert simulation.tracker._origin_marks() == {}
+    assert simulation.tracker.return_origin(c5.id, 1) == HOME.id
 
 
 def test_mark_return_is_one_undoable_action(simulation) -> None:

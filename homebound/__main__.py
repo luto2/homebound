@@ -93,7 +93,9 @@ def _run(application, guard) -> int:
         return 1
     focus = FocusTracker()
     sync = SyncManager(state)
-    window = MapWindow(state, focus, sync)
+    from .platform.hotkey import GlobalHotkey
+    hotkey = GlobalHotkey()
+    window = MapWindow(state, focus, sync, hotkey)
     if guard is not None:
         guard.showRequested.connect(window.raise_window)
     state.start()

@@ -163,7 +163,8 @@ class SystemNode(QGraphicsObject):
         system = self.system
         if not system:
             return str(self.system_id)
-        lines = [f"<b>{self.state.namer.label(self.system_id)}</b> · {system.name}",
+        number = self.state.namer.number_label(self.system_id)
+        lines = [f"<b>{self.state.namer.label(self.system_id)}</b>{f' ({number})' if number else ''} · {system.name}",
                  f"{system.system_class} · {system.region}"]
         if nearest := self.state.universe.nearest_hub(self.system_id):
             lines.append(f"Closest hub: {nearest[0]}, {nearest[1]} jump{'s' if nearest[1] != 1 else ''}")
@@ -301,8 +302,8 @@ class SystemNode(QGraphicsObject):
             self._draw_zkill(painter, right + 4, 7)
         painter.setFont(name_font)
         metrics = QFontMetricsF(name_font)
-        subtitle = (self.system.name if self.known_space and self.name != self.system.name
-                    and not (self.mapped and self.mapped.custom_name) else "")
+        number = self.state.namer.number_label(self.system_id)    # a custom name never hides the number
+        subtitle = number or (self.system.name if self.known_space and self.name != self.system.name else "")
         painter.setPen(color("ink"))
         if level_of_detail < 0.6 and self.system:   # the compact class badge takes the right end
             right -= painting.class_badge_width(self.system.system_class) + 4

@@ -4,22 +4,22 @@ from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, Qt
-from PySide6.QtGui import QColor, QContextMenuEvent, QKeySequence, QMouseEvent, QShortcut
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, Qt
+from PySide6.QtGui import QColor, QContextMenuEvent, QImage, QKeySequence, QMouseEvent, QPainter, QShortcut
 from PySide6.QtWidgets import QApplication, QStyleOptionViewItem
 
 from conftest import HOME, SCAN, UNIVERSE, pick_system
 from homebound.logs.parser import SystemChange
 from homebound.mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, Signature, ZkillStats)
 from homebound.mapping import signature_parser
+from homebound.mapping.naming import rename_system
 from homebound.theme import painting
 from homebound.theme.tokens import color
 from homebound.ui import signature_table as table_module
 from homebound.ui.signature_table import (
     COLUMN_ACTION, COLUMN_AGE, COLUMN_FLAG, COLUMN_GROUP, COLUMN_NAME, COLUMN_SEEN, COLUMN_SIGNATURE, COLUMN_TYPE,
     FLASH_IN_SECONDS, FLASH_OUT_SECONDS, SORTABLE, GroupHeader, RowFlash, SignatureModel, SignatureTable, group_key,
-    group_sort_key,
-    is_wormhole_signature)
+    NEW_MARKER_MINUTES, group_sort_key, is_new, is_wormhole_signature)
 from homebound.ui.system_panel import (BadgeStrip, ElideLabel, OwnerSwatch, SystemPanel, missing_banner_html, plural)
 from homebound.ui.state import AppState
 from ui_helpers import make_state
@@ -701,6 +701,84 @@ def test_all_new_group_collapses_on_header_click(state, model) -> None:
     assert model.rowCount() == rows_open
 
 
+def test_new_marker_goes_after_ten_minutes() -> None:
+    """A sig shows "new" for 10 minutes after the paste that added it; other states and bad dates never do."""
+    now = datetime(2026, 11, 12, 12, 0, tzinfo=timezone.utc)
+
+    def sig(state="new", created=None):
+        """Return a signature with a state and a creation time."""
+        return Signature(HOME.id, "AAA-111", state=state, created_at=now.isoformat() if created is None else created)
+
+    assert NEW_MARKER_MINUTES == 10
+    assert is_new(sig(), now) and is_new(sig(created=(now - timedelta(minutes=9, seconds=59)).isoformat()), now)
+    assert not is_new(sig(created=(now - timedelta(minutes=10)).isoformat()), now)
+    assert not is_new(sig(state=""), now) and not is_new(sig(state="missing"), now)
+    assert not is_new(sig(created=""), now) and not is_new(sig(created="yesterday"), now)
+    naive = (now - timedelta(minutes=1)).replace(tzinfo=None).isoformat()
+    assert is_new(sig(created=naive), now)                               # a date without zone counts as UTC
+    assert is_new(sig(created=iso_ago(minutes=1)))                       # the clock by default
+    assert not is_new(sig(created=iso_ago(minutes=11)))
+
+
+def test_header_counts_only_sigs_still_new(state, model) -> None:
+    """The header's "+" counts sigs added in the last 10 minutes, not every sig whose state is still new."""
+    add_signature(state, "NEW-001", group="gas", state="new", created_at=iso_ago(minutes=2))
+    add_signature(state, "OLD-001", group="gas", state="new", created_at=iso_ago(minutes=30))
+    model.load(HOME.id)
+    header = next(row for row in model.rows if isinstance(row, GroupHeader) and row.key == "sig:gas")
+    assert header.new == 1 and model.new_ids == {"NEW-001"}
+
+
+def test_new_marker_expires_by_itself_on_the_tick(state, table, monkeypatch) -> None:
+    """When a marker runs out the header count and the "+" flag go on the next tick, without a reload and without a write."""
+    add_signature(state, "NEW-001", group="gas", state="new", created_at=iso_ago(minutes=9, seconds=30))
+    table.load(HOME.id)
+    model = table.signature_model
+    row = row_of(table, "NEW-001")
+    index = model.index(row, 0)
+    assert model.new_ids == {"NEW-001"} and model.refresh_new() is False
+    header = next(entry for entry in model.rows if isinstance(entry, GroupHeader) and entry.key == "sig:gas")
+    assert header.new == 1
+    table.selectRow(row)
+    later = datetime.now(timezone.utc) + timedelta(minutes=1)
+    assert model.refresh_new(later) is True
+    assert model.new_ids == set() or model.new_ids == {"NEW-001"}        # the model's own clock is the real one
+    monkeypatch.setattr(table_module, "datetime", type("Late", (datetime,), {"now": classmethod(lambda cls, tz=None: later)}))
+    assert model.refresh_new() is True and model.new_ids == set()
+    header = next(entry for entry in model.rows if isinstance(entry, GroupHeader) and entry.key == "sig:gas")
+    assert header.new == 0 and state.store.signature(HOME.id, "NEW-001").state == "new"   # stored state untouched
+    assert table.selectionModel().isRowSelected(row_of(table, "NEW-001")) and model.refresh_new() is False
+    assert model.rows[row] is not None and index.isValid()
+
+
+def test_panel_tick_drops_the_expired_marker(state, panel, monkeypatch) -> None:
+    """The panel's once-a-minute tick refreshes the table's new markers."""
+    add_signature(state, "NEW-001", group="gas", state="new", created_at=iso_ago(minutes=9, seconds=30))
+    panel.set_system(HOME.id)
+    later = datetime.now(timezone.utc) + timedelta(minutes=1)
+    monkeypatch.setattr(table_module, "datetime", type("Late", (datetime,), {"now": classmethod(lambda cls, tz=None: later)}))
+    state.scanAgeTick.emit()
+    assert panel.table.signature_model.new_ids == set()
+
+
+def test_flag_column_paints_plus_only_while_new(state, table, monkeypatch) -> None:
+    """The "+" in the flag column is drawn for a new sig and not for one past the 10 minutes."""
+    add_signature(state, "NEW-001", group="gas", state="new", created_at=iso_ago(minutes=2))
+    add_signature(state, "OLD-001", group="gas", state="new", created_at=iso_ago(minutes=30))
+    table.load(HOME.id)
+    delegate = table.signature_delegate
+    results = {}
+    for signature_id in ("NEW-001", "OLD-001"):
+        signature = state.store.signature(HOME.id, signature_id)
+        image = QImage(40, 20, QImage.Format.Format_ARGB32)
+        image.fill(0)
+        painter = QPainter(image)
+        delegate._paint_cell(painter, QRectF(0, 0, 40, 20), signature, COLUMN_FLAG, "")
+        painter.end()
+        results[signature_id] = any(image.pixelColor(x, y).alpha() for x in range(40) for y in range(20))
+    assert results == {"NEW-001": True, "OLD-001": False}
+
+
 def test_collapsed_value_survives_garbage(state, model) -> None:
     """A broken stored value counts as nothing collapsed."""
     state.store.put_value("signature_collapsed", "not json")
@@ -1312,32 +1390,31 @@ def test_widgets_of_the_last_test_are_deleted(qt_application) -> None:
     assert [widget for widget in qt_application.topLevelWidgets() if widget.isVisible()] == []
 
 
-def test_panel_remember_toggle_follows_and_sets_the_alias(state, panel) -> None:
-    """The remember button shows whether the custom name is an alias, and sets or forgets it."""
-    assert not panel.remember.isEnabled() and not panel.remember.isChecked()
+def test_panel_custom_name_is_always_remembered(state, panel) -> None:
+    """A name typed in the panel is the system's permanent name: remembered at once, changed at any time, cleared with empty."""
+    assert not hasattr(panel, "remember") and panel.name.toolTip() == ""
     panel.name.setText("Base")
     panel._save_name()
-    assert state.store.system(HOME.id).custom_name == "Base" and state.store.alias(HOME.id) is None
-    assert panel.remember.isEnabled() and not panel.remember.isChecked()
-    panel.remember.click()
-    assert state.store.alias(HOME.id) == "Base" and panel.remember.isChecked()
-    panel.name.setText("Camp")                      # renaming while remembered keeps remembering
+    assert state.store.system(HOME.id).custom_name == "Base" and state.store.alias(HOME.id) == "Base"
+    assert "remembered" in panel.name.toolTip()
+    panel.name.setText("Camp")                      # changed later: the remembered name follows
     panel._save_name()
     assert state.store.alias(HOME.id) == "Camp"
-    panel.remember.click()
-    assert state.store.alias(HOME.id) is None and state.store.system(HOME.id).custom_name == "Camp"
-    panel.remember.click()
     panel.name.setText("")
     panel._save_name()
-    assert state.store.alias(HOME.id) is None and not panel.remember.isEnabled()
+    assert state.store.alias(HOME.id) is None and state.store.system(HOME.id).custom_name is None
 
 
-def test_panel_shows_a_remembered_name_as_remembered(state, panel) -> None:
-    """A system that came back with its alias shows the button checked."""
-    state.store.update_system(HOME.id, custom_name="Camp")
-    state.store.set_alias(HOME.id, "Camp")
+def test_panel_shows_number_beside_a_custom_name(state, panel) -> None:
+    """The line under the name shows the custom name and, in brackets, the number it replaces."""
+    child = pick_system("C5", exclude={HOME.id})
+    state.store.add_system(child.id, parent_id=HOME.id, hole_index=1)
+    state.select(child.id)
+    number = state.namer.scheme_label(child.id)
+    assert f"({number})" not in panel.location_label.text()
+    rename_system(state.store, child.id, "Staging")
     panel.refresh()
-    assert panel.remember.isChecked() and "emembered" in panel.remember.toolTip()
+    assert panel.location_label.text().startswith(f"Staging ({number})")
 
 
 # ---------------------------------------------------------------- return hole
@@ -1465,7 +1542,7 @@ def test_panel_marks_the_return_hole_with_one_undo(state, panel) -> None:
     assert state.store.signature(child.id, "KKK-001").destination is None
 
 
-def test_panel_tells_the_candidates_and_refuses_without_an_origin(state, panel) -> None:
+def test_panel_tells_the_candidates_and_refuses_without_an_origin(state, panel, modal) -> None:
     """Several types fit: the type stays empty and a toast names them. No origin: an error toast, nothing changes."""
     other = pick_system("C3")
     state.tracker.add_wormhole(HOME.id, other.id)
@@ -1479,8 +1556,39 @@ def test_panel_tells_the_candidates_and_refuses_without_an_origin(state, panel) 
     assert panel.mark_return("ZZZ-999", HOME.id) is True
     assert toasts[-1][0] == "ok" and "C008, N770" in toasts[-1][1]
     assert state.store.signature(other.id, "ZZZ-999").type is None
+    assert len(modal.dialogs) == 1                    # the editor opened by itself
     assert panel.mark_return("ZZZ-999", 0) is False and toasts[-1][0] == "err"
     assert panel.mark_return("ZZZ-999", 31337) is False
     assert panel.mark_return("NOPE-000", HOME.id) is False
     with pytest.raises(TypeError):
         panel.mark_return(5, HOME.id)
+
+
+def test_panel_opens_the_type_picker_when_several_types_fit(state, panel, modal, monkeypatch, qt_application) -> None:
+    """Marking a return hole whose type can be one of several opens the editor with the picker open and those types first."""
+    from homebound.ui.wormhole_fields import WormholeTypeCombo
+    other = pick_system("C3")
+    state.tracker.add_wormhole(HOME.id, other.id)
+    link = state.store.connection(HOME.id, other.id)
+    add_signature(state, "FAR-111", HOME.id, group="wormhole", type="K162")
+    state.store.set_connection_signature(link.id, HOME.id, "FAR-111")
+    add_signature(state, "ZZZ-999", other.id, group="wormhole")
+    state.select(other.id)
+    panel.set_system(other.id)
+    popups = []
+    monkeypatch.setattr(WormholeTypeCombo, "showPopup", lambda combo: popups.append(combo))
+    seen = []
+    modal.handler = lambda dialog: (seen.append(dialog), qt_application.processEvents(), 0)[2]
+    assert panel.mark_return("ZZZ-999", HOME.id) is True
+    assert len(seen) == 1 and seen[0].signature.signature_id == "ZZZ-999"
+    assert seen[0].wormhole.type.preferred == ("C008", "N770") and popups == [seen[0].wormhole.type]
+    assert state.store.signature(other.id, "ZZZ-999").destination == HOME.system_class   # cancelled: the mark stays
+
+
+def test_panel_does_not_open_the_picker_when_the_type_is_settled(state, panel, modal) -> None:
+    """A return hole whose type follows from the other side opens nothing."""
+    child, _ = return_scene(state)
+    state.select(child.id)
+    panel.set_system(child.id)
+    assert panel.mark_return("KKK-001", HOME.id) is True
+    assert modal.dialogs == []

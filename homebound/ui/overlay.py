@@ -302,6 +302,9 @@ class Overlay(QWidget):
             x += painting.draw_halo_text(painter, x, baseline, row.prefix, fonts.mono, muted)
         label = system.name if row.virtual else state.namer.label(row.system_id)
         x += painting.draw_halo_text(painter, x, baseline, label, fonts.current if row.current else fonts.row, ink) + 6
+        number = "" if row.virtual else state.namer.number_label(row.system_id)    # a custom name keeps its number
+        if number:
+            x += painting.draw_halo_text(painter, x, baseline, number, fonts.mono, muted) + 6
         badge_y = y + (row_height - 16) / 2
         x += painting.draw_class_badge(painter, x, badge_y, system.system_class,
                                        system.security if system.known_space else None) + 6

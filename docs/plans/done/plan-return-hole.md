@@ -85,3 +85,13 @@ Decided as recommended when built.
 1. Should marking also fill in A's side when A's sig is missing (A has one unlinked WH sig that fits)?
    Recommended and built: no, only suggest it there the same way, to keep one click = one sig.
 2. Shortcut `R` free in the signature table? Yes.
+
+## Implementation notes (2026-11-12)
+
+- The "which A" memory is saved now: `Tracker` keeps it in the map file's local key/value row `return_origins`
+  (`{"character:system": origin}`, never synced), written after each wormhole jump and pruned of systems that
+  left the map. `return_origin` reads it, so it survives a restart; it still only counts while the two systems
+  are connected, else the parent.
+- When several types fit (a K162 on the other side), `SystemPanel.mark_return` opens the signature editor for
+  the sig by itself with the type picker dropped open, the candidates first. Cancelling keeps the mark. The
+  "Pick its type" toast stays.

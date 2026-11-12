@@ -52,6 +52,9 @@ class BackupInfo:
     maps: dict = field(default_factory=dict)   # name -> {"file", "home_system", "naming_scheme"}
     size: int = 0                         # bytes
     app_version: str = ""
+    damaged: str = ""                     # why the backup counts as damaged ("" = fine), shown in the list
+    readable: bool = True                 # False when not even the manifest could be read: nothing to restore from
+    skipped: dict = field(default_factory=dict)   # map name -> why it was left out of this backup (damaged map)
 
 
 def backups_directory() -> Path:
@@ -106,10 +109,13 @@ def _unique_path(folder: Path, stem: str) -> Path:
     return path
 
 
-def create_backup(reason: str, settings: Settings, warnings: list[str] | None = None) -> Path:
+def create_backup(reason: str, settings: Settings, warnings: list[str] | None = None,
+                  skipped: dict[str, str] | None = None) -> Path:
     """Back up every map file and the settings into a new zip, then prune old backups.
 
-    Map files that don't exist yet (a map never opened) are left out. Old backups that can't be
+    Map files that don't exist yet (a map never opened) are left out. A damaged map file (not a map,
+    unreadable, or failing the integrity check) is left out too, and every other map is still
+    backed up; it is named in ``skipped`` and in the zip's manifest. Old backups that can't be
     deleted are added to ``warnings``; the backup still counts.
 
     Args:
@@ -117,17 +123,20 @@ def create_backup(reason: str, settings: Settings, warnings: list[str] | None = 
         settings: The current settings (the map list comes from here).
         warnings: Collects ``"<file>: <error>"`` for each old backup that couldn't be deleted, or None
             to drop them.
+        skipped: Collects ``map name -> why`` for each damaged map left out, or None to drop them.
 
     Returns:
         The new zip.
 
     Raises:
-        BackupError: If a map can't be copied or the zip can't be written; nothing is left behind
-            (unless the half-written file can't be deleted either).
+        BackupError: If the zip can't be written; nothing is left behind (unless the half-written
+            file can't be deleted either).
     """
     require_choice(reason, REASONS, "reason")
     require_type(settings, Settings, "settings")
     require_type(warnings, (list, type(None)), "warnings")
+    require_type(skipped, (dict, type(None)), "skipped")
+    left_out: dict[str, str] = {}
     folder = backups_directory()
     now = datetime.now(timezone.utc)
     maps = {}
@@ -141,7 +150,11 @@ def create_backup(reason: str, settings: Settings, warnings: list[str] | None = 
                     source = settings.map_path(name)
                     if not source.exists():
                         continue
-                    copy = _copy_database(source, Path(temporary) / f"{number}.db")
+                    try:
+                        copy = _copy_database(source, Path(temporary) / f"{number}.db")
+                    except BackupError as error:   # a damaged map must not stop the others being backed up
+                        left_out[name] = str(error)
+                        continue
                     archive.write(copy, entry["file"])
                     maps[name] = {"file": entry["file"], "home_system": entry.get("home_system", ""),
                                   "naming_scheme": entry.get("naming_scheme", "numeric")}
@@ -151,7 +164,7 @@ def create_backup(reason: str, settings: Settings, warnings: list[str] | None = 
                 archive.writestr(SETTINGS_MEMBER, json.dumps(asdict(settings), indent=2))
                 archive.writestr(MANIFEST, json.dumps({
                     "created_at": now.isoformat(timespec="seconds"), "app_version": app_version(),
-                    "reason": reason, "maps": maps}, indent=2))
+                    "reason": reason, "maps": maps, "skipped": left_out}, indent=2))
         partial.replace(path)
     except BackupError:
         partial_cleanup(folder)
@@ -159,6 +172,8 @@ def create_backup(reason: str, settings: Settings, warnings: list[str] | None = 
     except (OSError, zipfile.BadZipFile) as error:
         partial_cleanup(folder)
         raise BackupError(f"The backup couldn't be written to {folder}: {error}") from error
+    if skipped is not None:
+        skipped.update(left_out)
     prune(folder, warnings)
     return path
 
@@ -236,12 +251,40 @@ def read_manifest(path: Path) -> dict:
         raise BackupError(f"{path.name} is not a readable backup: {error}") from error
     if not isinstance(manifest, dict) or not isinstance(manifest.get("maps"), dict):
         raise BackupError(f"{path.name} has no list of maps")
+    manifest["damaged_entries"] = [name for name, entry in manifest["maps"].items() if not _valid_map_entry(entry)]
     manifest["maps"] = {name: entry for name, entry in manifest["maps"].items() if _valid_map_entry(entry)}
     return manifest
 
 
-def backup_info(path: Path) -> BackupInfo:
+def _damage_of(path: Path, manifest: dict, check: bool) -> str:
+    """Return what is wrong with a backup whose manifest was read, or ``""``.
+
+    Args:
+        path: The zip.
+        manifest: Its manifest, from :func:`read_manifest`.
+        check: Also read every member to check its checksum (slow for big backups).
+    """
+    problems = []
+    if manifest["damaged_entries"]:
+        problems.append(f"the entry for {', '.join(map(repr, manifest['damaged_entries']))} in its list of maps is damaged")
+    if check:
+        try:
+            with zipfile.ZipFile(path) as archive:
+                bad = archive.testzip()
+        except ZIP_READ_ERRORS as error:
+            bad = f"{path.name} ({error})"
+        if bad:
+            problems.append(f"{bad} is damaged")
+    return "; ".join(problems)
+
+
+def backup_info(path: Path, check: bool = False) -> BackupInfo:
     """Read one backup zip.
+
+    Args:
+        path: The zip.
+        check: Also test every member's checksum, so a damaged map inside the zip is found (the
+            Backups page does; automatic backups don't, to stay quick).
 
     Raises:
         BackupError: If it can't be read.
@@ -253,24 +296,42 @@ def backup_info(path: Path) -> BackupInfo:
         created = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
     if created.tzinfo is None:
         created = created.replace(tzinfo=timezone.utc)
+    skipped = manifest.get("skipped")
+    skipped = {str(name): str(why) for name, why in skipped.items()} if isinstance(skipped, dict) else {}
     return BackupInfo(path, created, str(manifest.get("reason", "")), manifest["maps"], path.stat().st_size,
-                      str(manifest.get("app_version", "")))
+                      str(manifest.get("app_version", "")), _damage_of(path, manifest, check), True, skipped)
 
 
-def list_backups(folder: Path | None = None) -> list[BackupInfo]:
-    """Return the readable backups in a folder (the backups folder by default), newest first.
+def _damaged_info(path: Path, name_match: re.Match, error: Exception) -> BackupInfo:
+    """Return the list entry of a backup that couldn't be read at all: its name gives the reason, the file its date."""
+    try:
+        stat = path.stat()
+        created, size = datetime.fromtimestamp(stat.st_mtime, timezone.utc), stat.st_size
+    except OSError:
+        created, size = datetime.fromtimestamp(0, timezone.utc), 0
+    return BackupInfo(path, created, name_match["reason"], {}, size, "", str(error), False)
 
-    Files that don't look like a backup, or can't be read, are skipped.
+
+def list_backups(folder: Path | None = None, check: bool = False) -> list[BackupInfo]:
+    """Return the backups in a folder (the backups folder by default), newest first.
+
+    A backup that can't be read is listed with ``damaged`` set and ``readable`` False, so the user
+    sees it and can delete it. Files whose name isn't a backup's are skipped.
+
+    Args:
+        folder: The folder to list.
+        check: Also test every member's checksum (see :func:`backup_info`).
     """
     folder = folder or backups_directory()
     found = []
     for path in folder.glob("*.zip") if folder.is_dir() else ():
-        if not NAME_PATTERN.match(path.name):
+        name_match = NAME_PATTERN.match(path.name)
+        if not name_match:
             continue
         try:
-            found.append(backup_info(path))
-        except (BackupError, OSError):
-            continue
+            found.append(backup_info(path, check))
+        except (BackupError, OSError) as error:
+            found.append(_damaged_info(path, name_match, error))
     return sorted(found, key=lambda info: info.created_at, reverse=True)
 
 
@@ -288,7 +349,7 @@ def prune(folder: Path | None = None, failed: list[str] | None = None) -> int:
         The number of backups deleted.
     """
     require_type(failed, (list, type(None)), "failed")
-    backups = list_backups(folder)
+    backups = [info for info in list_backups(folder) if info.readable]   # a damaged zip is left for the user to delete
     old = ([info for info in backups if info.reason == "auto"][KEEP_AUTO:]
            + [info for info in backups if info.reason in SAFETY_REASONS][KEEP_SAFETY:])
     removed = 0
@@ -306,7 +367,7 @@ def prune(folder: Path | None = None, failed: list[str] | None = None) -> int:
 def auto_backup_due(now: datetime | None = None) -> bool:
     """Return whether the newest automatic backup is older than 24 hours (or there is none)."""
     now = now or datetime.now(timezone.utc)
-    newest = next((info for info in list_backups() if info.reason == "auto"), None)
+    newest = next((info for info in list_backups() if info.reason == "auto" and not info.damaged), None)
     return newest is None or now - newest.created_at >= AUTO_INTERVAL
 
 

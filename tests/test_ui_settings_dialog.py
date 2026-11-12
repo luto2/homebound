@@ -542,8 +542,21 @@ def test_backups_page_lists_and_backs_up(dialog, state, tmp_path) -> None:
     assert dialog.backup_now() is True
     assert dialog.backup_list.topLevelItemCount() == 1 and dialog.restore_button.isEnabled()
     assert dialog.backup_list.topLevelItem(0).text(1) == "by hand"
-    state.settings.map_path().write_text("broken")
-    assert dialog.backup_now() is False and "not a map file" in dialog.backup_help.text()
+    state.settings.map_path().write_text("broken")       # a damaged map is left out, the backup still counts
+    assert dialog.backup_now() is True and dialog.backup_list.topLevelItemCount() == 2
+    assert "damaged map “Main” was left out" in dialog.backup_help.text()
+    assert dialog.backup_help.property("role") == "help-warn"
+    newest = state.last_backup_skipped
+    assert list(newest) == ["Main"]
+    skipped_item = next(dialog.backup_list.topLevelItem(row) for row in range(2) if dialog.backups[row].skipped)
+    dialog.backup_list.setCurrentItem(next(item for item in map(dialog.backup_list.topLevelItem, range(2)) if item is not skipped_item))
+    assert dialog.backup_help.text().startswith("▲ Backed up")                # selecting a fine backup says nothing new
+    dialog.backup_list.setCurrentItem(skipped_item)
+    assert "Left out of this backup because the map file was damaged: Main" in dialog.backup_help.text()
+    assert "damaged map file" in skipped_item.toolTip(2) or "damaged" in skipped_item.toolTip(2)
+    state.backup = lambda *arguments, **keywords: None
+    state.last_backup_error = "disk full"
+    assert dialog.backup_now() is False and "disk full" in dialog.backup_help.text()
 
 
 def test_backups_page_restores_as_new_map(dialog, state, modal) -> None:
@@ -612,9 +625,19 @@ def test_backups_page_with_damaged_backups(dialog, state, modal) -> None:
     broken_backup(folder / "2026-11-01_1200_manual.zip", "manifest.json")
     broken_backup(folder / "2026-11-02_1200_manual.zip", "map.db",
                   {"Main": {"file": "map.db"}, "Bad": "not an entry"})
-    assert dialog.refresh_backups() == 2
+    assert dialog.refresh_backups() == 3       # the unreadable one is listed too, marked damaged
+    unreadable = next(info for info in dialog.backups if info.path.name.startswith("2026-11-01"))
+    row = dialog.backups.index(unreadable)
+    item = dialog.backup_list.topLevelItem(row)
+    assert unreadable.readable is False and item.text(2).startswith("▲ damaged") and "not a readable backup" in item.toolTip(2)
+    dialog.backup_list.setCurrentItem(item)
+    assert not dialog.restore_button.isEnabled() and dialog.restore_selected_backup() is False
+    assert "can't be restored" in dialog.backup_help.text() and dialog.backup_help.property("role") == "help-warn"
+    good = next(info for info in dialog.backups if info.reason == "manual" and not info.damaged)
+    dialog.backup_list.setCurrentItem(dialog.backup_list.topLevelItem(dialog.backups.index(good)))
+    assert dialog.restore_button.isEnabled() and not dialog.backup_list.topLevelItem(dialog.backups.index(good)).text(2).startswith("▲")
     damaged = next(info for info in dialog.backups if info.path.name.startswith("2026-11-02"))
-    assert list(damaged.maps) == ["Main"]   # the bad entry is left out, so the restore dialog can show the rest
+    assert list(damaged.maps) == ["Main"] and "'Bad'" in damaged.damaged   # the bad entry is left out, the rest can be restored
     dialog.backup_list.setCurrentItem(dialog.backup_list.topLevelItem(dialog.backups.index(damaged)))
     modal.handler = lambda restore: (restore.as_new.setChecked(True), 1)[1]
     maps_before = dict(state.settings.maps)
@@ -682,14 +705,49 @@ def test_routes_page_saves_and_resets(dialog, state) -> None:
     assert settings.route_destinations[0] == "Jita" and not state.eve_scout.enabled
 
 
-def test_remembered_names_table_lists_and_deletes(state, kwin) -> None:
-    """The naming page lists the map's aliases with the system name and deletes one without the system on the map."""
+def test_remembered_names_table_lists_and_deletes(state, kwin, modal) -> None:
+    """The naming page lists the map's remembered names; deleting one needs the name typed, system on the map or not."""
     jita = UNIVERSE.by_name("Jita")
     state.store.set_alias(jita.id, "Staging")
     dialog = SettingsDialog(None, state)
     assert dialog.alias_table.rowCount() == 1
     assert dialog.alias_table.item(0, 0).text() == jita.name and dialog.alias_table.item(0, 1).text() == "Staging"
     assert not state.store.has_system(jita.id)
+    modal.handler = lambda prompt: (prompt.field.setText("Staging"), prompt.validate_now(), 1)[2]
     dialog.alias_table.cellWidget(0, 2).click()
     assert state.store.alias(jita.id) is None and dialog.alias_table.rowCount() == 0
     assert dialog.alias_empty.isVisibleTo(dialog.stack.widget(2)) and not dialog.alias_table.isVisibleTo(dialog.stack.widget(2))
+
+
+def test_deleting_a_remembered_name_clears_it_on_the_map(state, kwin, modal) -> None:
+    """With the system on the map the custom name goes too; a wrong or cancelled confirmation changes nothing."""
+    from homebound.mapping.naming import rename_system
+    child = pick_system("C5", exclude={HOME.id})
+    state.store.add_system(child.id, parent_id=HOME.id, hole_index=1)
+    rename_system(state.store, child.id, "Staging")
+    changed = []
+    state.mapChanged.connect(lambda: changed.append(1))
+    dialog = SettingsDialog(None, state)
+    prompts = []
+
+    def type_name(text: str):
+        """Return a handler that types ``text`` into the confirm prompt and accepts it only when it validates."""
+        def handler(prompt):
+            prompts.append(prompt)
+            prompt.field.setText(text)
+            prompt.validate_now()
+            return 1 if prompt.valid else 0
+        return handler
+
+    modal.handler = type_name("staging")                       # not exactly the name: the button stays disabled
+    assert dialog.delete_alias(child.id) is False
+    assert (state.store.system(child.id).custom_name, state.store.alias(child.id)) == ("Staging", "Staging")
+    assert not prompts[0].valid and not prompts[0].primary_button.isEnabled()
+    modal.handler = lambda prompt: 0                            # cancelled
+    assert dialog.delete_alias(child.id) is False and state.store.alias(child.id) == "Staging"
+    modal.handler = type_name("Staging")
+    assert dialog.delete_alias(child.id) is True
+    assert (state.store.system(child.id).custom_name, state.store.alias(child.id)) == (None, None) and changed
+    assert dialog.delete_alias(child.id) is False               # nothing left to delete
+    with pytest.raises(ValueError):
+        dialog.delete_alias(0)

@@ -78,3 +78,18 @@ Not coordinated, only noted.
 - **Backup URI handling**: `_copy_database` opens `file:{source}?mode=ro` (`backup.py:74`); any change to how paths are quoted touches the same function that `_extract_map` returns through (297).
 - **Prune errors**: `prune` (`backup.py:243-254`) and `list_backups` (226-240). Both plans may edit `list_backups`' `except` or the call order in `create_backup`/`copy_to_folder` (188). A change to what `list_backups` skips affects my test 4.
 - `restore_maps` is also the home of the undo branch; nothing else in the TODO lists plans a change there.
+
+## Implementation notes (2026-11-12, TODO item 19)
+
+- `create_backup` no longer stops at a damaged map: a map whose copy raises `BackupError` is left out, named in
+  the optional `skipped` argument and in the manifest (`"skipped": {name: why}`), and every other map and the
+  settings are backed up. A zip that can't be written still raises. `AppState.backup` keeps `last_backup_skipped`
+  and reports "Backed up, but the map “X” is damaged and was left out (why)" on the status line.
+- `delete_map` refuses a map that was left out of its safety backup (it has no backup to fall back on).
+  Replace over a damaged map now works too, because the `restore` safety backup no longer fails on it.
+- `list_backups` lists a zip with a backup name that can't be read, marked (`BackupInfo.damaged`,
+  `readable=False`, date from the file, reason from the name); `prune` leaves such a file alone and
+  `auto_backup_due` ignores damaged ones. `list_backups(check=True)` (the Backups page) also tests every member's
+  checksum; a manifest entry that was dropped as malformed makes the backup "damaged" but still restorable.
+- Settings → Backups: "▲ damaged" in the Maps column with the reason as tooltip; selecting it says why under the
+  list; Restore is disabled for an unreadable one.

@@ -5,7 +5,7 @@ import pytest
 
 from conftest import HOME, UNIVERSE, MapSimulation, drop_columns, pick_system
 from homebound.mapdb.store import Signature, Store
-from homebound.mapping.naming import (SCHEMES, rename_system, ChainDepthPositionScheme, Namer, Scheme, chain_letter,
+from homebound.mapping.naming import (SCHEMES, forget_alias, rename_system, ChainDepthPositionScheme, Namer, Scheme, chain_letter,
                                       freeze_legacy_names, guess_static, label_unnamed_systems, number_for_letters,
                                       hole_digit, hole_path, is_static_signature, letters_for_number, level_positions,
                                       next_level_index, ReturnType, return_type, scheme_for_key, signature_destination,
@@ -371,25 +371,60 @@ def test_namer_shows_a_remembered_name_like_a_custom_name() -> None:
 
 
 def test_rename_system_remembers_or_forgets_in_one_action() -> None:
-    """Rename sets the custom name; "remember" also keeps it as the alias; an empty name forgets both."""
+    """Rename sets the custom name and always keeps it as the alias; an empty name forgets both."""
     store = Store(":memory:")
     store.add_system(HOME.id)
     child = pick_system("C5", exclude={HOME.id})
     store.add_system(child.id, parent_id=HOME.id, hole_index=1)
     actions = []
     store.listeners.append(actions.append)
-    rename_system(store, child.id, "Staging", remember=True)
+    rename_system(store, child.id, "Staging")
     assert (store.system(child.id).custom_name, store.alias(child.id)) == ("Staging", "Staging") and len(actions) == 1
-    rename_system(store, child.id, "Farm", remember=False)        # unchecked: the alias goes
-    assert (store.system(child.id).custom_name, store.alias(child.id)) == ("Farm", None)
-    rename_system(store, child.id, "Farm", remember=True)
-    rename_system(store, child.id, "", remember=True)             # clearing the name forgets both
+    rename_system(store, child.id, "Farm")                        # a change at any time moves the alias too
+    assert (store.system(child.id).custom_name, store.alias(child.id)) == ("Farm", "Farm")
+    rename_system(store, child.id, "  ")                          # clearing the name forgets both
     assert (store.system(child.id).custom_name, store.alias(child.id)) == (None, None)
-    rename_system(store, child.id, "Staging", remember=True)
+    rename_system(store, child.id, "Staging")
     store.undo(actions[-1])                                       # one undo step undoes name and alias
     assert (store.system(child.id).custom_name, store.alias(child.id)) == (None, None)
     with pytest.raises(TypeError):
-        rename_system(store, child.id, "x", remember="yes")
+        rename_system(store, child.id, 5)
+
+
+def test_forget_alias_clears_the_name_on_the_map_in_one_action() -> None:
+    """Deleting a remembered name clears the custom name of the system when it is on the map, and one Undo restores both."""
+    store = Store(":memory:")
+    store.add_system(HOME.id)
+    child = pick_system("C5", exclude={HOME.id})
+    store.add_system(child.id, parent_id=HOME.id, hole_index=1)
+    other = pick_system("C3", exclude={HOME.id})
+    actions = []
+    rename_system(store, child.id, "Staging")
+    store.listeners.append(actions.append)
+    assert forget_alias(store, child.id) is True
+    assert (store.system(child.id).custom_name, store.alias(child.id)) == (None, None) and len(actions) == 1
+    store.undo(actions[-1])
+    assert (store.system(child.id).custom_name, store.alias(child.id)) == ("Staging", "Staging")
+    store.set_alias(other.id, "Elsewhere")                        # not on the map: only the name is forgotten
+    assert forget_alias(store, other.id) is False and store.alias(other.id) is None
+    store.update_system(child.id, custom_name="Typed since")      # a different name on the map stays
+    assert forget_alias(store, child.id) is False and store.system(child.id).custom_name == "Typed since"
+    assert forget_alias(store, child.id) is False                 # nothing left to forget
+    with pytest.raises(ValueError):
+        forget_alias(store, 0)
+
+
+def test_number_label_shows_only_beside_a_custom_name() -> None:
+    """A custom name never hides the number: ``number_label`` gives the scheme label for it, else nothing."""
+    store = Store(":memory:")
+    store.add_system(HOME.id)
+    child = pick_system("C5", exclude={HOME.id})
+    store.add_system(child.id, parent_id=HOME.id, hole_index=1)
+    namer = Namer(store, UNIVERSE, "numeric", HOME.id)
+    assert namer.number_label(child.id) == ""
+    rename_system(store, child.id, "Staging")
+    assert namer.number_label(child.id) == namer.scheme_label(child.id) != "Staging"
+    assert namer.number_label(999999) == ""
 
 
 def test_return_type_from_the_other_side() -> None:

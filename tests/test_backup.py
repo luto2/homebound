@@ -1,6 +1,7 @@
 """Tests for backups: creating, listing, pruning, restoring, and where the app makes them."""
 import json
 import os
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -136,12 +137,32 @@ def test_reason_is_checked(settings) -> None:
         create_backup("manual", object())
 
 
-def test_damaged_map_fails_the_backup(settings) -> None:
-    """A map file that isn't a database fails the backup, and nothing is left behind."""
+def test_damaged_map_is_left_out_and_the_rest_backed_up(settings, tmp_path) -> None:
+    """A map file that isn't a database is left out of the backup; the other maps and the settings are still in it."""
+    settings.add_map("Second", "", "numeric")
+    with Store(settings.map_path("Second")) as store:
+        store.add_system(OTHER.id)
     settings.map_path().write_text("not a database")
-    with pytest.raises(BackupError, match="not a map file"):
-        create_backup("manual", settings)
-    assert list(backups_directory().iterdir()) == []
+    skipped, warnings = {}, []
+    path = create_backup("manual", settings, warnings, skipped)
+    assert list(skipped) == ["Main"] and "not a map file" in skipped["Main"] and warnings == []
+    info = backup_info(path)
+    assert list(info.maps) == ["Second"] and info.skipped == skipped and info.damaged == ""
+    with zipfile.ZipFile(path) as archive:
+        assert "settings.json" in archive.namelist() and "map.db" not in archive.namelist()
+        assert map_rows(archive.read(info.maps["Second"]["file"]), tmp_path) == [OTHER.id]
+    assert [file.name for file in backups_directory().iterdir()] == [path.name]
+
+
+def test_all_maps_damaged_still_backs_up_the_settings(settings) -> None:
+    """With every map damaged the backup holds the settings only; nothing raises and nothing is left over."""
+    settings.map_path().write_text("not a database")
+    skipped = {}
+    path = create_backup("manual", settings, skipped=skipped)
+    assert list(skipped) == ["Main"] and backup_info(path).maps == {}
+    assert restore_settings(path, settings) >= 0
+    with pytest.raises(TypeError):
+        create_backup("manual", settings, skipped=[])
 
 
 @pytest.mark.skipif(CANNOT_LOCK_FOLDERS, reason="chmod can't make a folder read-only here")
@@ -178,8 +199,9 @@ def test_backup_refuses_a_database_without_map_tables(settings) -> None:
     database.execute("CREATE TABLE unrelated (a)")
     database.commit()
     database.close()
-    with pytest.raises(BackupError, match="holds no map data"):
-        create_backup("manual", settings)
+    skipped = {}
+    path = create_backup("manual", settings, skipped=skipped)
+    assert "holds no map data" in skipped["Main"] and backup_info(path).maps == {}
 
 
 def test_backup_of_a_zero_byte_map_still_succeeds(settings) -> None:
@@ -201,15 +223,21 @@ def test_copy_to_folder(settings, tmp_path) -> None:
 
 # ---------------------------------------------------------------- listing and pruning
 def test_list_skips_foreign_and_broken_files(settings) -> None:
-    """Only readable zips with a backup's name are listed, newest first."""
+    """Zips with a backup's name are listed newest first, an unreadable one marked damaged; other files are skipped."""
     folder = backups_directory()
     start = datetime(2026, 10, 1, tzinfo=timezone.utc)
     older, newer = fake_backup(folder, "auto", start), fake_backup(folder, "auto", start + timedelta(days=1))
     (folder / "notes.zip").write_text("x")
-    (folder / "2026-10-03_1200_auto.zip").write_text("not a zip")
-    assert [info.path for info in list_backups()] == [newer, older]
+    broken = folder / "2026-10-03_1200_auto.zip"
+    broken.write_text("not a zip")
+    os.utime(broken, (start.timestamp() + 10, start.timestamp() + 10))
+    listed = list_backups()
+    assert [info.path for info in listed] == [newer, broken, older]
+    assert [info.damaged != "" for info in listed] == [False, True, False]
+    assert listed[1].readable is False and listed[1].reason == "auto" and listed[1].maps == {}
+    assert "not a readable backup" in listed[1].damaged and listed[1].size == len("not a zip")
     with pytest.raises(BackupError):
-        read_manifest(folder / "2026-10-03_1200_auto.zip")
+        read_manifest(broken)
     assert list_backups(folder / "missing") == []
 
 
@@ -298,8 +326,12 @@ def test_partial_cleanup_skips_files_that_wont_delete(settings, monkeypatch) -> 
     (folder / "stuck.partial").write_bytes(b"")
     lock_backups(monkeypatch, suffix=".partial")
     assert backup_module.partial_cleanup(folder) == 0
-    settings.map_path().write_text("broken")
-    with pytest.raises(BackupError, match="not a map file"):
+    def disk_full(*arguments) -> NoReturn:
+        """Stand in for a zip that can't be written."""
+        raise OSError("disk full")
+
+    monkeypatch.setattr(zipfile.ZipFile, "writestr", disk_full)
+    with pytest.raises(BackupError, match="couldn't be written"):
         create_backup("manual", settings)
 
 
@@ -528,10 +560,22 @@ def test_state_backup_reports(monkeypatch, tmp_path, qt_application) -> None:
     assert state.backup("manual") is not None and messages[-1][:2] == ("backup", "ok")
     state.settings.backup_copy_directory = str(tmp_path / "missing")
     assert state.backup("manual") is not None and "not copied" in messages[-1][2]
-    state.settings.map_path().write_text("broken")
-    assert state.backup("manual") is None and "not a map file" in state.last_backup_error
+    state.settings.backup_copy_directory = ""
+    state.settings.map_path().write_text("broken")        # a damaged map is left out, the backup still counts
+    assert state.backup("manual") is not None and state.last_backup_error == ""
+    assert messages[-1][:2] == ("backup", "warn") and "“Main” is damaged and was left out" in messages[-1][2]
+    assert "not a map file" in messages[-1][2] and list(state.last_backup_skipped) == ["Main"]
+    assert state.backup("manual") is not None and state.backup("manual", report_failure=False) is not None
+
+    def failing(*arguments, **keywords) -> NoReturn:
+        """Stand in for a backup that can't be written."""
+        raise BackupError("disk full")
+
+    monkeypatch.setattr(backup_module, "create_backup", failing)
     count = len(messages)
-    assert state.backup("manual", report_failure=False) is None and len(messages) == count
+    assert state.backup("manual") is None and state.last_backup_error == "disk full" and len(messages) == count + 1
+    assert state.last_backup_skipped == {}
+    assert state.backup("manual", report_failure=False) is None and len(messages) == count + 1
     with pytest.raises(ValueError):
         state.backup("weekly")
     state.stop()
@@ -696,16 +740,20 @@ def test_failed_safety_backup_blocks_replace(monkeypatch, tmp_path, qt_applicati
 
 # ---------------------------------------------------------------- damaged input
 def test_unreadable_and_damaged_maps(settings, tmp_path) -> None:
-    """A map path that is a folder, a file with a damaged body or a failed integrity check stops the backup."""
+    """A map path that is a folder, a file with a damaged body or a failed integrity check is left out of the backup."""
+    def left_out() -> str:
+        """Back up and return why Main was left out."""
+        skipped = {}
+        create_backup("manual", settings, skipped=skipped)
+        return skipped["Main"]
+
     path = settings.map_path()
     path.unlink()
     path.mkdir()
-    with pytest.raises(BackupError, match="can't be read"):
-        create_backup("manual", settings)
+    assert "can't be read" in left_out()
     path.rmdir()
     path.write_bytes(b"SQLite format 3\0" + b"\xff" * 2000)
-    with pytest.raises(BackupError, match="can't be read"):
-        create_backup("manual", settings)
+    assert "can't be read" in left_out()
     path.unlink()
     database = sqlite3.connect(path)
     database.execute("CREATE TABLE t (a)")
@@ -716,8 +764,7 @@ def test_unreadable_and_damaged_maps(settings, tmp_path) -> None:
     database.execute("UPDATE sqlite_master SET sql = 'CREATE INDEX ia ON t (a DESC)' WHERE name = 'ia'")
     database.commit()
     database.close()
-    with pytest.raises(BackupError, match="integrity check"):
-        create_backup("manual", settings)
+    assert "integrity check" in left_out()
 
 
 def damage_member(path: Path, member: str) -> Path:
@@ -794,9 +841,37 @@ def test_damaged_manifest_member_is_skipped_in_list(settings) -> None:
     damage_member(broken, "manifest.json")
     with pytest.raises(BackupError, match="not a readable backup"):
         backup_info(broken)
-    assert [info.path for info in list_backups()] == [good]
-    assert auto_backup_due()
+    listed = list_backups()
+    assert {info.path: bool(info.damaged) for info in listed} == {good: False, broken: True}
+    assert auto_backup_due()                      # the damaged "auto" backup doesn't count as today's
     assert create_backup("manual", settings).exists()
+    assert prune(backups_directory()) == 0 and broken.exists()      # a damaged zip is left for the user to delete
+
+
+def test_checked_listing_finds_a_damaged_member_and_a_damaged_entry(settings) -> None:
+    """``check`` reads every member's checksum; a damaged map entry in the manifest is named too; skipped maps are listed."""
+    clean = create_backup("manual", settings)
+    assert backup_info(clean, check=True).damaged == ""
+    corrupt = backups_directory() / "2026-11-01_1200_manual.zip"
+    shutil.copy(clean, corrupt)
+    data = bytearray(corrupt.read_bytes())
+    with zipfile.ZipFile(corrupt) as archive:
+        info = archive.getinfo("map.db")
+    data[info.header_offset + 30 + len("map.db") + 20] ^= 0xff     # flip a byte of the stored map file
+    corrupt.write_bytes(bytes(data))
+    assert backup_info(corrupt).damaged == ""                       # not noticed without the check
+    assert "map.db" in backup_info(corrupt, check=True).damaged or "damaged" in backup_info(corrupt, check=True).damaged
+    odd = backups_directory() / "2026-11-02_1200_manual.zip"
+    with zipfile.ZipFile(odd, "w") as archive:
+        archive.writestr("manifest.json", json.dumps({"reason": "manual", "maps": {"Main": {"file": "map.db"}, "Bad": "x"},
+                                                      "skipped": {"Gone": "map file is damaged"}}))
+    result = backup_info(odd)
+    assert list(result.maps) == ["Main"] and "'Bad'" in result.damaged and result.skipped == {"Gone": "map file is damaged"}
+    assert result.readable
+    archive_path = backups_directory() / "2026-11-03_1200_manual.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("manifest.json", json.dumps({"reason": "manual", "maps": {}, "skipped": "nonsense"}))
+    assert backup_info(archive_path).skipped == {}
 
 
 def test_restore_settings_with_damaged_member(settings) -> None:

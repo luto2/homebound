@@ -5,23 +5,24 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QBrush, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QCompleter, QDialog, QFileDialog, QFrame, QHBoxLayout,
-    QHeaderView, QLabel, QLineEdit, QListWidget, QPushButton, QSlider, QSpinBox, QStackedWidget, QTableWidget,
+    QHeaderView, QKeySequenceEdit, QLabel, QLineEdit, QListWidget, QPushButton, QSlider, QSpinBox, QStackedWidget, QTableWidget,
     QTableWidgetItem, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from .. import app_version, backup, routing
 from ..logs.parser import LogFile
-from ..mapping.naming import SCHEMES, scheme_for_key
+from ..mapping.naming import SCHEMES, forget_alias, scheme_for_key
+from ..platform.hotkey import DEFAULT_SHORTCUT, normalize_shortcut
 from ..settings import (KNOWN_SPACE_RADIUS_RANGE, OVERLAY_MAX_ROWS_RANGE, OVERLAY_OPACITY_RANGE, OVERLAY_TEXT_SIZE_RANGE,
                         RESCAN_DUE_HOURS_RANGE, TRADE_HUBS, detect_log_directories)
 from ..theme.qss import repolish
 from ..theme.tokens import PIXELS, color
 from ..universe.db import SIZE_NAMES, SIZES
 from ..validation import require_integer, require_text, require_type
-from .dialogs import RestoreBackupDialog
+from .dialogs import PromptDialog, RestoreBackupDialog
 from .state import AppState
 from .widgets import RadioCard, caption, help_label
 
@@ -294,8 +295,9 @@ class SettingsDialog(QDialog):
         layout.addWidget(help_label("Bookmarks: a WH sig gets its number n when it is pasted, so its hole in system S is S-n; "
                                     "the way back home is S-0. Names never change on their own."))
         layout.addWidget(caption("Remembered names"))
-        layout.addWidget(help_label("A name remembered with Rename comes back when the system is mapped again. "
-                                    "They belong to this map; deleting one doesn't rename a system that is on the map."))
+        layout.addWidget(help_label("Every custom name is remembered and comes back when the system is mapped again. "
+                                    "They belong to this map. Deleting one also clears the name on the map, after you "
+                                    "type it to confirm."))
         self.alias_table = QTableWidget(0, 3)
         self.alias_table.setHorizontalHeaderLabels(["System", "Name", ""])
         self.alias_table.verticalHeader().hide()
@@ -321,11 +323,34 @@ class SettingsDialog(QDialog):
         self.alias_table.setVisible(bool(aliases))
         self.alias_empty.setVisible(not aliases)
 
-    def delete_alias(self, system_id: int) -> None:
-        """Forget one remembered name (at once, not with Save: it is the map's data, not a setting)."""
+    def delete_alias(self, system_id: int) -> bool:
+        """Forget one remembered name, and clear it on the map, once the name is typed to confirm.
+
+        It acts at once, not with Save: it is the map's data, not a setting.
+
+        Returns:
+            Whether the name was deleted.
+        """
         require_integer(system_id, "system_id", minimum=1)
-        self.state.store.delete_alias(system_id)
+        state = self.state
+        name = state.store.alias(system_id)
+        if name is None:
+            self.refresh_aliases()
+            return False
+        system = state.universe.by_id(system_id)
+        on_map = state.store.has_system(system_id)
+        prompt = PromptDialog(
+            self, "Delete remembered name",
+            f"<b>{name}</b> · {system.name if system else system_id}",
+            "Type the name to confirm", validate=lambda text: (text == name, f"Type {name} exactly"),
+            primary="Delete", hint=("It is also cleared on the map, so the system shows its number again."
+                                    if on_map else "The system isn't on the map; the name is just forgotten."))
+        if prompt.exec() != QDialog.DialogCode.Accepted:
+            return False
+        if forget_alias(state.store, system_id):
+            state.mapChanged.emit()
         self.refresh_aliases()
+        return True
 
     @staticmethod
     def scheme_preview(key: str) -> str:
@@ -381,6 +406,20 @@ class SettingsDialog(QDialog):
         self.pinned.setCurrentIndex(max(0, self.pinned.findData(self.edited.overlay_pinned_character)))
         pinned_row.addWidget(self.pinned, 1)
         layout.addLayout(pinned_row)
+        shortcut_row = QHBoxLayout()
+        shortcut_row.addWidget(caption("Shortcut"))
+        self.shortcut = QKeySequenceEdit(QKeySequence(self.edited.overlay_shortcut))
+        self.shortcut.setMaximumSequenceLength(1)
+        self.shortcut.setClearButtonEnabled(True)
+        self.shortcut.keySequenceChanged.connect(lambda _: self.validate_shortcut())
+        shortcut_row.addWidget(self.shortcut, 1)
+        reset_shortcut = QPushButton("Reset")
+        reset_shortcut.clicked.connect(lambda: self.shortcut.setKeySequence(QKeySequence(DEFAULT_SHORTCUT)))
+        shortcut_row.addWidget(reset_shortcut)
+        layout.addLayout(shortcut_row)
+        self.shortcut_help = help_label("")
+        layout.addWidget(self.shortcut_help)
+        self.validate_shortcut()
         look_row = QHBoxLayout()
         look_row.addWidget(caption("Background"))
         self.opacity = QSlider(Qt.Orientation.Horizontal)
@@ -427,6 +466,24 @@ class SettingsDialog(QDialog):
         layout.addLayout(focus_row)
         layout.addWidget(help_label("Systems farther away fold into one line per branch, with a marker where a branch "
                                     "leads to high-, low- or nullsec. The way home and the way on from the character stay shown."))
+
+    def validate_shortcut(self) -> str:
+        """Check the shortcut field and show the result.
+
+        Returns:
+            ``valid``, ``empty`` (no shortcut) or ``invalid``.
+        """
+        text = self.shortcut.keySequence().toString(QKeySequence.SequenceFormat.PortableText)
+        if not text:
+            set_help(self.shortcut_help, "No shortcut: the overlay mode only changes from the toolbar and the tray.", "help")
+            return "empty"
+        if not normalize_shortcut(text):
+            set_help(self.shortcut_help, "✕ Use Ctrl, Alt or Meta (and Shift if you like) with one letter, digit or F-key.",
+                     "help-err")
+            return "invalid"
+        set_help(self.shortcut_help, f"Works in every program, also while EVE has the focus. Each press moves to the "
+                 f"next mode. If another program uses {text}, the status bar says so.", "help")
+        return "valid"
 
     # ------------------------------------------------------------ zKill
     def _build_zkill_page(self, layout: QVBoxLayout) -> None:
@@ -570,6 +627,7 @@ class SettingsDialog(QDialog):
         self.backup_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.backup_list.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.backup_list.currentItemChanged.connect(lambda *_: self._sync_backup_buttons())
+        self.backup_list.currentItemChanged.connect(lambda *_: self._show_backup_damage())
         self.backup_list.itemDoubleClicked.connect(lambda *_: self.restore_selected_backup())
         layout.addWidget(self.backup_list, 1)
         buttons = QHBoxLayout()
@@ -614,18 +672,28 @@ class SettingsDialog(QDialog):
         Returns:
             The number of backups listed.
         """
+        self.refreshing_backups = True       # listing selects the first row; that must not overwrite the help line
         self.backup_list.clear()
-        self.backups = backup.list_backups()
+        self.backups = backup.list_backups(check=True)
         for info in self.backups:
+            maps = ", ".join(info.maps) or "–"
+            if info.damaged:
+                maps = f"▲ damaged · {maps}"
             item = QTreeWidgetItem([f"{info.created_at.astimezone():%Y-%m-%d %H:%M}",
-                                    BACKUP_REASONS.get(info.reason, info.reason), ", ".join(info.maps) or "–",
+                                    BACKUP_REASONS.get(info.reason, info.reason), maps,
                                     f"{max(1, round(info.size / 1024))} KB"])
             item.setData(0, Qt.ItemDataRole.UserRole, str(info.path))
+            if info.damaged:
+                item.setToolTip(2, f"This backup is damaged: {info.damaged}")
+                item.setForeground(2, QBrush(color("warning")))
+            elif info.skipped:
+                item.setToolTip(2, "Left out because the map file was damaged: " + ", ".join(info.skipped))
             self.backup_list.addTopLevelItem(item)
         for column in (0, 1, 3):
             self.backup_list.resizeColumnToContents(column)
         if self.backups:
             self.backup_list.setCurrentItem(self.backup_list.topLevelItem(0))
+        self.refreshing_backups = False
         self._sync_backup_buttons()
         return len(self.backups)
 
@@ -635,9 +703,25 @@ class SettingsDialog(QDialog):
         Returns:
             Whether a backup is selected.
         """
-        selected = self.selected_backup() is not None
-        self.restore_button.setEnabled(selected)
-        return selected
+        info = self.selected_backup()
+        self.restore_button.setEnabled(info is not None and info.readable)
+        return info is not None
+
+    def _show_backup_damage(self) -> str:
+        """Say under the list what is wrong with the selected backup, or that a damaged map was left out of it.
+
+        Returns:
+            The text shown, empty when the backup is fine.
+        """
+        info = self.selected_backup()
+        if getattr(self, "refreshing_backups", False) or info is None or not (info.damaged or info.skipped):
+            return ""
+        if info.damaged:
+            text = f"This backup is damaged: {info.damaged}." + ("" if info.readable else " It can't be restored; delete the file.")
+        else:
+            text = "Left out of this backup because the map file was damaged: " + ", ".join(info.skipped) + "."
+        set_help(self.backup_help, f"▲ {text}", "help-warn")
+        return text
 
     def selected_backup(self) -> backup.BackupInfo | None:
         """Return the backup selected in the list, or None."""
@@ -655,7 +739,12 @@ class SettingsDialog(QDialog):
             set_help(self.backup_help, f"✕ {self.state.last_backup_error}", "help-err")
             return False
         self.refresh_backups()
-        set_help(self.backup_help, f"✓ Backed up to {path.name}", "help-ok")
+        if self.state.last_backup_skipped:
+            names = ", ".join(f"“{name}”" for name in self.state.last_backup_skipped)
+            set_help(self.backup_help, f"▲ Backed up to {path.name}, but the damaged map {names} was left out. "
+                     f"The other maps are in it.", "help-warn")
+        else:
+            set_help(self.backup_help, f"✓ Backed up to {path.name}", "help-ok")
         return True
 
     def restore_selected_backup(self) -> bool:
@@ -667,7 +756,7 @@ class SettingsDialog(QDialog):
             Whether anything was restored.
         """
         info = self.selected_backup()
-        if info is None:
+        if info is None or not info.readable:
             return False
         dialog = RestoreBackupDialog(self, info, self.state.settings.active_map)
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -752,7 +841,12 @@ class SettingsDialog(QDialog):
                      "…/EVE/logs/Chatlogs folder, or clear the field to set it later.", "help-err")
             self.log_directory.setFocus()
             return False
+        if self.validate_shortcut() == "invalid":
+            self.nav.setCurrentRow(PAGES.index("Overlay"))
+            self.shortcut.setFocus()
+            return False
         edited = self.edited
+        edited.overlay_shortcut = normalize_shortcut(self.shortcut.keySequence().toString(QKeySequence.SequenceFormat.PortableText))
         edited.log_directory = self.log_directory.text().strip()
         home_text = self.home.text().strip()
         if not home_text:

@@ -289,7 +289,7 @@ def test_switch_to_damaged_map_sets_the_file_aside(state) -> None:
         store.add_system(c5.id)
     good = state.backup("manual")
     garbage = write_garbage(path)
-    assert state.backup("manual") is None   # one bad map stops every backup
+    assert state.backup("manual") is not None and list(state.last_backup_skipped) == ["Second"]   # left out, rest backed up
     with pytest.raises(MapOpenError, match=r"second\.db\.damaged"):
         state.switch_map("Second")
     assert path.with_name("second.db.damaged").read_bytes() == garbage and not path.exists()
@@ -917,6 +917,25 @@ def test_overlay_paints_chain_rows(overlay_setup) -> None:
     assert overlay.grab().width() == overlay.width()
     settings.zkill_enabled = False
     assert overlay.grab().width() > 0
+
+
+def test_overlay_row_keeps_the_number_beside_a_custom_name(overlay_setup, monkeypatch) -> None:
+    """A custom-named system's overlay row also draws its scheme label, drawn muted after the name."""
+    from homebound.mapping.naming import rename_system
+    overlay, _, state = overlay_setup
+    settings = state.settings
+    settings.overlay_mode, settings.overlay_pinned_character = "pinned_always", 5
+    c5 = pick_system("C5", exclude={HOME.id})
+    state.tracker.add_wormhole(HOME.id, c5.id)
+    put_character(state, 5, "Pilot", c5.id)
+    rename_system(state.store, c5.id, "Staging")
+    drawn = []
+    original = overlay_module.painting.draw_halo_text
+    monkeypatch.setattr(overlay_module.painting, "draw_halo_text",
+                        lambda painter, x, y, text, *rest: (drawn.append(text), original(painter, x, y, text, *rest))[1])
+    overlay.refresh()
+    overlay.grab()
+    assert "Staging" in drawn and state.namer.scheme_label(c5.id) in drawn
 
 
 def test_overlay_paints_a_system_with_an_effect_and_no_name_room(overlay_setup) -> None:

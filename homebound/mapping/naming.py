@@ -442,6 +442,14 @@ class Namer:
             return mapped.custom_name
         return self.scheme_label(system_id)
 
+    def number_label(self, system_id: int) -> str:
+        """Return the scheme (number) label of a system that has a custom name, else ``""``.
+
+        A custom name never replaces the number: wherever the name is shown, this is shown next to it.
+        """
+        mapped = self.store.system(system_id)
+        return self.scheme_label(system_id) if mapped and mapped.custom_name else ""
+
     def scheme_label(self, system_id: int) -> str:
         """Return the scheme name of a system, ignoring a custom name.
 
@@ -621,30 +629,51 @@ def rename_systems(namer: "Namer", system_ids: list[int] | None = None) -> int:
     return len(changes)
 
 
-def rename_system(store: Store, system_id: int, name: str, remember: bool) -> None:
+def rename_system(store: Store, system_id: int, name: str) -> None:
     """Give a system a custom name by hand; one action, so one Undo puts name and alias back.
 
-    The alias is the remembered custom name of the solar system (it outlives the system's place on
-    the map and fills ``custom_name`` when it is added again). It never touches ``label``, the stored
-    scheme name. Checked, the name becomes the alias; unchecked, the alias is forgotten; an empty
-    name goes back to the scheme name and forgets the alias.
+    A custom name is the system's permanent name: it is always kept as the alias, the remembered custom
+    name of the solar system (it outlives the system's place on the map and fills ``custom_name`` when
+    it is added again). It never touches ``label``, the stored scheme name. An empty name goes back to
+    the scheme name and forgets the alias.
 
     Args:
         store: The map.
         system_id: The system.
         name: The new custom name; empty or blank for the scheme name.
-        remember: Whether to keep the name as the system's alias.
     """
     require_integer(system_id, "system_id", minimum=1)
     require_text(name, "name", allow_empty=True)
-    require_type(remember, bool, "remember")
     name = name.strip()
     with store.batch():
         store.update_system(system_id, custom_name=name or None)
-        if name and remember:
+        if name:
             store.set_alias(system_id, name)
         else:
             store.delete_alias(system_id)
+
+
+def forget_alias(store: Store, system_id: int) -> bool:
+    """Delete a remembered name and clear it from the system if the system is on the map with that name.
+
+    One action, so one Undo brings both back.
+
+    Args:
+        store: The map.
+        system_id: The solar system.
+
+    Returns:
+        Whether the name was also cleared on the map.
+    """
+    require_integer(system_id, "system_id", minimum=1)
+    remembered = store.alias(system_id)
+    mapped = store.system(system_id)
+    on_map = bool(remembered and mapped and mapped.custom_name == remembered)
+    with store.batch():
+        if on_map:
+            store.update_system(system_id, custom_name=None)
+        store.delete_alias(system_id)
+    return on_map
 
 
 # ---------------------------------------------------------------- maps from before stored names

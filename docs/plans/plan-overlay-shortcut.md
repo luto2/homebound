@@ -43,3 +43,18 @@ Another app may already hold the key, so registration has to fail quietly and sa
 
 - The key can be changed in Settings.
 - The tray menu shows the shortcut text (TODO item 19).
+
+## Implementation notes (2026-11-12)
+
+- `homebound/platform/hotkey.py`: `GlobalHotkey` over a backend per platform. Windows uses `RegisterHotKey` and a
+  native event filter for `WM_HOTKEY`. Linux uses the KDE global shortcut service (`org.kde.kglobalaccel`,
+  `doRegister`, `setForeignShortcut`, then `globalShortcutPressed`); the key is read back to detect a key that
+  another shortcut holds. The XDG GlobalShortcuts portal was tried: `CreateSession` works from QtDBus but
+  `BindShortcuts` needs an `a(sa{sv})` argument that PySide6 can't build, so other desktops than KDE say
+  "not available". No new dependency.
+- The key is the setting `overlay_shortcut` (default `Ctrl+Shift+O`, empty = none), edited in Settings > Overlay.
+  Usable: Ctrl, Alt or Meta (plus Shift) with a letter, digit or F1 to F12.
+- `MapWindow.cycle_overlay_mode` goes through `set_overlay_mode(quiet=True)` and moves on past a refused mode.
+- A failed registration shows on a status-bar label that is hidden otherwise, and the tray row "Next overlay
+  mode" with the shortcut text only shows where it worked.
+- Not tested by machine: a real key press on KDE or Windows.
