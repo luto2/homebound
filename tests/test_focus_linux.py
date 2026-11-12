@@ -202,6 +202,21 @@ def test_x11_window_titles(monkeypatch) -> None:
     assert linux_module.x11_window_titles() is None
 
 
+def test_x11_reads_survive_a_tool_that_vanishes(tracker, backend, monkeypatch) -> None:
+    """A tool found by which() but gone when run (FileNotFoundError), or timing out, is a failure, not a crash."""
+    def gone(*arguments: object, **options: object) -> NoReturn:
+        raise FileNotFoundError("wmctrl")
+
+    monkeypatch.setattr(linux_module.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(linux_module.subprocess, "run", gone)
+    assert linux_module.x11_window_titles() is None
+    tracker._set("Keep", QRect())
+    monkeypatch.setattr(linux_module.subprocess, "run", gone)
+    backend._poll_x11()
+    assert tracker.character == "Keep"
+    assert backend.open_eve_characters() is None
+
+
 def test_open_clients_come_from_kwin_or_x11(tracker, backend, monkeypatch) -> None:
     """The KWin script's caption list wins once it has sent one; else the X11 list; else None."""
     monkeypatch.setattr(linux_module, "x11_window_titles", lambda: ["EVE - Bob", "Konsole"])
