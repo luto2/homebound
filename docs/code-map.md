@@ -314,7 +314,7 @@ and the server setup in [`plans/done/hosting-hetzner.md`](plans/done/hosting-het
 | `esi.py` | SSO, public ESI lookups, receiver wallet and mail |
 | `mailer.py` | Receipt mails |
 | `events.py` | Admin event outbox and Discord webhook |
-| `jobs.py` | Timers |
+| `jobs.py` | Timers; EVE downtime grace (504s held 10:55–11:15 UTC, ESI pull at 11:15, retry 11:30) |
 | `prune.py` | Server-side auto-prune |
 | `config.py` | Settings from the environment |
 

@@ -463,15 +463,14 @@ class Service:
         self.mailer.queue(f"unassigned:{entry['id']}", "unassigned", recipient, subject, text)
 
     def poll_wallet(self) -> dict:
-        """Read the receiving character's wallet journal and count new payments (plan §7)."""
-        try:
-            access = self._receiver_access()
-            if access is None:
-                return {"applied": 0, "unmatched": 0}
-            journal = self.eve.wallet_journal(*access)
-        except Exception as error:      # noqa: BLE001
-            self.events.server_problem(f"wallet poll failed: {error}")
-            raise
+        """Read the receiving character's wallet journal and count new payments (plan §7).
+
+        A failed ESI call raises; the job loop decides whether it's worth a webhook (see :mod:`.jobs`).
+        """
+        access = self._receiver_access()
+        if access is None:
+            return {"applied": 0, "unmatched": 0}
+        journal = self.eve.wallet_journal(*access)
         result = self.billing.apply_journal(journal)
         self.db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('wallet_polled_at', ?)", (iso(utc_now()),))
         for row in self.db.all("SELECT id FROM maps WHERE deleted_at IS NULL"):
