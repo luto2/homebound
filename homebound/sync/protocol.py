@@ -17,7 +17,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, NamedTuple
 
-from ..mapdb.store import MAP_SETTING_KEYS, MASS_STATES, Action, Change
+from ..mapdb.store import (MAP_SETTING_KEYS, MASS_STATES, SHIP_CATEGORIES, STRUCTURE_SOURCES, TIMER_KINDS, Action,
+                           Change)
 from ..mapping.naming import SCHEMES
 from ..mapping.signature_parser import GROUP_ORDER, SIGNATURE_ID_PATTERN
 from ..mapping.watch import watched_ids
@@ -78,6 +79,9 @@ _flag = _integer(0, 1)
 _time = _optional(_text(40))
 _signature_id = _optional(lambda value: isinstance(value, str) and bool(SIGNATURE_ID_PATTERN.match(value)))
 _coordinate = _number(-1e7, 1e7)
+_type_id = _optional(_integer(1, 2**31 - 1))
+# a ship's key in its system: the probe ID (ABC-123) or "<type ID>-<count>" from a directional scan
+SHIP_KEY_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,24}$")
 
 # The synced fields of each entity and their checks. Server-stamped times are listed too: a client
 # sends its placeholder, the server overwrites it (plan §3 "Server time").
@@ -107,6 +111,18 @@ FIELDS: dict[str, dict[str, Any]] = {
     "setting": {"value": _optional(_text(MAX_TEXT))},     # each key's own check: SETTING_VALUES
     # a remembered name of a solar system, keyed by its ID (plan-system-alias.md); it outlives the system's place
     "alias": {"name": _text_between(1, MAX_SHORT_TEXT), "set_at": _time},
+    # the ships and deployables of the last combat or directional scan of a system (plan-combat-scan.md)
+    "ship": {
+        "type_name": _text_between(1, MAX_SHORT_TEXT), "type_id": _type_id,
+        "group_name": _optional(_text(MAX_SHORT_TEXT)), "name": _optional(_text(MAX_SHORT_TEXT)),
+        "distance": _optional(_text(20)), "category": _choice(SHIP_CATEGORIES), "created_at": _time, "seen_at": _time,
+    },
+    # a structure, keyed by system, type and name; it outlives the system's place (plan-structure-list.md)
+    "structure": {
+        "type_id": _type_id, "group_name": _optional(_text(MAX_SHORT_TEXT)), "owner_ticker": _optional(_text(10)),
+        "timer_at": _time, "timer_kind": _optional(_choice(TIMER_KINDS)), "note": _optional(_text(MAX_TEXT)),
+        "source": _choice(STRUCTURE_SOURCES), "created_at": _time, "seen_at": _time,
+    },
 }
 LAYOUT_FIELDS = ("x", "y")                     # only sent with a full upsert
 _short_setting = _optional(_text(MAX_SHORT_TEXT))
@@ -116,7 +132,8 @@ SETTING_VALUES = {"watched_systems": lambda value: watched_ids(value) is not Non
 # Fields that merge as the highest value instead of the newest: a counter that only goes up.
 # ``next_hole`` is the highest hole number given out in a system, so a number is never given twice.
 MAX_FIELDS = {("system", "next_hole")}
-CREATED_FIELD = {"system": "added_at", "connection": "created_at", "signature": "created_at"}
+CREATED_FIELD = {"system": "added_at", "connection": "created_at", "signature": "created_at", "ship": "created_at",
+                 "structure": "created_at"}
 
 
 # ---------------------------------------------------------------- the version gate
@@ -139,7 +156,8 @@ GATED_FIELDS: dict[str, dict[str, GatedField]] = {
     "system": {"label": GatedField(2, None), "static": GatedField(2, 0), "next_hole": GatedField(2, 0),
                "cut_off_at": GatedField(2, None)},
 }
-GATED_ENTITIES: dict[str, int] = {"alias": 2}       # entity -> the version that added it
+# entity -> the version that added it: aliases, and the ships and structures of combat and directional scans
+GATED_ENTITIES: dict[str, int] = {"alias": 2, "ship": 2, "structure": 2}
 # Map settings (keys of the ``setting`` entity) a version added: an older peer refuses an unknown key.
 GATED_SETTINGS: dict[str, int] = {"watched_systems": 2}
 # Fields of a presence entry (``presence``, ``presence_all``) a version added: ``state`` says whether the
@@ -325,6 +343,12 @@ def key_from_json(entity: str, value: Any) -> Any:
     if (entity == "signature" and isinstance(value, list) and len(value) == 2 and system_id(value[0])
             and isinstance(value[1], str) and SIGNATURE_ID_PATTERN.match(value[1])):
         return (value[0], value[1])
+    if (entity == "ship" and isinstance(value, list) and len(value) == 2 and system_id(value[0])
+            and isinstance(value[1], str) and SHIP_KEY_PATTERN.match(value[1])):
+        return (value[0], value[1])
+    if (entity == "structure" and isinstance(value, list) and len(value) == 3 and system_id(value[0])
+            and all(_text_between(1, MAX_SHORT_TEXT)(part) for part in value[1:])):
+        return (value[0], value[1], value[2])
     if entity == "setting" and value in MAP_SETTING_KEYS:
         return value
     raise InvalidOp(f"bad key for {entity}: {value!r}")
@@ -452,10 +476,11 @@ def full_ops_for_rows(rows: dict[str, list[dict]], hlc: str, client_id: str) -> 
     """Build full upserts for every entity of a map, e.g. to upload it as a new cloud map.
 
     Args:
-        rows: ``{"system": [...], "connection": [...], "signature": [...], "setting": [...], "alias": [...]}`` rows.
+        rows: ``{"system": [...], "connection": [...], "signature": [...], "setting": [...], "alias": [...],
+            "ship": [...], "structure": [...]}`` rows.
     """
     ops = []
-    for entity in ("setting", "system", "connection", "signature", "alias"):
+    for entity in ("setting", "system", "connection", "signature", "alias", "ship", "structure"):
         for row in rows.get(entity, []):
             ops.append(Op(entity, row_key(entity, row), synced_values(entity, row), hlc, client_id,
                           placement_of(row) if entity == "system" else None, entity == "system", full=True))
@@ -472,4 +497,8 @@ def row_key(entity: str, row: dict) -> Any:
         return (row["system_id"], row["signature_id"])
     if entity == "alias":
         return row["system_id"]
+    if entity == "ship":
+        return (row["system_id"], row["ship_key"])
+    if entity == "structure":
+        return (row["system_id"], row["type_name"], row["name"])
     return row["key"]

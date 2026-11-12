@@ -113,6 +113,8 @@ class SystemNode(QGraphicsObject):
         self.unconfirmed = False
         self.scan_status = ScanStatus("fresh")
         self.cut_off = ""                            # "12m" while this system holds the cut-off mark of its piece
+        self.ship_chip = ""                          # "⚔ 3" while ships were seen here in the last 5 minutes
+        self.timer_tab = ""                          # "⏱ 4h" while a structure timer ends within 24 h
         self.following = False                       # being moved as part of a block: don't snap on your own
         self.block_start: dict[SystemNode, QPointF] = {}   # while dragging: where each selected node started
         self._character_marker_start = 8.0   # where the character markers start on the top edge
@@ -137,11 +139,13 @@ class SystemNode(QGraphicsObject):
             or any(not connection.confirmed for connection in state.store.connections_of_system(self.system_id))))
         self.scan_status = state.scan_status(self.system_id)
         self.cut_off = state.cut_off_age(self.system_id)
+        self.ship_chip = state.ship_chip(self.system_id)
+        self.timer_tab = state.timer_tab(self.system_id)
         self.setToolTip(self._tooltip())
         self.update()
 
     def refresh_scan_status(self) -> bool:
-        """Recompute the rescan status and the cut-off age on the clock tick; repaint only if one changed.
+        """Recompute the rescan status, the cut-off age, the ⚔ chip and the ⏱ tab on the clock tick; repaint only if one changed.
 
         Returns:
             True if the node changed.
@@ -149,11 +153,12 @@ class SystemNode(QGraphicsObject):
         status = self.state.scan_status(self.system_id)
         old = self.scan_status
         cut_off = self.state.cut_off_age(self.system_id)
-        if status.state == old.state and (status.state != "due"
-                                          or status.short_age == old.short_age) and cut_off == self.cut_off:
+        ship_chip, timer_tab = self.state.ship_chip(self.system_id), self.state.timer_tab(self.system_id)
+        if (status.state == old.state and (status.state != "due" or status.short_age == old.short_age)
+                and (cut_off, ship_chip, timer_tab) == (self.cut_off, self.ship_chip, self.timer_tab)):
             self.scan_status = status
             return False
-        self.scan_status, self.cut_off = status, cut_off
+        self.scan_status, self.cut_off, self.ship_chip, self.timer_tab = status, cut_off, ship_chip, timer_tab
         self.setToolTip(self._tooltip())
         self.update()
         return True
@@ -187,6 +192,10 @@ class SystemNode(QGraphicsObject):
                          f"(threshold {self.state.settings.rescan_due_hours}h)")
         elif self.scan_status.state == "never":
             lines.append("Never scanned")
+        if self.ship_chip:
+            lines.append(f"{self.ship_chip[2:]} ship{'s' if self.ship_chip != '⚔ 1' else ''} on the last scan (5 min)")
+        if self.timer_tab:
+            lines.append(f"Structure timer ends in {self.timer_tab[2:]}")
         if self.zkill:
             lines.extend(kill_text(kill, self.state.universe)
                          for kill in self.state.store.zkill_kills(self.system_id)[:TOOLTIP_ROWS])
@@ -291,6 +300,12 @@ class SystemNode(QGraphicsObject):
         if (label := scan_tab_label(self.scan_status, compact=crowded or bool(self.cut_off))) and not (crowded and self.characters):
             self._character_marker_start += painting.draw_chip(
                 painter, self._character_marker_start, -7, label, color("stale"), height=13) + 4
+        if self.timer_tab and not crowded:
+            self._character_marker_start += painting.draw_chip(
+                painter, self._character_marker_start, -7, self.timer_tab, color("warning"), height=13) + 4
+        if self.ship_chip and not crowded:
+            self._character_marker_start += painting.draw_chip(
+                painter, self._character_marker_start, -7, self.ship_chip, color("danger"), height=13) + 4
 
     def _paint_title(self, painter: QPainter, level_of_detail: float) -> None:
         """Draw line 1 (zKill, name, J-name) and, when zoomed out, the compact class badge."""

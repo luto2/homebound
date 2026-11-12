@@ -565,6 +565,30 @@ def test_paste_shortcut_routes_by_focus(window, monkeypatch) -> None:
     assert calls == ["line", "text"] and pasted == ["panel"]
 
 
+def test_ctrl_v_of_the_real_dscan_fills_the_structure_list(window, monkeypatch) -> None:
+    """The owner's paste through Ctrl+V: a Fortizar and four Customs Offices, no signature touched, one undo."""
+    from test_scan_paste import REAL_DSCAN
+    state = window.state
+    state.select(HOME.id)
+    QApplication.clipboard().setText(SCAN)
+    monkeypatch.setattr(QApplication, "focusWidget", staticmethod(lambda: None))
+    window._paste_shortcut()
+    signatures, scanned = state.store.signatures(HOME.id), state.store.system(HOME.id).scanned_at
+    QApplication.clipboard().setText(REAL_DSCAN)
+    window._paste_shortcut()
+    assert [(s.type_name, s.name) for s in state.store.structures(HOME.id)][0] == ("Fortizar", "J161940 - Perry")
+    assert len(state.store.structures(HOME.id)) == 5 and window.panel.structures.list.count() == 5
+    assert state.store.signatures(HOME.id) == signatures and state.store.system(HOME.id).scanned_at == scanned
+    assert toast_text(window.toasts.toasts[-1]) == "5 structures (5 new) · 0 ships"
+
+
+def test_a_structure_timer_toast_reaches_the_window(window) -> None:
+    """The 15-minute warning shows as a warning toast."""
+    window.state.structureTimerSoon.emit(HOME.id, "Armor timer ends in 14 min")
+    toast = window.toasts.toasts[-1]
+    assert toast_text(toast) == "Armor timer ends in 14 min" and toast_kind(toast) == "warning"
+
+
 # ---------------------------------------------------------------- naming queue
 def naming_request(window, system_class="C5") -> NamingRequest:
     """Return a NamingRequest for a fresh child of home."""

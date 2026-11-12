@@ -87,3 +87,28 @@ The parser must not guess this format.
 - No 15-minute expiry: ship rows stay until the next combat paste of that system replaces them (or they
   are deleted by hand).
 - No ⚔ chip in the overlay.
+
+## Implementation notes (2026-11-12)
+
+- **Paste formats.** The owner's real paste (`tests/data/dscan_j161940_structures.txt`) is the directional
+  scan format: `type ID, name, type, distance`. `signature_parser.parse_paste` reads it and the probe
+  scanner format in one pass. A d-scan row's type ID decides what it is: a ship if the universe file's
+  `ship_types` has it, a structure or deployable if `mapping/scan_type_table.py` has it, else it is left
+  out (celestials, drones, wrecks, NPCs). Type names are taken in English from those tables, so keys match
+  across client languages.
+- **No universe schema bump.** Structures, POCOs, Skyhooks, control towers and deployables aren't in
+  `universe.sqlite`; instead `tools/make_scan_types.py` writes them from the SDE into a Python module that
+  ships with the app (147 types; unpublished ones kept, since the Customs Office, type 2233, is
+  unpublished). POS modules are left out (noise); Mercenary Dens count as structures.
+- **Combat-probe rows** (`ABC-123, Ship/Structure/Deployable/Drone/Fighter/Starbase, group, name, …`) become
+  objects by their scan group (English and a few unverified German words). Deviation: a scan group we
+  don't know still becomes a cosmic signature as before, not skipped, so French/Russian/… clients keep
+  pasting sigs. Not checked against a real combat-probe paste: the name column is taken as the type.
+- **Merge** (`merge_scan`, one batch): sigs only go through `merge_signatures` when the paste has some (fixes
+  the "everything missing" bug and doesn't touch `scanned_at`); any d-scan or combat paste replaces the
+  system's ships and deployables (keys: probe ID, or `<type ID>-<count>` so the same scan gives the same
+  keys). No TTL (owner decision). Ships go with their system.
+- **Sync:** new entity `ship`, gated at protocol 2 (`GATED_ENTITIES`); protocol 1 peers get none.
+- **UI:** ships are a folded "Ships" section in the system panel (not rows of the sig table, which holds
+  only `Signature` rows), opened by a paste with ships. The node shows `⚔ 3` while ships were seen in the
+  last 5 minutes; not in the overlay.
