@@ -299,6 +299,9 @@ class MapWindow(QMainWindow):
         state.unknownJump.connect(self._unknown_jump)
         state.wormholeJumped.connect(self.focus_jumped_system)
         state.autoNamed.connect(self._auto_named)
+        state.watchHit.connect(self._watch_hit)
+        state.jumpNotMapped.connect(self._jump_not_mapped)
+        self.route_dock.watch.showRequested.connect(self.show_system)
         state.schemeChanged.connect(self._ask_rename_for_scheme)
         state.settingsChanged.connect(self._sync_settings)
         state.mapChanged.connect(self._refresh_find)
@@ -866,6 +869,47 @@ class MapWindow(QMainWindow):
         self.state.select(system_id)
         self.view.centerOn(self.scene.nodes[system_id])
         return True
+
+    def show_system(self, system_id: int) -> bool:
+        """Select and centre a system on the map.
+
+        Returns:
+            Whether it is on the map.
+        """
+        if system_id not in self.scene.nodes:
+            return False
+        self.state.select(system_id)
+        self.view.centerOn(self.scene.nodes[system_id])
+        return True
+
+    def _watch_hit(self, hit) -> None:
+        """Tell the user the chain reached a watched system (a desktop notification while hidden)."""
+        state = self.state
+        name = state.universe.by_id(hit.system_id).name
+        if hit.jumps == 0:
+            text = f"Watched {name} is on the map now"
+        else:
+            text = (f"A chain is {hit.jumps} jump{'s' if hit.jumps != 1 else ''} from watched {name}, "
+                    f"via {state.namer.display(hit.via_id)}")
+
+        def route() -> None:
+            """Show the route from the exit to the watched system in the routes dock."""
+            if hit.system_id not in state.route_destination_ids():
+                self.route_dock.add_system(hit.system_id)
+            self.show_system(hit.via_id)
+        self.toasts.show("warn", text, [("Show", lambda: self.show_system(hit.via_id), False), ("Route", route, False)],
+                         timeout_ms=12000)
+
+    def _jump_not_mapped(self, event) -> None:
+        """Say why a jump didn't go on the map."""
+        universe = self.state.universe
+        origin, destination = universe.by_id(event.from_id).name, universe.by_id(event.to_id).name
+        blocked = universe.by_id(event.blocked_id).name
+        why = {"watched": f"{blocked} is watched, not mapped from until a jump from the chain puts it on the map",
+               "cut off": f"{blocked} was cut off from home over an hour ago",
+               "removed": f"{blocked} was taken off the map over an hour ago"}.get(event.reason, event.reason)
+        self.toasts.show("info", f"Not mapped: {origin} → {destination} ({event.character_name})", detail=f"{why}.",
+                         timeout_ms=6000)
 
     def fit_chain(self) -> QRectF:
         """Zoom the view to the chain of the selected system (or of home).

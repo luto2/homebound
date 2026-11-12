@@ -18,6 +18,7 @@ from ..universe.db import SIZE_NAMES, SIZES
 from ..validation import require_integer, require_type
 from . import menus
 from .state import AppState
+from .watch_list import WatchList
 
 ROW_HEIGHT = 40
 SQUARE, SQUARE_GAP, MIN_STEP = 8, 2, 3
@@ -239,6 +240,9 @@ class RouteDock(QWidget):
         footer.addWidget(self.add_field, 1)
         footer.addWidget(add_button)
         layout.addLayout(footer)
+        self.watch = WatchList(state)       # watched systems (plan-watched-systems.md)
+        self.watch.toast.connect(self.toast)
+        layout.addWidget(self.watch)
 
         state.selectionChanged.connect(lambda _: self.reload())
         state.followedChanged.connect(lambda _: self.reload())
