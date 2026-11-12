@@ -351,9 +351,10 @@ class FakeWindow:
 
     instances: list = []
 
-    def __init__(self, state, focus, sync=None) -> None:
+    def __init__(self, state, focus, sync=None, hotkey=None) -> None:
         """Remember the collaborators."""
         self.state, self.focus, self.sync, self.shown, self.settings_opened = state, focus, sync, False, None
+        self.hotkey = hotkey
         FakeWindow.instances.append(self)
 
     def show(self) -> None:
@@ -451,6 +452,7 @@ def test_main_normal_path(fake_app, monkeypatch, log_directory, settings_page) -
     assert isinstance(window.sync, FakeSync) and window.sync.state is window.state
     assert window.sync.started and window.sync.stopped
     assert window.settings_opened == settings_page
+    assert window.hotkey is not None and window.hotkey.text == ""      # made, nothing registered until the window asks
 
 
 def test_main_opens_backups_after_recovery(fake_app, monkeypatch) -> None:
