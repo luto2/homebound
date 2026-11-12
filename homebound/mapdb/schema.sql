@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS systems (
     pinned       INTEGER DEFAULT 0, -- keep when cleaning up
     confirmed    INTEGER DEFAULT 1, -- 0: added by hand, no character has been here yet
     label        TEXT,             -- scheme name given when attached; only explicit renames change it
-    static       INTEGER DEFAULT 0, -- 1: reached through the parent's static (a flag, not a number)
+    static       INTEGER DEFAULT 0, -- 1: reached through the static of the parent; a flag and not a number
     next_hole    INTEGER DEFAULT 0  -- highest hole number given out here; numbers are never reused
 );
 
