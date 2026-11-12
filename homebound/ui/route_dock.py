@@ -79,7 +79,11 @@ def strip_origin(rect: QRectF) -> tuple[float, float, float]:
 
 def route_names(state: AppState, route: routing.Route) -> str:
     """Return a route as system names, e.g. for pasting into chat: ``Jita → Perimeter → Thera``."""
-    return " → ".join(state.universe.by_id(hop.system_id).name for hop in route.hops)
+    names = []
+    for hop in route.hops:
+        system = state.universe.by_id(hop.system_id)
+        names.append(system.name if system else str(hop.system_id))
+    return " → ".join(names)
 
 
 class RouteDelegate(QStyledItemDelegate):
@@ -156,7 +160,10 @@ class RouteDelegate(QStyledItemDelegate):
                 and event.button() == Qt.MouseButton.LeftButton and index.isValid()):
             hop = self.hop_at(QRectF(option.rect), index.data(Qt.ItemDataRole.UserRole)[1], event.position())
             if hop:
-                name = self.state.universe.by_id(hop.system_id).name
+                system = self.state.universe.by_id(hop.system_id)
+                if system is None:
+                    return super().editorEvent(event, model, option, index)
+                name = system.name
                 QApplication.clipboard().setText(name)
                 self.systemCopied.emit(name)
                 return True
@@ -176,6 +183,8 @@ class RouteDelegate(QStyledItemDelegate):
         drawn = 0
         for square, hop in strip_squares(x, y, width, route)[1]:   # a route too long is cut off
             system = self.state.universe.by_id(hop.system_id)
+            if system is None:
+                continue
             fill = painting.security_color(system.system_class, system.security)
             if hop.via == routing.VIA_GATE:
                 painter.setPen(Qt.PenStyle.NoPen)

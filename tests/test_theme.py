@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from PySide6.QtCore import QPointF, QRectF
 from PySide6.QtGui import (QBrush, QColor, QFont, QFontDatabase, QFontMetricsF, QImage, QPainter, QPainterPath,
                            QPixmap)
-from PySide6.QtWidgets import QApplication, QLabel
+from PySide6.QtWidgets import QLabel
 
 from homebound.mapdb.store import LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, LIFETIME_STABLE
 from homebound.theme import painting
@@ -90,9 +90,8 @@ def test_font_mono_hint_and_letter_spacing(qt_application) -> None:
     """Mono styles hint Monospace; letter spacing is spacing_em times the pixel size, and 0 when unset."""
     mono = next(name for name, spec in TYPE.items() if spec["family"] == "mono")
     assert font(mono).styleHint() == QFont.StyleHint.Monospace
-    spaced = next((name for name, spec in TYPE.items() if spec["spacing_em"]), None)
-    if spaced:
-        assert font(spaced, 10).letterSpacing() == pytest.approx(TYPE[spaced]["spacing_em"] * 10, abs=0.05)
+    spaced = next(name for name, spec in TYPE.items() if spec["spacing_em"])
+    assert font(spaced, 10).letterSpacing() == pytest.approx(TYPE[spaced]["spacing_em"] * 10, abs=0.05)
     unspaced = next(name for name, spec in TYPE.items() if not spec["spacing_em"])
     assert font(unspaced).letterSpacing() == 0
 
@@ -146,7 +145,6 @@ def test_apply_theme(qt_application) -> None:
     assert qt_application.font().pixelSize() == TYPE["ui-body"]["px"]
     with pytest.raises(TypeError):
         apply_theme("not an application")
-    assert isinstance(qt_application, QApplication)
 
 
 def test_bundled_fonts_load_privately(qt_application) -> None:

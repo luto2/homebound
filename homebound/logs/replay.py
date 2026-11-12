@@ -29,8 +29,15 @@ def print_tree(store: Store, universe: Universe, namer: Namer, system_id: int, d
         The number of lines printed.
     """
     system = universe.by_id(system_id)
-    print("  " * depth + f"{namer.display(system_id):<14} {system.name:<10} {system.system_class}")
+    name, system_class = (system.name, system.system_class) if system else (str(system_id), "?")
+    print("  " * depth + f"{namer.display(system_id):<14} {name:<10} {system_class}")
     return 1 + sum(print_tree(store, universe, namer, child.id, depth + 1) for child in store.children(system_id))
+
+
+def _name(universe: Universe, system_id: int) -> str:
+    """Return a system's name, or its ID when the universe data doesn't have it."""
+    system = universe.by_id(system_id)
+    return system.name if system else str(system_id)
 
 
 def main(arguments: list[str] | None = None, universe: Universe | None = None) -> int:
@@ -41,7 +48,7 @@ def main(arguments: list[str] | None = None, universe: Universe | None = None) -
         universe: Static data, or None to load the default file.
 
     Returns:
-        The exit code: 0, or 2 for an unknown home system.
+        The exit code: 0, or 2 for an unknown home system or a log that can't be read.
     """
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("logs", nargs="+", type=Path)
@@ -62,17 +69,22 @@ def main(arguments: list[str] | None = None, universe: Universe | None = None) -
     if home:
         store.add_system(home.id)
 
-    changes = sorted((change for path in options.logs for change in parse_log_file(path)), key=lambda change: change.at)
+    try:
+        changes = sorted((change for path in options.logs for change in parse_log_file(path)),
+                         key=lambda change: change.at)
+    except OSError as error:   # a missing, unreadable or vanished log file
+        print(f"can't read the log: {error}", file=sys.stderr)
+        return 2
     for change in changes:
         prefix = f"{change.at:%F %T} {change.character_name}:"
         for event in tracker.on_system_change(change):
             if isinstance(event, NamingRequest):
                 tracker.apply_naming(event, event.guess.guess)
                 if not options.quiet:
-                    print(f"{prefix} new {universe.by_id(event.child_id).name} -> {namer.display(event.child_id)} "
+                    print(f"{prefix} new {_name(universe, event.child_id)} -> {namer.display(event.child_id)} "
                           f"(static={event.guess.guess}; {event.guess.reason})")
             elif isinstance(event, UnknownJump) and not options.quiet:
-                print(f"{prefix} unknown jump {universe.by_id(event.from_id).name} -> {universe.by_id(event.to_id).name}")
+                print(f"{prefix} unknown jump {_name(universe, event.from_id)} -> {_name(universe, event.to_id)}")
 
     print(f"\n{len(changes)} system changes, {len(store.systems())} systems, {len(store.connections())} connections\n")
     for root in (system for system in store.systems() if system.parent_id is None):

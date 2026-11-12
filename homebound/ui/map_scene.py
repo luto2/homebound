@@ -26,20 +26,22 @@ MINIMUM_ZOOM, MAXIMUM_ZOOM = 0.2, 2.5
 ARROW_STEPS = {Qt.Key.Key_Left: (-1, 0), Qt.Key.Key_Right: (1, 0), Qt.Key.Key_Up: (0, -1), Qt.Key.Key_Down: (0, 1)}
 
 
-def removed_in(connection: Connection, universe: Universe) -> str:
+def removed_in(connection: Connection, universe: Universe, now: datetime | None = None) -> str:
     """Time until tracker.expire drops the connection, e.g. "7 min" / "2h 10m".
 
     Args:
         connection: The connection to look at.
         universe: Static data (the type's lifetime).
+        now: The current time (UTC), or None for the clock.
 
     Returns:
         The remaining time, or "?" when the lifetime state has no countdown.
     """
     require_type(connection, Connection, "connection")
+    require_type(now, (datetime, type(None)), "now")
     if not connection.lifetime_set_at or connection.lifetime not in LIFETIME_REMAINING:
         return "?"
-    remaining = expires_at(connection, universe) - datetime.now(timezone.utc)
+    remaining = expires_at(connection, universe) - (now or datetime.now(timezone.utc))
     return format_duration(remaining, "min")
 
 

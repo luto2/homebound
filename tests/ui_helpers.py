@@ -3,7 +3,11 @@ import sqlite3
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from collections.abc import Callable
+
 from PySide6.QtCore import QObject, QRect, Signal
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import QMenu
 
 import homebound.settings as settings_module
 from conftest import HOME, UNIVERSE
@@ -63,3 +67,28 @@ def make_state(monkeypatch, folder: Path, **values) -> "AppState":
     """Return an AppState on a temporary map (zKill off, nothing started)."""
     from homebound.ui.state import AppState
     return AppState(UNIVERSE, isolated_settings(monkeypatch, folder, **values))
+
+
+def spy(signal) -> list:
+    """Collect the arguments of every emission of a signal."""
+    received: list = []
+    signal.connect(lambda *arguments: received.append(arguments))
+    return received
+
+
+def find_action(menu: QMenu, text: str) -> QAction:
+    """Return the action of a menu whose label starts with ``text``."""
+    for action in menu.actions():
+        if action.text().replace("&", "").startswith(text):
+            return action
+    raise LookupError(text)
+
+
+def pick(text: str) -> Callable[[QMenu], QAction]:
+    """A modal menu handler that picks the action starting with ``text``."""
+    return lambda menu: find_action(menu, text)
+
+
+def toast_text(toast) -> str:
+    """Return the title line of a toast."""
+    return toast.title.text()

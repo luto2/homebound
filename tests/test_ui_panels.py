@@ -8,7 +8,7 @@ from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, Qt
 from PySide6.QtGui import QColor, QContextMenuEvent, QImage, QKeySequence, QMouseEvent, QPainter, QShortcut
 from PySide6.QtWidgets import QApplication, QStyleOptionViewItem
 
-from conftest import HOME, SCAN, UNIVERSE, pick_system
+from conftest import HOME, SCAN, UNIVERSE, iso_ago, pick_system
 from homebound.logs.parser import SystemChange
 from homebound.mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, Signature, ZkillStats)
 from homebound.mapping import signature_parser
@@ -21,21 +21,6 @@ from homebound.ui.signature_table import (
     FLASH_IN_SECONDS, FLASH_OUT_SECONDS, SORTABLE, GroupHeader, RowFlash, SignatureModel, SignatureTable, group_key,
     NEW_MARKER_MINUTES, group_sort_key, is_new, is_wormhole_signature)
 from homebound.ui.system_panel import (BadgeStrip, ElideLabel, OwnerSwatch, SystemPanel, missing_banner_html, plural)
-from homebound.ui.state import AppState
-from ui_helpers import make_state
-
-
-def iso_ago(**delta) -> str:
-    """Return a UTC timestamp some time in the past."""
-    return (datetime.now(timezone.utc) - timedelta(**delta)).isoformat(timespec="seconds")
-
-
-@pytest.fixture
-def state(qt_application, monkeypatch, tmp_path) -> Iterator[AppState]:
-    """An AppState on a temporary map (home on it, nothing selected)."""
-    app_state = make_state(monkeypatch, tmp_path)
-    yield app_state
-    app_state.stop()
 
 
 @pytest.fixture

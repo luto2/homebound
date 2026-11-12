@@ -1,5 +1,4 @@
 """Offscreen tests of the Routes dock, the empire node fill, the hub tag and the route wiring of the window."""
-from collections.abc import Iterator
 
 import pytest
 from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, Qt
@@ -15,19 +14,9 @@ from homebound.theme import painting
 from homebound.theme.tokens import color
 from homebound.ui.map_scene import SystemNode, hub_text
 from homebound.ui.route_dock import RouteDelegate, RouteDock, hop_text, route_names, route_tooltip, system_label
-from homebound.ui.state import AppState
-from test_ui_map_window import find_action, pick, window  # noqa: F401 - window is a fixture
-from ui_helpers import make_state
+from ui_helpers import find_action, pick
 
 JITA, PERIMETER, THERA = (UNIVERSE.by_name(name).id for name in ("Jita", "Perimeter", "Thera"))
-
-
-@pytest.fixture
-def state(qt_application, monkeypatch, tmp_path) -> Iterator[AppState]:
-    """An AppState on a temporary map, with home on it and nothing selected."""
-    app_state = make_state(monkeypatch, tmp_path)
-    yield app_state
-    app_state.stop()
 
 
 @pytest.fixture

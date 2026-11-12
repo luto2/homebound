@@ -7,13 +7,7 @@ from PySide6.QtCore import QObject, QRect
 
 import homebound.platform.focus_windows as windows_module
 import homebound.ui.focus as focus_module
-
-
-def spy(signal) -> list:
-    """Collect the arguments of every emission of a signal."""
-    received: list = []
-    signal.connect(lambda *arguments: received.append(arguments))
-    return received
+from ui_helpers import spy
 
 
 class IdleBackend(QObject):

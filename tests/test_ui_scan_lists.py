@@ -3,7 +3,7 @@ from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from PySide6.QtCore import QDateTime, QPoint, QRect, Qt, QTimeZone
+from PySide6.QtCore import QDateTime, QPoint, QRect, QTimeZone
 from PySide6.QtGui import QImage, QPainter
 from PySide6.QtWidgets import QApplication, QStyle, QStyleOptionViewItem
 
@@ -13,23 +13,13 @@ from homebound.mapping.signature_parser import ScanResult, merge_scan, parse_pas
 from homebound.ui import map_scene
 from homebound.ui.map_scene import MapScene, MapView
 from homebound.ui.scan_lists import StructureDialog
-from homebound.ui.state import AppState
 from homebound.ui.system_panel import SystemPanel, combat_summary
 from test_scan_paste import COMBAT_PROBES, REAL_DSCAN, SHIPS_DSCAN
-from ui_helpers import make_state
 
 
 def iso(**delta) -> str:
     """A UTC timestamp relative to now."""
     return (datetime.now(timezone.utc) + timedelta(**delta)).isoformat(timespec="seconds")
-
-
-@pytest.fixture
-def state(qt_application, monkeypatch, tmp_path) -> Iterator[AppState]:
-    """An AppState on a temporary map with home on it."""
-    app_state = make_state(monkeypatch, tmp_path)
-    yield app_state
-    app_state.stop()
 
 
 @pytest.fixture

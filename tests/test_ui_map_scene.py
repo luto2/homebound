@@ -6,7 +6,7 @@ from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, Qt
 from PySide6.QtGui import QFont, QImage, QKeyEvent, QPainter
 from PySide6.QtWidgets import (QGraphicsSceneContextMenuEvent, QGraphicsSceneMouseEvent, QStyleOptionGraphicsItem)
 
-from conftest import HOME, UNIVERSE, pick_system
+from conftest import HOME, UNIVERSE, iso_ago, pick_system
 from homebound.mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, LIFETIME_REMAINING, Connection,
                                    ZkillStats)
 from homebound.theme.tokens import color
@@ -16,11 +16,6 @@ from homebound.ui.map_scene import (GRID, ConnectionEdge, MapScene, MapView, Sys
                                     scan_tab_label)
 from homebound.ui.state import AppState
 from ui_helpers import make_state
-
-
-def iso_ago(**delta) -> str:
-    """Return an ISO timestamp the given time ago."""
-    return (datetime.now(timezone.utc) - timedelta(**delta)).isoformat()
 
 
 @pytest.fixture
@@ -114,11 +109,12 @@ class TestHelpers:
             age_text(5)
 
     def test_removed_in(self) -> None:
-        """An expired hole set 3 minutes ago is removed in 6-7 min; a < 4h hole set an hour ago in about 2h."""
-        connection = make_connection(lifetime=LIFETIME_EXPIRED, lifetime_set_at=iso_ago(minutes=3))
-        assert removed_in(connection, UNIVERSE) in ("6 min", "7 min")
-        long_one = make_connection(lifetime=LIFETIME_4H, lifetime_set_at=iso_ago(hours=1))
-        assert removed_in(long_one, UNIVERSE).startswith("2h ")
+        """With a fixed clock, an expired hole set 3 minutes ago is removed in 7 min; a < 4h hole set an hour ago in 3h."""
+        now = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+        connection = make_connection(lifetime=LIFETIME_EXPIRED, lifetime_set_at=(now - timedelta(minutes=3)).isoformat())
+        assert removed_in(connection, UNIVERSE, now) == "7 min"
+        long_one = make_connection(lifetime=LIFETIME_4H, lifetime_set_at=(now - timedelta(hours=1)).isoformat())
+        assert removed_in(long_one, UNIVERSE, now) == "3h 0m"
 
     def test_removed_in_overdue_is_zero(self) -> None:
         """An expired hole past its removal time shows "0 min", never a negative time."""
@@ -152,11 +148,6 @@ class TestHelpers:
             elide(None, QFont(), 10)
         with pytest.raises(TypeError):
             elide("x", QFont(), "10")
-
-    def test_aliases(self) -> None:
-        """W and H alias the node width and height, and the grid step is a third of the node height."""
-        assert (map_scene.W, map_scene.H) == (map_scene.NODE_WIDTH, map_scene.NODE_HEIGHT)
-        assert GRID == map_scene.NODE_HEIGHT / 3
 
     def test_grid_is_a_third_of_the_node_height_token(self) -> None:
         """The grid step (defined once, in the tracker) is a third of the node height token."""
@@ -428,9 +419,9 @@ class TestSystemNode:
         assert node._zkill_level() == ("none", False)
         node.zkill = ZkillStats(HOME.id, 0, 0, 0, None, iso_ago())
         level, recent = node._zkill_level()
-        assert recent is False and isinstance(level, str)
+        assert (level, recent) == ("none", False)   # no kills at all
         node.zkill = ZkillStats(HOME.id, 1, 5, 0, iso_ago(minutes=1), iso_ago())
-        assert node._zkill_level()[1] is True
+        assert node._zkill_level() == ("med", True)
         assert node._zkill_width() == 14 + 16 + 4
         node.zkill = ZkillStats(HOME.id, 1, 5, 0, iso_ago(hours=1), iso_ago())
         assert node._zkill_width() == 18
@@ -471,8 +462,9 @@ class TestSystemNode:
         edge = node.edges[0]
         before = edge.line
         node.setPos(100.3 + GRID * 2, 50.9)
-        assert node.pos().x() % GRID == pytest.approx(0) or node.pos().x() % GRID == pytest.approx(GRID)
-        assert node.pos().y() % GRID == pytest.approx(0) or node.pos().y() % GRID == pytest.approx(GRID)
+        assert node.pos().x() / GRID == pytest.approx(round(node.pos().x() / GRID))
+        assert node.pos().y() / GRID == pytest.approx(round(node.pos().y() / GRID))
+        assert node.pos().y() != pytest.approx(50.9)   # the input was not a multiple, so it did move
         assert edge.line != before
 
     def test_selecting_updates_state(self, state, scene) -> None:

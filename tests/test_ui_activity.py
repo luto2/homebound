@@ -1,12 +1,10 @@
 """Offscreen tests of the zKill activity list: row text, the folded section, the panel and the node tooltip."""
 from collections.abc import Iterator
-from datetime import datetime, timedelta, timezone
 
 import pytest
-from PySide6.QtCore import QUrl, Qt
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import Qt
 
-from conftest import HOME, UNIVERSE
+from conftest import HOME, UNIVERSE, iso_ago
 from homebound.mapdb.store import KillSummary, ZkillStats
 from homebound.theme.tokens import color
 from homebound.ui import activity_list
@@ -18,15 +16,10 @@ from ui_helpers import make_state
 RIFTER = 587
 
 
-def ago(**delta) -> str:
-    """Return a UTC timestamp some time in the past."""
-    return (datetime.now(timezone.utc) - timedelta(**delta)).isoformat(timespec="seconds")
-
-
 def kill(killmail_id: int, minutes: int = 12, victim: int | None = RIFTER, attackers: int = 1, top: int | None = None,
          value: float = 1.2e9, npc: int = 0, solo: int = 0) -> KillSummary:
     """A stored kill some minutes ago in the home system."""
-    return KillSummary(HOME.id, killmail_id, ago(minutes=minutes), victim, attackers, top, value, npc, solo)
+    return KillSummary(HOME.id, killmail_id, iso_ago(minutes=minutes), victim, attackers, top, value, npc, solo)
 
 
 def test_isk_formatting_lives_in_widgets() -> None:
@@ -138,7 +131,7 @@ def test_panel_shows_the_stored_kills_and_follows_updates(state, qt_application)
 def test_node_tooltip_lists_the_three_newest_kills(state, qt_application) -> None:
     """The zKill part of a node's tooltip shows the three newest rows."""
     from homebound.ui.map_scene import MapScene
-    state.store.set_zkill_stats(ZkillStats(HOME.id, 4, 4, 0, ago(minutes=1), ago(minutes=1)))
+    state.store.set_zkill_stats(ZkillStats(HOME.id, 4, 4, 0, iso_ago(minutes=1), iso_ago(minutes=1)))
     state.store.replace_zkill_kills(HOME.id, [kill(number, minutes=number) for number in range(1, 6)])
     scene = MapScene(state)
     scene.rebuild()

@@ -636,7 +636,7 @@ def test_removed_in_matches_when_expire_drops_the_connection(simulation) -> None
                             wormhole_type="E004", created_at=(now - timedelta(hours=4)).isoformat())
     connection = store.connection_by_id(connection.id)
     limit = expires_at(connection, UNIVERSE)
-    assert removed_in(connection, UNIVERSE) in ("29 min", "30 min")
+    assert removed_in(connection, UNIVERSE, now) == "30 min"
     assert simulation.tracker.expire(limit - timedelta(minutes=1)) == 0
     assert simulation.tracker.expire(limit + timedelta(minutes=1)) == 1
 

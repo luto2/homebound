@@ -35,6 +35,7 @@ def test_window_builds_and_shows_the_map(window, qt_application) -> None:
     qt_application.processEvents()
     window.grab()
     assert window.scene.nodes and len(window.scene.edges) == 1
+    assert window.panel.system_name_label.text() == c5.name
 
 
 def test_the_scheme_combo_is_off_where_the_scheme_is_locked(window) -> None:

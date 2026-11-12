@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import HOME, UNIVERSE
+from conftest import HOME, UNIVERSE, write_log
 from homebound.logs import replay
 from homebound.logs.parser import (SYSTEM_SENDERS, LogFile, decode_log_bytes, parse_header, parse_log_file,
                                    parse_log_text, parse_system_change, parse_timestamp, unlisted_system_sender)
@@ -27,11 +27,6 @@ HEADER = """
 def line(timestamp: str, message: str, sender: str = "EVE System") -> str:
     """One log line as the client writes it."""
     return f"﻿[ {timestamp} ] {sender} > {message}\n"
-
-
-def write_log(path: Path, body: str) -> None:
-    """Write a log file in the client's encoding."""
-    path.write_bytes(b"\xff\xfe" + body.encode("utf-16-le"))
 
 
 def test_parse_system_change() -> None:
@@ -282,3 +277,9 @@ def test_replay_prints_jumps_and_the_tree(tmp_path, capsys) -> None:
     assert "4 system changes, 3 systems, 2 connections" in output and "Home" in output
     assert replay.main([str(log), "--quiet"], universe=UNIVERSE) == 0
     assert replay.main([str(log), "--home", "Nowhere"], universe=UNIVERSE) == 2
+
+
+def test_replay_reports_an_unreadable_log(tmp_path, capsys) -> None:
+    """A log file that doesn't exist ends the replay with exit code 2 and a message, not a traceback."""
+    assert replay.main([str(tmp_path / "Local_20261028_165148_7.txt")], universe=UNIVERSE) == 2
+    assert "can't read the log" in capsys.readouterr().err

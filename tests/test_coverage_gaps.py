@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import HOME, UNIVERSE
+from conftest import HOME, UNIVERSE, write_log
 from homebound import zkill
 from homebound.logs import replay
 from homebound.logs.parser import LogFile
@@ -30,11 +30,6 @@ HEADER = """
 def log_line(timestamp: str, system_name: str) -> str:
     """One "Channel changed" line as the client writes it."""
     return f"﻿[ {timestamp} ] EVE System > Channel changed to Local : {system_name}\n"
-
-
-def write_log(path: Path, body: str) -> None:
-    """Write a log file in the client's encoding (UTF-16 LE with a byte order mark)."""
-    path.write_bytes(b"\xff\xfe" + body.encode("utf-16-le"))
 
 
 def test_scanner_survives_a_log_that_vanishes_between_listing_and_reading(tmp_path, monkeypatch) -> None:

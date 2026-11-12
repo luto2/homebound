@@ -957,7 +957,8 @@ class MapWindow(QMainWindow):
     def _watch_hit(self, hit) -> None:
         """Tell the user the chain reached a watched system (a desktop notification while hidden)."""
         state = self.state
-        name = state.universe.by_id(hit.system_id).name
+        watched = state.universe.by_id(hit.system_id)
+        name = watched.name if watched else str(hit.system_id)
         if hit.jumps == 0:
             text = f"Watched {name} is on the map now"
         else:
@@ -975,8 +976,10 @@ class MapWindow(QMainWindow):
     def _jump_not_mapped(self, event) -> None:
         """Say why a jump didn't go on the map."""
         universe = self.state.universe
-        origin, destination = universe.by_id(event.from_id).name, universe.by_id(event.to_id).name
-        blocked = universe.by_id(event.blocked_id).name
+        def name_of(system_id: int) -> str:
+            system = universe.by_id(system_id)
+            return system.name if system else str(system_id)
+        origin, destination, blocked = name_of(event.from_id), name_of(event.to_id), name_of(event.blocked_id)
         why = {"watched": f"{blocked} is watched, not mapped from until a jump from the chain puts it on the map",
                "cut off": f"{blocked} was cut off from home over an hour ago",
                "removed": f"{blocked} was taken off the map over an hour ago"}.get(event.reason, event.reason)

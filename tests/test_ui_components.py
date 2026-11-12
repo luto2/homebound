@@ -21,11 +21,11 @@ from homebound.logs.watcher import CharacterState
 from homebound.mapdb.store import Action, Store, ZkillStats, utc_now_iso
 from homebound.mapping.tracker import AutoNamed, MapChanged, Moved, NamingRequest, UnknownJump
 from homebound.ui import menus
-from homebound.ui.character_dock import CharacterDock, CharacterDelegate
+from homebound.ui.character_dock import CharacterDock
 from homebound.ui.overlay import MODE_LABELS, Overlay, OverlayFonts
 from homebound.ui.state import SCAN_AGE_INTERVAL_MS, AppState, MapOpenError, set_aside_damaged
 from homebound.ui.toast import KINDS, MAX_TOASTS, Toast, ToastHost
-from ui_helpers import FakeFocus, damage_systems_table, isolated_settings, make_state, write_garbage
+from ui_helpers import FakeFocus, damage_systems_table, isolated_settings, spy, write_garbage
 
 LOG_HEADER = "\n\n  Channel Name:    Local\n  Listener:        {name}\n  Session started: 2026.10.28 16:51:48\n\n"
 
@@ -35,21 +35,6 @@ def write_character_log(folder, character_id: int, name: str, system: str, start
     body = LOG_HEADER.format(name=name) + (
         f"﻿[ 2026.10.28 16:51:53 ] EVE System > Channel changed to Local : {system}\n")
     (folder / "logs" / f"Local_{started}_{character_id}.txt").write_bytes(b"\xff\xfe" + body.encode("utf-16-le"))
-
-
-def spy(signal) -> list:
-    """Collect the arguments of every emission of a signal."""
-    received: list = []
-    signal.connect(lambda *arguments: received.append(arguments))
-    return received
-
-
-@pytest.fixture
-def state(qt_application, monkeypatch, tmp_path) -> Iterator[AppState]:
-    """An AppState on a temporary map; stopped afterwards."""
-    app_state = make_state(monkeypatch, tmp_path)
-    yield app_state
-    app_state.stop()
 
 
 # ---------------------------------------------------------------- state
@@ -1070,7 +1055,6 @@ def test_dock_reload_and_paint_states(dock_setup, tmp_path) -> None:
     state.watcher.characters[3].recent = False
     dock.reload()
     delegate = dock.itemDelegate()
-    assert isinstance(delegate, CharacterDelegate)
     assert delegate.online_text(3, "online") == "● online"
     assert delegate.online_text(3, "recent") == "◐ recent"
     assert delegate.online_text(3, "offline").startswith("○ offline ")

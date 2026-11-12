@@ -250,3 +250,42 @@ def modal(monkeypatch, qt_application) -> ModalResponder:
     monkeypatch.setattr(QDialog, "exec", lambda dialog: responder.answer_dialog(dialog))
     monkeypatch.setattr(menus, "QMenu", AnsweringMenu)
     return responder
+
+
+@pytest.fixture
+def state(qt_application, monkeypatch, tmp_path) -> Iterator[object]:
+    """An AppState on a temporary map with home on it and nothing selected; stopped afterwards."""
+    from ui_helpers import make_state
+    app_state = make_state(monkeypatch, tmp_path)
+    yield app_state
+    app_state.stop()
+
+
+@pytest.fixture
+def window(qt_application, monkeypatch, tmp_path, modal) -> Iterator[object]:
+    """The main window on a temporary map, shown offscreen, with the settings dialog stubbed out."""
+    from homebound.ui import map_window as map_window_module
+    from homebound.ui.map_window import MapWindow
+    from ui_helpers import FakeFocus, make_state
+    opened = []
+    monkeypatch.setattr(map_window_module, "SettingsDialog",
+                        lambda parent, state, page: type("Stub", (), {"exec": lambda self: opened.append(page) or 0})())
+    app_state = make_state(monkeypatch, tmp_path)
+    main_window = MapWindow(app_state, FakeFocus())
+    main_window.opened_pages = opened
+    main_window.show()
+    qt_application.processEvents()
+    yield main_window
+    main_window.overlay.hide()
+    main_window.hide()
+    app_state.stop()
+
+
+def iso_ago(**delta: float) -> str:
+    """Return a UTC ISO timestamp (whole seconds) some time in the past."""
+    return (datetime.now(timezone.utc) - timedelta(**delta)).isoformat(timespec="seconds")
+
+
+def write_log(path, body: str) -> None:
+    """Write a log file in the client's encoding (UTF-16 LE with a byte order mark)."""
+    path.write_bytes(b"\xff\xfe" + body.encode("utf-16-le"))
