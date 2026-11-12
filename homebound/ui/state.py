@@ -13,13 +13,16 @@ from ..mapdb.store import LEGACY_NAMES_KEY, Action, Store, utc_now_iso
 from ..mapping.chain import Chain, resolve_chain
 from ..mapping.naming import Namer, freeze_legacy_names, label_unnamed_systems, needs_label
 from ..mapping.scan_status import ScanStatus, age_text, format_duration, scan_status
-from ..mapping.tracker import AutoNamed, MapChanged, Moved, NamingRequest, Tracker, UnknownJump
+from ..mapping.tracker import AutoNamed, MapChanged, Moved, NamingRequest, NotMapped, Tracker, UnknownJump
+from ..mapping.watch import (MAX_WATCHED, WatchAlerts, WatchHit, check as check_watched, distance as watch_distance,
+                             map_watch_list, set_map_watch_list)
 from ..settings import Settings
 from ..universe.db import Universe
 from ..validation import require_choice, require_integer, require_type
 from ..zkill import ZkillFetcher
 
 EXPIRY_INTERVAL_MS = 5 * 60 * 1000
+WATCH_CHECK_DELAY_MS = 1000           # a burst of map changes is checked against the watch lists once
 SCAN_AGE_INTERVAL_MS = 60 * 1000
 PRESENCE_ORDER = {"online": 0, "recent": 1, "offline": 2}    # how character_rows sorts
 
@@ -118,6 +121,9 @@ class AppState(QObject):
     followedChanged = Signal(object)      # character id or None (overlay target)
     scanAgeTick = Signal()                # once a minute: scan ages moved on, rescan states may change
     scoutUpdated = Signal()               # EVE-Scout's Thera/Turnur connections changed
+    watchHit = Signal(object)             # WatchHit: the chain just reached a watched system
+    watchListChanged = Signal()           # a watch list changed (either one) or the watch range
+    jumpNotMapped = Signal(object)        # NotMapped: a jump from a system that isn't mapped from
     _zkillUpdated = Signal(int)
     _zkillStatus = Signal(str, str)
     _scoutStatus = Signal(str, str)
@@ -191,6 +197,10 @@ class AppState(QObject):
         self.eve_scout.enabled = settings.eve_scout_enabled
         self._expiry_timer: QTimer | None = None
         self._scan_age_timer: QTimer | None = None
+        self.watch_alerts = WatchAlerts()
+        self._watch_timer = QTimer(self, singleShot=True, interval=WATCH_CHECK_DELAY_MS, timeout=self.check_watches)
+        self.mapChanged.connect(self._watch_timer.start)
+        self._take_private_watch_list()
         self._ensure_home()
         self._constructed = True
 
@@ -309,6 +319,7 @@ class AppState(QObject):
         self.watcher.start()
         self.zkill.start()
         self.eve_scout.start()
+        self.check_watches(silent=True)   # what the chain reaches already at start is listed, not alerted
         self.expire()
         self._expiry_timer = QTimer(self, interval=EXPIRY_INTERVAL_MS, timeout=self.expire)
         self._expiry_timer.start()
@@ -321,10 +332,16 @@ class AppState(QObject):
         Returns:
             The number of connections removed.
         """
-        removed = self.tracker.expire()
+        removed = self.tracker.expire(occupied=self.remote_occupied())
         if removed:
             self.mapChanged.emit()
+        else:
+            self.check_watches()   # holes age and drop out of the k-space search
         return removed
+
+    def remote_occupied(self) -> set[int]:
+        """Return the systems other members' shared characters are in (cloud maps; AFK ones too)."""
+        return {entry["system_id"] for entry in self.remote_presence.values() if entry.get("system_id")}
 
     def stop(self) -> None:
         """Stop the background work."""
@@ -399,6 +416,9 @@ class AppState(QObject):
         self.namer.home_id = self.home_id
         self._freeze_legacy_names()
         self._watch_names()
+        self.tracker.watch_store()
+        self.watch_alerts.forget()
+        self.check_watches(silent=True)
         self.zkill.database_path = self.database_path
         self._ensure_home()
         return store
@@ -564,6 +584,7 @@ class AppState(QObject):
         self.namer.scheme_key = settings.naming_scheme
         self.namer.home_id = self.home_id
         self.tracker.auto_when_certain = settings.auto_name_when_certain
+        self._take_private_watch_list()
         self.zkill.enabled = settings.zkill_enabled
         self.eve_scout.enabled = settings.eve_scout_enabled
         self._ensure_home()
@@ -610,6 +631,133 @@ class AppState(QObject):
         return routing.routes(self.universe, origin, self.route_destination_ids(), self.store.connections(),
                               self.eve_scout.links(), self.route_options())
 
+    # ------------------------------------------------------------ watched systems
+    def _take_private_watch_list(self) -> None:
+        """Give the tracker this user's own watch list (it doesn't map from those systems either)."""
+        self.tracker.private_watched = set(self.private_watch_ids())
+
+    def private_watch_ids(self) -> list[int]:
+        """Return this user's own watched systems that are known systems, in order, without repeats."""
+        found: list[int] = []
+        for name in self.settings.watched_private:
+            system = self.universe.by_name(name)
+            if system and system.id not in found:
+                found.append(system.id)
+        return found
+
+    def watch_entries(self) -> list[tuple[int, bool]]:
+        """Return every watched system as ``(system id, private)``: the map's list first, then this user's own.
+
+        A system on both lists is listed once, as the map's.
+        """
+        shared = map_watch_list(self.store)
+        return [(system_id, False) for system_id in shared] + [(system_id, True) for system_id in self.private_watch_ids()
+                                                               if system_id not in shared]
+
+    def is_watched(self, system_id: int) -> bool:
+        """Return whether a system is on either watch list."""
+        require_integer(system_id, "system_id")
+        return any(watched == system_id for watched, _ in self.watch_entries())
+
+    def add_watch(self, system_id: int, private: bool = False) -> bool:
+        """Watch a system: on the map's list (synced on a cloud map) or on this user's own.
+
+        It isn't alerted for if the chain reaches it already; the list shows that.
+
+        Returns:
+            True if it was added; False if it is watched already, unknown, or the map's list is full.
+
+        Raises:
+            TypeError: If the arguments have the wrong types.
+        """
+        require_integer(system_id, "system_id", minimum=1)
+        require_type(private, bool, "private")
+        system = self.universe.by_id(system_id)
+        if system is None or self.is_watched(system_id):
+            return False
+        if private:
+            self.settings.watched_private.append(system.name)
+            self.settings.save()
+            self._take_private_watch_list()
+        else:
+            shared = map_watch_list(self.store)
+            if len(shared) >= MAX_WATCHED:
+                return False
+            set_map_watch_list(self.store, shared + [system_id])
+        if hit := self.watch_status(system_id):
+            self.watch_alerts.accept(hit)
+        self.watchListChanged.emit()
+        return True
+
+    def remove_watch(self, system_id: int) -> bool:
+        """Stop watching a system, on whichever list it is.
+
+        Returns:
+            True if it was watched.
+        """
+        require_integer(system_id, "system_id")
+        removed = False
+        shared = map_watch_list(self.store)
+        if system_id in shared:
+            removed = set_map_watch_list(self.store, [watched for watched in shared if watched != system_id])
+        names = [name for name in self.settings.watched_private
+                 if (system := self.universe.by_name(name)) is None or system.id != system_id]
+        if len(names) != len(self.settings.watched_private):
+            self.settings.watched_private = names
+            self.settings.save()
+            self._take_private_watch_list()
+            removed = True
+        if removed:
+            self.watch_alerts.forget(system_id)
+            self.watchListChanged.emit()
+        return removed
+
+    def set_watch_private(self, system_id: int, private: bool) -> bool:
+        """Move a watched system to this user's own list or to the map's.
+
+        Returns:
+            True if it moved.
+        """
+        require_integer(system_id, "system_id", minimum=1)
+        require_type(private, bool, "private")
+        if (system_id, not private) not in self.watch_entries():
+            return False
+        hit = self.watch_status(system_id)
+        self.remove_watch(system_id)
+        self.add_watch(system_id, private)
+        if hit:
+            self.watch_alerts.accept(hit)
+        return True
+
+    def set_watch_jumps(self, jumps: int) -> None:
+        """Change how far to look from a watched k-space system; what that reaches now isn't alerted."""
+        require_choice(jumps, settings_module.WATCH_JUMP_CHOICES, "jumps")
+        self.settings.watch_jumps = jumps
+        self.settings.save()
+        self.check_watches(silent=True)
+        self.watchListChanged.emit()
+
+    def watch_status(self, system_id: int) -> WatchHit | None:
+        """Return how close the chain is to a watched system now, or None if it isn't within the watch range."""
+        require_integer(system_id, "system_id", minimum=1)
+        return watch_distance(self.store, self.universe, system_id, self.settings.watch_jumps)
+
+    def check_watches(self, silent: bool = False) -> list[WatchHit]:
+        """Check both watch lists and emit ``watchHit`` for each system the chain just reached.
+
+        Args:
+            silent: Take what is reached without alerting (a map was just opened).
+
+        Returns:
+            The hits that alerted.
+        """
+        hits = check_watched(self.store, self.universe, [system_id for system_id, _ in self.watch_entries()],
+                             self.settings.watch_jumps)
+        fired = self.watch_alerts.update(hits, datetime.now(timezone.utc), silent)
+        for hit in fired:
+            self.watchHit.emit(hit)
+        return fired
+
     # ------------------------------------------------------------ log events
     def on_system_change(self, change: SystemChange) -> None:
         """Run a log event through the tracker and emit what it produced."""
@@ -640,6 +788,8 @@ class AppState(QObject):
                 self.unknownJump.emit(event)
             elif isinstance(event, AutoNamed):
                 self.autoNamed.emit(event)
+            elif isinstance(event, NotMapped):
+                self.jumpNotMapped.emit(event)
         if changed:
             self.mapChanged.emit()
         self.charactersChanged.emit()

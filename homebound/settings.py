@@ -20,8 +20,10 @@ UNKNOWN_JUMP_CHOICES = ("add", "ignore")
 ROUTE_PREFERENCES = ("shortest", "safer", "less_secure")   # same as routing.PREFERENCES
 TRADE_HUBS = ["Jita", "Amarr", "Dodixie", "Rens", "Hek"]   # default route destinations
 # settings that must be one of a few values; anything else keeps the default
+WATCH_JUMP_CHOICES = (1, 2, 5, 10)        # same as mapping.watch.WATCH_JUMPS; 1 is "adjacent only"
 SETTING_CHOICES = {"route_preference": ROUTE_PREFERENCES, "route_ship_size": SIZES, "overlay_mode": OVERLAY_MODES,
-                   "unknown_jump_default": UNKNOWN_JUMP_CHOICES, "naming_scheme": SCHEMES}
+                   "unknown_jump_default": UNKNOWN_JUMP_CHOICES, "naming_scheme": SCHEMES,
+                   "watch_jumps": WATCH_JUMP_CHOICES}
 DEFAULT_MAP = "Main"
 MAP_NAME_LIMIT = 32                       # characters
 MARKER_SLOTS = 6
@@ -79,6 +81,10 @@ class Settings:
     route_use_eol: bool = True            # route through holes at < 4h / < 1h
     route_use_mass_critical: bool = False
     route_ship_size: str = "M"            # skip holes smaller than this (S/M/L/XL)
+    # Watched systems (docs/plans/plan-watched-systems.md): this user's own list, never synced (the map's
+    # list is a map setting), and how many gate jumps from a watched k-space system the chain may be.
+    watched_private: list = field(default_factory=list)   # system names, all maps
+    watch_jumps: int = 5
     # Cloud sync (docs/plans/done/cloud-sync-plan.md). A cloud map's entry in ``maps`` has "cloud": "<map id>".
     sync_server: str = "https://homebound.luthopian.de"
     sync_client_id: str = ""              # random per install, the LWW tie-breaker; made on first use
@@ -318,7 +324,7 @@ class Settings:
                 fits = isinstance(value, type(default)) and not (isinstance(value, bool) and not isinstance(default, bool))
             if key in SETTING_CHOICES:
                 fits = fits and value in SETTING_CHOICES[key]
-            elif key == "route_destinations":
+            elif key in ("route_destinations", "watched_private"):
                 fits = fits and all(isinstance(name, str) and name.strip() for name in value)
             elif key == "maps" and fits:
                 value = self._usable_maps(value)

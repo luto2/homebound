@@ -56,6 +56,7 @@ class MapSystem:
     label: str | None = None     # scheme name given when the system was attached; None: not named yet
     static: int = 0              # 1: reached through its parent's static (a flag, not a hole number)
     next_hole: int = 0           # highest hole number given out in this system; numbers are never reused
+    cut_off_at: str | None = None  # when a lost connection cut this system's piece off from home (Tracker.disconnect)
 
 
 @dataclass
@@ -256,8 +257,10 @@ SYSTEMS_SELECT = ("SELECT " + ", ".join("coalesce(o.x, s.x) AS x" if column == "
                                        for column in [field.name for field in fields(MapSystem)]
                                        for _quoted_name in [f'"{column}"'])
                   + " FROM systems s LEFT JOIN layout_override o ON o.system_id = s.id")
-# Settings that belong to the map itself and sync with it.
-MAP_SETTING_KEYS = ("home_system", "naming_scheme")
+# Settings that belong to the map itself and sync with it. ``watched_systems`` is the map's watch list
+# (a JSON list of system IDs, plan-watched-systems.md); it syncs from protocol 2 (``protocol.GATED_SETTINGS``).
+MAP_SETTING_KEYS = ("home_system", "naming_scheme", "watched_systems")
+SETTINGS_MIRRORED = ("home_system", "naming_scheme")   # also kept in settings.json, in the map's entry
 
 # Columns renamed when abbreviations were spelled out: (table, old name, new name).
 COLUMN_RENAMES = [
@@ -298,6 +301,7 @@ COLUMN_ADDITIONS = [
     ("systems", "label", "TEXT"),
     ("systems", "static", "INTEGER DEFAULT 0"),
     ("systems", "next_hole", "INTEGER DEFAULT 0"),
+    ("systems", "cut_off_at", "TEXT"),
 ]
 
 
