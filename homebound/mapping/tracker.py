@@ -455,7 +455,10 @@ class Tracker:
         events: list = []
         child = self.store.system(child_id)
         connection = self.store.connection(parent_id, child_id)
-        child_class = self.universe.by_id(child_id).system_class
+        child_system = self.universe.by_id(child_id)
+        if child_system is None:   # not in the universe data: nothing to guess from
+            return events
+        child_class = child_system.system_class
         guess = guess_static(self.store, self.universe, parent_id, child_id)
         previous = {"parent_id": child.parent_id, "hole_index": child.hole_index, "static": child.static,
                     "label": child.label}
@@ -692,7 +695,8 @@ class Tracker:
         if not is_numbered_kind(signature):
             raise ValueError(f"{signature_id} is not a wormhole signature")
         found = self.return_type_of(connection, system_id)
-        changes: dict[str, Any] = {"destination": self.universe.by_id(origin_id).system_class}
+        origin = self.universe.by_id(origin_id)
+        changes: dict[str, Any] = {"destination": origin.system_class} if origin else {}
         if found.code:
             changes["type"] = found.code
         self.store.update_signature(system_id, signature_id, **changes)

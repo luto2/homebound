@@ -29,8 +29,15 @@ def print_tree(store: Store, universe: Universe, namer: Namer, system_id: int, d
         The number of lines printed.
     """
     system = universe.by_id(system_id)
-    print("  " * depth + f"{namer.display(system_id):<14} {system.name:<10} {system.system_class}")
+    name, system_class = (system.name, system.system_class) if system else (str(system_id), "?")
+    print("  " * depth + f"{namer.display(system_id):<14} {name:<10} {system_class}")
     return 1 + sum(print_tree(store, universe, namer, child.id, depth + 1) for child in store.children(system_id))
+
+
+def _name(universe: Universe, system_id: int) -> str:
+    """Return a system's name, or its ID when the universe data doesn't have it."""
+    system = universe.by_id(system_id)
+    return system.name if system else str(system_id)
 
 
 def main(arguments: list[str] | None = None, universe: Universe | None = None) -> int:
@@ -69,10 +76,10 @@ def main(arguments: list[str] | None = None, universe: Universe | None = None) -
             if isinstance(event, NamingRequest):
                 tracker.apply_naming(event, event.guess.guess)
                 if not options.quiet:
-                    print(f"{prefix} new {universe.by_id(event.child_id).name} -> {namer.display(event.child_id)} "
+                    print(f"{prefix} new {_name(universe, event.child_id)} -> {namer.display(event.child_id)} "
                           f"(static={event.guess.guess}; {event.guess.reason})")
             elif isinstance(event, UnknownJump) and not options.quiet:
-                print(f"{prefix} unknown jump {universe.by_id(event.from_id).name} -> {universe.by_id(event.to_id).name}")
+                print(f"{prefix} unknown jump {_name(universe, event.from_id)} -> {_name(universe, event.to_id)}")
 
     print(f"\n{len(changes)} system changes, {len(store.systems())} systems, {len(store.connections())} connections\n")
     for root in (system for system in store.systems() if system.parent_id is None):
