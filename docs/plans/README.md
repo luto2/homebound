@@ -19,7 +19,6 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [plan-combat-scan.md](plan-combat-scan.md) | 8. Combat-scanned ships (and the paste bug behind it) | not started |
 | [plan-structure-list.md](plan-structure-list.md) | 9. Structure list, fed by combat scans | not started, after 8 |
 | [plan-overlay-focus.md](plan-overlay-focus.md) | 15. Overlay shows the nearby part of a big chain | not started |
-| [plan-single-instance.md](plan-single-instance.md) | 16. A second start opens the running app | not started |
 | [plan-overlay-shortcut.md](plan-overlay-shortcut.md) | Global shortcut to cycle the overlay mode | not started |
 | [plan-code-signing.md](plan-code-signing.md) | Windows code signing | not started |
 
@@ -74,4 +73,5 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [done/plan-disconnect-connection.md](done/plan-disconnect-connection.md) | 2026-11-11 | cut-off tab on other cloud members |
 | [done/plan-return-hole.md](done/plan-return-hole.md) | 2026-11-11 | origin memory survives restart? marker for child-origin return holes (needs a synced flag) |
 | [done/plan-online-indicator.md](done/plan-online-indicator.md) | 2026-11-11 | overlay follow skipping closed clients (step 5) |
-
+| [done/plan-single-instance.md](done/plan-single-instance.md) | 2026-11-12 (`45398b0`) | a run on Windows |
+| [done/plan-gate-connections.md](done/plan-gate-connections.md) | 2026-11-12 (`3dfeb27`) | line colour/token and corner look by eye |

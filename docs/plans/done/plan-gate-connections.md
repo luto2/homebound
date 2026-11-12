@@ -1,6 +1,6 @@
 # Plan: gate connections (TODO human-added task 20)
 
-Status: implemented.
+Status: implemented (2026-11-12, `3dfeb27`). Deviations: none; the gate flag is derived from the universe, not stored or synced.
 
 Goal: when two joined systems are also stargate neighbours, draw the connection with 90 degree corners
 instead of the wormhole curve, and leave out wormhole state.

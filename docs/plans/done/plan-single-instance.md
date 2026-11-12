@@ -1,8 +1,6 @@
 # Plan: a second Homebound start opens the running one instead of breaking both
 
-Status: not started. Owner task 16 in `TODO.md` (human-added, from a user, 2026-11-10): "opening two
-instances of this thing by accident breaks it until both are closed again". Reported on Windows; the
-owner ran two instances for a sync test once without trouble, but those didn't read real logs.
+Status: implemented (2026-11-12, `45398b0`). Deviations: Qt's tryLock removes a dead PID's lock itself; the wire client_id is now a random per-process id (the stored sync_client_id stays unused); no server change. A hung (live) first instance is not taken over.
 
 Depends on: nothing. Touches `homebound/__main__.py`, a new `homebound/platform/instance.py`, and tests.
 

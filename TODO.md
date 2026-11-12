@@ -79,8 +79,8 @@ a small change whose file and fix are named.
     around the character plus the path home, fold other branches into summary rows, mark branches with a
     k-space or home exit, and cap the height. Plan: `docs/plans/plan-overlay-focus.md`.
     Effort: 3/5 · Sonnet. A pure folding function in `chain.py` plus overlay painting and two settings.
-16. Opening two instances by accident breaks both until both are closed (user report, probably Windows).
-    Make a second start raise the running window and exit. Plan: `docs/plans/plan-single-instance.md`.
+16. **Done 2026-11-12 (`45398b0`).** Opening two instances by accident breaks both until both are closed (user report, probably Windows).
+    Make a second start raise the running window and exit. Plan: `docs/plans/done/plan-single-instance.md`.
     Effort: 2/5 · Sonnet. `QLockFile` + `QLocalServer`; reproduce on Windows first to learn what broke.
 17. **Done 2026-11-11 (`4885d92`).** With several systems selected, Delete removes only one (user report, 2026-11-11). Remove all of them
     in one undo step. Plan: `docs/plans/done/plan-multi-delete.md`.
@@ -119,7 +119,7 @@ a small change whose file and fix are named.
       connection, so no stored return flag.
     - The damaged-map message texts are approved as they are.
     Effort: mostly 1–2/5 · Sonnet; the backfill and the admin-only scheme change 3/5 · Opus (sync).
-20. When two systems on the map are joined and they are also neighbours through a stargate, mark that
+20. **Done 2026-11-12 (`3dfeb27`).** When two systems on the map are joined and they are also neighbours through a stargate, mark that
     connection as a gate connection and draw its line with 90° corners (horizontal and vertical segments)
     instead of the curve the wormhole lines use (owner, 2026-11-12).
     Effort: 2/5 · Sonnet. A check against the universe's gate list, a stored or derived flag, and a second
