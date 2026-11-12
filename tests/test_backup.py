@@ -997,25 +997,30 @@ def test_manifest_variants(tmp_path) -> None:
     assert backup_info(path).created_at == datetime(2026, 11, 1, 12, tzinfo=timezone.utc)
 
 
-def test_restore_with_missing_or_unwritable_file(settings, monkeypatch) -> None:
-    """A map listed but not in the zip, a target that can't be written, or a disk error is a BackupError."""
+@pytest.mark.skipif(CANNOT_LOCK_FOLDERS, reason="chmod can't make a folder read-only here")
+def test_restore_into_an_unwritable_folder(settings) -> None:
+    """A target folder that can't be written is a BackupError, and no half-restored map is left in the list."""
+    path = create_backup("manual", settings)
+    folder = settings_module.DATA_DIR / "maps"
+    folder.mkdir()
+    folder.chmod(0o500)
+    try:
+        maps_before = dict(settings.maps)
+        with pytest.raises(BackupError, match="couldn't be written"):
+            restore_maps(path, ["Main"], False, settings)
+        assert settings.maps == maps_before
+    finally:
+        folder.chmod(0o700)
+
+
+def test_restore_with_missing_file_or_disk_error(settings, monkeypatch) -> None:
+    """A map listed but not in the zip, or a disk error, is a BackupError."""
     path = create_backup("manual", settings)
     broken = path.with_name("2026-11-01_1200_manual.zip")
     with zipfile.ZipFile(broken, "w") as archive:
         archive.writestr("manifest.json", json.dumps({"maps": {"Main": {"file": "map.db"}}}))
     with pytest.raises(BackupError, match="no file map.db"):
         restore_maps(broken, ["Main"], False, settings)
-    if not CANNOT_LOCK_FOLDERS:
-        folder = settings_module.DATA_DIR / "maps"
-        folder.mkdir()
-        folder.chmod(0o500)
-        try:
-            maps_before = dict(settings.maps)
-            with pytest.raises(BackupError, match="couldn't be written"):
-                restore_maps(path, ["Main"], False, settings)
-            assert settings.maps == maps_before   # the half-restored map isn't left in the list
-        finally:
-            folder.chmod(0o700)
 
     def disk_error(*arguments: object) -> NoReturn:
         """Fail like a full disk."""

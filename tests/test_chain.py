@@ -19,16 +19,19 @@ def test_known_space_radius(simulation) -> None:
     jita = UNIVERSE.by_name("Jita")
     simulation.jump(jita.name)  # home -> Jita by WH; Jita is the entrance
     distances = UNIVERSE.gate_distances(jita.id, 6)
-    for jumps in range(0, 7):
+
+    def chain_at(jumps: int):
+        """Resolve the chain for a system exactly ``jumps`` gate jumps from Jita."""
         system_id = next(candidate for candidate, distance in sorted(distances.items()) if distance == jumps)
-        chain = resolve_chain(simulation.store, UNIVERSE, system_id, HOME.id, radius=5)
-        if jumps <= 5:
-            assert chain is not None and HOME.id in chain.members, jumps
-            if jumps:
-                assert chain.entrance_id == jita.id and chain.jumps == jumps
-                assert any(row.virtual and row.current and row.jumps_from == jumps for row in chain.rows)
-        else:
-            assert chain is None
+        return resolve_chain(simulation.store, UNIVERSE, system_id, HOME.id, radius=5)
+
+    assert HOME.id in chain_at(0).members
+    for jumps in range(1, 6):
+        chain = chain_at(jumps)
+        assert HOME.id in chain.members, jumps
+        assert (chain.entrance_id, chain.jumps) == (jita.id, jumps)
+        assert any(row.virtual and row.current and row.jumps_from == jumps for row in chain.rows)
+    assert chain_at(6) is None
 
 
 def test_tree_rows_have_box_drawing_prefixes(simulation) -> None:

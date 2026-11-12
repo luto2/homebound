@@ -754,7 +754,6 @@ def test_unknown_jump_default_add(window) -> None:
     window.state.unknownJump.emit(UnknownJump(1, "Pilot", source.id, destination.id))
     toast = window.toasts.toasts[-1]
     assert toast_kind(toast) == "warning" and toast_text(toast).startswith("Unknown jump")
-    assert callable(toast.default)
     toast.default()                      # the timeout answer is "add"
     assert window.state.store.connection(source.id, destination.id)
 

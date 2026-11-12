@@ -154,11 +154,6 @@ class TestHelpers:
         with pytest.raises(TypeError):
             elide("x", QFont(), "10")
 
-    def test_aliases(self) -> None:
-        """W and H alias the node width and height, and the grid step is a third of the node height."""
-        assert (map_scene.W, map_scene.H) == (map_scene.NODE_WIDTH, map_scene.NODE_HEIGHT)
-        assert GRID == map_scene.NODE_HEIGHT / 3
-
     def test_grid_is_a_third_of_the_node_height_token(self) -> None:
         """The grid step (defined once, in the tracker) is a third of the node height token."""
         assert GRID == map_scene.PIXELS["size-node-h"] / 3
@@ -429,9 +424,9 @@ class TestSystemNode:
         assert node._zkill_level() == ("none", False)
         node.zkill = ZkillStats(HOME.id, 0, 0, 0, None, iso_ago())
         level, recent = node._zkill_level()
-        assert recent is False and isinstance(level, str)
+        assert (level, recent) == ("none", False)   # no kills at all
         node.zkill = ZkillStats(HOME.id, 1, 5, 0, iso_ago(minutes=1), iso_ago())
-        assert node._zkill_level()[1] is True
+        assert node._zkill_level() == ("med", True)
         assert node._zkill_width() == 14 + 16 + 4
         node.zkill = ZkillStats(HOME.id, 1, 5, 0, iso_ago(hours=1), iso_ago())
         assert node._zkill_width() == 18

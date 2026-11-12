@@ -21,7 +21,7 @@ from homebound.logs.watcher import CharacterState
 from homebound.mapdb.store import Action, Store, ZkillStats, utc_now_iso
 from homebound.mapping.tracker import AutoNamed, MapChanged, Moved, NamingRequest, UnknownJump
 from homebound.ui import menus
-from homebound.ui.character_dock import CharacterDock, CharacterDelegate
+from homebound.ui.character_dock import CharacterDock
 from homebound.ui.overlay import MODE_LABELS, Overlay, OverlayFonts
 from homebound.ui.state import SCAN_AGE_INTERVAL_MS, AppState, MapOpenError, set_aside_damaged
 from homebound.ui.toast import KINDS, MAX_TOASTS, Toast, ToastHost
@@ -1070,7 +1070,6 @@ def test_dock_reload_and_paint_states(dock_setup, tmp_path) -> None:
     state.watcher.characters[3].recent = False
     dock.reload()
     delegate = dock.itemDelegate()
-    assert isinstance(delegate, CharacterDelegate)
     assert delegate.online_text(3, "online") == "● online"
     assert delegate.online_text(3, "recent") == "◐ recent"
     assert delegate.online_text(3, "offline").startswith("○ offline ")
