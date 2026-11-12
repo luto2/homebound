@@ -381,7 +381,7 @@ def stamp_server_times(state: MapState, ops: list[Op], now_iso: str) -> tuple[li
             elif previous != op.fields["lifetime"] or not op.fields.get("lifetime_set_at"):
                 values["lifetime_set_at"] = now_iso
             else:
-                values["lifetime_set_at"] = current.fields.get("lifetime_set_at")
+                values["lifetime_set_at"] = current.fields.get("lifetime_set_at") if current else None
         if values:
             op = op.with_fields(**values)
             stamped[f"{op.entity}:{key_text(op.key)}"] = values

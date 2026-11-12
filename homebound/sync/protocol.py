@@ -300,7 +300,7 @@ class Op:
             return message
         if self.fields:
             message["f"] = dict(self.fields)
-        if self.has_placement:
+        if self.has_placement and self.placement is not None:
             message["placement"] = {"parent_id": self.placement[0], "hole_index": self.placement[1]}
         if self.full:
             message["full"] = True
@@ -453,10 +453,14 @@ def ops_from_change(change: Change, hlc: str, client_id: str) -> list[Op]:
     entity = change.entity
     if change.deleted:
         return [Op(entity, change.key, {}, hlc, client_id, delete=True)]
+    if change.after is None:   # absent before and after: nothing to sync
+        return []
     after = synced_values(entity, change.after)
     if change.created:
         return [Op(entity, change.key, after, hlc, client_id, placement_of(change.after) if entity == "system" else None,
                    entity == "system", full=True)]
+    if change.before is None:   # not created and still there, so it was there before
+        return []
     before = synced_values(entity, change.before)
     changed = {name: value for name, value in after.items()
                if before.get(name) != value and name not in LAYOUT_FIELDS}

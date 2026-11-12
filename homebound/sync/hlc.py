@@ -6,6 +6,7 @@ client ID, so a merge stamp is ``"<hlc>@<client_id>"`` (see :func:`stamp`).
 """
 import re
 import time
+from typing import TypeGuard
 from collections.abc import Callable
 
 from ..validation import require_text
@@ -34,7 +35,7 @@ def parse_hlc(value: str) -> tuple[int, int]:
     return int(milliseconds, 16), int(counter, 16)
 
 
-def is_hlc(value: object) -> bool:
+def is_hlc(value: object) -> TypeGuard[str]:
     """Return whether a value is a well-formed HLC string."""
     return isinstance(value, str) and bool(HLC_PATTERN.match(value))
 

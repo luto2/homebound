@@ -8,6 +8,7 @@ import logging
 import random
 import threading
 import time
+from typing import Any
 from collections.abc import Callable
 
 from websockets.exceptions import WebSocketException
@@ -97,7 +98,7 @@ class SocketWorker:
             self.on_state("connecting")
             started = time.monotonic()
             try:
-                options = {"ssl": ssl_context()} if self.url.startswith("wss://") else {}
+                options: dict[str, Any] = {"ssl": ssl_context()} if self.url.startswith("wss://") else {}
                 with connect(self.url, max_size=MAX_MESSAGE_BYTES * 4, open_timeout=15, close_timeout=2,
                              **options) as connection:
                     with self.lock:
