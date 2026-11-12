@@ -7,6 +7,7 @@ import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from PySide6.QtCore import (QAbstractItemModel, QAbstractTableModel, QEvent, QModelIndex, QObject,
                             QPersistentModelIndex, QPoint, QPointF, QRect, QRectF, Qt, QTimer, Signal)
@@ -47,6 +48,7 @@ FLASH_IN_SECONDS = 0.12    # pasted rows light up quickly ...
 FLASH_OUT_SECONDS = 1.8    # ... and fade out slowly
 FLASH_PEAK_ALPHA = 90      # of the success colour, out of 255
 FLASH_FRAME_MS = 16
+NEW_MARKER_MINUTES = 10    # the "+" of a sig a paste added goes by itself after this long
 
 
 @dataclass
@@ -71,6 +73,27 @@ def group_sort_key(key: str) -> tuple[bool, int]:
     require_type(key, str, "key")
     kind, group = key.split(":", 1)
     return kind != "sig", GROUP_ORDER.index(group) if group in GROUP_ORDER else len(GROUP_ORDER)
+
+
+def is_new(signature: Signature, now: datetime | None = None) -> bool:
+    """Return whether a signature still shows the "new" marker: added by a paste in the last :data:`NEW_MARKER_MINUTES`.
+
+    The stored state stays ``new`` until the next paste that contains the sig; the marker only goes
+    by itself on screen, so nothing is written or synced when it expires.
+
+    Args:
+        signature: The signature.
+        now: The time to compare with (UTC), or None for the clock.
+    """
+    if signature.state != "new":
+        return False
+    try:
+        created = datetime.fromisoformat(signature.created_at)
+    except (TypeError, ValueError):
+        return False
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return (now or datetime.now(timezone.utc)) - created < timedelta(minutes=NEW_MARKER_MINUTES)
 
 
 def _seen_at(signature: Signature) -> str:
@@ -100,6 +123,26 @@ class SignatureModel(QAbstractTableModel):
         self.origin: int | None = None                  # where a return hole here leads, if known
         self.hint: str | None = None                    # the one sig that looks like the return hole
         self.copied: str | None = None
+        self.new_ids: set[str] = set()                  # sigs that show the "new" marker (it goes after 10 minutes)
+
+    def refresh_new(self, now: datetime | None = None) -> bool:
+        """Drop the "new" marker of sigs that are older than :data:`NEW_MARKER_MINUTES`, keeping selection and scroll.
+
+        Called on the once-a-minute tick; only redraws when a marker has expired.
+
+        Args:
+            now: The time to compare with (UTC), or None for the clock.
+
+        Returns:
+            True if a marker went.
+        """
+        current = {signature.signature_id for signature in self.signatures if is_new(signature, now)}
+        if current == self.new_ids:
+            return False
+        self.layoutAboutToBeChanged.emit()
+        self.rows = self._grouped_rows()     # same rows, the group headers count the "+" again
+        self.layoutChanged.emit()
+        return True
 
     def sort_state(self) -> tuple[int, bool]:
         """Return ``(column, descending)`` the rows are sorted by inside each group; default: ID ascending."""
@@ -205,6 +248,8 @@ class SignatureModel(QAbstractTableModel):
         collapsed = self.collapsed()
         column, descending = self.sort_state()
         sort_key = self._sort_key(column)
+        now = datetime.now(timezone.utc)
+        self.new_ids = {signature.signature_id for signature in self.signatures if is_new(signature, now)}
         rows: list[Signature | GroupHeader] = []
         for key in sorted(groups, key=group_sort_key):
             kind, group = key.split(":", 1)
@@ -214,7 +259,7 @@ class SignatureModel(QAbstractTableModel):
             members = sorted(groups[key], key=sort_key, reverse=descending)
             shut = key in collapsed
             rows.append(GroupHeader(key, title, len(members), shut, sum(signature.state == "missing" for signature in members),
-                                    sum(signature.state == "new" for signature in members)))
+                                    sum(is_new(signature, now) for signature in members)))
             if not shut:
                 rows += members
         return rows
@@ -518,7 +563,7 @@ class SignatureDelegate(QStyledItemDelegate):
         padding = PIXELS["sp-4"] if column in (COLUMN_SEEN, COLUMN_AGE, COLUMN_TYPE) else PIXELS["sp-8"]
         text_rect = rect.adjusted(padding, 0, -padding, 0)
         if column == COLUMN_FLAG:
-            flag = {"missing": ("−", "warning"), "new": ("+", "success")}.get(signature.state)
+            flag = ("−", "warning") if signature.state == "missing" else (("+", "success") if is_new(signature) else None)
             if flag:
                 painter.setFont(font("mono-sig"))
                 painter.setPen(color(flag[1]))

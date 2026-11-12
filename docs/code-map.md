@@ -113,7 +113,7 @@ others show or edit it.
 | Feature | Logic | UI |
 |---|---|---|
 | Parsing a probe scanner paste and merging it | `mapping/signature_parser.py` `parse_scanner_text`, `merge_signatures` | `ui/map_window.py` `_paste_shortcut` (Ctrl+V) |
-| Signature table (groups, sorting, flash, copy-bookmark button, Delete key) | `ui/signature_table.py` `SignatureModel`, `SignatureDelegate`, `RowFlash` | `ui/system_panel.py` `SystemPanel` |
+| Signature table (groups, sorting, flash, copy-bookmark button, Delete key; the "+" new marker goes after 10 minutes, `is_new`, `SignatureModel.refresh_new` on the minute tick) | `ui/signature_table.py` `SignatureModel`, `SignatureDelegate`, `RowFlash` | `ui/system_panel.py` `SystemPanel` |
 | Editing one signature | `mapping/tracker.py` `save_signature`, `link_signature` | `ui/dialogs.py` `SignatureDialog`; `ui/wormhole_fields.py` |
 | Deleting a wormhole sig removes its connection, systems stay | — | `ui/system_panel.py` `SystemPanel` (delete handler) |
 | Rescan status (`SCAN 26h`, `NO SCAN`) | `mapping/scan_status.py`; `ui/state.py` `AppState.scan_status`, `mark_scanned` | `ui/map_scene.py` `scan_tab_label`; `ui/system_panel.py` |
@@ -193,6 +193,7 @@ detail.
 | `__init__.py` | `app_version` |
 | `settings.py` | The settings file, its fields, choices and ranges, log folder detection |
 | `backup.py` | Backup zips: create, list, prune, restore |
+| `hotkey.py` (platform) | Global overlay shortcut: Windows `RegisterHotKey`, KDE global shortcut service |
 | `routing.py` | Route search |
 | `zkill.py` | zKill worker and activity summary |
 | `eve_scout.py` | EVE-Scout worker |

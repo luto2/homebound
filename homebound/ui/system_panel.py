@@ -381,6 +381,7 @@ class SystemPanel(QWidget):
         if self.signature_summary.property("role") != role:
             self.signature_summary.setProperty("role", role)
             repolish(self.signature_summary)
+        self.table.signature_model.refresh_new()     # the "+" of sigs added over 10 minutes ago goes
         self.table.viewport().update()
 
     # ------------------------------------------------------------ actions

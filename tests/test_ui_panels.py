@@ -4,8 +4,8 @@ from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, Qt
-from PySide6.QtGui import QContextMenuEvent, QKeySequence, QMouseEvent, QShortcut
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, Qt
+from PySide6.QtGui import QContextMenuEvent, QKeySequence, QImage, QMouseEvent, QPainter, QShortcut
 from PySide6.QtWidgets import QApplication, QStyleOptionViewItem
 
 from conftest import HOME, SCAN, UNIVERSE, pick_system
@@ -19,8 +19,7 @@ from homebound.ui import signature_table as table_module
 from homebound.ui.signature_table import (
     COLUMN_ACTION, COLUMN_AGE, COLUMN_FLAG, COLUMN_GROUP, COLUMN_NAME, COLUMN_SEEN, COLUMN_SIGNATURE, COLUMN_TYPE,
     FLASH_IN_SECONDS, FLASH_OUT_SECONDS, SORTABLE, GroupHeader, RowFlash, SignatureModel, SignatureTable, group_key,
-    group_sort_key,
-    is_wormhole_signature)
+    NEW_MARKER_MINUTES, group_sort_key, is_new, is_wormhole_signature)
 from homebound.ui.system_panel import (BadgeStrip, ElideLabel, OwnerSwatch, SystemPanel, missing_banner_html, plural)
 from homebound.ui.state import AppState
 from ui_helpers import make_state
@@ -700,6 +699,84 @@ def test_all_new_group_collapses_on_header_click(state, model) -> None:
     assert model.rows[0].collapsed and model.rowCount() == 1
     assert model.toggle("sig:gas") is False
     assert model.rowCount() == rows_open
+
+
+def test_new_marker_goes_after_ten_minutes() -> None:
+    """A sig shows "new" for 10 minutes after the paste that added it; other states and bad dates never do."""
+    now = datetime(2026, 11, 12, 12, 0, tzinfo=timezone.utc)
+
+    def sig(state="new", created=None):
+        """Return a signature with a state and a creation time."""
+        return Signature(HOME.id, "AAA-111", state=state, created_at=now.isoformat() if created is None else created)
+
+    assert NEW_MARKER_MINUTES == 10
+    assert is_new(sig(), now) and is_new(sig(created=(now - timedelta(minutes=9, seconds=59)).isoformat()), now)
+    assert not is_new(sig(created=(now - timedelta(minutes=10)).isoformat()), now)
+    assert not is_new(sig(state=""), now) and not is_new(sig(state="missing"), now)
+    assert not is_new(sig(created=""), now) and not is_new(sig(created="yesterday"), now)
+    naive = (now - timedelta(minutes=1)).replace(tzinfo=None).isoformat()
+    assert is_new(sig(created=naive), now)                               # a date without zone counts as UTC
+    assert is_new(sig(created=iso_ago(minutes=1)))                       # the clock by default
+    assert not is_new(sig(created=iso_ago(minutes=11)))
+
+
+def test_header_counts_only_sigs_still_new(state, model) -> None:
+    """The header's "+" counts sigs added in the last 10 minutes, not every sig whose state is still new."""
+    add_signature(state, "NEW-001", group="gas", state="new", created_at=iso_ago(minutes=2))
+    add_signature(state, "OLD-001", group="gas", state="new", created_at=iso_ago(minutes=30))
+    model.load(HOME.id)
+    header = next(row for row in model.rows if isinstance(row, GroupHeader) and row.key == "sig:gas")
+    assert header.new == 1 and model.new_ids == {"NEW-001"}
+
+
+def test_new_marker_expires_by_itself_on_the_tick(state, table, monkeypatch) -> None:
+    """When a marker runs out the header count and the "+" flag go on the next tick, without a reload and without a write."""
+    add_signature(state, "NEW-001", group="gas", state="new", created_at=iso_ago(minutes=9, seconds=30))
+    table.load(HOME.id)
+    model = table.signature_model
+    row = row_of(table, "NEW-001")
+    index = model.index(row, 0)
+    assert model.new_ids == {"NEW-001"} and model.refresh_new() is False
+    header = next(entry for entry in model.rows if isinstance(entry, GroupHeader) and entry.key == "sig:gas")
+    assert header.new == 1
+    table.selectRow(row)
+    later = datetime.now(timezone.utc) + timedelta(minutes=1)
+    assert model.refresh_new(later) is True
+    assert model.new_ids == set() or model.new_ids == {"NEW-001"}        # the model's own clock is the real one
+    monkeypatch.setattr(table_module, "datetime", type("Late", (datetime,), {"now": classmethod(lambda cls, tz=None: later)}))
+    assert model.refresh_new() is True and model.new_ids == set()
+    header = next(entry for entry in model.rows if isinstance(entry, GroupHeader) and entry.key == "sig:gas")
+    assert header.new == 0 and state.store.signature(HOME.id, "NEW-001").state == "new"   # stored state untouched
+    assert table.selectionModel().isRowSelected(row_of(table, "NEW-001")) and model.refresh_new() is False
+    assert model.rows[row] is not None and index.isValid()
+
+
+def test_panel_tick_drops_the_expired_marker(state, panel, monkeypatch) -> None:
+    """The panel's once-a-minute tick refreshes the table's new markers."""
+    add_signature(state, "NEW-001", group="gas", state="new", created_at=iso_ago(minutes=9, seconds=30))
+    panel.set_system(HOME.id)
+    later = datetime.now(timezone.utc) + timedelta(minutes=1)
+    monkeypatch.setattr(table_module, "datetime", type("Late", (datetime,), {"now": classmethod(lambda cls, tz=None: later)}))
+    state.scanAgeTick.emit()
+    assert panel.table.signature_model.new_ids == set()
+
+
+def test_flag_column_paints_plus_only_while_new(state, table, monkeypatch) -> None:
+    """The "+" in the flag column is drawn for a new sig and not for one past the 10 minutes."""
+    add_signature(state, "NEW-001", group="gas", state="new", created_at=iso_ago(minutes=2))
+    add_signature(state, "OLD-001", group="gas", state="new", created_at=iso_ago(minutes=30))
+    table.load(HOME.id)
+    delegate = table.signature_delegate
+    results = {}
+    for signature_id in ("NEW-001", "OLD-001"):
+        signature = state.store.signature(HOME.id, signature_id)
+        image = QImage(40, 20, QImage.Format.Format_ARGB32)
+        image.fill(0)
+        painter = QPainter(image)
+        delegate._paint_cell(painter, QRectF(0, 0, 40, 20), signature, COLUMN_FLAG, "")
+        painter.end()
+        results[signature_id] = any(image.pixelColor(x, y).alpha() for x in range(40) for y in range(20))
+    assert results == {"NEW-001": True, "OLD-001": False}
 
 
 def test_collapsed_value_survives_garbage(state, model) -> None:
