@@ -243,7 +243,7 @@ def test_connection_dialog_values_and_collapse(state) -> None:
     assert not dialog.fields.destination_box.isVisibleTo(dialog)
     assert dialog.values() == {"wormhole_type": "K162", "mass": "reduced", "lifetime": LIFETIME_4H, "size": "L",
                                "frigate_only": 0}
-    dialog.fields.size.set_value("S")
+    dialog.fields.size_choice.set_value("S")
     assert dialog.values()["frigate_only"] == 1
     got = []
     dialog.collapse.connect(lambda: got.append(1))
@@ -848,7 +848,7 @@ def test_wormhole_fields_k162_vs_typed(state) -> None:
     assert fields.type_info_text().startswith("Exit of a hole")
     assert fields.values() == {"type": "K162", "destination": "C3", "size": "L", "lifetime": 0, "mass": "fresh",
                                "frigate_only": 0}
-    fields.size.set_value("S")
+    fields.size_choice.set_value("S")
     assert fields.values()["frigate_only"] == 1
     fields.type.setCurrentIndex(fields.type.findData("H296"))
     assert resized and not fields.destination_box.isVisible() and not fields.size_box.isVisible()

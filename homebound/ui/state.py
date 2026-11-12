@@ -593,6 +593,8 @@ class AppState(QObject):
         now = now or datetime.now(timezone.utc)
         sent = []
         for structure in timers_to_warn(self.store.structures(), now):
+            if structure.timer_at is None:   # timers_to_warn only returns structures with a timer
+                continue
             key = (structure.system_id, structure.type_name, structure.name, structure.timer_at)
             if key in self._warned_timers:
                 continue
@@ -946,9 +948,9 @@ class AppState(QObject):
         for row in self.store.characters():
             merged[row["id"]] = [row["id"], row["name"], row["system_id"]]
         for character_id, scanned in self.watcher.characters.items():
-            row = merged.setdefault(character_id, [character_id, scanned.name or str(character_id), None])
+            entry = merged.setdefault(character_id, [character_id, scanned.name or str(character_id), None])
             if scanned.name:
-                row[1] = scanned.name
+                entry[1] = scanned.name
         rows = [(character_id, name, system_id, self.presence(character_id, name), self.settings.slot_for(character_id))
                 for character_id, name, system_id in merged.values()]
         return sorted(rows, key=lambda row: (PRESENCE_ORDER[row[3]], (row[1] or "").lower()))

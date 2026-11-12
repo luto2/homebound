@@ -77,7 +77,7 @@ class Toast(QFrame):
         column = QVBoxLayout(self)
         column.setContentsMargins(PIXELS["sp-12"], PIXELS["sp-8"], PIXELS["sp-8"], PIXELS["sp-8"])
         header = QHBoxLayout()
-        header.setSpacing(PIXELS["sp-8"])
+        header.setSpacing(int(PIXELS["sp-8"]))
         header.addWidget(Glyph(kind), 0, Qt.AlignmentFlag.AlignTop)
         self.title = QLabel(text)
         self.title.setWordWrap(True)
@@ -117,7 +117,7 @@ class Toast(QFrame):
         """Build the row of action buttons (and the countdown label)."""
         row = QHBoxLayout()
         if countdown:
-            row.addSpacing(20 + PIXELS["sp-8"])   # line up under the text, not the glyph
+            row.addSpacing(int(20 + PIXELS["sp-8"]))   # line up under the text, not the glyph
         else:
             row.addStretch(1)
         for label, callback, primary in actions:

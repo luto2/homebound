@@ -1310,9 +1310,10 @@ class MapWindow(QMainWindow):
             menu.addSeparator()
             menus.section(menu, "Lifetime")
             group = QActionGroup(menu)
-            for key, label in ((0, "Stable"), (1, "◷ < 4h"), (2, "◷ < 1h"), (3, "✕ Expired")):
-                menus.item(menu, label, lambda key=key: self._set_connection(connection_id, lifetime=key),
-                           checked=connection.lifetime == key, group=group)
+            for lifetime_key, label in ((0, "Stable"), (1, "◷ < 4h"), (2, "◷ < 1h"), (3, "✕ Expired")):
+                menus.item(menu, label,
+                           lambda lifetime_key=lifetime_key: self._set_connection(connection_id, lifetime=lifetime_key),
+                           checked=connection.lifetime == lifetime_key, group=group)
             menu.addSeparator()
         menus.item(menu, "Lost connection", lambda: self._lost_connection(connection_id))
         menus.item(menu, "Collapse", lambda: self._collapse(connection_id), danger=True)

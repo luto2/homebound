@@ -401,7 +401,7 @@ class Segmented(QWidget):
         require_type(options, list, "options")
         grid = QGridLayout(self)
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setSpacing(PIXELS["sp-4"])
+        grid.setSpacing(int(PIXELS["sp-4"]))
         self.group = QButtonGroup(self)
         self.buttons: dict[object, SegmentButton] = {}
         for column, segment in enumerate(options):
@@ -508,7 +508,7 @@ class WormholeFields(QWidget):
         self.state = state
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(PIXELS["sp-8"])
+        layout.setSpacing(int(PIXELS["sp-8"]))
         layout.addWidget(caption("Wormhole type"))
         self.type = WormholeTypeCombo(state, system_ids, current.get("type"), preferred)
         layout.addWidget(self.type)
@@ -522,9 +522,9 @@ class WormholeFields(QWidget):
         self.ask_destination = ask_destination
 
         self.size_box, box = self._box(layout, "Size")
-        self.size = Segmented(size_segments())
-        self.size.set_value(current.get("size") or "")
-        box.addWidget(self.size)
+        self.size_choice = Segmented(size_segments())
+        self.size_choice.set_value(current.get("size") or "")
+        box.addWidget(self.size_choice)
 
         layout.addWidget(caption("Lifetime"))
         self.lifetime = Segmented(lifetime_segments())
@@ -553,7 +553,7 @@ class WormholeFields(QWidget):
         widget = QWidget()
         box = QVBoxLayout(widget)
         box.setContentsMargins(0, 0, 0, 0)
-        box.setSpacing(PIXELS["sp-8"])
+        box.setSpacing(int(PIXELS["sp-8"]))
         box.addWidget(caption(title))
         layout.addWidget(widget)
         return widget, box
@@ -608,7 +608,8 @@ class WormholeFields(QWidget):
         """
         code = self.type.code() or None
         k162 = code == "K162"
-        size = (self.size.value() or None) if k162 else None
+        size_key = self.size_choice.value()   # a size segment key is its text, or None
+        size = str(size_key) if k162 and size_key else None
         return {"type": code,
                 "destination": (self.destination.currentData() or None) if k162 and self.ask_destination else None,
                 "size": size,

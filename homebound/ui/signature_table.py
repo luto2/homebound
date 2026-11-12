@@ -112,7 +112,7 @@ class SignatureModel(QAbstractTableModel):
     def __init__(self, state: AppState) -> None:
         """Create an empty model."""
         super().__init__()
-        self.state = state
+        self.app_state = state
         self.system_id = 0
         self.rows: list[Signature | GroupHeader] = []   # in display order
         self.signatures: list[Signature] = []           # every signature + anomaly of the system
@@ -147,7 +147,7 @@ class SignatureModel(QAbstractTableModel):
     def sort_state(self) -> tuple[int, bool]:
         """Return ``(column, descending)`` the rows are sorted by inside each group; default: ID ascending."""
         try:
-            column, descending = json.loads(self.state.store.get_value("signature_sort", "[1, false]"))
+            column, descending = json.loads(self.app_state.store.get_value("signature_sort", "[1, false]"))
             return (column if column in SORTABLE else COLUMN_SIGNATURE), bool(descending)
         except (ValueError, TypeError):
             return COLUMN_SIGNATURE, False
@@ -160,7 +160,7 @@ class SignatureModel(QAbstractTableModel):
         """
         if column not in SORTABLE:
             raise ValueError(f"column {column} can't be sorted by")
-        self.state.store.put_value("signature_sort", json.dumps([column, bool(descending)]))
+        self.app_state.store.put_value("signature_sort", json.dumps([column, bool(descending)]))
         self.load(self.system_id)
 
     def _sort_key(self, column: int) -> Callable[[Signature], tuple]:
@@ -181,7 +181,7 @@ class SignatureModel(QAbstractTableModel):
     def collapsed(self) -> set[str]:
         """Return the group keys collapsed on this map."""
         try:
-            return set(json.loads(self.state.store.get_value("signature_collapsed", "[]")))
+            return set(json.loads(self.app_state.store.get_value("signature_collapsed", "[]")))
         except (ValueError, TypeError):
             return set()
 
@@ -193,7 +193,7 @@ class SignatureModel(QAbstractTableModel):
         """
         require_type(key, str, "key")
         collapsed = self.collapsed() ^ {key}
-        self.state.store.put_value("signature_collapsed", json.dumps(sorted(collapsed)))
+        self.app_state.store.put_value("signature_collapsed", json.dumps(sorted(collapsed)))
         self.load(self.system_id)
         return key in collapsed
 
@@ -205,9 +205,9 @@ class SignatureModel(QAbstractTableModel):
         """
         require_type(signature_ids, list, "signature_ids")
         changed = set(signature_ids)
-        keys = {group_key(signature) for signature in self.state.store.signatures(self.system_id)
+        keys = {group_key(signature) for signature in self.app_state.store.signatures(self.system_id)
                 if signature.signature_id in changed}
-        self.state.store.put_value("signature_collapsed", json.dumps(sorted(self.collapsed() - keys)))
+        self.app_state.store.put_value("signature_collapsed", json.dumps(sorted(self.collapsed() - keys)))
         self.load(self.system_id)
 
     def load(self, system_id: int) -> int:
@@ -219,7 +219,7 @@ class SignatureModel(QAbstractTableModel):
         require_integer(system_id, "system_id", minimum=0)
         self.beginResetModel()
         self.system_id = system_id
-        state = self.state
+        state = self.app_state
         self.signatures = state.store.signatures(system_id) if system_id else []
         self.leads = {}
         self.returns = set()
@@ -275,7 +275,7 @@ class SignatureModel(QAbstractTableModel):
         unnumbered = [signature.signature_id for signature in self.signatures
                       if is_numbered_kind(signature) and not signature.hole_index
                       and signature.signature_id not in self.leads]
-        first = take_hole_number(self.state.store, self.system_id) if unnumbered else 0
+        first = take_hole_number(self.app_state.store, self.system_id) if unnumbered else 0
         return {signature_id: first + offset for offset, signature_id in enumerate(unnumbered)}
 
     def _shared_numbers(self) -> dict[str, list[str]]:
@@ -379,7 +379,7 @@ class SignatureModel(QAbstractTableModel):
 
     def wormhole_details(self, signature: Signature) -> list[str]:
         """Return destination and state of an unlinked WH sig, e.g. ``['→ C5', 'L', '◷ <1h', 'CRIT']``."""
-        universe = self.state.universe
+        universe = self.app_state.universe
         details = []
         destination = signature_destination(universe, signature)
         if destination:
@@ -396,7 +396,7 @@ class SignatureModel(QAbstractTableModel):
 
     def lead_class(self, signature: Signature) -> str | None:
         """Return the class of where a WH sig leads: the linked system's, else the set or known destination."""
-        universe = self.state.universe
+        universe = self.app_state.universe
         if signature.signature_id in self.leads:
             system = universe.by_id(self.leads[signature.signature_id][0])
             return system.system_class if system else None
@@ -426,7 +426,7 @@ class SignatureModel(QAbstractTableModel):
         A linked hole uses the child's hole number (or ``-0`` towards home); otherwise the sig's
         own number, given when it was pasted.
         """
-        state = self.state
+        state = self.app_state
         if signature.signature_id in self.leads:
             other = self.leads[signature.signature_id][0]
             mapped = state.store.system(other)
@@ -450,7 +450,7 @@ class SignatureModel(QAbstractTableModel):
             The number, or None if the sig needs none (already numbered, linked, or not a wormhole).
         """
         require_type(signature, Signature, "signature")
-        number = number_signature(self.state.store, self.system_id, signature.signature_id)
+        number = number_signature(self.app_state.store, self.system_id, signature.signature_id)
         self.upcoming.pop(signature.signature_id, None)
         return number
 
@@ -692,7 +692,7 @@ class SignatureDelegate(QStyledItemDelegate):
 
     def is_stale(self) -> bool:
         """Return whether a rescan of the system is due (rows are drawn faint)."""
-        return bool(self.model.system_id) and self.model.state.scan_status(self.model.system_id).state == "due"
+        return bool(self.model.system_id) and self.model.app_state.scan_status(self.model.system_id).state == "due"
 
     def editorEvent(self, event: QEvent, model: QAbstractItemModel, option: QStyleOptionViewItem,
                     index: QModelIndex) -> bool:
@@ -725,7 +725,7 @@ class SignatureTable(QTableView):
     def __init__(self, state: AppState, parent: QWidget | None = None) -> None:
         """Create the table with saved column widths and sort order."""
         super().__init__(parent)
-        self.state = state
+        self.app_state = state
         self.signature_model = SignatureModel(state)
         self.setModel(self.signature_model)
         self.signature_delegate = SignatureDelegate(self.signature_model, self)
@@ -773,7 +773,7 @@ class SignatureTable(QTableView):
         header.setStretchLastSection(False)
         header.setMinimumSectionSize(16)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-        saved = self.state.settings.signature_column_widths
+        saved = self.app_state.settings.signature_column_widths
         for column, width in DEFAULT_WIDTHS.items():
             header.resizeSection(column, max(MIN_WIDTHS.get(column, 0), int(saved.get(str(column), width))))
         self.setColumnHidden(COLUMN_GROUP, True)  # the group headers say it; the space goes to Name
@@ -850,7 +850,7 @@ class SignatureTable(QTableView):
             The saved widths.
         """
         header = self.horizontalHeader()
-        settings = self.state.settings
+        settings = self.app_state.settings
         settings.signature_column_widths = {str(column): header.sectionSize(column) for column in DEFAULT_WIDTHS}
         settings.save()
         return settings.signature_column_widths
@@ -910,7 +910,7 @@ class SignatureTable(QTableView):
             The menu.
         """
         require_type(signature, Signature, "signature")
-        state, model = self.state, self.signature_model
+        state, model = self.app_state, self.signature_model
         menu = menus.menu(self)
         already = signature.signature_id in model.leads and model.leads[signature.signature_id][0]
         if model.origin:
@@ -945,7 +945,10 @@ class SignatureTable(QTableView):
             return None
         if not signature.hole_index and signature.signature_id not in model.leads:
             model.reserve_index(signature)
-            model.rows[row] = signature = self.state.store.signature(model.system_id, signature.signature_id)
+            stored = self.app_state.store.signature(model.system_id, signature.signature_id)
+            if stored is None:
+                return None
+            model.rows[row] = signature = stored
         label = model.bookmark_text(signature)
         QApplication.clipboard().setText(label)
         model.copied = signature.signature_id

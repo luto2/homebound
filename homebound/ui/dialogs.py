@@ -53,7 +53,7 @@ class ChoiceRow(RadioCard):
         super().__init__(group=group)
         row = QHBoxLayout(self)
         row.setContentsMargins(PIXELS["sp-8"], PIXELS["sp-6"], PIXELS["sp-8"], PIXELS["sp-6"])
-        row.setSpacing(PIXELS["sp-8"])
+        row.setSpacing(int(PIXELS["sp-8"]))
         self.radio.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.main = QLabel(main)
         self.main.setFont(font("mono-sig"))
@@ -101,7 +101,7 @@ def banner(kind: str, glyph: str, html: str) -> QFrame:
     frame.setProperty("banner", kind)
     row = QHBoxLayout(frame)
     row.setContentsMargins(PIXELS["sp-8"], PIXELS["sp-6"], PIXELS["sp-8"], PIXELS["sp-6"])
-    row.setSpacing(PIXELS["sp-8"])
+    row.setSpacing(int(PIXELS["sp-8"]))
     glyph_label = QLabel(glyph)
     glyph_label.setStyleSheet(f"color: {color(BANNER_TOKENS[kind]).name()}; font-weight: 800; "
                               "background: transparent; border: 0;")
@@ -143,7 +143,7 @@ class BaseDialog(QDialog):
         body.setStyleSheet(f"#dialogBody {{ background: {color('bg-2').name()}; }}")
         self.body = QVBoxLayout(body)
         self.body.setContentsMargins(PIXELS["sp-16"], PIXELS["sp-16"], PIXELS["sp-16"], PIXELS["sp-12"])
-        self.body.setSpacing(PIXELS["sp-8"])
+        self.body.setSpacing(int(PIXELS["sp-8"]))
         title_label = QLabel(title)
         title_label.setProperty("role", "title")
         self.body.addWidget(title_label)
@@ -159,7 +159,7 @@ class BaseDialog(QDialog):
                            f"border-top: 1px solid {color('line-1').name()}; }}")
         self.foot = QHBoxLayout(foot)
         self.foot.setContentsMargins(PIXELS["sp-16"], PIXELS["sp-8"], PIXELS["sp-16"], PIXELS["sp-8"])
-        self.foot.setSpacing(PIXELS["sp-8"])
+        self.foot.setSpacing(int(PIXELS["sp-8"]))
         outer.addWidget(foot)
 
     def adjustSize(self) -> None:
@@ -235,6 +235,7 @@ class NamingDialog(BaseDialog):
         if_static, if_not = state.tracker.preview_names(request)
         self.names = {True: if_static, False: if_not}
         self._build_static_question(request, if_static, if_not)
+        assert child is not None   # a naming request is only made for a system in the universe
         self._build_signature_question(request, child)
 
         self.caption("Name")
@@ -291,6 +292,8 @@ class NamingDialog(BaseDialog):
         self.caption("Which sig did you take?")
         for signature_id in request.signature_candidates:
             signature = self.state.store.signature(request.parent_id, signature_id)
+            if signature is None:   # scanned in this process just before; it is there
+                continue
             row = ChoiceRow(signature_id, self.signature_text(signature, child.system_class),
                             group=self.signature_group)
             self.signature_rows[signature_id] = row
@@ -424,9 +427,9 @@ class SignatureDialog(BaseDialog):
         self.rule = QFrame()
         self.rule.setFixedHeight(1)
         self.rule.setStyleSheet(f"background: {color('line-1').name()};")
-        self.body.addSpacing(PIXELS["sp-4"])
+        self.body.addSpacing(int(PIXELS["sp-4"]))
         self.body.addWidget(self.rule)
-        self.body.addSpacing(PIXELS["sp-4"])
+        self.body.addSpacing(int(PIXELS["sp-4"]))
         self.body.addWidget(self.wormhole)
 
         self.name_caption = self.caption("Name")
@@ -872,7 +875,8 @@ class BuildDataDialog(BaseDialog):
         if build is None:
             from ..universe import build_static
             build = build_static.build
-        self.build, self.command, self.worker = build, command, None
+        self.build, self.command = build, command
+        self.worker: BuildWorker | None = None
         self.setWindowTitle("Homebound")
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowTitleHint)
         self.setFixedWidth(440)
@@ -974,7 +978,7 @@ class BuildDataDialog(BaseDialog):
                           f" border-radius: {PIXELS['radius-2']:g}px; }}")
         row = QHBoxLayout(box)
         row.setContentsMargins(PIXELS["sp-8"], PIXELS["sp-4"], PIXELS["sp-4"], PIXELS["sp-4"])
-        row.setSpacing(PIXELS["sp-6"])
+        row.setSpacing(int(PIXELS["sp-6"]))
         mono = font("mono-small")
         prompt = QLabel("$")
         prompt.setFont(mono)

@@ -53,7 +53,7 @@ class WatchList(QWidget):
         self.state = state
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(PIXELS["sp-4"])
+        layout.setSpacing(int(PIXELS["sp-4"]))
 
         header = QHBoxLayout()
         header.setContentsMargins(PIXELS["sp-8"], PIXELS["sp-4"], PIXELS["sp-4"], 0)
@@ -171,7 +171,7 @@ class WatchList(QWidget):
     def remove(self, row: int) -> bool:
         """Stop watching the system of a row."""
         found = self.entry(row)
-        return bool(found) and self.state.remove_watch(found[0])
+        return found is not None and self.state.remove_watch(found[0])
 
     def show_system(self, row: int) -> bool:
         """Ask the window to show a row's system on the map, or the mapped exit nearest it.
@@ -189,7 +189,7 @@ class WatchList(QWidget):
         """Offer showing, moving between the lists and removing an entry."""
         list_item = self.list.itemAt(position)
         found = list_item.data(Qt.ItemDataRole.UserRole) if list_item else None
-        if not found:
+        if list_item is None or not found:
             return
         row = self.list.row(list_item)
         system_id, private, hit = found

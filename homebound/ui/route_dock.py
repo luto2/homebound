@@ -213,7 +213,7 @@ class RouteDock(QWidget):
         self.setMinimumWidth(int(PIXELS["size-panel-left"]))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, PIXELS["sp-4"], 0, PIXELS["sp-4"])
-        layout.setSpacing(PIXELS["sp-4"])
+        layout.setSpacing(int(PIXELS["sp-4"]))
 
         header = QHBoxLayout()
         header.setContentsMargins(PIXELS["sp-8"], 0, PIXELS["sp-4"], 0)
@@ -275,7 +275,7 @@ class RouteDock(QWidget):
         known = bool(self.origin_id and state.universe.by_id(self.origin_id))
         self.routes = state.routes(self.origin_id) if known else []
         destinations = state.route_destination_ids()
-        if known:
+        if known and self.origin_id is not None:
             source = "" if state.selected else " (followed character)"
             self.origin_label.setText(f"From {system_label(state, self.origin_id)}{source}")
         else:

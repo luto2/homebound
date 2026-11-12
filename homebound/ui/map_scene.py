@@ -746,8 +746,8 @@ class MapScene(QGraphicsScene):
                 self.removeItem(self.nodes.pop(system_id))
         for connection_id in list(self.edges):
             self.removeItem(self.edges.pop(connection_id))
-        for node in self.nodes.values():
-            node.edges.clear()
+        for shown in self.nodes.values():
+            shown.edges.clear()
         for system_id, mapped in systems.items():
             node = self.nodes.get(system_id)
             if node is None:

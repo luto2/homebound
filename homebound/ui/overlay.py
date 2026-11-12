@@ -29,7 +29,7 @@ class OverlayFonts:
 
     def __init__(self, text_size: int) -> None:
         """Build the fonts; the size is clamped to 11–14 px."""
-        size = clamp_to_range("overlay_text_size", int(text_size))
+        size = int(clamp_to_range("overlay_text_size", int(text_size)))
         self.row = font("overlay-row", size)
         self.current = QFont(self.row)
         self.current.setWeight(QFont.Weight.ExtraBold)
@@ -211,7 +211,7 @@ class Overlay(QWidget):
         fonts = OverlayFonts(self.state.settings.overlay_text_size)
         ink, muted = color("overlay-ink"), color("overlay-ink-muted")
         self._paint_header(painter, fonts, ink, muted)
-        y = HEADER_HEIGHT
+        y: float = HEADER_HEIGHT
         row_height = self._row_height()
         if not self.chain or not self.chain.rows:
             self._paint_empty(painter, fonts, ink, muted, y, row_height)

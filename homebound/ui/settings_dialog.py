@@ -127,7 +127,7 @@ class SettingsDialog(QDialog):
             widget = QWidget()
             layout = QVBoxLayout(widget)
             layout.setContentsMargins(PIXELS["sp-16"], PIXELS["sp-16"], PIXELS["sp-16"], PIXELS["sp-16"])
-            layout.setSpacing(PIXELS["sp-8"])
+            layout.setSpacing(int(PIXELS["sp-8"]))
             build(layout)
             layout.addStretch(1)
             self.stack.addWidget(widget)
@@ -436,7 +436,7 @@ class SettingsDialog(QDialog):
         self.opacity.valueChanged.connect(lambda value: self.opacity_label.setText(f"{value}%"))
         look_row.addWidget(self.opacity, 1)
         look_row.addWidget(self.opacity_label)
-        look_row.addSpacing(PIXELS["sp-16"])
+        look_row.addSpacing(int(PIXELS["sp-16"]))
         look_row.addWidget(caption("Text"))
         self.text_size = QSpinBox()
         self.text_size.setRange(*TEXT_SIZE_RANGE)
@@ -461,7 +461,7 @@ class SettingsDialog(QDialog):
             self.focus_radius.addItem(text, jumps)
         self.focus_radius.setCurrentIndex(max(0, self.focus_radius.findData(self.edited.overlay_focus_radius)))
         focus_row.addWidget(self.focus_radius)
-        focus_row.addSpacing(PIXELS["sp-16"])
+        focus_row.addSpacing(int(PIXELS["sp-16"]))
         focus_row.addWidget(caption("At most"))
         self.max_rows = QSpinBox()
         self.max_rows.setRange(*OVERLAY_MAX_ROWS_RANGE)
@@ -698,7 +698,9 @@ class SettingsDialog(QDialog):
         for column in (0, 1, 3):
             self.backup_list.resizeColumnToContents(column)
         if self.backups:
-            self.backup_list.setCurrentItem(self.backup_list.topLevelItem(0))
+            first_backup = self.backup_list.topLevelItem(0)
+            if first_backup is not None:
+                self.backup_list.setCurrentItem(first_backup)
         self.refreshing_backups = False
         self._sync_backup_buttons()
         return len(self.backups)
@@ -731,7 +733,8 @@ class SettingsDialog(QDialog):
 
     def selected_backup(self) -> backup.BackupInfo | None:
         """Return the backup selected in the list, or None."""
-        row = self.backup_list.indexOfTopLevelItem(self.backup_list.currentItem()) if self.backup_list.currentItem() else -1
+        current_backup = self.backup_list.currentItem()
+        row = self.backup_list.indexOfTopLevelItem(current_backup) if current_backup else -1
         return self.backups[row] if 0 <= row < len(self.backups) else None
 
     def backup_now(self) -> bool:
