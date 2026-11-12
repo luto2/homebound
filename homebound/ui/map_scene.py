@@ -8,8 +8,8 @@ from PySide6.QtGui import (QColor, QFont, QFontMetricsF, QPainter, QPainterPath,
 from PySide6.QtWidgets import (QGraphicsItem, QGraphicsLineItem, QGraphicsObject, QGraphicsScene,
                                QGraphicsView, QStyle, QStyleOptionGraphicsItem, QWidget)
 
-from ..mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_CHIPS, LIFETIME_EXPIRED, LIFETIME_LABELS,
-                           LIFETIME_REMAINING, Connection)
+from ..mapdb.store import (LIFETIME_CHIPS, LIFETIME_EXPIRED, LIFETIME_LABELS, LIFETIME_REMAINING,
+                           Connection)
 from ..mapping.chain import connected_component, wormhole_adjacency
 from ..mapping.scan_status import ScanStatus, age_text, format_duration
 from ..mapping.tracker import GRID, expires_at, hole_size

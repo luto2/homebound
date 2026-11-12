@@ -15,4 +15,3 @@ Implemented by:
 - `STATUS_SOURCES` in `homebound/ui/map_window.py`
 - `STATUS_LEVELS` in `homebound/ui/map_window.py`
 
-Note: The spec has the glyph in its own QLabel. The app puts glyph and text in one rich-text label.

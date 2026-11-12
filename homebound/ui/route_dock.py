@@ -11,10 +11,9 @@ from PySide6.QtWidgets import (
 )
 
 from .. import routing
-from ..settings import TRADE_HUBS
 from ..theme import painting
 from ..theme.tokens import PIXELS, color, font
-from ..universe.db import SIZE_NAMES, SIZES
+from ..universe.db import SIZE_NAMES, SIZES, TRADE_HUBS
 from ..validation import require_integer, require_type
 from . import menus
 from .state import AppState

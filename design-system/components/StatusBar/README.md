@@ -10,4 +10,4 @@ The bottom strip of the map window. It shows the state of each background source
 - **KWin** is always listed; it shows `…` until the focus script reports, and the message is the same whether the script is installed or not.
 - Labels update in place; a source that has not reported yet shows `…` in `ink-faint`.
 
-Qt: a `QStatusBar` with one `QLabel` per source (`STATUS_SOURCES` in `map_window.py`); the glyph is a separate `QLabel` so its colour can be set without touching the text. Hidden labels use `hide()`, not an empty text. The separator before the backup label is hidden with it.
+Qt: a `QStatusBar` with one `QLabel` per source (`STATUS_SOURCES` in `map_window.py`); glyph and text share one rich-text label, the glyph coloured by a `<span>`. Hidden labels use `hide()`, not an empty text. The separator before the backup label is hidden with it.

@@ -11,7 +11,7 @@ from ..platform.paths import read_only_uri, source_tree, static_data_candidates,
 from ..validation import require_integer, require_text, require_type
 
 DEFAULT_PATH = static_data_path()
-SCHEMA_VERSION = "4"         # bump together with build_static.SCHEMA_VERSION
+SCHEMA_VERSION = "4"         # the build script writes the same version
 KNOWN_SPACE_CLASSES = ("HS", "LS", "NS")
 EMPIRE_CLASSES = ("HS", "LS")
 # SDE faction -> empire whose colour its space gets (Ammatar and Khanid space count as Amarr)

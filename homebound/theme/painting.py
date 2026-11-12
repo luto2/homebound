@@ -14,6 +14,7 @@ from PySide6.QtGui import (
 from PySide6.QtSvg import QSvgRenderer
 
 from ..lifetime import LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED
+from ..universe.db import KNOWN_SPACE_CLASSES
 from ..validation import require_integer, require_number, require_type
 from .tokens import OPACITY, PIXELS, color, font
 
@@ -27,7 +28,6 @@ CLASSES = {
     "PV": ("class-pochven", "pochven"),
     "HS": ("class-hs", "k"), "LS": ("class-ls", "k"), "NS": ("class-ns", "k"),
 }
-KNOWN_SPACE_CLASSES = {"HS", "LS", "NS"}
 
 BADGE_HEIGHT = PIXELS["size-badge"]
 
@@ -584,31 +584,6 @@ def draw_halo_text(painter: QPainter, x: float, baseline: float, text: str, text
 def stale_brush() -> QBrush:
     """Return the hatch brush for stale data."""
     return QBrush(color("line-1"), Qt.BrushStyle.BDiagPattern)
-
-
-def draw_dot_grid(painter: QPainter, rect: QRectF, step: float | None = None) -> int:
-    """Fill with bg-0 and draw a dot grid (the design's original canvas).
-
-    Returns:
-        The number of dots drawn.
-    """
-    step = step or PIXELS["sp-24"]
-    require_number(step, "step", minimum=1)
-    painter.fillRect(rect, color("bg-0"))
-    pen = QPen(color("grid-dot"), 2.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
-    pen.setCosmetic(True)
-    painter.setPen(pen)
-    first_x = int(rect.left() // step) * step
-    points = []
-    y = int(rect.top() // step) * step
-    while y < rect.bottom():
-        x = first_x
-        while x < rect.right():
-            points.append(QPointF(x, y))
-            x += step
-        y += step
-    painter.drawPoints(points)
-    return len(points)
 
 
 def draw_line_grid(painter: QPainter, rect: QRectF, step: float, major_every: int = 3, minor: bool = True) -> int:

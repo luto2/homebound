@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 from .mapdb.store import LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, Connection
 from .mapping.tracker import hole_size
-from .universe.db import SIZES, TRADE_HUBS, Universe
+from .universe.db import SIZES, Universe
 from .validation import require_choice, require_integer, require_type
 
 PREFERENCES = ("shortest", "safer", "less_secure")
@@ -19,7 +19,6 @@ PREFERENCE_LABELS = {"shortest": "Shortest", "safer": "Safer", "less_secure": "L
 HIGH_SEC = 0.45           # true security from which the autopilot counts a system as high-sec
 PENALTY = 1000            # cost of entering a system the preference avoids
 VIA_GATE, VIA_WORMHOLE, VIA_THERA, VIA_TURNUR = "gate", "wormhole", "thera", "turnur"
-DEFAULT_DESTINATIONS = list(TRADE_HUBS)
 
 
 @dataclass(frozen=True)
