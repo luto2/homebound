@@ -471,8 +471,8 @@ def restore_maps(backup: Path, names: list[str], replace: bool, settings: Settin
         settings.maps, settings.home_system, settings.naming_scheme = before
         message = str(error) if isinstance(error, BackupError) else f"The backup couldn't be restored: {error}"
         if replaced:
-            names = ", ".join(replaced)
-            message += (f". {names} {'was' if len(replaced) == 1 else 'were'} already replaced; "
+            replaced_names = ", ".join(replaced)
+            message += (f". {replaced_names} {'was' if len(replaced) == 1 else 'were'} already replaced; "
                         f"the restore backup made just now has the earlier state")
         elif isinstance(error, BackupError):
             raise

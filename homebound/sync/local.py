@@ -12,7 +12,7 @@ can't be undone. Only synced columns are written; local ones (sig ``state``, lay
 """
 import json
 import uuid
-from typing import Any
+from typing import Any, overload
 
 from ..mapdb.store import (ENTITY_TABLES, ENTITY_WHERE, MAP_SETTING_KEYS, NAMES_BACKFILL_KEY, Action, Store,
                            key_values, utc_now_iso)
@@ -41,6 +41,12 @@ class LocalReplica:
         self.database.executescript(SCHEMA)
 
     # ------------------------------------------------------------ meta
+    @overload
+    def meta(self, key: str, default: str) -> str: ...
+
+    @overload
+    def meta(self, key: str, default: None = None) -> str | None: ...
+
     def meta(self, key: str, default: str | None = None) -> str | None:
         """Return a ``sync_meta`` value."""
         row = self.database.execute("SELECT value FROM sync_meta WHERE key=?", (key,)).fetchone()
@@ -373,7 +379,8 @@ class LocalReplica:
         if entity == "system":
             parent, hole = state.placement
             if not placement or (parent is not None and not self.store.has_system(parent)):
-                parent = None if not self.store.has_system(key) else self.store._row("system", key)["parent_id"]
+                row = self.store._row("system", key) if self.store.has_system(key) else None
+                parent = None if row is None else row["parent_id"]
                 hole = None if parent is None else hole
             values |= {"parent_id": parent, "hole_index": hole}
         self._write(entity, key, values)
@@ -385,6 +392,8 @@ class LocalReplica:
                 continue
             parent, hole = state.placement
             row = self.store._row("system", key)
+            if row is None:
+                continue
             if (row["parent_id"], row["hole_index"]) == (parent, hole):
                 continue
             if parent is None or self.store.has_system(parent):

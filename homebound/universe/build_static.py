@@ -247,7 +247,9 @@ def resolve_statics(known: dict[int, str], wanderer: dict[int, list], anoik: dic
         if from_wanderer is not None and from_anoik is not None and from_wanderer != from_anoik:
             disputed.append(system_id)
         else:
-            statics[system_id] = from_wanderer if from_wanderer is not None else from_anoik
+            chosen = from_wanderer if from_wanderer is not None else from_anoik
+            if chosen is not None:
+                statics[system_id] = chosen
     for system_id in sorted(disputed):
         name = known[system_id]
         if name in pinned:
@@ -274,6 +276,8 @@ def whole_number(value: object) -> int | None:
     Returns:
         The value truncated to an int, or None.
     """
+    if not isinstance(value, (int, float, str)):
+        return None
     try:
         return int(float(value))
     except (TypeError, ValueError):
@@ -327,7 +331,8 @@ def build(refresh: bool = False, progress: Progress | None = None, keep_cache: b
         if wormhole_class in ABYSSAL_CLASSES:
             continue
         security = float(record.get("securityStatus", 0.0))
-        label = WORMHOLE_CLASS_LABEL.get(wormhole_class) or known_space_label(security)
+        label = (WORMHOLE_CLASS_LABEL.get(wormhole_class) if wormhole_class is not None else None) \
+            or known_space_label(security)
         # region first: the empire whose space it is (Jita itself is a CONCORD system in Caldari space)
         faction = region.get("factionID") or constellation.get("factionID") or record.get("factionID")
         rows.append((system_id, record["name"]["en"], label, wormhole_class, security, region["name"]["en"],

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from collections.abc import Callable, Collection, Iterator
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import Any, overload
 
 from ..platform.paths import read_only_uri
 from ..validation import require_choice, require_integer, require_text, require_type
@@ -1450,6 +1450,12 @@ class Store:
         self._commit()
 
     # ------------------------------------------------------------ key/value settings of this map
+    @overload
+    def get_value(self, key: str, default: str) -> str: ...
+
+    @overload
+    def get_value(self, key: str, default: None = None) -> str | None: ...
+
     def get_value(self, key: str, default: str | None = None) -> str | None:
         """Return a per-map UI setting (local only), or ``default`` if it isn't set."""
         require_text(key, "key")

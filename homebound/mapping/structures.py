@@ -67,6 +67,8 @@ def timer_tab_label(structures: list[Structure], now: datetime) -> str:
     if structure is None:
         return ""
     left = timer_left(structure, now)
+    if left is None:
+        return ""
     return f"⏱ {format_duration(left, 'short')}" if left <= TIMER_TAB_WITHIN else ""
 
 

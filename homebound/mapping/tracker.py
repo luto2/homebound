@@ -378,9 +378,8 @@ class Tracker:
         events: list = [MapChanged()]
         a_is_new = self.ensure_system(system_a, confirmed=not manual)
         b_existed = self.store.has_system(system_b)
-        if b_existed and a_is_new:
+        if b_existed and a_is_new and (known := self.store.system(system_b)) is not None:
             # Came from outside into a known system: the new side hangs under the known one.
-            known = self.store.system(system_b)
             self.store.update_system(system_a, x=known.x - CHILD_OFFSET_X, y=known.y)
             self._connect(system_a, system_b, manual)
             return events + self._attach(system_b, system_a, character_name)
@@ -390,7 +389,7 @@ class Tracker:
 
         mapped_b = self.store.system(system_b)
         root_a, _ = hole_path(self.store, system_a)
-        becomes_child = (mapped_b.parent_id is None and system_b != self.namer.home_id and root_a != system_b
+        becomes_child = (mapped_b is not None and mapped_b.parent_id is None and system_b != self.namer.home_id and root_a != system_b
                          and (not b_existed or root_a == self.namer.home_id))
         if not becomes_child:
             return events
@@ -433,8 +432,8 @@ class Tracker:
             if with_connections:
                 for connection in self.store.connections_of_system(system_id):
                     changed |= self.confirm(connection_id=connection.id)
-        if (connection_id is not None and (connection := self.store.connection_by_id(connection_id))
-                and not connection.confirmed):
+        if (connection_id is not None and (found := self.store.connection_by_id(connection_id))
+                and not found.confirmed):
             self.store.update_connection(connection_id, confirmed=1)
             changed = True
         return changed
@@ -456,6 +455,8 @@ class Tracker:
         child = self.store.system(child_id)
         connection = self.store.connection(parent_id, child_id)
         child_system = self.universe.by_id(child_id)
+        if child is None or connection is None:   # it was just put on the map and linked: never missing
+            return events
         if child_system is None:   # not in the universe data: nothing to guess from
             return events
         child_class = child_system.system_class
@@ -479,7 +480,7 @@ class Tracker:
                                  static=int(guess.applies and guess.guess))
         label = self.namer.attach_label(child_id)
         scheme = self.namer.scheme
-        if not (child.label and own == hole and scheme.place(child.label) == scheme.place(label)):
+        if label is not None and not (child.label and own == hole and scheme.place(child.label) == scheme.place(label)):
             self.store.update_system(child_id, label=label)
         if taken:
             self.link_signature(connection.id, parent_id, taken)
@@ -651,7 +652,10 @@ class Tracker:
         near = (self._near_type(connection, origin_id) or connection.wormhole_type or "").upper()
         fitting = []
         for signature_id in self.unlinked_wormhole_signatures(system_id, origin.system_class):
-            code = (self.store.signature(system_id, signature_id).type or "").upper()
+            signature = self.store.signature(system_id, signature_id)
+            if signature is None:
+                continue
+            code = (signature.type or "").upper()
             leads_there = bool(self.universe.known_type(code))
             if (code == "K162" and near != "K162") or (leads_there and near in ("", "K162")):
                 fitting.append(signature_id)
@@ -700,18 +704,19 @@ class Tracker:
         if found.code:
             changes["type"] = found.code
         self.store.update_signature(system_id, signature_id, **changes)
-        origin = self.store.system(origin_id)
-        if origin and origin.parent_id == system_id and origin.hole_index and signature.hole_index != origin.hole_index:
+        mapped_origin = self.store.system(origin_id)
+        if mapped_origin and mapped_origin.parent_id == system_id and mapped_origin.hole_index and signature.hole_index != mapped_origin.hole_index:
             replaced_id = connection.signature_on(system_id)
             replaced = self.store.signature(system_id, replaced_id) if replaced_id else None
-            if replaced and replaced.signature_id != signature_id and replaced.hole_index == origin.hole_index:
+            if replaced and replaced.signature_id != signature_id and replaced.hole_index == mapped_origin.hole_index:
                 self.store.update_signature(system_id, replaced.signature_id, hole_index=signature.hole_index)
-            self.store.update_signature(system_id, signature_id, hole_index=origin.hole_index)
+            self.store.update_signature(system_id, signature_id, hole_index=mapped_origin.hole_index)
         self.link_signature(connection_id, system_id, signature_id)
         connection = self.store.connection_by_id(connection_id)
-        self.store.update_signature(system_id, signature_id, mass=connection.mass, lifetime=connection.lifetime,
-                                    lifetime_set_at=connection.lifetime_set_at, size=connection.size,
-                                    frigate_only=connection.frigate_only)
+        if connection is not None:
+            self.store.update_signature(system_id, signature_id, mass=connection.mass, lifetime=connection.lifetime,
+                                        lifetime_set_at=connection.lifetime_set_at, size=connection.size,
+                                        frigate_only=connection.frigate_only)
         return found
 
     # ------------------------------------------------------------ lost connections
@@ -902,14 +907,16 @@ class Tracker:
             changes["custom_name"] = custom_name
         if signature_id:
             number = self._signature_number(parent_id, signature_id)
-            if number and number != self.store.system(child_id).hole_index:
+            child_now = self.store.system(child_id)
+            if number and child_now is not None and number != child_now.hole_index:
                 changes["hole_index"] = number
             if self.store.connection_by_id(request.connection_id):
                 self.link_signature(request.connection_id, parent_id, signature_id)
         self.store.update_system(child_id, **changes)
         if "hole_index" in changes:   # behind another hole now: the name that hole gives
             self.store.update_system(child_id, label=self.namer.attach_label(child_id))
-        return self.store.system(child_id).hole_index
+        placed = self.store.system(child_id)
+        return placed.hole_index if placed is not None else None
 
     @_one_action
     def undo_auto_naming(self, event: AutoNamed) -> bool:

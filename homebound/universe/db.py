@@ -153,7 +153,8 @@ class Universe:
         for row in self.database.execute(
                 "SELECT id, name, system_class, security, region, constellation, effect, wormhole_space, faction_id "
                 "FROM systems"):
-            system = System(*row[:7], bool(row[7]), tuple(sorted(statics.get(row[0], ()))), row[8])
+            system = System(row[0], row[1], row[2], row[3], row[4], row[5], row[6], bool(row[7]),
+                            tuple(sorted(statics.get(row[0], ()))), row[8])
             self._by_id[system.id] = system
             self._by_name[system.name.lower()] = system
         self._gates: dict[int, set[int]] = {}

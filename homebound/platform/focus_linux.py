@@ -27,7 +27,7 @@ def is_own_window(window_class: str | None, caption: str = "") -> bool:
 
 
 @ClassInfo({"D-Bus Interface": INTERFACE})
-class _Adaptor(QObject):
+class _Adaptor(QObject):  # type: ignore[operator]  # PySide6 stub doesn't declare ClassInfo callable; it is a decorator at runtime
     """The D-Bus object the KWin script calls."""
 
     def __init__(self, owner: "LinuxFocus") -> None:

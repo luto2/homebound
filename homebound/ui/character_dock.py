@@ -20,7 +20,7 @@ class CharacterDelegate(QStyledItemDelegate):
     def __init__(self, state: AppState, parent: QWidget | None = None) -> None:
         """Create the delegate for the characters of ``state``."""
         super().__init__(parent)
-        self.state = state
+        self.app_state = state
 
     def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
         """Every row has the same height."""
@@ -29,7 +29,7 @@ class CharacterDelegate(QStyledItemDelegate):
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
         """Draw the row."""
         character_id, name, system_id, presence, slot = index.data(Qt.ItemDataRole.UserRole)
-        state = self.state
+        state = self.app_state
         rect = QRectF(option.rect)
         painter.save()
         try:
@@ -63,15 +63,15 @@ class CharacterDelegate(QStyledItemDelegate):
             return "● online"
         if presence == "recent":
             return "◐ recent"
-        scanned = self.state.watcher.characters.get(character_id)
+        scanned = self.app_state.watcher.characters.get(character_id)
         last = (scanned.last_written or scanned.last_seen) if scanned else None
         return "○ offline" + (f" {age_text(last.isoformat())}" if last else "")
 
     def _paint_location(self, painter: QPainter, rect: QRectF, x: float, y: float, system_id: int | None) -> None:
         """Draw the class badge and the map name (plus the real name) of where the character is."""
-        state = self.state
+        state = self.app_state
         system = state.universe.by_id(system_id) if system_id else None
-        if not system:
+        if not system or system_id is None:
             painter.setFont(font("ui-small"))
             painter.setPen(color("ink-faint"))
             painter.drawText(QRectF(x, y, rect.width(), 16), Qt.AlignmentFlag.AlignVCenter, "Location unknown")
@@ -97,7 +97,7 @@ class CharacterDock(QListWidget):
     def __init__(self, state: AppState) -> None:
         """Create the list and follow the character changes of ``state``."""
         super().__init__()
-        self.state = state
+        self.app_state = state
         self.setItemDelegate(CharacterDelegate(state, self))
         self.setMouseTracking(True)
         self.setMinimumWidth(int(PIXELS["size-panel-left"]))
@@ -117,12 +117,12 @@ class CharacterDock(QListWidget):
         Returns:
             The number of characters.
         """
-        rows = self.state.character_rows()
+        rows = self.app_state.character_rows()
         self.clear()
         for row in rows:
             list_item = QListWidgetItem()
             list_item.setData(Qt.ItemDataRole.UserRole, row)
-            list_item.setToolTip(f"{row[1]} ({row[0]}) · {self.state.presence_detail(row[0])}")
+            list_item.setToolTip(f"{row[1]} ({row[0]}) · {self.app_state.presence_detail(row[0])}")
             self.addItem(list_item)
         return len(rows)
 
@@ -137,8 +137,8 @@ class CharacterDock(QListWidget):
             True if a system was selected.
         """
         system_id = list_item.data(Qt.ItemDataRole.UserRole)[2]
-        if system_id and self.state.store.has_system(system_id):
-            self.state.select(system_id)
+        if system_id and self.app_state.store.has_system(system_id):
+            self.app_state.select(system_id)
             return True
         return False
 
@@ -151,6 +151,6 @@ class CharacterDock(QListWidget):
         context = menus.menu(self)
         menus.item(context, "Pin overlay to this character", lambda: self.pinRequested.emit(character_id))
         menus.item(context, "Show on map", lambda: self.show_on_map(list_item), "Space",
-                   enabled=bool(system_id and self.state.store.has_system(system_id)),
+                   enabled=bool(system_id and self.app_state.store.has_system(system_id)),
                    why="Not in a system on this map.")
         context.exec(self.mapToGlobal(position))

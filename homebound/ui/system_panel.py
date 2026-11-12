@@ -172,14 +172,14 @@ class SystemPanel(QWidget):
         self.setMinimumWidth(int(PIXELS["size-panel-right"]))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(PIXELS["sp-12"], PIXELS["sp-12"], PIXELS["sp-12"], PIXELS["sp-12"])
-        layout.setSpacing(PIXELS["sp-8"])
+        layout.setSpacing(int(PIXELS["sp-8"]))
         self.empty = QLabel("Select a system on the map")
         self.empty.setProperty("role", "help")
         layout.addWidget(self.empty)
         self.body = QWidget()
         body = QVBoxLayout(self.body)
         body.setContentsMargins(0, 0, 0, 0)
-        body.setSpacing(PIXELS["sp-8"])
+        body.setSpacing(int(PIXELS["sp-8"]))
         layout.addWidget(self.body, 1)
         self._build_details(body)
         self._build_scan_lists(body)
@@ -342,7 +342,9 @@ class SystemPanel(QWidget):
             return "off"
         if not stats:
             return "loading …"
-        stale = age(stats) > ZKILL_STALE_AFTER
+        stats_age = age(stats)
+        assert stats_age is not None   # stats is set here, so it has an age
+        stale = stats_age > ZKILL_STALE_AFTER
         last = f"last kill {age_text(stats.last_kill_at)} ago" if stats.last_kill_at else "no kills 24h"
         return (f"{stats.kills_1h}/{stats.kills_24h} kills · {stats.pod_kills_1h} pods 1h · {last}"
                 + (f" · stale {age_text(stats.fetched_at)}" if stale else ""))
@@ -511,7 +513,9 @@ class SystemPanel(QWidget):
         self.undoable.emit(f"{signature_id} is the hole back to {origin}", state.namer.display(self.system_id), action)
         if found.candidates and not found.code:
             self.toast.emit("ok", f"Pick its type: {', '.join(found.candidates)} lead to {origin}")
-            self.edit_signature(state.store.signature(self.system_id, signature_id), open_type_picker=True)
+            signature = state.store.signature(self.system_id, signature_id)
+            if signature is not None:
+                self.edit_signature(signature, open_type_picker=True)
         return True
 
     def keep_missing(self) -> int:

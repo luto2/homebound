@@ -37,7 +37,7 @@ def kill_text(kill: KillSummary, universe: Universe, now: datetime | None = None
     require_type(universe, Universe, "universe")
     now = now or datetime.now(timezone.utc)
     victim = universe.ship_name(kill.victim_ship_id) if kill.victim_ship_id else None
-    group = universe.ship_group_name(kill.victim_ship_id) if victim else None
+    group = universe.ship_group_name(kill.victim_ship_id) if victim and kill.victim_ship_id else None
     ship = f"{victim} ({group})" if victim and group and group != victim else victim or "unknown ship"
     parts = [f"{age_text(kill.killed_at, now) or '0m'} ago", ship, isk(kill.value),
              f"{kill.attacker_count} attacker{'s' if kill.attacker_count != 1 else ''}"]
