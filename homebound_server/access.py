@@ -105,7 +105,7 @@ class Access:
             For one map, the accounts removed; for all maps, ``(map_id, account_id)`` pairs.
         """
         map_ids = [map_id] if map_id else [row["id"] for row in self.db.all("SELECT id FROM maps WHERE deleted_at IS NULL")]
-        removed = []
+        removed: list[int | tuple[str, int]] = []
         for each in map_ids:
             allowed = self.allowed_owners(each)
             if allowed is None:

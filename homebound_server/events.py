@@ -10,7 +10,7 @@ from datetime import timedelta
 
 import httpx
 
-from .db import Database, iso, parse_iso, utc_now
+from .db import Database, iso, stored_time, utc_now
 from .mailer import isk
 
 log = logging.getLogger("homebound.server")
@@ -50,8 +50,10 @@ class Events:
     def add(self, kind: str, **payload) -> int:
         """Queue an event."""
         log.info("admin event %s %s", kind, payload)
-        return self.db.execute("INSERT INTO admin_events (kind, payload_json, created_at) VALUES (?,?,?)",
-                               (kind, json.dumps(payload, default=str), iso(utc_now()))).lastrowid
+        event_id = self.db.execute("INSERT INTO admin_events (kind, payload_json, created_at) VALUES (?,?,?)",
+                                   (kind, json.dumps(payload, default=str), iso(utc_now()))).lastrowid
+        assert event_id is not None          # an INSERT always sets it
+        return event_id
 
     # ------------------------------------------------------------ the event kinds of §17
     def map_limit_request(self, sender_char: int, account_id: int | None, maps: int, subject: str) -> int:
@@ -171,7 +173,7 @@ class Events:
             text = payload.get("what", "")
         elif kind == "billing_state":
             text = (f"The maps of {self._payer(payload['payer_id'], cache)} are now "
-                    f"{STATE_WORDS.get(payload.get('new'), payload.get('new'))} (were {payload.get('old')}).")
+                    f"{STATE_WORDS.get(payload.get('new') or '', payload.get('new'))} (were {payload.get('old')}).")
             maps = [row["name"] for row in self.db.all("SELECT name FROM maps WHERE payer_id=? ORDER BY created_at",
                                                        (payload["payer_id"],))]
             fields = [("Maps", ", ".join(maps) or "none")]
@@ -199,7 +201,7 @@ class Events:
         if footer:
             embed["footer"] = {"text": footer}
         if created_at:
-            embed["timestamp"] = parse_iso(created_at).isoformat()
+            embed["timestamp"] = stored_time(created_at).isoformat()
         return embed
 
     def flush(self, client: httpx.Client | None = None) -> int:

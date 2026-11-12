@@ -130,7 +130,7 @@ class Mailer:
         """Count a failed attempt."""
         log.warning("EVE mail %s failed: %s", mail_id, error)
         self.db.execute("UPDATE outgoing_mails SET attempts = attempts + 1, last_error=? WHERE id=?", (error, mail_id))
-        row = self.db.one("SELECT * FROM outgoing_mails WHERE id=?", (mail_id,))
+        row = self.db.required("SELECT * FROM outgoing_mails WHERE id=?", (mail_id,))
         if self.events is not None and row["attempts"] >= MAX_ATTEMPTS:
             self.events.mail_given_up(row["key"], row["recipient_id"], row["subject"], error, row["attempts"])
 

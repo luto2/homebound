@@ -4,7 +4,7 @@ import secrets
 from collections.abc import Callable
 from datetime import timedelta
 
-from .db import Database, iso, parse_iso, utc_now
+from .db import Database, iso, stored_time, utc_now
 
 ROLES = ("owner", "manager", "editor", "viewer")
 EDIT_ROLES = ("owner", "manager", "editor")
@@ -100,6 +100,7 @@ class Maps:
         if row:
             return row["id"]
         payer_id = self.db.execute("INSERT INTO payers (kind, subject_id) VALUES (?,?)", (kind, subject_id)).lastrowid
+        assert payer_id is not None          # an INSERT always sets it
         prefix = "HB-" if kind == "account" else "HBC-"
         while True:
             code = new_code(prefix, 4)
@@ -201,7 +202,7 @@ class Maps:
         """
         with self.db.transaction():
             invite = self.db.one("SELECT * FROM invites WHERE code=?", ((code or "").strip().upper(),))
-            if not invite or invite["uses_left"] < 1 or parse_iso(invite["expires_at"]) < utc_now():
+            if not invite or invite["uses_left"] < 1 or stored_time(invite["expires_at"]) < utc_now():
                 raise MapError("invalid", "This invite is invalid or has expired.")
             the_map = self.map(invite["map_id"])
             if not the_map:

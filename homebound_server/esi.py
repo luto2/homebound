@@ -84,7 +84,7 @@ class Eve:
 
     def affiliations(self, char_ids: list[int]) -> dict[int, tuple[int, int | None]]:
         """Return each character's ``(corporation, alliance or None)`` (public, no scope)."""
-        result = {}
+        result: dict[int, tuple[int, int | None]] = {}
         for start in range(0, len(char_ids), 1000):
             response = self.http.post(f"{ESI}/characters/affiliation/", json=char_ids[start:start + 1000])
             response.raise_for_status()
