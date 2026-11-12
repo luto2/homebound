@@ -65,3 +65,7 @@ over the game.
 - Summary rows are not clickable.
 - Go deeper along the branch the character is in: that branch is shown beyond the radius (up to the row
   cap), the other branches stay folded at the radius.
+- Only k-space and home count as markers; holes into w-space (C1–C6, Thera, etc.) never do.
+- Highsec, lowsec and nullsec exits are three separate markers (each in its security colour), so a summary
+  row can show any combination of them. `ChainRow` gets `exits: frozenset` of `"high" | "low" | "null"`
+  instead of one `kspace_exit` flag; the tests check each class on its own and a branch with two classes.
