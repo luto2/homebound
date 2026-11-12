@@ -3,7 +3,7 @@ import hashlib
 import secrets
 from datetime import timedelta
 
-from .db import Database, iso, parse_iso, utc_now
+from .db import Database, iso, stored_time, utc_now
 from .esi import SsoCharacter, is_npc_corp
 
 SESSION_DAYS = 90
@@ -60,7 +60,7 @@ class Auth:
         if link_code:
             row = self.db.one("SELECT account_id, expires_at FROM link_codes WHERE code_hash=?",
                               (token_hash(link_code),))
-            if not row or parse_iso(row["expires_at"]) < utc_now():
+            if not row or stored_time(row["expires_at"]) < utc_now():
                 raise AuthError("unauthorized", "the link code has expired")
             self.db.execute("DELETE FROM link_codes WHERE code_hash=?", (token_hash(link_code),))
             link_account = row["account_id"]
@@ -87,7 +87,7 @@ class Auth:
                 character belongs to another account (linking), or the account is suspended.
         """
         pending = self.db.one("SELECT * FROM pending_logins WHERE state=?", (state,))
-        if not pending or parse_iso(pending["created_at"]) < utc_now() - timedelta(minutes=PENDING_LOGIN_MINUTES):
+        if not pending or stored_time(pending["created_at"]) < utc_now() - timedelta(minutes=PENDING_LOGIN_MINUTES):
             raise AuthError("invalid", "This login has expired. Please start again from the app.")
         self.db.execute("DELETE FROM pending_logins WHERE state=?", (state,))
         account_id = self.attach_character(character, corp_id, pending["link_account"])
@@ -131,11 +131,14 @@ class Auth:
                 account_id = link_account
                 if account_id is None:
                     account_id = self.db.execute("INSERT INTO accounts (created_at) VALUES (?)", (now,)).lastrowid
+                    assert account_id is not None     # an INSERT always sets it
                 self.db.execute("INSERT INTO characters (char_id, account_id, name, corp_id, corp_checked_at, "
                                 "owner_hash, linked_at) VALUES (?,?,?,?,?,?,?)",
                                 (character.char_id, account_id, character.name, corp_id, now,
                                  character.owner_hash, now))
             account = self.db.one("SELECT suspended_at, deleted_at FROM accounts WHERE id=?", (account_id,))
+            if not account:
+                raise AuthError("unauthorized")
             if account["suspended_at"] or account["deleted_at"]:
                 raise AuthError("forbidden", "This account is suspended.")
         return account_id
@@ -150,7 +153,7 @@ class Auth:
             row = self.db.one("SELECT * FROM login_codes WHERE code_hash=?", (token_hash(code or ""),))
             self.db.execute("DELETE FROM login_codes WHERE code_hash=? OR expires_at < ?",
                             (token_hash(code or ""), iso(utc_now())))
-            if not row or parse_iso(row["expires_at"]) < utc_now() or (state and row["state"] != state):
+            if not row or stored_time(row["expires_at"]) < utc_now() or (state and row["state"] != state):
                 raise AuthError("unauthorized", "The login code is invalid or has expired.")
             return self.create_session(row["account_id"], device)
 
@@ -188,8 +191,8 @@ class Auth:
         if not account or account["suspended_at"] or account["deleted_at"]:
             raise AuthError("unauthorized")
         now = utc_now()
-        deferred_until = parse_iso(row["deferred_at"]) + timedelta(hours=DEFER_HOURS) if row["deferred_at"] else None
-        if parse_iso(row["expires_at"]) < now and not (deferred_until and deferred_until > now):
+        deferred_until = stored_time(row["deferred_at"]) + timedelta(hours=DEFER_HOURS) if row["deferred_at"] else None
+        if stored_time(row["expires_at"]) < now and not (deferred_until and deferred_until > now):
             raise AuthError("relogin_due" if not row["deferred_at"] else "unauthorized")
         if row["relogin_due"] and not (deferred_until and deferred_until > now):
             raise AuthError("relogin_due")

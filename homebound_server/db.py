@@ -215,7 +215,7 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 
 def utc_now() -> datetime:
     """Return the current UTC time with whole seconds (the app's :func:`utc_now_iso`, as a datetime)."""
-    return parse_utc(utc_now_iso())
+    return stored_time(utc_now_iso())
 
 
 def iso(moment: datetime) -> str:
@@ -226,6 +226,14 @@ def iso(moment: datetime) -> str:
 def parse_iso(text: str | None) -> datetime | None:
     """Parse ISO 8601 text with the app's :func:`parse_utc` (None stays None)."""
     return parse_utc(text) if text else None
+
+
+def stored_time(text: str | None) -> datetime:
+    """Parse a time the server wrote itself (a NOT NULL column); ValueError if it isn't one."""
+    moment = parse_utc(text)
+    if moment is None:
+        raise ValueError(f"not a stored time: {text!r}")
+    return moment
 
 
 class Database:
