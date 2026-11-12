@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import HOME, UNIVERSE
+from conftest import HOME, UNIVERSE, write_log
 from homebound.logs import replay
 from homebound.logs.parser import (SYSTEM_SENDERS, LogFile, decode_log_bytes, parse_header, parse_log_file,
                                    parse_log_text, parse_system_change, parse_timestamp, unlisted_system_sender)
@@ -27,11 +27,6 @@ HEADER = """
 def line(timestamp: str, message: str, sender: str = "EVE System") -> str:
     """One log line as the client writes it."""
     return f"﻿[ {timestamp} ] {sender} > {message}\n"
-
-
-def write_log(path: Path, body: str) -> None:
-    """Write a log file in the client's encoding."""
-    path.write_bytes(b"\xff\xfe" + body.encode("utf-16-le"))
 
 
 def test_parse_system_change() -> None:

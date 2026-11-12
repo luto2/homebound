@@ -6,7 +6,7 @@ from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, Qt
 from PySide6.QtGui import QFont, QImage, QKeyEvent, QPainter
 from PySide6.QtWidgets import (QGraphicsSceneContextMenuEvent, QGraphicsSceneMouseEvent, QStyleOptionGraphicsItem)
 
-from conftest import HOME, UNIVERSE, pick_system
+from conftest import HOME, UNIVERSE, iso_ago, pick_system
 from homebound.mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, LIFETIME_REMAINING, Connection,
                                    ZkillStats)
 from homebound.theme.tokens import color
@@ -16,11 +16,6 @@ from homebound.ui.map_scene import (GRID, ConnectionEdge, MapScene, MapView, Sys
                                     scan_tab_label)
 from homebound.ui.state import AppState
 from ui_helpers import make_state
-
-
-def iso_ago(**delta) -> str:
-    """Return an ISO timestamp the given time ago."""
-    return (datetime.now(timezone.utc) - timedelta(**delta)).isoformat()
 
 
 @pytest.fixture

@@ -1,12 +1,11 @@
 """Tests for the main window: toolbar, maps, naming queue, context menus, shortcuts, tray and legend."""
-from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta, timezone
 from typing import NoReturn
 
 import pytest
 from PySide6.QtCore import QPoint, QPointF, Qt
-from PySide6.QtGui import QAction, QCloseEvent, QMouseEvent
-from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QMenu, QPlainTextEdit, QSystemTrayIcon
+from PySide6.QtGui import QCloseEvent, QMouseEvent
+from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QPlainTextEdit, QSystemTrayIcon
 
 from conftest import HOME, SCAN, UNIVERSE, pick_system
 from homebound.backup import list_backups
@@ -18,30 +17,13 @@ from homebound.mapping.tracker import AutoNamed, NamingRequest, UnknownJump
 from homebound.theme.tokens import PIXELS
 from homebound.ui import map_window as map_window_module
 from homebound.ui.dialogs import ConnectionDialog, NamingDialog, RenameSystemsDialog
-from homebound.ui.map_window import Legend, MapArea, MapWindow, Scrim, app_mark
+from homebound.ui.map_window import Legend, MapArea, Scrim, app_mark
 from homebound.ui.state import MapOpenError
 from homebound.ui.toast import Glyph
 from homebound.universe.db import System
-from ui_helpers import FakeFocus, isolated_settings, make_state, write_garbage
+from ui_helpers import find_action, isolated_settings, pick, toast_text, write_garbage
 
 NOW = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
-
-
-@pytest.fixture
-def window(qt_application, monkeypatch, tmp_path, modal) -> Iterator[MapWindow]:
-    """The main window on a temporary map, shown offscreen, with the settings dialog stubbed out."""
-    opened = []
-    monkeypatch.setattr(map_window_module, "SettingsDialog",
-                        lambda parent, state, page: type("Stub", (), {"exec": lambda self: opened.append(page) or 0})())
-    state = make_state(monkeypatch, tmp_path)
-    main_window = MapWindow(state, FakeFocus())
-    main_window.opened_pages = opened
-    main_window.show()
-    qt_application.processEvents()
-    yield main_window
-    main_window.overlay.hide()
-    main_window.hide()
-    state.stop()
 
 
 def add_child(window, system_class="C5", exclude=()) -> System:
@@ -51,27 +33,9 @@ def add_child(window, system_class="C5", exclude=()) -> System:
     return child
 
 
-def find_action(menu: QMenu, text: str) -> QAction:
-    """Return the action of a menu whose label starts with ``text``."""
-    for action in menu.actions():
-        if action.text().replace("&", "").startswith(text):
-            return action
-    raise LookupError(text)
-
-
 def toast_kind(toast) -> str:
     """Return the kind token (e.g. "danger") of a toast's glyph."""
     return toast.findChild(Glyph).token
-
-
-def toast_text(toast) -> str:
-    """Return the title line of a toast."""
-    return toast.title.text()
-
-
-def pick(text: str) -> Callable[[QMenu], QAction]:
-    """A modal menu handler that picks the action starting with ``text``."""
-    return lambda menu: find_action(menu, text)
 
 
 # ---------------------------------------------------------------- helpers and widgets

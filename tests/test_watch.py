@@ -5,7 +5,6 @@ after a cut" and the synced countdown read.
 """
 import json
 from collections import deque
-from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -21,8 +20,7 @@ from homebound.mapping.watch import (MAX_WATCHED, QUIET_TIME, WATCH_SETTING, Wat
 from homebound.settings import Settings
 from homebound.ui.state import AppState
 from homebound.ui.watch_list import WatchList, jumps_label, watch_text
-from test_ui_map_window import find_action, pick, toast_text, window  # noqa: F401 - window is a fixture
-from ui_helpers import isolated_settings, make_state
+from ui_helpers import find_action, isolated_settings, pick, toast_text
 
 WATCHED = UNIVERSE.by_name("Rancer").id   # k-space, not a trade hub (those are route destinations)
 C5 = pick_system("C5", exclude={HOME.id})
@@ -340,14 +338,6 @@ def test_the_removed_list_is_bounded_and_survives_bad_values(simulation, monkeyp
 
 
 # ---------------------------------------------------------------- AppState
-
-@pytest.fixture
-def state(qt_application, monkeypatch, tmp_path) -> Iterator[AppState]:
-    """An AppState on a temporary map with home on it."""
-    app_state = make_state(monkeypatch, tmp_path)
-    yield app_state
-    app_state.stop()
-
 
 def test_state_adds_and_removes_on_both_lists(state) -> None:
     """The map's list goes into the map file, the private one into the settings; each system once."""

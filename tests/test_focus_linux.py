@@ -12,13 +12,7 @@ pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="KWin, D-Bus and
 if sys.platform == "linux":
     import homebound.platform.focus_linux as linux_module
 from homebound.ui.focus import FocusTracker
-
-
-def spy(signal) -> list:
-    """Collect the arguments of every emission of a signal."""
-    received: list = []
-    signal.connect(lambda *arguments: received.append(arguments))
-    return received
+from ui_helpers import spy
 
 
 class FakeBus:

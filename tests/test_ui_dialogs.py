@@ -1,6 +1,5 @@
 """Offscreen tests of the dialogs and the shared wormhole fields."""
 import threading
-from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -21,19 +20,9 @@ from homebound.ui.dialogs import (AddSystemDialog, BaseDialog, BuildDataDialog, 
 from homebound.ui.wormhole_fields import (SHOW_ALL, Segment, SegmentButton, Segmented, TypeRow, WormholeFields,
                                           WormholeTypeCombo, draw_edge_icon, kilotons_text, lifetime_help_text,
                                           lifetime_segments, mass_segments, paint_type_row, size_segments)
-from homebound.ui.state import AppState
 from homebound.ui.widgets import caption
-from ui_helpers import make_state
 
 NOW = datetime(2026, 10, 30, 12, tzinfo=timezone.utc)
-
-
-@pytest.fixture
-def state(qt_application, monkeypatch, tmp_path) -> Iterator[AppState]:
-    """An app state on a temporary map with home on it."""
-    state = make_state(monkeypatch, tmp_path)
-    yield state
-    state.stop()
 
 
 def jump(state, name: str, minutes: int = 1) -> list:
