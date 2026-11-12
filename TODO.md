@@ -27,6 +27,7 @@ a small change whose file and fix are named.
    1. **Done 2026-11-11 (`530ad2d`).** Delete a connection without deleting the systems, to allow exfilling out of a chain if the
       connection is lost; maybe stop mapping additional connections there after ~1h. Plan:
       `docs/plans/done/plan-disconnect-connection.md`.
+   Owner (2026-11-12): the plan works as written, with the owner decisions in it.
    Effort: 3/5 · Sonnet. New setting, a check on new connections and a toast; 5.1 is 2/5 · Sonnet (Store
    batch, undo and sync must stay right).
 6. **Done 2026-11-11 (`3fcafca`, protocol 2: deploy the server first, then release the client).** Overhaul the online indicator in the character list; maybe check if the client is open. Plan:
@@ -38,6 +39,15 @@ a small change whose file and fix are named.
    signatures under wrong groups (`Customs Office` → Ice), and a combat-only paste marks every real
    signature in the system missing. Plan: `docs/plans/plan-combat-scan.md`.
    Effort: 5/5 · Opus. Parser, merge rules, expiring ships and a protocol change. Record real pastes first.
+   Real paste from the owner (2026-11-12, tab-separated: type ID, name, type, distance; this is the
+   directional/combat scan result format, not the probe scanner's):
+   ```
+   35833	J161940 - Perry	Fortizar	0 m
+   2233	Customs Office (J161940 IV)	Customs Office	6.8 AU
+   2233	Customs Office (J161940 III)	Customs Office	3.8 AU
+   2233	Customs Office (J161940 II)	Customs Office	6.5 AU
+   2233	Customs Office (J161940 I)	Customs Office	5.0 AU
+   ```
 9. Rework/add a structure list; combat-scanned structures go in there automatically. Plan:
    `docs/plans/plan-structure-list.md` (after 8).
    Effort: 4/5 · Opus for the table and sync entity, Sonnet for the list widget and timer tab.
@@ -109,6 +119,11 @@ a small change whose file and fix are named.
       connection, so no stored return flag.
     - The damaged-map message texts are approved as they are.
     Effort: mostly 1–2/5 · Sonnet; the backfill and the admin-only scheme change 3/5 · Opus (sync).
+20. When two systems on the map are joined and they are also neighbours through a stargate, mark that
+    connection as a gate connection and draw its line with 90° corners (horizontal and vertical segments)
+    instead of the curve the wormhole lines use (owner, 2026-11-12).
+    Effort: 2/5 · Sonnet. A check against the universe's gate list, a stored or derived flag, and a second
+    path shape in the connection painter.
 
 ## To do
 
