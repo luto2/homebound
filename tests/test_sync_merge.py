@@ -4,12 +4,12 @@ import random
 import pytest
 
 from conftest import HOME, UNIVERSE, pick_system
-from homebound.mapdb.store import Signature, Store
+from homebound.mapdb.store import Change, Signature, Store
 from homebound.sync.hlc import HybridClock, format_hlc, hlc_milliseconds, is_hlc, parse_hlc, stamp
 from homebound.sync.merge import (BatchRejected, MapState, apply_op, check_batch, settle_hole_numbers,
                                  stamp_server_times)
 from homebound.sync.protocol import (FIELDS, GATED_FIELDS, InvalidOp, Op, batch_from_json, full_ops_for_rows,
-                                     op_from_json, ops_for_peer, ops_from_action)
+                                     op_from_json, ops_for_peer, ops_from_action, ops_from_change)
 
 CLIENTS = ["aaaaaaaa", "bbbbbbbb", "cccccccc"]
 
@@ -98,6 +98,11 @@ def test_batch_checks() -> None:
 
 
 # ---------------------------------------------------------------- Store actions -> ops
+
+def test_a_change_absent_before_and_after_makes_no_op() -> None:
+    """An entity on neither side of a change (nothing happened to it) sends nothing, and does not crash."""
+    assert ops_from_change(Change("system", 5, None, None), format_hlc(1, 0), CLIENTS[0]) == []
+
 
 def test_store_actions_become_ops() -> None:
     """Adds are full upserts, edits send only what changed, removals are tombstones for every dependant."""
