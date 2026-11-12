@@ -107,3 +107,4 @@ What can be held back is what needs the server. Options:
   members' shared characters are in, since the removal now syncs. Marks from the old local
   `key_value` `cut_off` row are not migrated (they last about an hour).
 - Owner (2026-11-12): removing a cut-off piece after the hour on every install is fine, even if a member is inside without sharing their location.
+- Owner (2026-11-12): systems that left the map any way (collapse, cut-off, removed by hand, undo) count for the 1-hour rule, as built.

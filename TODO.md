@@ -14,7 +14,7 @@ a small change whose file and fix are named.
 
 1. **Done 2026-11-10 (`1665163`).** Show what zKill activity happened, not just how much. Plan: `docs/plans/done/plan-zkill-details.md`.
    Effort: 3/5 · Sonnet. The API already returns full killmails; the work is parsing, caching and a popup.
-2. **Icons and cache refresh done 2026-11-10 (`e6b86d3`); cause and desktop test still open.** Image for the app menu. Same as "To do" 14. Plan: `docs/plans/plan-menu-icon.md`.
+2. **Done 2026-11-12 (`e6b86d3`, confirmed by the owner).** Image for the app menu. Same as "To do" 14. Plan: `docs/plans/done/plan-menu-icon.md`.
    Effort: 1/5 · Haiku for the code. Most of it is testing on Plasma by hand.
 3. **Done 2026-11-10 (`e970367`); not yet tested on Arch.** Linux SSL error when building the SDE. Same as "To do" 13. Plan: `docs/plans/done/plan-appimage-ssl.md`.
    Effort: 2/5 · Sonnet. Small, but three HTTP stacks and the AppImage build; a slip fails silently.
@@ -211,13 +211,13 @@ is. The Effort line uses the same scale and models as the human-added tasks.
     paths in order. Plan: `docs/plans/done/plan-appimage-ssl.md` (httpx already uses certifi; `websockets`
     for cloud sync is affected too).
     Effort: 2/5 · Sonnet. Same as human-added task 3.
-14. **Partly done 2026-11-10 (`e6b86d3`), see human-added task 2.** **[2] No icon in the app menu after the README install (2026-11-08).** On CachyOS (Plasma),
+14. **Done 2026-11-12 (`e6b86d3`, confirmed by the owner).** **[2] No icon in the app menu after the README install (2026-11-08).** On CachyOS (Plasma),
     Homebound appears in the menu but has no icon. The install command writes a valid 256×256
     `homebound.png` to `~/.local/share/icons/hicolor/256x256/apps/`, and the desktop entry says
     `Icon=homebound`. Other apps' icons in that folder show up, so the location seems fine. Cause not
     found yet. Things to try: a stale menu cache (`kbuildsycoca6`), installing `homebound.svg` to
     `scalable/apps` too, or an absolute `Icon=` path in the desktop entry. Plan:
-    `docs/plans/plan-menu-icon.md`.
+    `docs/plans/done/plan-menu-icon.md`.
     Effort: 1/5 · Haiku for the code. Same as human-added task 2.
 
 Small items (partly done 2026-11-10 in `3d65485`; what was skipped is in `docs/plans/plan-small-fixes.md`):

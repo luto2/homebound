@@ -1,6 +1,6 @@
 # Plan: app menu icon after the README install
 
-Status: partly implemented (2026-11-10, commit `e6b86d3`): 48 px and SVG icons, cache refresh and uninstall line in the README. Not tested on a desktop; the investigation steps below are still open, and since 2026-11-12 the install is one line running `packaging/linux/install.sh`.
+Status: implemented (2026-11-12, `e6b86d3`). Deviations: the cause stayed a stale Plasma cache; the install refreshes it and ships 48 px and SVG icons; confirmed working by the owner on 2026-11-12.
 
 Depends on: nothing. Touches `README.md` (install commands), `packaging/linux/homebound.desktop` and
 possibly `packaging/linux/AppRun` / `build_appimage.sh`.

@@ -14,7 +14,6 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 
 | Plan | Task | State |
 |---|---|---|
-| [plan-menu-icon.md](plan-menu-icon.md) | 2. App menu icon (To do 14) | icons and cache refresh done; cause and desktop test open |
 | [plan-code-signing.md](plan-code-signing.md) | Windows code signing | not started |
 
 ### Audit fixes (`TODO.md` "To do", findings in `docs/findings/findings.md`)
@@ -75,3 +74,4 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [done/plan-combat-scan.md](done/plan-combat-scan.md) | 2026-11-12 (`0402ae7`) | a real combat-probe paste (English and German) |
 | [done/plan-structure-list.md](done/plan-structure-list.md) | 2026-11-12 (`0402ae7`) | timer toast in the running app |
 | [done/plan-overlay-shortcut.md](done/plan-overlay-shortcut.md) | 2026-11-12 (`d28cf66`) | a real key press on KDE/Wayland and Windows |
+| [done/plan-menu-icon.md](done/plan-menu-icon.md) | 2026-11-12 (`e6b86d3`) | — |
