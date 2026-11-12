@@ -1,0 +1,12 @@
+[Unit]
+Description=Deploy new Homebound commits from GitHub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# root: it owns the checkout and restarts homebound-sync
+EnvironmentFile=-/etc/homebound/env
+Environment=HOME=/root
+StateDirectory=homebound-deploy
+ExecStart=/usr/local/bin/hb-deploy

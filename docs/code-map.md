@@ -318,7 +318,7 @@ and the server setup in [`plans/done/hosting-hetzner.md`](plans/done/hosting-het
 | `prune.py` | Server-side auto-prune |
 | `config.py` | Settings from the environment |
 
-Server ops files (Litestream, restore test) are in `packaging/server/`.
+Server ops files (Litestream, restore test, `hb-deploy` auto-deploy timer) are in `packaging/server/`.
 
 ## 6. Data on disk
 
