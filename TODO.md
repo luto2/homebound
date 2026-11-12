@@ -128,8 +128,8 @@ a small change whose file and fix are named.
     Once `uv run mypy` is at 0 errors: the CI step in `test.yml` fails the build, and the push gate
     (`tools/push_gate.py`) runs mypy too, so a commit with type errors can't be pushed. Rule: mypy errors
     are always fixed by a Haiku agent. Open: how the gate reports it, whether the rule is enforced in
-    the gate's failure message or only written down, and where agents read it. Also: mypy checks only
-    `homebound/`, not `homebound_server/`; and the `[tool.mypy]` overrides for `ui`, `theme`, `platform`
+    the gate's failure message or only written down, and where agents read it. mypy covers
+    `homebound_server/` too since `e2e39a1` (61 errors fixed). Still: the `[tool.mypy]` overrides for `ui`, `theme`, `platform`
     and `__main__` still hide error kinds such as `union-attr` there.
     Effort: 2/5 · Sonnet.
 
