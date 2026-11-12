@@ -5,6 +5,10 @@ A->B classification:
   * either side w-space / Thera / Pochven     -> wormhole: add B + connection A<->B
   * k-space to non-adjacent k-space           -> unknown (bridge, filament, clone jump): ask the UI
 
+A jump that touches a system that is not mapped from (see :meth:`Tracker.mapping_blocked`: a watched
+system off the map, a piece cut off for over an hour, a system removed over an hour ago) is only
+mapped when its other end is on the chain; otherwise it gives :class:`NotMapped`.
+
 A new system takes the number of the sig it came through (the next number of its parent when no
 sig is known) and the static flag of the best guess; a NamingRequest is emitted so the UI can
 confirm "was this the static?" / "which sig?". The answer sets the flag; only the picked sig can
@@ -14,6 +18,7 @@ import functools
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from collections.abc import Collection
 from typing import Any
 
 from ..logs.parser import SystemChange
@@ -23,13 +28,17 @@ from ..validation import is_int, require_integer, require_text, require_type
 from .chain import connected_component, wormhole_adjacency
 from .naming import (Namer, ReturnType, StaticGuess, guess_static, hole_path, is_numbered_kind, number_signature,
                      return_type, static_slot_count, take_hole_number, used_hole_indices)
+from .watch import map_watch_list
 
 GRID = 62 / 3                          # map grid cell = 1/3 of the node height (token size-node-h)
 CHILD_OFFSET_X, CHILD_OFFSET_Y = 12 * GRID, 5 * GRID  # offset of a new child from its parent, in whole grid cells
 DEFAULT_LIFETIME_HOURS = 48            # for connections whose type (and so lifetime) is unknown
-CUT_OFF_GRACE = timedelta(hours=1)     # a cut-off piece nobody is in goes after this long
-CUT_OFF_KEY = "cut_off"                # local key/value: {system id: when its piece was cut off from home}
+CUT_OFF_GRACE = timedelta(hours=1)     # a cut-off piece nobody is in goes after this long; nor is it mapped from
+REMOVED_KEY = "removed_systems"        # local key/value: {system id: when it left the map}
+REMOVED_KEEP = timedelta(days=2)       # how long a removed system is not mapped from
+REMOVED_LIMIT = 500                    # removed systems remembered at most (the newest)
 ORIGINS_KEY = "return_origins"         # local key/value: {"character:system": the system it jumped in from}
+BLOCK_WATCHED, BLOCK_CUT_OFF, BLOCK_REMOVED = "watched", "cut off", "removed"   # why a jump isn't mapped
 SIGNATURE_EDIT_KEYS = ("group", "type", "name", "destination", "mass", "lifetime", "lifetime_set_at",
                        "frigate_only", "size")
 
@@ -83,6 +92,17 @@ class AutoNamed:
     child_id: int
     name: str
     previous: dict  # values to restore on undo
+
+
+@dataclass
+class NotMapped:
+    """A wormhole jump was not put on the map: one end is not mapped from (see ``Tracker.mapping_blocked``)."""
+
+    character_name: str
+    from_id: int
+    to_id: int
+    blocked_id: int                       # the end that is not mapped from
+    reason: str                           # BLOCK_*
 
 
 @dataclass
@@ -152,6 +172,105 @@ class Tracker:
         require_type(namer, Namer, "namer")
         self.store, self.universe, self.namer = store, universe, namer
         self.auto_when_certain = bool(auto_when_certain)
+        self.private_watched: set[int] = set()           # this user's own watch list (the map's is in the store)
+        self.watch_store()
+
+    def watch_store(self) -> None:
+        """Remember the systems each action takes off the map (see :meth:`removed_since`); call after a store switch."""
+        if self.note_removals not in self.store.listeners:
+            self.store.listeners.append(self.note_removals)
+
+    def note_removals(self, action) -> int:
+        """Store listener: remember when systems left the map, and forget those that came back.
+
+        Returns:
+            The number of systems that left.
+        """
+        left = [change.key for change in action.changes if change.entity == "system" and change.deleted]
+        back = [change.key for change in action.changes if change.entity == "system" and change.created]
+        if not (left or back):
+            return 0
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        removed = {system_id: since for system_id, since in self._removed().items() if system_id not in back}
+        for system_id in left:
+            removed.setdefault(system_id, now)   # a cut-off piece that went has its cut time already
+        newest = sorted(removed.items(), key=lambda item: item[1], reverse=True)[:REMOVED_LIMIT]
+        self._store_removed(dict(newest))
+        return len(left)
+
+    def _removed(self) -> dict[int, str]:
+        """Return ``{system id: when it left the map}`` (local to this install)."""
+        try:
+            return {int(system_id): since for system_id, since in json.loads(self.store.get_value(REMOVED_KEY, "{}")).items()}
+        except (ValueError, AttributeError):
+            return {}
+
+    def _store_removed(self, removed: dict[int, str]) -> None:
+        """Save the removed systems."""
+        self.store.put_value(REMOVED_KEY, json.dumps({str(system_id): since for system_id, since in removed.items()}))
+
+    def removed_since(self, system_id: int) -> datetime | None:
+        """Return when a system that is not on the map left it (None if it is on the map or isn't remembered)."""
+        require_integer(system_id, "system_id", minimum=1)
+        since = self._removed().get(system_id)
+        return datetime.fromisoformat(since) if since and not self.store.has_system(system_id) else None
+
+    # ------------------------------------------------------------ where not to map from
+    def watched(self) -> set[int]:
+        """Return every watched system: the map's watch list and this user's own."""
+        return set(map_watch_list(self.store)) | self.private_watched
+
+    def _cut_off_too_long(self, now: datetime) -> set[int]:
+        """Return the systems of pieces that were cut off from home more than :data:`CUT_OFF_GRACE` ago."""
+        old = [root for root, since in self._cut_off_marks().items() if now - datetime.fromisoformat(since) >= CUT_OFF_GRACE]
+        if not old:
+            return set()
+        adjacency = wormhole_adjacency(self.store)
+        return set().union(*(connected_component(adjacency, root) for root in old))
+
+    def not_mapped_from(self, system_id: int, now: datetime | None = None) -> str | None:
+        """Return why new connections from a system are not mapped, or None if they are.
+
+        * ``watched``: a watched system that is not on the map (it is mapped from once a jump from
+          the chain puts it there);
+        * ``cut off``: on the map, in a piece cut off from home more than an hour ago;
+        * ``removed``: not on the map, and taken off it more than an hour (and less than
+          :data:`REMOVED_KEEP`) ago: a deleted chain, or a cut-off piece that went.
+
+        Args:
+            system_id: The system.
+            now: The current time (UTC), or None for the clock.
+        """
+        require_integer(system_id, "system_id", minimum=1)
+        now = now or datetime.now(timezone.utc)
+        if self.store.has_system(system_id):
+            return BLOCK_CUT_OFF if system_id in self._cut_off_too_long(now) else None
+        if system_id in self.watched():
+            return BLOCK_WATCHED
+        removed = self.removed_since(system_id)
+        return BLOCK_REMOVED if removed and CUT_OFF_GRACE <= now - removed < REMOVED_KEEP else None
+
+    def on_chain(self, system_id: int, now: datetime | None = None) -> bool:
+        """Return whether a system is on the map and mapped from (not in a piece cut off over an hour ago)."""
+        return self.store.has_system(system_id) and self.not_mapped_from(system_id, now) is None
+
+    def mapping_blocked(self, from_id: int, to_id: int, now: datetime | None = None) -> tuple[int, str] | None:
+        """Return the end of a jump that is not mapped from and why, if the jump must not go on the map.
+
+        A jump is mapped when neither end is blocked (:meth:`not_mapped_from`), or when the blocked end's
+        other end is on the chain: that is how a watched system joins the chain, and how a cut-off
+        piece is found again from outside.
+
+        Returns:
+            ``(blocked system, reason)``, or None if the jump may be mapped.
+        """
+        require_integer(from_id, "from_id", minimum=1)
+        require_integer(to_id, "to_id", minimum=1)
+        for end, other in ((from_id, to_id), (to_id, from_id)):
+            reason = self.not_mapped_from(end, now)
+            if reason and not self.on_chain(other, now):
+                return end, reason
+        return None
 
     # ------------------------------------------------------------ log events
     @_one_action
@@ -163,7 +282,7 @@ class Tracker:
 
         Returns:
             Events for the UI: always a :class:`Moved`, plus :class:`MapChanged`,
-            :class:`NamingRequest`, :class:`AutoNamed` or :class:`UnknownJump` as needed.
+            :class:`NamingRequest`, :class:`AutoNamed`, :class:`UnknownJump` or :class:`NotMapped` as needed.
         """
         require_type(change, SystemChange, "change")
         system = self.universe.by_name(change.system)
@@ -176,6 +295,9 @@ class Tracker:
         if change.first or system_id is None or previous is None or previous == system_id:
             return events
         if self.universe.gate_adjacent(previous, system_id):
+            return events
+        if blocked := self.mapping_blocked(previous, system_id, change.at):
+            events.append(NotMapped(change.character_name, previous, system_id, *blocked))
             return events
         if is_wormhole_side(self.universe, previous) or is_wormhole_side(self.universe, system_id):
             events[0].wormhole = True
@@ -608,6 +730,7 @@ class Tracker:
         connection = self.store.connection_by_id(connection_id)
         if connection is None:
             return []
+        self._clear_lapsed_marks()   # a piece found again and now lost again starts a new countdown
         for side in (connection.system_a, connection.system_b):
             if signature := connection.signature_on(side):
                 self.store.delete_signatures(side, [signature])
@@ -624,24 +747,36 @@ class Tracker:
             piece = connected_component(adjacency, end)
             if end in reachable or any(system_id in marks for system_id in piece):
                 continue   # still joined to home, or in a piece that was cut off (and is counting down) already
-            marks[end] = (now or datetime.now(timezone.utc)).isoformat()
+            marks[end] = (now or datetime.now(timezone.utc)).isoformat(timespec="seconds")
+            self.store.update_system(end, cut_off_at=marks[end])
             marked_pieces += piece
-        self._store_cut_off_marks(marks)
         return sorted(set(marked_pieces))
 
     def _cut_off_marks(self) -> dict[int, str]:
-        """Return the marks that still hold: the system exists and its piece doesn't reach home."""
-        marks = {int(system_id): since for system_id, since in json.loads(self.store.get_value(CUT_OFF_KEY, "{}")).items()}
+        """Return the marks that still hold: the system is on the map and its piece doesn't reach home.
+
+        The mark is the system's ``cut_off_at`` column, so it syncs on a cloud map (protocol 2) and
+        every member sees it and runs the same countdown. A mark whose piece reaches home again has
+        lapsed; it stays in the column until :meth:`_clear_lapsed_marks` takes it out.
+        """
+        marked = {system.id: system.cut_off_at for system in self.store.systems() if system.cut_off_at}
         home_id = self.namer.home_id
-        if not marks or home_id is None:
+        if not marked or home_id is None:
             return {}
         reachable = connected_component(wormhole_adjacency(self.store), home_id)
-        return {system_id: since for system_id, since in marks.items()
-                if self.store.has_system(system_id) and system_id not in reachable}
+        return {system_id: since for system_id, since in marked.items() if system_id not in reachable}
 
-    def _store_cut_off_marks(self, marks: dict[int, str]) -> None:
-        """Save the marks (local to this install, so a new field doesn't need a protocol change)."""
-        self.store.put_value(CUT_OFF_KEY, json.dumps({str(system_id): since for system_id, since in marks.items()}))
+    def _clear_lapsed_marks(self) -> int:
+        """Take out the marks whose piece reaches home again (or that hold without a home).
+
+        Returns:
+            The number of marks cleared.
+        """
+        holding = self._cut_off_marks()
+        lapsed = [system.id for system in self.store.systems() if system.cut_off_at and system.id not in holding]
+        for system_id in lapsed:
+            self.store.update_system(system_id, cut_off_at=None)
+        return len(lapsed)
 
     def cut_off_since(self, system_id: int) -> datetime | None:
         """Return when a system's piece was cut off from home, if the system holds that mark.
@@ -656,8 +791,11 @@ class Tracker:
         since = self._cut_off_marks().get(system_id)
         return datetime.fromisoformat(since) if since else None
 
-    def _expire_cut_off_pieces(self, now: datetime) -> int:
+    def _expire_cut_off_pieces(self, now: datetime, occupied: Collection[int] = ()) -> int:
         """Remove cut-off pieces nobody has been in for :data:`CUT_OFF_GRACE` (pinned systems stay).
+
+        ``occupied`` are systems other members' shared characters are in (cloud maps): a piece with
+        one of them in it stays too, since the mark and the removal sync to everyone.
 
         Returns:
             The number of connections removed with them.
@@ -669,25 +807,28 @@ class Tracker:
             characters = self.store.characters()
             for root, since in marks.items():
                 piece = connected_component(adjacency, root)
-                if any(character["system_id"] in piece for character in characters):
+                if any(character["system_id"] in piece for character in characters) or piece & set(occupied):
                     continue
                 last = max([datetime.fromisoformat(since)] + [datetime.fromisoformat(character["seen_at"])
                                                               for character in characters
                                                               if character["previous_system_id"] in piece])
                 if now - last < CUT_OFF_GRACE:
                     continue
+                removed_at = self._removed()
                 for system_id in piece:
                     system = self.store.system(system_id)
                     if system and not system.pinned:
+                        removed_at[system_id] = since   # not mapped from: it was cut off over an hour ago
                         removed += len(self.store.connections_of_system(system_id))
                         self.store.remove_system(system_id)
+                self._store_removed(removed_at)
             self.store.clear_broken_parents()
-        self._store_cut_off_marks(self._cut_off_marks())   # drop the marks that lapsed or went with their system
+        self._clear_lapsed_marks()
         return removed
 
     # ------------------------------------------------------------ expiry
     @_one_action
-    def expire(self, now: datetime | None = None) -> int:
+    def expire(self, now: datetime | None = None, occupied: Collection[int] = ()) -> int:
         """Drop connections past their lifetime, and the systems they leave without connections.
 
         Pieces cut off by :meth:`disconnect` go too, an hour after the last character left them.
@@ -700,12 +841,15 @@ class Tracker:
 
         Args:
             now: The current time (UTC), or None for the clock.
+            occupied: Systems other members' characters are in (cloud maps); they stay like those of
+                this computer's characters.
 
         Returns:
             The number of connections removed.
         """
         require_type(now, (datetime, type(None)), "now")
         now = now or datetime.now(timezone.utc)
+        occupied = {system_id for system_id in occupied if system_id}
         removed = 0
         expired_ends: set[int] = set()
         for connection in self.store.connections():
@@ -715,9 +859,9 @@ class Tracker:
                 expired_ends.update((connection.system_a, connection.system_b))
                 removed += 1
         if removed:
-            occupied = {character["system_id"] for character in self.store.characters()}
-            self.store.remove_unlinked_systems(expired_ends, keep=occupied | {self.namer.home_id})
-        return removed + self._expire_cut_off_pieces(now)
+            here = {character["system_id"] for character in self.store.characters()}
+            self.store.remove_unlinked_systems(expired_ends, keep=here | occupied | {self.namer.home_id})
+        return removed + self._expire_cut_off_pieces(now, occupied)
 
     # ------------------------------------------------------------ answers from the UI
     @_one_action

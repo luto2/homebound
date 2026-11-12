@@ -309,7 +309,7 @@ def test_stored_names_and_the_static_flag_go_only_to_a_peer_that_knows_them() ->
     whole batch, and an old client keeps asking for it again), so the version gate strips them.
     """
     gated = set(GATED_FIELDS["system"])
-    assert gated == {"label", "static", "next_hole"} and gated <= set(FIELDS["system"])
+    assert gated == {"label", "static", "next_hole", "cut_off_at"} and gated <= set(FIELDS["system"])
     store = Store(":memory:")
     actions: list = []
     store.listeners.append(actions.append)

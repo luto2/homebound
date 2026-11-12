@@ -20,6 +20,7 @@ from typing import Any, NamedTuple
 from ..mapdb.store import MAP_SETTING_KEYS, MASS_STATES, Action, Change
 from ..mapping.naming import SCHEMES
 from ..mapping.signature_parser import GROUP_ORDER, SIGNATURE_ID_PATTERN
+from ..mapping.watch import watched_ids
 from ..universe.db import SIZES
 from .hlc import is_hlc
 
@@ -87,6 +88,7 @@ FIELDS: dict[str, dict[str, Any]] = {
         "notes": _optional(_text(MAX_TEXT)), "added_at": _time, "scanned_at": _time,
         "pinned": _flag, "confirmed": _flag, "x": _coordinate, "y": _coordinate,
         "label": _optional(_text(MAX_SHORT_TEXT)), "static": _flag, "next_hole": _integer(0, 1000),
+        "cut_off_at": _time,
     },
     "connection": {
         "signature_a": _signature_id, "signature_b": _signature_id,
@@ -102,11 +104,15 @@ FIELDS: dict[str, dict[str, Any]] = {
         "lifetime": _integer(0, 3), "lifetime_set_at": _time, "frigate_only": _flag,
         "size": _optional(_choice(SIZES)), "created_at": _time, "seen_at": _time,
     },
-    "setting": {"value": _optional(_text(MAX_SHORT_TEXT))},
+    "setting": {"value": _optional(_text(MAX_TEXT))},     # each key's own check: SETTING_VALUES
     # a remembered name of a solar system, keyed by its ID (plan-system-alias.md); it outlives the system's place
     "alias": {"name": _text_between(1, MAX_SHORT_TEXT), "set_at": _time},
 }
 LAYOUT_FIELDS = ("x", "y")                     # only sent with a full upsert
+_short_setting = _optional(_text(MAX_SHORT_TEXT))
+# The value check of each map setting; a key not listed takes a short text. The watch list is a JSON
+# list of system IDs (plan-watched-systems.md); the server checks that each is a real system.
+SETTING_VALUES = {"watched_systems": lambda value: watched_ids(value) is not None}
 # Fields that merge as the highest value instead of the newest: a counter that only goes up.
 # ``next_hole`` is the highest hole number given out in a system, so a number is never given twice.
 MAX_FIELDS = {("system", "next_hole")}
@@ -128,9 +134,14 @@ class GatedField(NamedTuple):
 # the server keeps what each socket said in ``hello`` and strips the rest (:func:`message_for_peer`).
 GATED_FIELDS: dict[str, dict[str, GatedField]] = {
     # the stored scheme name, the static flag and the hole counter (plan-stable-hole-names.md, change 8)
-    "system": {"label": GatedField(2, None), "static": GatedField(2, 0), "next_hole": GatedField(2, 0)},
+    # the stored scheme name, the static flag and the hole counter (plan-stable-hole-names.md, change 8);
+    # when a lost connection cut the system's piece off from home (plan-disconnect-connection.md, task 18)
+    "system": {"label": GatedField(2, None), "static": GatedField(2, 0), "next_hole": GatedField(2, 0),
+               "cut_off_at": GatedField(2, None)},
 }
 GATED_ENTITIES: dict[str, int] = {"alias": 2}       # entity -> the version that added it
+# Map settings (keys of the ``setting`` entity) a version added: an older peer refuses an unknown key.
+GATED_SETTINGS: dict[str, int] = {"watched_systems": 2}
 # Fields of a presence entry (``presence``, ``presence_all``) a version added: ``state`` says whether the
 # character's client window is open ("online") or only its log was written lately ("recent").
 GATED_PRESENCE_FIELDS: dict[str, int] = {"state": 2}
@@ -148,8 +159,10 @@ def peer_protocol(value: Any) -> int:
     return min(value, PROTOCOL)
 
 
-def knows_entity(entity: Any, protocol: int) -> bool:
-    """Return whether a peer that speaks ``protocol`` knows an entity."""
+def knows_entity(entity: Any, protocol: int, key: Any = None) -> bool:
+    """Return whether a peer that speaks ``protocol`` knows an entity (and, for a setting, its key)."""
+    if entity == "setting" and isinstance(key, str) and protocol < GATED_SETTINGS.get(key, 1):
+        return False
     return protocol >= GATED_ENTITIES.get(entity, 1)
 
 
@@ -161,11 +174,12 @@ def unknown_fields(entity: Any, protocol: int) -> set[str]:
 def op_for_peer(message: dict, protocol: int) -> dict | None:
     """Return a wire op as a peer speaking ``protocol`` may get it, or None if nothing of it is left.
 
-    An op of an entity the peer doesn't know goes; fields it doesn't know are taken out. A plain
-    update that is left with nothing to change goes too (a full upsert, a placement or a delete stays).
+    An op of an entity (or map setting) the peer doesn't know goes; fields it doesn't know are taken
+    out. A plain update that is left with nothing to change goes too (a full upsert, a placement or a
+    delete stays).
     """
     entity = message.get("e")
-    if not knows_entity(entity, protocol):
+    if not knows_entity(entity, protocol, message.get("k")):
         return None
     hidden = unknown_fields(entity, protocol)
     values = message.get("f")
@@ -188,10 +202,10 @@ def ops_for_peer(ops: list[dict], protocol: int) -> list[dict]:
 def entity_for_peer(item: dict, protocol: int) -> dict | None:
     """Return a merged-state entry (``{"e", "k", "f", "clocks", "alive", "dead"}``) for a peer, or None.
 
-    An entity the peer doesn't know goes; fields it doesn't know leave both ``f`` and ``clocks``.
+    An entity (or map setting) the peer doesn't know goes; fields it doesn't know leave both ``f`` and ``clocks``.
     """
     entity = item.get("e")
-    if not knows_entity(entity, protocol):
+    if not knows_entity(entity, protocol, item.get("k")):
         return None
     hidden = unknown_fields(entity, protocol)
     if not hidden:
@@ -355,6 +369,8 @@ def op_from_json(message: Any, client_id: str | None = None) -> Op:
     full = bool(message.get("full"))
     if entity == "setting" and key == "naming_scheme" and values.get("value") not in (None, *NAMING_SCHEMES):
         raise InvalidOp(f"unknown naming scheme {values.get('value')!r}")
+    if entity == "setting" and "value" in values and not SETTING_VALUES.get(key, _short_setting)(values["value"]):
+        raise InvalidOp(f"bad value for setting {key}: {values['value']!r}")
     if not full and set(values) & set(LAYOUT_FIELDS):
         raise InvalidOp("x/y only go with a full upsert")
     placement, has_placement = None, "placement" in message

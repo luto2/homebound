@@ -16,7 +16,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
-from .protocol import CREATED_FIELD, MAX_FIELDS, Op, defaults_left_out, key_text
+from .protocol import CREATED_FIELD, MAX_FIELDS, Op, defaults_left_out, key_text, watched_ids
 
 PLACEMENT = "placement"
 
@@ -242,6 +242,8 @@ def referenced_systems(op: Op) -> list[int]:
         ids.extend(op.key)
     elif op.entity == "signature":
         ids.append(op.key[0])
+    elif op.entity == "setting" and op.key == "watched_systems":
+        ids.extend(watched_ids(op.fields.get("value")) or [])
     return ids
 
 

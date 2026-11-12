@@ -84,3 +84,28 @@ What can be held back is what needs the server. Options:
   setting and syncs on cloud maps.
 - How far to look from a watched k-space system is a setting: direct (adjacent only), 2, 5 or 10 jumps;
   default 5.
+
+## Implementation notes (2026-11-12)
+
+- Logic in `mapping/watch.py`; the k-space check is one gate BFS from each watched system (radius
+  `watch_jumps`) to the nearest mapped system with a live (not expired) connection. That equals
+  "gates plus the map's wormholes", since wormhole edges only join mapped systems. Home counts like
+  any mapped exit, so a k-space home with a chain is always "near" what is around it.
+- Two lists: the map's is the map setting `watched_systems` (JSON list of IDs, max 200), gated at
+  protocol 2 as a new setting key (`protocol.GATED_SETTINGS`); the private one is
+  `Settings.watched_private` (system names, all maps). The range is the user setting `watch_jumps`
+  (1 "adjacent only", 2, 5, 10; default 5), set from the ⚙ of the Watch section, not the Settings
+  dialog. Whole-list LWW: two members adding at the same moment can lose one entry.
+- Alerts: `AppState.check_watches` after a map change (1 s debounce) and on the expiry timer; a hit
+  fires once, again only after 1 h without it. Start, map switch, adding an entry and changing the
+  range take what is reached silently. Thera/Pochven/w-space count only when on the map; Turnur
+  (k-space) uses the jump rule.
+- Not mapped from (`Tracker.mapping_blocked`): a watched system off the map, a piece cut off more
+  than 1 h ago (`CUT_OFF_GRACE`), and a system taken off the map 1 h to 2 days ago (local
+  `key_value` `removed_systems`; a cut-off piece that went counts from its cut time). A jump touching
+  such a system is mapped only when its other end is on the chain; otherwise the window shows a
+  "Not mapped" toast. Hand links and the unknown-jump question for other systems are unchanged.
+- Task 18: the CUT OFF mark is now the system column `cut_off_at`, gated at protocol 2. Lapsed marks
+  are cleared on the next disconnect or expiry. `Tracker.expire(occupied=)` keeps pieces that other
+  members' shared characters are in, since the removal now syncs. Marks from the old local
+  `key_value` `cut_off` row are not migrated (they last about an hour).

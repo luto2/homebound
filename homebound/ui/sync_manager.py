@@ -12,7 +12,7 @@ from collections.abc import Iterator
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from ..mapdb.store import MAP_SETTING_KEYS, Action, Store
+from ..mapdb.store import SETTINGS_MIRRORED, Action, Store
 from .. import app_version
 from .. import settings as settings_module
 from ..settings import Settings
@@ -147,7 +147,7 @@ class SyncManager(QObject):
         values = {change.key: (change.after or {}).get("value") for change in action.changes if change.entity == "setting"}
         if name and values:
             entry = settings.maps[name]
-            for key in MAP_SETTING_KEYS:
+            for key in SETTINGS_MIRRORED:
                 if values.get(key) is not None:
                     entry[key] = values[key]
                     if name == settings.active_map:
