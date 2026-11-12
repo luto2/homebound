@@ -230,20 +230,20 @@ P1 and P2 filtering (3/5) · Sonnet.
   stores None, and the tooltip at `map_scene.py:457` would raise on it. No UI path found (E13, E13a).
 - **Done earlier (`3d65485`; test `85f21e6`).** [2] `focus_linux.py:120`: `FileNotFoundError` and `TimeoutExpired` are uncaught, and
   `kwin_available` checks only `kpackagetool6` (E10).
-- [2] `universe.by_id(...)` used without a None check in the places listed under E20.
-- [2] `test_ui_map_scene.py:118` and `test_tracker.py:488` loosen the result to dodge timing. Give
+- **Done 2026-11-12 (`f94c459`).** [2] `universe.by_id(...)` used without a None check in the places listed under E20.
+- **Done 2026-11-12 (`9023687`).** [2] `test_ui_map_scene.py:118` and `test_tracker.py:488` loosen the result to dodge timing. Give
   `removed_in` a `now` parameter (T3).
-- [2] `test_ui_settings_dialog.py:167`: the `or` also passes when the file is missing (T10).
-- [1] `test_ui_map_scene.py:439-440`: replace the `or` with
+- **Done 2026-11-12 (`9023687`).** [2] `test_ui_settings_dialog.py:167`: the `or` also passes when the file is missing (T10).
+- **Done 2026-11-12 (`9023687`).** [1] `test_ui_map_scene.py:439-440`: replace the `or` with
   `x / GRID == pytest.approx(round(x / GRID))` (T11). The `or` is needed for `%` in general, because
   1989 of the first 4000 multiples of `GRID` land next to `GRID`. These inputs only reach the first
   arm, though, and `approx(0)` is too tight for larger coordinates. The test does catch a missing or
   wrong snap, and `done/plan-test-fixes.md` rules out `or` assertions like this.
-- [1] Weak tests, from `docs/findings/findings.md` and not all re-checked: T2, T4 to T9, T12, T13.
-- [1] Test structure: copied fixtures and helpers, the fixture imported at `test_ui_routes.py:19`.
-- [1] `_set_home` (`map_window.py:1013`) has no loop guard. No way to create a parent loop was found,
+- **Done 2026-11-12 (`d7b6654`; T8 was already fine).** [1] Weak tests, from `docs/findings/findings.md` and not all re-checked: T2, T4 to T9, T12, T13.
+- **Done 2026-11-12 (`1f6f5bd`; same-named tests, function-level imports and private-attribute reads left).** [1] Test structure: copied fixtures and helpers, the fixture imported at `test_ui_routes.py:19`.
+- **Already done (guard and test exist).** [1] `_set_home` (`map_window.py:1013`) has no loop guard. No way to create a parent loop was found,
   so this only matters for a damaged map (E12).
-- [1] Unhandled but unlikely: second `open_universe()` (E17), `build_static.py:187` `urlopen` without
+- **Done 2026-11-12 (E21 `ab980e6`; E15, E16, E17 were already handled).** [1] Unhandled but unlikely: second `open_universe()` (E17), `build_static.py:187` `urlopen` without
   `with` (E15), bytes in `TimeoutExpired.stdout` in `push_gate.py:73` (E16), `OSError` in the replay
   CLI (E21).
 - [1] Unused code: `DEFAULT_DESTINATIONS`, `name_caption`, `LIFETIME_1H` and `LIFETIME_4H` in
