@@ -121,9 +121,9 @@ class Hub:
         return self.db.value("SELECT seq FROM maps WHERE id=?", (map_id,), 0)
 
     # ------------------------------------------------------------ join / leave
-    def join(self, connection: Connection, map_id: str, last_seq: int, request_id: Any = None) -> None:
+    def join(self, connection: Connection, map_id: str | None, last_seq: int, request_id: Any = None) -> None:
         """Join a map: send the missing ops (or a snapshot), then the status, members and presence."""
-        if not self.maps.map(map_id):
+        if not isinstance(map_id, str) or not self.maps.map(map_id):
             connection.send({"t": "error", "re": request_id, "map": map_id, "code": "map_deleted"})
             return
         if self.maps.role(map_id, connection.account_id) is None:
@@ -146,8 +146,10 @@ class Hub:
         connection.send({"t": "members", "map": map_id, "members": self.maps.members(map_id)})
         connection.send({"t": "presence_all", "map": map_id, "entries": self.presence_entries(map_id)})
 
-    def leave(self, connection: Connection, map_id: str) -> None:
+    def leave(self, connection: Connection, map_id: str | None) -> None:
         """Stop sending a map's changes to a socket."""
+        if map_id is None:
+            return
         connection.maps.discard(map_id)
         self.subscribers.get(map_id, {}).pop(connection.id, None)
 
@@ -202,7 +204,7 @@ class Hub:
         if connection.web:
             reject("read_only", "The web view can't edit.")
             return
-        if not self.maps.map(map_id):
+        if not isinstance(map_id, str) or not self.maps.map(map_id):
             reject("map_deleted")
             return
         role = self.maps.role(map_id, connection.account_id)
@@ -288,8 +290,10 @@ class Hub:
             seq = self.seq(map_id) + 1
             self.db.execute("UPDATE maps SET seq=? WHERE id=?", (seq, map_id))
             for entity, key in dict.fromkeys((op.entity, op.key) for op in ops):
+                entity_state = state.get(entity, key)
+                assert entity_state is not None      # apply_batch stored every entity of the ops
                 self.db.execute("INSERT OR REPLACE INTO entities (map_id, kind, key, state) VALUES (?,?,?,?)",
-                                (map_id, entity, key_text(key), json.dumps(state.get(entity, key).to_json())))
+                                (map_id, entity, key_text(key), json.dumps(entity_state.to_json())))
             self.db.execute("INSERT INTO ops (map_id, seq, batch_id, account_id, payload, stamped, received_at) "
                             "VALUES (?,?,?,?,?,?,?)", (map_id, seq, batch_id, account_id, json.dumps(payload),
                                                        json.dumps(stamped), iso(now)))

@@ -205,6 +205,19 @@ def test_a_removed_member_is_told_and_can_rejoin_no_more(harness) -> None:
     socket.close()
 
 
+def test_a_join_or_push_without_a_map_is_refused(harness) -> None:
+    """A message with no map ID gets map_deleted, the same answer as an unknown map, and the socket stays up."""
+    map_id, kira, bob = setup_map(harness)
+    socket = Socket(harness, bob, B)
+    socket.send({"t": "join", "id": 2, "last_seq": 0})
+    assert socket.until("error")["code"] == "map_deleted"
+    socket.send({"t": "push", "id": 3, "batch_id": "bob-no-map", "ops": []})
+    assert socket.until("reject")["code"] == "map_deleted"
+    socket.send({"t": "leave"})
+    assert socket.join(map_id)["t"] in ("ops_since", "snapshot")
+    socket.close()
+
+
 def test_hello_checks(harness) -> None:
     """Bad tokens, old apps and bad client IDs are refused."""
     token = harness.login(91000001, "Kira")
