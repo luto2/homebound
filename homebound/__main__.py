@@ -3,10 +3,14 @@ import os
 import sys
 
 APP_USER_MODEL_ID = "Homebound.Homebound"   # also in packaging/windows/homebound.iss
+ALLOW_SECOND_INSTANCE = "--allow-second-instance"   # development: skip the one-instance guard
 
 
 def main() -> int:
     """Start the app and run the Qt event loop, or handle ``--version`` / ``--build-static [--refresh]``.
+
+    A second start on the same data folder raises the running window and returns 0, unless
+    ``--allow-second-instance`` is given.
 
     Returns:
         The exit code: 1 if the static universe data is missing or outdated and the user quits instead of
@@ -30,11 +34,11 @@ def main() -> int:
         # makes it use the window icon. The installer's shortcuts carry the same ID, so pinned shortcuts group with it.
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
-    from PySide6.QtWidgets import QApplication, QMessageBox
+    from PySide6.QtWidgets import QApplication
 
-    from .settings import Settings
+    from . import settings as settings_module
+    from .platform.instance import acquire_single_instance
     from .theme.qss import apply_theme
-    from .universe.db import BUILD_COMMAND, UniverseDataError, open_universe, static_data_path
 
     application = QApplication.instance() or QApplication(sys.argv)
     application.setApplicationName("homebound")
@@ -42,6 +46,25 @@ def main() -> int:
     application.setDesktopFileName("homebound")
     application.setQuitOnLastWindowClosed(False)
     apply_theme(application)
+
+    guard = None
+    if ALLOW_SECOND_INSTANCE not in arguments:
+        guard = acquire_single_instance(settings_module.DATA_DIR)
+        if guard is None:   # Homebound already runs on this folder; it was asked to show its window
+            return 0
+    try:
+        return _run(application, guard)
+    finally:
+        if guard is not None:
+            guard.release()
+
+
+def _run(application, guard) -> int:
+    """Open the universe and the map, show the window and run the event loop (the one instance's work)."""
+    from PySide6.QtWidgets import QMessageBox
+
+    from .settings import Settings
+    from .universe.db import BUILD_COMMAND, UniverseDataError, open_universe, static_data_path
 
     try:
         universe = open_universe()
@@ -71,6 +94,8 @@ def main() -> int:
     focus = FocusTracker()
     sync = SyncManager(state)
     window = MapWindow(state, focus, sync)
+    if guard is not None:
+        guard.showRequested.connect(window.raise_window)
     state.start()
     focus.start()
     sync.start()

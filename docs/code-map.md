@@ -53,7 +53,7 @@ so it can be tested without a window.
 
 | Step | Where |
 |---|---|
-| Entry point (`homebound`, `python -m homebound`, `--version`, `--build-static [--refresh]`) | `homebound/__main__.py` `main` |
+| Entry point (`homebound`, `python -m homebound`, `--version`, `--build-static [--refresh]`) | `homebound/__main__.py` `main` (one-instance guard: `platform/instance.py`) |
 | PyInstaller entry point | `packaging/launch.py` |
 | Theme: bundled fonts, Fusion palette, style sheet | `theme/qss.py` `apply_theme`, `theme/fonts.py` |
 | Universe file missing or outdated → first-run build dialog | `ui/dialogs.py` `BuildDataDialog`, `BuildWorker`; `universe/db.py` `open_universe`, `UniverseDataError` |
@@ -233,6 +233,7 @@ detail.
 | Module | Owns |
 |---|---|
 | `paths.py` | Data, Documents and universe paths; packaged or checkout; read-only SQLite URIs |
+| `instance.py` | One Homebound per data folder: `QLockFile` + `QLocalServer`; a second start raises the running window and exits (`--allow-second-instance` skips it) |
 | `focus_linux.py` | KWin script install and D-Bus calls, xprop polling, open-window list (`x11_window_titles`) |
 | `focus_windows.py` | Foreground window polling, open-window list (`window_titles`), keep-on-top |
 | `kwin/homebound-focus/` | The KWin script itself (JavaScript) |

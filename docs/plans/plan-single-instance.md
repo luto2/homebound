@@ -61,3 +61,20 @@ Windows with real logs and a cloud map and note what broke, so the release note 
 - The second start passes nothing on; it only raises the running window.
 - Each process gets its own sync connection ID, whatever step 1 shows, so two instances started with the
   developer flag don't push each other off the server.
+
+## Implementation notes (2026-11-12)
+
+- `platform/instance.py` as planned. `QLockFile` with stale time 0 (never stale by age); `tryLock` itself removes a
+  lock whose PID is dead, so there is no separate `removeStaleLockFile` call. The socket name is `homebound-` plus a
+  hash of the resolved data folder. A second start sends `show`, retries once if the first try finds nobody
+  listening (the holder may still be starting), and exits 0 either way. A holder that is alive but hung is not
+  taken over; the user must end it.
+- `__main__.py` acquires the guard right after the QApplication, before the universe and the map; `main` split
+  into `main` and `_run`. The guard is released in `finally`. A `show` that arrives before the window exists
+  (first-run data build) is ignored.
+- Sync: the server never evicts by client ID (each socket has its own `Connection.id`; broadcasts exclude the
+  pushing connection; the cap is 5 sockets per account), so two sockets with one ID did not push each other off.
+  What did collide was the LWW stamp `<hlc>@<client_id>`: equal HLCs from two processes could not be ordered. So
+  `SyncManager.connection_id` (random per process) is now the `client_id` of the hello and of every op; the
+  persistent `sync_client_id` stays in the settings, unused by the wire for now. No server change was needed: a
+  per-process ID passes the same `CLIENT_ID` check, and old clients are unaffected.

@@ -94,6 +94,7 @@ uv run pytest                     # --cov=homebound for coverage
 uv run python -m homebound.logs.replay path/to/Local_*.txt --home J161940   # replay logs through the tracker
 ```
 
+- Only one Homebound runs per data folder: a second start raises the running window and exits with code 0. To run two on purpose (sync tests), start the second with `python -m homebound --allow-second-instance`, ideally with its own `HOMEBOUND_HOME` so the two don't share `settings.json` and map files. Each process signs its sync ops with its own connection ID.
 - `homebound/logs/` reads the chat logs, `homebound/mapping/` turns jumps into the map (tracker, naming, signature parsing), `homebound/mapdb/` stores it, `homebound/ui/` is the PySide6 interface.
 - Names are spelled out (no abbreviations), and every public entry point checks its arguments with `homebound/validation.py`.
 - The UI follows `design-system/`: tokens, component specs and Qt notes.

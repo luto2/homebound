@@ -60,7 +60,11 @@ class SyncManager(QObject):
         self.worker_class = worker_class
         self.worker = None
         self.socket_state = "stopped"
-        self.engine = SyncEngine(settings.sync_client_id, self._send, self._open_replica, self.cloud_map_ids,
+        # The op stamps and the hello carry an ID of this process, not the install's: two instances on one install
+        # (the --allow-second-instance dev flag) would otherwise sign alike, and the LWW tie-break could not tell
+        # their equal stamps apart. The install's own ID stays in the settings.
+        self.connection_id = secrets.token_hex(8)
+        self.engine = SyncEngine(self.connection_id, self._send, self._open_replica, self.cloud_map_ids,
                                  HybridClock(), app_version())
         self.engine.on_changed = self._remote_changed
         self.engine.on_info = self._info
