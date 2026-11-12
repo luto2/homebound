@@ -1,6 +1,6 @@
 # Plan: tooling (type checker, graphify)
 
-Status: done in the repo on 2026-11-12 except the owner's hand steps (hooks path check, `uv.lock` review) and the upstream graphify issues; mypy is at 112 errors and non-blocking in CI. Checked against the repo on 2026-11-06.
+Status: implemented (2026-11-12, `597e10e`). Deviations: mypy at 112 errors (from 342), CI step non-blocking; graphify extractor problems need an upstream fix, query habits documented in HOW_TO.md.
 
 Depends on: nothing. Each step stands alone and can be its own commit. Nothing here touches app
 behaviour, so none of it is urgent; the order is by value for the effort.

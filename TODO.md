@@ -253,9 +253,9 @@ P1 and P2 filtering (3/5) · Sonnet.
   `tracker.py:22` and the hard-coded range in `overlay.py:30,195`.
 - [1] Mockups differ from the app: Find placeholder, tray `Ctrl+Shift+O` and "Open map", StatusBar
   glyph label. The UI hint on map names describes a character rule nothing enforces.
-- [1] No type checker in dev dependencies or CI. mypy's 259 errors are mostly PySide stub noise;
+- **Done 2026-11-12 (`aa8942f`; 112 errors left, CI step non-blocking).** [1] No type checker in dev dependencies or CI. mypy's 259 errors are mostly PySide stub noise;
   `@overload` on `require_integer` and `require_text` would clear several.
-- [1] `graphify-out/` (12 MB) is untracked and not in `.gitignore`.
+- **Done 2026-11-12 (`7059341`; graph stays tracked, refresh.log ignored).** [1] `graphify-out/` (12 MB) is untracked and not in `.gitignore`.
 
 From the graphify audit (2026-11-06). P numbers match the problems in `docs/findings/graphify-findings.md`.
 These are tooling problems and none of them affects the app, so they sit low on
@@ -266,7 +266,7 @@ the same scale. Test-only functions and `graphify-out/` are listed above.
   check with a text search.
 - [3] 337 of the 448 `uses` edges are false (P1), which skews god node ranks and bridge scores.
   Filter them out before relying on either.
-- [3] `graphify` isn't on the PATH of the agent's shell, though the repo rules require it. It works
+- **Documented 2026-11-12 in HOW_TO.md.** [3] `graphify` isn't on the PATH of the agent's shell, though the repo rules require it. It works
   at `~/.local/bin/graphify`.
 - [2] Check that the repo's hooks path setting points at `.githooks`. If it doesn't, neither the
   gate's pre-push hook nor the graph refresh runs. `claude-hook` blocks any command naming the
@@ -275,15 +275,15 @@ the same scale. Test-only functions and `graphify-out/` are listed above.
 - [2] Decorated methods lose their class, and the `enabled` getter and setter appear to share a node
   (P3). This looks like an extractor limit, so it may need an upstream fix. `graphify update .` was
   not tested against it.
-- [1] The pre-push refresh hides its output, and `graphify update` needs `--force` to write a graph
+- **Done 2026-11-12 (`7059341`).** [1] The pre-push refresh hides its output, and `graphify update` needs `--force` to write a graph
   with fewer nodes. After large deletions, run it by hand.
 - [1] `BackgroundFetcher` is split in two, `RadioCard` has no source file, and 62 of 1791 definitions
   have no node, mostly nested ones (P6).
 - [1] Report noise: `pick_system()` as a god node, `__init__.py` communities, 0 output tokens in
   `cost.json` (P7).
-- [1] `homebound/theme/painting.py:16` imports the lifetime constants from `mapdb.store`. Fix it only
+- **Done 2026-11-12 (`597e10e`).** [1] `homebound/theme/painting.py:16` imports the lifetime constants from `mapdb.store`. Fix it only
   when working in that file.
-- [1] `focus_windows.py` has an indented `ui.focus` import whose guard wasn't read, so that apparent
+- **Checked 2026-11-12 (`597e10e`): a real import, no cycle.** [1] `focus_windows.py` has an indented `ui.focus` import whose guard wasn't read, so that apparent
   cycle is only assumed harmless.
 
 Open in the plans: the optional overlay marker (`done/plan-rescan-status.md`), a run on a real Windows

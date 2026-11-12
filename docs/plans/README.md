@@ -22,7 +22,6 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 |---|---|---|
 | [plan-small-fixes.md](plan-small-fixes.md) | "Small items" | partly done (`3d65485`) |
 | [plan-test-cleanup.md](plan-test-cleanup.md) | Weak tests and test structure | not started |
-| [plan-tooling.md](plan-tooling.md) | Type checker, graphify | not started |
 
 ### Drafts
 
@@ -75,3 +74,4 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [done/plan-structure-list.md](done/plan-structure-list.md) | 2026-11-12 (`0402ae7`) | timer toast in the running app |
 | [done/plan-overlay-shortcut.md](done/plan-overlay-shortcut.md) | 2026-11-12 (`d28cf66`) | a real key press on KDE/Wayland and Windows |
 | [done/plan-menu-icon.md](done/plan-menu-icon.md) | 2026-11-12 (`e6b86d3`) | — |
+| [done/plan-tooling.md](done/plan-tooling.md) | 2026-11-12 (`597e10e`) | hooks path check by hand; mypy to zero, then blocking; upstream graphify issues |
