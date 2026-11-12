@@ -24,7 +24,7 @@ datas = [
 ]
 
 # Qt modules Homebound never imports; QtDBus is only used by the Linux focus backend.
-excludes = ["tkinter", "PySide6.QtNetwork", "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtOpenGL",
+excludes = ["tkinter", "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtOpenGL",
             "PySide6.QtPdf", "PySide6.QtWebEngineCore",
             # the sync server and its web stack stay out of the client (cloud-sync-plan §18)
             "homebound_server", "starlette", "uvicorn", "uvloop", "watchfiles"]

@@ -622,3 +622,27 @@ def test_main_flag_skips_the_guard(fake_app, monkeypatch) -> None:
         assert FakeWindow.instances and FakeWindow.instances[0].shown
     finally:
         first.release()
+
+
+def test_packaging_excludes_nothing_the_app_imports() -> None:
+    """A module the PyInstaller spec leaves out must not be imported by the client (1.0.1 shipped without QtNetwork)."""
+    import ast
+    import re
+
+    root = Path(__file__).resolve().parents[1]
+    spec = (root / "packaging" / "homebound.spec").read_text(encoding="utf-8")
+    listed = re.search(r"^excludes = (\[.*?\])", spec, re.S | re.M)
+    assert listed is not None
+    excluded = set(re.findall(r'"([^"]+)"', listed.group(1)))
+    excluded |= set(re.findall(r'excludes\.append\("([^"]+)"\)', spec))
+    excluded.discard("PySide6.QtDBus")  # left out on Windows only; focus_linux imports it
+    imported: set[str] = set()
+    for path in (root / "homebound").rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                imported.add(node.module)
+    clashes = {name for name in imported
+               if any(name == gone or name.startswith(gone + ".") for gone in excluded)}
+    assert not clashes, f"imported but excluded from the package: {sorted(clashes)}"
