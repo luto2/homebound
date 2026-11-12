@@ -115,6 +115,7 @@ class AppState(QObject):
     settingsChanged = Signal()
     schemeChanged = Signal(str)           # the map's naming scheme changed (old key); names stay until renamed
     status = Signal(str, str, str)        # source (logs|zkill|scout|kwin|backup), level, text
+    notice = Signal(str, str)             # a toast: level, text
     followedChanged = Signal(object)      # character id or None (overlay target)
     scanAgeTick = Signal()                # once a minute: scan ages moved on, rescan states may change
     scoutUpdated = Signal()               # EVE-Scout's Thera/Turnur connections changed
@@ -182,6 +183,7 @@ class AppState(QObject):
         self.watcher.systemChanged.connect(self.on_system_change)
         self.watcher.charactersChanged.connect(self.charactersChanged)
         self.watcher.statusChanged.connect(lambda level, text: self.status.emit("logs", level, text))
+        self.watcher.notice.connect(self.notice)
         self._zkillUpdated.connect(self.systemUpdated)
         self._zkillStatus.connect(lambda level, text: self.status.emit("zkill", level, text))
         self.zkill = ZkillFetcher(self.database_path, self._zkillUpdated.emit, self._zkillStatus.emit)

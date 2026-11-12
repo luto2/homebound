@@ -6,8 +6,8 @@ import pytest
 
 from conftest import HOME, UNIVERSE
 from homebound.logs import replay
-from homebound.logs.parser import (LogFile, decode_log_bytes, parse_header, parse_log_file, parse_log_text,
-                                   parse_system_change, parse_timestamp)
+from homebound.logs.parser import (SYSTEM_SENDERS, LogFile, decode_log_bytes, parse_header, parse_log_file,
+                                   parse_log_text, parse_system_change, parse_timestamp, unlisted_system_sender)
 from homebound.logs.watcher import RECENT_WINDOW, LogScanner, LogWatcher
 
 HEADER = """
@@ -45,6 +45,32 @@ def test_parse_system_change() -> None:
     assert parse_system_change("no timestamp here") is None
     with pytest.raises(TypeError):
         parse_system_change(None)
+
+
+def test_only_listed_system_senders_count() -> None:
+    """A player named "EVE ..." who types the system text is not the system; every listed name is."""
+    stamp = "2026.10.28 16:51:53"
+    assert parse_system_change(line(stamp, "anyone in local : Amarr", sender="EVE Fan")) is None
+    assert parse_system_change(line(stamp, "Channel changed to Local : Amarr", sender="EVE Fan")) is None
+    assert unlisted_system_sender(line(stamp, "anyone in local : Amarr", sender="EVE Fan")) == "EVE Fan"
+    assert unlisted_system_sender(line(stamp, "Channel changed to Local : Amarr", sender="EVE Fan")) == "EVE Fan"
+    assert unlisted_system_sender(line(stamp, "o7", sender="EVE Fan")) is None
+    assert unlisted_system_sender(line(stamp, "Channel changed to Local : Amarr")) is None
+    assert unlisted_system_sender(line(stamp, "Channel changed to Local : Amarr", sender="Some Pilot")) is None
+    for name in sorted(SYSTEM_SENDERS):
+        assert parse_system_change(line(stamp, "Channel changed to Local : Jita", sender=name))[1] == "Jita"
+        assert unlisted_system_sender(line(stamp, "Channel changed to Local : Jita", sender=name)) is None
+
+
+def test_system_sender_spacing_variants_match() -> None:
+    """Two spaces, a no-break space or a padded name still give the system; the loose message match stays."""
+    stamp = "2026.10.28 16:51:53"
+    assert parse_system_change(line(stamp, "Channel changed to Local : Jita", sender="EVE  System"))[1] == "Jita"
+    assert parse_system_change(line(stamp, "Channel changed to Local : Jita", sender="EVE\u00a0System"))[1] == "Jita"
+    assert parse_system_change(line(stamp, "Channel changed to Local : Jita", sender="EVE システム"))[1] == "Jita"
+    assert parse_system_change(line(stamp, "Kanal gewechselt zu Lokal (local) : Amarr", sender="EVE-System"))[1] \
+        == "Amarr"
+    assert parse_system_change(line(stamp, "Something else : Amarr")) is None
 
 
 def test_timestamps_and_decoding() -> None:
@@ -217,6 +243,29 @@ def test_watcher_emits_signals(tmp_path, qt_application) -> None:
     watcher.timer.stop()
     with pytest.raises(ValueError):
         LogWatcher(str(tmp_path), interval_ms=0)
+
+
+def test_watcher_warns_once_about_an_unlisted_system_sender(tmp_path, caplog) -> None:
+    """An EVE-prefixed sender that looks like the system is ignored, logged and warned about once per session."""
+    import logging
+    write_log(tmp_path / "Local_20261028_165148_7.txt", HEADER
+              + line("2026.10.28 16:51:53", "Channel changed to Local : Jita", sender="EVE Fan")
+              + line("2026.10.28 16:52:53", "Channel changed to Local : Amarr", sender="Système EVE"))
+    watcher = LogWatcher(str(tmp_path), interval_ms=60000)
+    changes, notices = [], []
+    watcher.systemChanged.connect(changes.append)
+    watcher.notice.connect(lambda level, text: notices.append((level, text)))
+    with caplog.at_level(logging.WARNING, logger="homebound.logs"):
+        watcher.poll()
+        with open(tmp_path / "Local_20261028_165148_7.txt", "ab") as log:
+            log.write(line("2026.10.28 17:00:00", "Channel changed to Local : Jita", sender="EVE Fan")
+                      .encode("utf-16-le"))
+        watcher.poll()
+    assert [change.system for change in changes] == ["Amarr"]      # the listed sender still counts
+    assert len(notices) == 1 and notices[0][0] == "warn" and "EVE Fan" in notices[0][1]
+    assert "English" in notices[0][1]
+    assert [record.levelno for record in caplog.records] == [logging.WARNING]
+    assert "EVE Fan" in caplog.records[0].getMessage()
 
 
 def test_replay_prints_jumps_and_the_tree(tmp_path, capsys) -> None:

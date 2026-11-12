@@ -8,7 +8,9 @@ Header block:
 Messages:
     [ 2026.10.28 16:51:53 ] EVE System > Channel changed to Local : J161940
 """
+import logging
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,10 +21,12 @@ FILE_PATTERN = re.compile(r"^Local_(\d{8})_(\d{6})_(\d+)\.txt$")
 LISTENER_PATTERN = re.compile(r"^\s*Listener:\s*(.+?)\s*$")
 STARTED_PATTERN = re.compile(r"^\s*Session started:\s*(\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2})")
 LINE_PATTERN = re.compile(r"^\[\s*(\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2})\s*\]\s*(.+?)\s*>\s?(.*)$")
-# English client text; other languages are matched by the trailing "Local : <system>" / "* : <system>".
+# English client text. Other languages have other text; their lines are matched by the loose message test
+# below, and only when the sender is one of SYSTEM_SENDERS.
 CHANGE_PATTERN = re.compile(r"^Channel changed to Local\s*:\s*(.+?)\s*\*?\s*$")
 ANY_CHANGE_PATTERN = re.compile(r":\s*([^:]+?)\s*\*?\s*$")
 SYSTEM_SENDERS = {"EVE System", "EVE-System", "Système EVE", "EVE システム", "Система EVE", "EVE 系统"}
+log = logging.getLogger("homebound.logs")
 BYTE_ORDER_MARK = b"\xff\xfe"
 HEADER_LINES = 20
 
@@ -115,22 +119,61 @@ def parse_header(text: str) -> tuple[str | None, datetime | None]:
     return listener, started
 
 
-def parse_system_change(line: str) -> tuple[datetime, str] | None:
-    """Return ``(timestamp, system name)`` if a log line is a Local channel change, else None."""
-    require_type(line, str, "line")
-    line = line.lstrip("﻿").strip()
+def normalize_sender(sender: str) -> str:
+    """Return a sender name in NFKC form with runs of whitespace collapsed, so spacing variants compare equal."""
+    return " ".join(unicodedata.normalize("NFKC", sender).split())
+
+
+_KNOWN_SENDERS = {normalize_sender(name) for name in SYSTEM_SENDERS}
+
+
+def _split_line(line: str) -> tuple[str, str, str] | None:
+    """Return ``(timestamp, sender, message)`` of a chat line, or None if it is not one."""
+    line = line.lstrip("\ufeff").strip()
     match = LINE_PATTERN.match(line)
     if not match:
         return None
     timestamp, sender, message = match.groups()
-    sender = sender.strip()
-    if sender not in SYSTEM_SENDERS and not sender.startswith("EVE"):
-        return None
+    return timestamp, normalize_sender(sender), message
+
+
+def _change_in(message: str) -> str | None:
+    """Return the system named by a channel-change message, or None if the text is not one."""
     if change := CHANGE_PATTERN.match(message):
-        return parse_timestamp(timestamp), change.group(1).strip()
+        return change.group(1).strip()
     if "local" in message.lower() and (change := ANY_CHANGE_PATTERN.search(message)):
-        return parse_timestamp(timestamp), change.group(1).strip()
+        return change.group(1).strip()
     return None
+
+
+def parse_system_change(line: str) -> tuple[datetime, str] | None:
+    """Return ``(timestamp, system name)`` if a log line is a Local channel change, else None.
+
+    Only lines from a sender in ``SYSTEM_SENDERS`` count, so a player who types the same text is ignored.
+    """
+    require_type(line, str, "line")
+    parts = _split_line(line)
+    if not parts or parts[1] not in _KNOWN_SENDERS:
+        return None
+    timestamp, _, message = parts
+    system = _change_in(message)
+    return (parse_timestamp(timestamp), system) if system else None
+
+
+def unlisted_system_sender(line: str) -> str | None:
+    """Return the sender name if a line looks like a system change from an ``EVE``-prefixed sender not listed.
+
+    Such lines are ignored by :func:`parse_system_change`; this tells the caller that a client language
+    is probably not supported. Players with an ``EVE`` name who type the same text give the same answer.
+
+    Returns:
+        The sender name, or None.
+    """
+    require_type(line, str, "line")
+    parts = _split_line(line)
+    if not parts or parts[1] in _KNOWN_SENDERS or not parts[1].startswith("EVE"):
+        return None
+    return parts[1] if _change_in(parts[2]) else None
 
 
 def parse_log_text(text: str, character_id: int, listener: str | None = None) -> list[SystemChange]:
