@@ -499,6 +499,7 @@ class Store:
         """
         require_type(path, (str, Path), "path")
         self.path = str(path)
+        self.closed = False               # set by close(); late timers check it
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         if before_migration and needs_migration(self.path):
@@ -538,6 +539,7 @@ class Store:
 
     def close(self) -> None:
         """Close the database connection."""
+        self.closed = True
         self.database.close()
 
     def __enter__(self) -> "Store":

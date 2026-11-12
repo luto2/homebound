@@ -477,8 +477,7 @@ class Namer:
         if not path:
             if root == self.home_id:
                 return HOME_NAME
-            system = self.universe.by_id(system_id)
-            return system.name if system else str(system_id)
+            return self.universe.name_of(system_id)
         label = self.scheme.name(path, self.level_index(system_id) if mapped else None)
         return label if root == self.home_id or self.home_id is None else "~" + label
 

@@ -403,9 +403,8 @@ class StructureDialog(BaseDialog):
             timer: Start with the timer turned on and focused.
         """
         require_type(structure, Structure, "structure")
-        system = state.universe.by_id(structure.system_id)
         super().__init__(parent, f"Structure · {structure.type_name}" if editing else "Add structure",
-                         system.name if system else str(structure.system_id))
+                         state.universe.name_of(structure.system_id))
         self.structure = structure
         self.caption("Type")
         self.type = QComboBox()

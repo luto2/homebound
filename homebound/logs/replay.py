@@ -34,12 +34,6 @@ def print_tree(store: Store, universe: Universe, namer: Namer, system_id: int, d
     return 1 + sum(print_tree(store, universe, namer, child.id, depth + 1) for child in store.children(system_id))
 
 
-def _name(universe: Universe, system_id: int) -> str:
-    """Return a system's name, or its ID when the universe data doesn't have it."""
-    system = universe.by_id(system_id)
-    return system.name if system else str(system_id)
-
-
 def main(arguments: list[str] | None = None, universe: Universe | None = None) -> int:
     """Replay log files and print what the tracker made of them.
 
@@ -81,10 +75,10 @@ def main(arguments: list[str] | None = None, universe: Universe | None = None) -
             if isinstance(event, NamingRequest):
                 tracker.apply_naming(event, event.guess.guess)
                 if not options.quiet:
-                    print(f"{prefix} new {_name(universe, event.child_id)} -> {namer.display(event.child_id)} "
+                    print(f"{prefix} new {universe.name_of(event.child_id)} -> {namer.display(event.child_id)} "
                           f"(static={event.guess.guess}; {event.guess.reason})")
             elif isinstance(event, UnknownJump) and not options.quiet:
-                print(f"{prefix} unknown jump {_name(universe, event.from_id)} -> {_name(universe, event.to_id)}")
+                print(f"{prefix} unknown jump {universe.name_of(event.from_id)} -> {universe.name_of(event.to_id)}")
 
     print(f"\n{len(changes)} system changes, {len(store.systems())} systems, {len(store.connections())} connections\n")
     for root in (system for system in store.systems() if system.parent_id is None):

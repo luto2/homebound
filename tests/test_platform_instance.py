@@ -69,3 +69,19 @@ def test_different_folders_do_not_block_each_other(tmp_path, guards) -> None:
     second = acquire_single_instance(two)
     guards.extend([first, second])
     assert first is not None and second is not None
+
+
+def test_a_bare_connection_asks_for_the_window(tmp_path, guards) -> None:
+    """Connecting is the request: a second start that is gone before its message is read still raises the window."""
+    from PySide6.QtNetwork import QLocalSocket
+    first = acquire_single_instance(tmp_path)
+    assert first is not None
+    guards.append(first)
+    shown = []
+    first.showRequested.connect(lambda: shown.append(True))
+    socket = QLocalSocket()
+    socket.connectToServer(server_name(tmp_path))
+    assert socket.waitForConnected(1000)
+    socket.abort()                      # writes nothing, leaves at once
+    assert wait_for(lambda: shown)
+    assert shown == [True]

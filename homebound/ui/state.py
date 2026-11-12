@@ -17,7 +17,7 @@ from ..mapping.scan_status import ScanStatus, age_text, format_duration, scan_st
 from ..mapping.tracker import AutoNamed, MapChanged, Moved, NamingRequest, NotMapped, Tracker, UnknownJump
 from ..mapping.watch import (MAX_WATCHED, WatchAlerts, WatchHit, check as check_watched, distance as watch_distance,
                              map_watch_list, set_map_watch_list)
-from ..mapping.structures import TIMER_LABELS, fresh_ships, timer_tab_label, timers_to_warn
+from ..mapping.structures import TIMER_LABELS, fresh_ships, timer_left, timer_tab_label, timers_to_warn
 from ..settings import Settings
 from ..universe.db import Universe
 from ..validation import require_choice, require_integer, require_type
@@ -593,16 +593,16 @@ class AppState(QObject):
         now = now or datetime.now(timezone.utc)
         sent = []
         for structure in timers_to_warn(self.store.structures(), now):
-            if structure.timer_at is None:   # timers_to_warn only returns structures with a timer
+            left = timer_left(structure, now)
+            if left is None:                 # timers_to_warn only returns structures with a timer
                 continue
             key = (structure.system_id, structure.type_name, structure.name, structure.timer_at)
             if key in self._warned_timers:
                 continue
             self._warned_timers.add(key)
-            minutes = max(0, int((datetime.fromisoformat(structure.timer_at) - now).total_seconds() // 60))
-            where = self.namer.display(structure.system_id) if self.store.has_system(structure.system_id) else (
-                self.universe.by_id(structure.system_id).name if self.universe.by_id(structure.system_id)
-                else str(structure.system_id))
+            minutes = max(0, int(left.total_seconds() // 60))
+            where = (self.namer.display(structure.system_id) if self.store.has_system(structure.system_id)
+                     else self.universe.name_of(structure.system_id))
             label = f"{TIMER_LABELS[structure.timer_kind]} timer" if structure.timer_kind in TIMER_LABELS else "Timer"
             text = (f"{label} of {structure.type_name} "
                     f"“{structure.name}” in {where} ends in {minutes} min")
@@ -807,6 +807,8 @@ class AppState(QObject):
         Returns:
             The hits that alerted.
         """
+        if self.store.closed:      # the delayed check outlived its map (a switch, restore or quit in between)
+            return []
         hits = check_watched(self.store, self.universe, [system_id for system_id, _ in self.watch_entries()],
                              self.settings.watch_jumps)
         fired = self.watch_alerts.update(hits, datetime.now(timezone.utc), silent)

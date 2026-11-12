@@ -197,6 +197,11 @@ class Universe:
         require_integer(system_id, "system_id")
         return self._by_id.get(system_id)
 
+    def name_of(self, system_id: int) -> str:
+        """Return a system's name, or its ID as text when the universe data doesn't have it."""
+        system = self.by_id(system_id)
+        return system.name if system else str(system_id)
+
     def search(self, prefix: str, limit: int = 20) -> list[System]:
         """Return systems whose name starts with ``prefix``, sorted by name.
 

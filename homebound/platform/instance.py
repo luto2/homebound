@@ -1,7 +1,7 @@
 """One running Homebound per data folder: a lock file plus a local socket the second start talks to.
 
 The first start takes ``homebound.lock`` (``QLockFile``) and listens on a ``QLocalServer`` named after the data
-folder. A second start finds the lock taken, tells the running one to show its window and gives up. A lock left
+folder. A second start finds the lock taken, connects to tell the running one to show its window, and gives up. A lock left
 by a process that is gone (crash, kill) is taken over: Qt treats a lock whose PID is dead as stale, whatever its age.
 """
 import hashlib
@@ -33,19 +33,18 @@ class InstanceGuard(QObject):
         self.server.newConnection.connect(self._accept)
 
     def _accept(self) -> None:
-        """Take every waiting connection and read its message."""
+        """Raise the window once for every connection.
+
+        Only a second Homebound start connects here, and connecting is the request: the ``show`` it writes
+        is not waited for, because on Windows a client that writes and exits at once can close the pipe
+        before the bytes are read here.
+        """
         while (socket := self.server.nextPendingConnection()) is not None:
             socket.setParent(self)
-            socket.readyRead.connect(lambda socket=socket: self._read(socket))
             socket.disconnected.connect(socket.deleteLater)
-            if socket.bytesAvailable():
-                self._read(socket)
-
-    def _read(self, socket: QLocalSocket) -> None:
-        """Raise the window for a ``show`` message; nothing else is understood."""
-        if bytes(socket.readAll()).strip() == SHOW_MESSAGE.strip():
+            socket.readyRead.connect(socket.readAll)     # drain the message; its content doesn't matter
             self.showRequested.emit()
-        socket.disconnectFromServer()
+            socket.disconnectFromServer()
 
     def release(self) -> None:
         """Stop serving and remove the lock (safe to call twice)."""

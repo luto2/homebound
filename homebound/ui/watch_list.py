@@ -36,8 +36,7 @@ def watch_text(state: AppState, system_id: int, hit: WatchHit | None) -> str:
 
 def system_name(state: AppState, system_id: int) -> str:
     """Return the real name of a system (a watched one is usually not on the map)."""
-    system = state.universe.by_id(system_id)
-    return system.name if system else str(system_id)
+    return state.universe.name_of(system_id)
 
 
 class WatchList(QWidget):

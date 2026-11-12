@@ -727,7 +727,6 @@ def test_new_marker_expires_by_itself_on_the_tick(state, table, monkeypatch) -> 
     table.selectRow(row)
     later = datetime.now(timezone.utc) + timedelta(minutes=1)
     assert model.refresh_new(later) is True
-    assert model.new_ids == set() or model.new_ids == {"NEW-001"}        # the model's own clock is the real one
     monkeypatch.setattr(table_module, "datetime", type("Late", (datetime,), {"now": classmethod(lambda cls, tz=None: later)}))
     assert model.refresh_new() is True and model.new_ids == set()
     header = next(entry for entry in model.rows if isinstance(entry, GroupHeader) and entry.key == "sig:gas")

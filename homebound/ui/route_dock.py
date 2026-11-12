@@ -29,8 +29,7 @@ def system_label(state: AppState, system_id: int) -> str:
     """Return a system's map name when it is on the map (followed by the real name if different), else its name."""
     if state.store.has_system(system_id):
         return state.namer.with_real_name(system_id)
-    system = state.universe.by_id(system_id)
-    return system.name if system else str(system_id)
+    return state.universe.name_of(system_id)
 
 
 def hop_text(state: AppState, hop: routing.Hop) -> str:
@@ -78,11 +77,7 @@ def strip_origin(rect: QRectF) -> tuple[float, float, float]:
 
 def route_names(state: AppState, route: routing.Route) -> str:
     """Return a route as system names, e.g. for pasting into chat: ``Jita → Perimeter → Thera``."""
-    names = []
-    for hop in route.hops:
-        system = state.universe.by_id(hop.system_id)
-        names.append(system.name if system else str(hop.system_id))
-    return " → ".join(names)
+    return " → ".join(state.universe.name_of(hop.system_id) for hop in route.hops)
 
 
 class RouteDelegate(QStyledItemDelegate):

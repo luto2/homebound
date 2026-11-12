@@ -583,3 +583,11 @@ def test_the_watch_list_sits_in_the_routes_dock_and_shows_on_the_map(window) -> 
     window.state.dispatch(window.state.tracker.add_wormhole(HOME.id, child.id))
     window.route_dock.watch.showRequested.emit(child.id)
     assert window.state.selected == child.id
+
+
+def test_a_late_check_after_the_map_closed_does_nothing(state) -> None:
+    """The delayed watch check can fire after its map was closed (switch, restore, quit): it checks nothing."""
+    state.add_watch(C5.id)
+    state.store.close()
+    assert state.check_watches() == []
+
