@@ -919,6 +919,25 @@ def test_overlay_paints_chain_rows(overlay_setup) -> None:
     assert overlay.grab().width() > 0
 
 
+def test_overlay_row_keeps_the_number_beside_a_custom_name(overlay_setup, monkeypatch) -> None:
+    """A custom-named system's overlay row also draws its scheme label, drawn muted after the name."""
+    from homebound.mapping.naming import rename_system
+    overlay, _, state = overlay_setup
+    settings = state.settings
+    settings.overlay_mode, settings.overlay_pinned_character = "pinned_always", 5
+    c5 = pick_system("C5", exclude={HOME.id})
+    state.tracker.add_wormhole(HOME.id, c5.id)
+    put_character(state, 5, "Pilot", c5.id)
+    rename_system(state.store, c5.id, "Staging")
+    drawn = []
+    original = overlay_module.painting.draw_halo_text
+    monkeypatch.setattr(overlay_module.painting, "draw_halo_text",
+                        lambda painter, x, y, text, *rest: (drawn.append(text), original(painter, x, y, text, *rest))[1])
+    overlay.refresh()
+    overlay.grab()
+    assert "Staging" in drawn and state.namer.scheme_label(c5.id) in drawn
+
+
 def test_overlay_paints_a_system_with_an_effect_and_no_name_room(overlay_setup) -> None:
     """Wormhole systems show their name and effect when there is room."""
     overlay, _, state = overlay_setup

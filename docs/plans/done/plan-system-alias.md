@@ -92,3 +92,11 @@ restored with the map without extra work. `Store.remove_system` must not touch i
   sent only to servers and clients of protocol 2 (`protocol.GATED_ENTITIES`, see `sync-protocol.md` §3).
   `LOCAL_ENTITIES` is empty but stays for the next local-only entity. Aliases made while the server spoke
   protocol 1 stayed local and are not sent later; the next change to one sends it.
+- **2026-11-12: always remembered** (TODO item 19). The "Remember" box in Rename and the ⟲ button in the system
+  panel are gone: `rename_system(store, system_id, name)` keeps every custom name as the alias, a change at any
+  time moves the alias too, and an empty name forgets both. The number label is shown beside a custom name
+  (`Namer.number_label`: map node subtitle and tooltip, system panel line, overlay row), so a name never hides
+  it. Deleting a remembered name in Settings asks to type the name and, if the system is on the map with that
+  name, clears the custom name too (`naming.forget_alias`, one batch). Sync is unchanged: the same `alias` rows
+  as before. Custom names on an existing map that were never remembered (typed with the box unchecked) get an alias
+  the next time they are renamed; there is no automatic backfill (that is the separate backfill item).

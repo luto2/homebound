@@ -12,6 +12,7 @@ from conftest import HOME, SCAN, UNIVERSE, pick_system
 from homebound.logs.parser import SystemChange
 from homebound.mapdb.store import (LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, Signature, ZkillStats)
 from homebound.mapping import signature_parser
+from homebound.mapping.naming import rename_system
 from homebound.theme import painting
 from homebound.theme.tokens import color
 from homebound.ui import signature_table as table_module
@@ -1282,32 +1283,31 @@ def test_widgets_of_the_last_test_are_deleted(qt_application) -> None:
     assert [widget for widget in qt_application.topLevelWidgets() if widget.isVisible()] == []
 
 
-def test_panel_remember_toggle_follows_and_sets_the_alias(state, panel) -> None:
-    """The remember button shows whether the custom name is an alias, and sets or forgets it."""
-    assert not panel.remember.isEnabled() and not panel.remember.isChecked()
+def test_panel_custom_name_is_always_remembered(state, panel) -> None:
+    """A name typed in the panel is the system's permanent name: remembered at once, changed at any time, cleared with empty."""
+    assert not hasattr(panel, "remember") and panel.name.toolTip() == ""
     panel.name.setText("Base")
     panel._save_name()
-    assert state.store.system(HOME.id).custom_name == "Base" and state.store.alias(HOME.id) is None
-    assert panel.remember.isEnabled() and not panel.remember.isChecked()
-    panel.remember.click()
-    assert state.store.alias(HOME.id) == "Base" and panel.remember.isChecked()
-    panel.name.setText("Camp")                      # renaming while remembered keeps remembering
+    assert state.store.system(HOME.id).custom_name == "Base" and state.store.alias(HOME.id) == "Base"
+    assert "remembered" in panel.name.toolTip()
+    panel.name.setText("Camp")                      # changed later: the remembered name follows
     panel._save_name()
     assert state.store.alias(HOME.id) == "Camp"
-    panel.remember.click()
-    assert state.store.alias(HOME.id) is None and state.store.system(HOME.id).custom_name == "Camp"
-    panel.remember.click()
     panel.name.setText("")
     panel._save_name()
-    assert state.store.alias(HOME.id) is None and not panel.remember.isEnabled()
+    assert state.store.alias(HOME.id) is None and state.store.system(HOME.id).custom_name is None
 
 
-def test_panel_shows_a_remembered_name_as_remembered(state, panel) -> None:
-    """A system that came back with its alias shows the button checked."""
-    state.store.update_system(HOME.id, custom_name="Camp")
-    state.store.set_alias(HOME.id, "Camp")
+def test_panel_shows_number_beside_a_custom_name(state, panel) -> None:
+    """The line under the name shows the custom name and, in brackets, the number it replaces."""
+    child = pick_system("C5", exclude={HOME.id})
+    state.store.add_system(child.id, parent_id=HOME.id, hole_index=1)
+    state.select(child.id)
+    number = state.namer.scheme_label(child.id)
+    assert f"({number})" not in panel.location_label.text()
+    rename_system(state.store, child.id, "Staging")
     panel.refresh()
-    assert panel.remember.isChecked() and "emembered" in panel.remember.toolTip()
+    assert panel.location_label.text().startswith(f"Staging ({number})")
 
 
 # ---------------------------------------------------------------- return hole

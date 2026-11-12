@@ -13,6 +13,7 @@ from homebound.backup import list_backups
 from homebound.logs.parser import SystemChange
 from homebound.mapdb.store import Store
 from homebound.mapping import signature_parser
+from homebound.mapping.naming import rename_system
 from homebound.mapping.tracker import AutoNamed, NamingRequest, UnknownJump
 from homebound.theme.tokens import PIXELS
 from homebound.ui import map_window as map_window_module
@@ -1222,30 +1223,38 @@ def test_opening_an_old_map_freezes_the_names_it_showed(qt_application, monkeypa
     state.stop()
 
 
-def test_rename_can_remember_the_name(window, modal) -> None:
-    """The Rename box keeps the name as the system's alias; unchecked or cleared forgets it; one Undo undoes both."""
+def test_rename_always_remembers_the_name(window, modal) -> None:
+    """Rename has no remember box: the name is the system's permanent name and can be changed at any time; one Undo undoes both."""
     child = add_child(window)
     store = window.state.store
-
-    def answer(text: str, remember: bool):
-        """Return a dialog handler that types a name and sets the box."""
-        return lambda dialog: (dialog.field.setText(text), dialog.check.setChecked(remember), 1)[2]
-
-    modal.handler = answer("Staging", True)
-    window._rename(child.id)
-    assert (store.system(child.id).custom_name, store.alias(child.id)) == ("Staging", "Staging")
     seen = []
-    modal.handler = lambda dialog: (seen.append(dialog.is_checked()), dialog.field.setText("Farm"), 1)[2]
-    window._rename(child.id)                      # starts checked because the system has an alias
-    assert seen == [True] and store.alias(child.id) == "Farm"
-    modal.handler = answer("Farm", False)
+
+    def answer(text: str):
+        """Return a dialog handler that types a name."""
+        return lambda dialog: (seen.append(dialog.check), dialog.field.setText(text), 1)[2]
+
+    modal.handler = answer("Staging")
     window._rename(child.id)
-    assert store.alias(child.id) is None and store.system(child.id).custom_name == "Farm"
-    modal.handler = answer("Staging", True)
+    assert seen == [None] and (store.system(child.id).custom_name, store.alias(child.id)) == ("Staging", "Staging")
+    modal.handler = answer("Farm")
     window._rename(child.id)
-    modal.handler = answer("", True)
+    assert (store.system(child.id).custom_name, store.alias(child.id)) == ("Farm", "Farm")
+    modal.handler = answer("")
     window._rename(child.id)
     assert (store.system(child.id).custom_name, store.alias(child.id)) == (None, None)
+
+
+def test_node_shows_the_number_beside_a_custom_name(window) -> None:
+    """The map node's subtitle and tooltip keep the scheme label when a custom name is set."""
+    child = add_child(window)
+    node = window.scene.nodes[child.id]
+    number = window.state.namer.scheme_label(child.id)
+    assert f"({number})" not in node._tooltip()
+    rename_system(window.state.store, child.id, "Staging")
+    window.state.mapChanged.emit()
+    node = window.scene.nodes[child.id]
+    assert node.name == "Staging" and window.state.namer.number_label(child.id) == number
+    assert f"<b>Staging</b> ({number})" in node._tooltip()
 
 
 def test_lost_connection_via_menu_keeps_both_systems_and_undo(window, modal) -> None:

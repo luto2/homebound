@@ -1093,12 +1093,12 @@ class MapWindow(QMainWindow):
             f"<b>{state.namer.label(system_id)}</b> · {universe_system.name} · {universe_system.system_class}",
             "Custom name", mapped.custom_name or "", validate=lambda text: (True, ""),
             primary=lambda text: "Rename" if text else "Use scheme name", placeholder=automatic,
-            end_text="scheme name", hint=f"Leave empty to use the scheme name ({automatic}).",
-            check_text=f"Remember this name for {universe_system.name}",
-            checked=state.store.alias(system_id) is not None)
+            end_text="scheme name",
+            hint=f"Leave empty to use the scheme name ({automatic}). A name is remembered for {universe_system.name} "
+                 f"and comes back when it is mapped again; the number stays shown next to it.")
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return False
-        rename_system(state.store, system_id, dialog.text(), dialog.is_checked())
+        rename_system(state.store, system_id, dialog.text())
         state.mapChanged.emit()
         return True
 

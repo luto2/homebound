@@ -677,14 +677,49 @@ def test_routes_page_saves_and_resets(dialog, state) -> None:
     assert settings.route_destinations[0] == "Jita" and not state.eve_scout.enabled
 
 
-def test_remembered_names_table_lists_and_deletes(state, kwin) -> None:
-    """The naming page lists the map's aliases with the system name and deletes one without the system on the map."""
+def test_remembered_names_table_lists_and_deletes(state, kwin, modal) -> None:
+    """The naming page lists the map's remembered names; deleting one needs the name typed, system on the map or not."""
     jita = UNIVERSE.by_name("Jita")
     state.store.set_alias(jita.id, "Staging")
     dialog = SettingsDialog(None, state)
     assert dialog.alias_table.rowCount() == 1
     assert dialog.alias_table.item(0, 0).text() == jita.name and dialog.alias_table.item(0, 1).text() == "Staging"
     assert not state.store.has_system(jita.id)
+    modal.handler = lambda prompt: (prompt.field.setText("Staging"), prompt.validate_now(), 1)[2]
     dialog.alias_table.cellWidget(0, 2).click()
     assert state.store.alias(jita.id) is None and dialog.alias_table.rowCount() == 0
     assert dialog.alias_empty.isVisibleTo(dialog.stack.widget(2)) and not dialog.alias_table.isVisibleTo(dialog.stack.widget(2))
+
+
+def test_deleting_a_remembered_name_clears_it_on_the_map(state, kwin, modal) -> None:
+    """With the system on the map the custom name goes too; a wrong or cancelled confirmation changes nothing."""
+    from homebound.mapping.naming import rename_system
+    child = pick_system("C5", exclude={HOME.id})
+    state.store.add_system(child.id, parent_id=HOME.id, hole_index=1)
+    rename_system(state.store, child.id, "Staging")
+    changed = []
+    state.mapChanged.connect(lambda: changed.append(1))
+    dialog = SettingsDialog(None, state)
+    prompts = []
+
+    def type_name(text: str):
+        """Return a handler that types ``text`` into the confirm prompt and accepts it only when it validates."""
+        def handler(prompt):
+            prompts.append(prompt)
+            prompt.field.setText(text)
+            prompt.validate_now()
+            return 1 if prompt.valid else 0
+        return handler
+
+    modal.handler = type_name("staging")                       # not exactly the name: the button stays disabled
+    assert dialog.delete_alias(child.id) is False
+    assert (state.store.system(child.id).custom_name, state.store.alias(child.id)) == ("Staging", "Staging")
+    assert not prompts[0].valid and not prompts[0].primary_button.isEnabled()
+    modal.handler = lambda prompt: 0                            # cancelled
+    assert dialog.delete_alias(child.id) is False and state.store.alias(child.id) == "Staging"
+    modal.handler = type_name("Staging")
+    assert dialog.delete_alias(child.id) is True
+    assert (state.store.system(child.id).custom_name, state.store.alias(child.id)) == (None, None) and changed
+    assert dialog.delete_alias(child.id) is False               # nothing left to delete
+    with pytest.raises(ValueError):
+        dialog.delete_alias(0)

@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 
 from .. import app_version, backup, routing
 from ..logs.parser import LogFile
-from ..mapping.naming import SCHEMES, scheme_for_key
+from ..mapping.naming import SCHEMES, forget_alias, scheme_for_key
 from ..platform.hotkey import DEFAULT_SHORTCUT, normalize_shortcut
 from ..settings import (KNOWN_SPACE_RADIUS_RANGE, OVERLAY_OPACITY_RANGE, OVERLAY_TEXT_SIZE_RANGE,
                         RESCAN_DUE_HOURS_RANGE, TRADE_HUBS, detect_log_directories)
@@ -22,7 +22,7 @@ from ..theme.qss import repolish
 from ..theme.tokens import PIXELS, color
 from ..universe.db import SIZE_NAMES, SIZES
 from ..validation import require_integer, require_text, require_type
-from .dialogs import RestoreBackupDialog
+from .dialogs import PromptDialog, RestoreBackupDialog
 from .state import AppState
 from .widgets import RadioCard, caption, help_label
 
@@ -295,8 +295,9 @@ class SettingsDialog(QDialog):
         layout.addWidget(help_label("Bookmarks: a WH sig gets its number n when it is pasted, so its hole in system S is S-n; "
                                     "the way back home is S-0. Names never change on their own."))
         layout.addWidget(caption("Remembered names"))
-        layout.addWidget(help_label("A name remembered with Rename comes back when the system is mapped again. "
-                                    "They belong to this map; deleting one doesn't rename a system that is on the map."))
+        layout.addWidget(help_label("Every custom name is remembered and comes back when the system is mapped again. "
+                                    "They belong to this map. Deleting one also clears the name on the map, after you "
+                                    "type it to confirm."))
         self.alias_table = QTableWidget(0, 3)
         self.alias_table.setHorizontalHeaderLabels(["System", "Name", ""])
         self.alias_table.verticalHeader().hide()
@@ -322,11 +323,34 @@ class SettingsDialog(QDialog):
         self.alias_table.setVisible(bool(aliases))
         self.alias_empty.setVisible(not aliases)
 
-    def delete_alias(self, system_id: int) -> None:
-        """Forget one remembered name (at once, not with Save: it is the map's data, not a setting)."""
+    def delete_alias(self, system_id: int) -> bool:
+        """Forget one remembered name, and clear it on the map, once the name is typed to confirm.
+
+        It acts at once, not with Save: it is the map's data, not a setting.
+
+        Returns:
+            Whether the name was deleted.
+        """
         require_integer(system_id, "system_id", minimum=1)
-        self.state.store.delete_alias(system_id)
+        state = self.state
+        name = state.store.alias(system_id)
+        if name is None:
+            self.refresh_aliases()
+            return False
+        system = state.universe.by_id(system_id)
+        on_map = state.store.has_system(system_id)
+        prompt = PromptDialog(
+            self, "Delete remembered name",
+            f"<b>{name}</b> · {system.name if system else system_id}",
+            "Type the name to confirm", validate=lambda text: (text == name, f"Type {name} exactly"),
+            primary="Delete", hint=("It is also cleared on the map, so the system shows its number again."
+                                    if on_map else "The system isn't on the map; the name is just forgotten."))
+        if prompt.exec() != QDialog.DialogCode.Accepted:
+            return False
+        if forget_alias(state.store, system_id):
+            state.mapChanged.emit()
         self.refresh_aliases()
+        return True
 
     @staticmethod
     def scheme_preview(key: str) -> str:

@@ -4,7 +4,7 @@ from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QFontMetricsF, QIcon, QKeySequence, QPainter, QPaintEvent, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
-    QSizePolicy, QToolButton, QVBoxLayout, QWidget,
+    QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from ..mapdb.store import Connection, Signature
@@ -188,13 +188,7 @@ class SystemPanel(QWidget):
         self.selected_note = QLabel()
         self.selected_note.setProperty("role", "help")
         self.selected_note.hide()
-        self.remember = QToolButton()
-        self.remember.setText("⟲")
-        self.remember.setCheckable(True)
-        self.remember.setToolTip("Remember this name for the system: it comes back when the system is mapped again")
-        self.remember.clicked.connect(self._save_remember)
         row.addWidget(self.name, 1)
-        row.addWidget(self.remember)
         row.addWidget(self.selected_note)
         row.addWidget(self.system_name_label)
         body.addLayout(row)
@@ -342,15 +336,14 @@ class SystemPanel(QWidget):
         if not self.name.hasFocus():
             self.name.setText(mapped.custom_name or "")
             self.name.setPlaceholderText(state.namer.label(self.system_id) if not mapped.custom_name else "Custom name")
-        remembered = state.store.alias(self.system_id) is not None
-        self.remember.setEnabled(bool(mapped.custom_name))
-        self.remember.setChecked(remembered)
-        self.remember.setToolTip("Remembered: this name comes back when the system is mapped again" if remembered else
-                                 "Remember this name for the system: it comes back when the system is mapped again")
+        self.name.setToolTip("A custom name is remembered: it comes back when the system is mapped again. "
+                             "Delete it in Settings → Naming scheme." if mapped.custom_name else "")
         self.system_name_label.setText(system.name)
         nearest = state.universe.nearest_hub(self.system_id)
         hub = f" · {nearest[1]} j to {nearest[0]}" if nearest and nearest[1] else (" · trade hub" if nearest else "")
-        self.location_label.setText(f"{state.namer.display(self.system_id)} · {system.region} · {system.constellation}"
+        number = state.namer.number_label(self.system_id)
+        self.location_label.setText(f"{state.namer.display(self.system_id)}{f' ({number})' if number else ''}"
+                                    f" · {system.region} · {system.constellation}"
                                     + hub)
         self.badges.set_system(self.system_id)
         if not self.owner.hasFocus():
@@ -538,20 +531,13 @@ class SystemPanel(QWidget):
         return deleted
 
     def _save_name(self) -> None:
-        """Store the custom name (empty clears it, and forgets the alias); a remembered name stays remembered."""
+        """Store the custom name; it is remembered for the system (empty clears it and forgets it)."""
         if self.system_id:
             name = self.name.text().strip()
             if name == (self.state.store.system(self.system_id).custom_name or ""):
                 return
-            rename_system(self.state.store, self.system_id, name, self.remember.isChecked())
+            rename_system(self.state.store, self.system_id, name)
             self.state.mapChanged.emit()
-
-    def _save_remember(self, checked: bool) -> None:
-        """Remember the custom name as the system's alias, or forget it."""
-        if self.system_id:
-            rename_system(self.state.store, self.system_id,
-                          self.state.store.system(self.system_id).custom_name or "", checked)
-            self.refresh()
 
     def _save_owner(self, *_: object) -> None:
         """Store owner ticker, colour and note."""
