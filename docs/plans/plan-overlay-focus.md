@@ -58,3 +58,10 @@ over the game.
 2. Should the summary row be clickable to unfold it while the overlay is unlocked? Recommended: later.
 3. Count wormhole-to-wormhole holes leading to C1–C6 as "exits"? Recommended: no, only k-space and home,
    as the user asked.
+
+## Owner decisions (2026-11-12)
+
+- Defaults: radius 2 jumps, at most 15 rows.
+- Summary rows are not clickable.
+- Go deeper along the branch the character is in: that branch is shown beyond the radius (up to the row
+  cap), the other branches stay folded at the radius.

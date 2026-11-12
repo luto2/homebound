@@ -53,3 +53,8 @@ Windows with real logs and a cloud map and note what broke, so the release note 
 2. Also give each process a distinct sync connection ID, so two deliberate instances (with the dev flag)
    don't fight on the server? Recommended: yes if step 1 shows that's what broke, as a separate small
    change.
+
+## Owner decisions (2026-11-12)
+
+- A second start from the app menu never opens a second window: it raises the running one and exits.
+- Two instances only with a developer flag at startup (`--allow-second-instance`).

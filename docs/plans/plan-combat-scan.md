@@ -79,3 +79,11 @@ The parser must not guess this format.
    the protocol change. Recommended: sync structures and deployables (they last), keep ships local.
 2. `SHIP_TTL` 15 minutes?
 3. Show the `⚔` chip in the overlay too?
+
+## Owner decisions (2026-11-12)
+
+- Ships are synced like sigs (so the new kinds go through the protocol 2 version gate, see
+  `done/sync-protocol.md`).
+- No 15-minute expiry: ship rows stay until the next combat paste of that system replaces them (or they
+  are deleted by hand).
+- No ⚔ chip in the overlay.

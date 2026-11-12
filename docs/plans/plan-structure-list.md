@@ -62,3 +62,9 @@ the combat-scan plan).
    name + type, plus a "Merge into …" action later if renames turn out common.
 3. Should structures also be listed across all systems (a "Structures" dock or Settings page with timers
    sorted by time)? Useful for timers; a second step.
+
+## Owner decisions (2026-11-12)
+
+- Structures are matched by name + type.
+- No list across all systems: the structure list is per system only.
+- Sync structures (protocol 2 gate).

@@ -30,3 +30,7 @@ licence, and add the signing step to `release.yml`.
 ## Decisions (2026-11-01)
 
 - First releases ship unsigned; apply to SignPath Foundation once the repo is public.
+
+## Owner decisions (2026-11-12)
+
+- Not planned: no certificate will be bought for now.

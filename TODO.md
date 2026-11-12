@@ -81,6 +81,26 @@ a small change whose file and fix are named.
     through the protocol 2 gate (it is local-only now).
     Effort: 2/5 · Sonnet.
 
+19. Follow-ups from the owner's answers (2026-11-12). No plan yet; most are small.
+    - Cloud map upgrade: also sync the bookmark numbers the upgrade fills in for unlinked sigs.
+    - Changing a cloud map's naming scheme needs map admin or owner; other members then get the rename
+      question (that is fine).
+    - The custom name is the permanent name: it is always remembered (no "Remember" box) and can be
+      changed at any time, and it never clashes with the number label (show both).
+    - Deleting a remembered name in Settings also clears it on the map, behind a confirm box where the
+      name has to be typed.
+    - Return hole: remember where each character jumped in from across restarts; open the type picker by
+      itself when several types fit.
+    - "Also share whether the game is open" is on by default.
+    - One-time backfill of names that exist only on one computer (labels from before protocol 2, systems
+      placed by old clients) to the server.
+    - Backups: damaged backups get a "damaged" marker in the list; a damaged map is left out of a backup
+      and every other map is still backed up.
+    - Tray menu shows the "Ctrl+Shift+O" overlay shortcut hint again (with `plan-overlay-shortcut.md`).
+    - The "new" marker on sigs clears by itself after about 10 minutes.
+    - Unused code and duplicate constants: one refactor pass at the end, not now.
+    Effort: mostly 1–2/5 · Sonnet; the backfill and the admin-only scheme change 3/5 · Opus (sync).
+
 ## To do
 
 From the audit of `582ee55` (2026-11-06). IDs match `docs/findings/findings.md`. The list

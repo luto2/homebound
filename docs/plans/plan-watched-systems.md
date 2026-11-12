@@ -73,3 +73,10 @@ What can be held back is what needs the server. Options:
 2. Sync the watch list on cloud maps (a map setting) or keep it per user? Recommended: per map and synced;
    a group watches the same things.
 3. Default `max_jumps` for k-space: 5?
+
+## Owner decisions (2026-11-12)
+
+- Build the owner's suggestion: a watched system is not mapped from. Mapping from a watched hole is only
+  allowed once it is connected to the chain.
+- When a chain is deleted (or cut off, see `done/plan-disconnect-connection.md`), stop mapping new
+  connections there after 1 hour.
