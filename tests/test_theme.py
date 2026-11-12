@@ -13,7 +13,7 @@ from homebound.mapdb.store import LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, LI
 from homebound.theme import painting
 from homebound.theme.painting import (
     CLASSES, EFFECTS, SITE_TOKENS, MARKER_POLYGONS, class_badge_width, draw_character_marker, draw_chip,
-    draw_class_badge, draw_dot_grid, draw_effect, draw_halo_text, draw_line_grid, draw_owner,
+    draw_class_badge, draw_effect, draw_halo_text, draw_line_grid, draw_owner,
     draw_recent_kill, draw_site, draw_static, draw_zkill, edge_pens, effect_pixmap, halo_path, opacity,
     owner_width, site_pixmap, stale_brush, zkill_level,
 )
@@ -461,18 +461,6 @@ def test_stale_brush(qt_application) -> None:
     brush = stale_brush()
     assert isinstance(brush, QBrush)
     assert brush.color() == color("line-1")
-
-
-def test_draw_dot_grid(canvas) -> None:
-    """The dot grid returns its dot count, snapped to the step (24 px by default); a step below 1 raises ValueError."""
-    painter, pixmap = canvas
-    rect = QRectF(0, 0, 100, 50)
-    assert draw_dot_grid(painter, rect, 10) == 50
-    assert draw_dot_grid(painter, QRectF(-5, -5, 20, 20), 10) == 9   # grid snaps to multiples of the step
-    default_step = PIXELS["sp-24"]
-    assert draw_dot_grid(painter, rect) == len(range(0, 100, int(default_step))) * len(range(0, 50, int(default_step)))
-    with pytest.raises(ValueError):
-        draw_dot_grid(painter, rect, 0.5)
 
 
 def test_draw_line_grid_counts(canvas) -> None:

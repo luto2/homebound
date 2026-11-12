@@ -429,7 +429,7 @@ class SignatureDialog(BaseDialog):
         self.body.addSpacing(PIXELS["sp-4"])
         self.body.addWidget(self.wormhole)
 
-        self.name_caption = self.caption("Name")
+        self.caption("Name")
         self.name = QLineEdit(signature.name or "")
         self.name.setPlaceholderText("Site name from the scanner")
         self.scanner_note = _end_label(self.name, "from the scanner")

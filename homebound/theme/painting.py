@@ -586,31 +586,6 @@ def stale_brush() -> QBrush:
     return QBrush(color("line-1"), Qt.BrushStyle.BDiagPattern)
 
 
-def draw_dot_grid(painter: QPainter, rect: QRectF, step: float | None = None) -> int:
-    """Fill with bg-0 and draw a dot grid (the design's original canvas).
-
-    Returns:
-        The number of dots drawn.
-    """
-    step = step or PIXELS["sp-24"]
-    require_number(step, "step", minimum=1)
-    painter.fillRect(rect, color("bg-0"))
-    pen = QPen(color("grid-dot"), 2.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
-    pen.setCosmetic(True)
-    painter.setPen(pen)
-    first_x = int(rect.left() // step) * step
-    points = []
-    y = int(rect.top() // step) * step
-    while y < rect.bottom():
-        x = first_x
-        while x < rect.right():
-            points.append(QPointF(x, y))
-            x += step
-        y += step
-    painter.drawPoints(points)
-    return len(points)
-
-
 def draw_line_grid(painter: QPainter, rect: QRectF, step: float, major_every: int = 3, minor: bool = True) -> int:
     """Fill with bg-0 and draw a square grid of hairlines.
 
