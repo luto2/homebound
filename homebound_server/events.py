@@ -56,7 +56,7 @@ class Events:
         return event_id
 
     # ------------------------------------------------------------ the event kinds of §17
-    def map_limit_request(self, sender_char: int, account_id: int | None, maps: int, subject: str) -> int:
+    def map_limit_request(self, sender_char: int | None, account_id: int | None, maps: int, subject: str) -> int:
         """An EVE mail asking for more maps."""
         return self.add("map_limit_request", sender_char=sender_char, account_id=account_id, maps=maps, subject=subject)
 

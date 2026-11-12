@@ -19,7 +19,7 @@ from .auth import Auth, AuthError, new_secret, token_hash
 from .billing import Billing, BillingError
 from .config import Config
 from .corp import Corps
-from .db import Database, iso, parse_iso, utc_now
+from .db import Database, iso, parse_iso, stored_time, utc_now
 from .esi import RECEIVER_SCOPES, Eve, FakeEve
 from .events import Events
 from .hub import SERVER_CLIENT_ID, Hub
@@ -108,7 +108,7 @@ class Service:
         payer_id = self.maps.payer_for_account(account_id)
         row = self.billing.row(payer_id)
         total, prices = self.billing.total(payer_id)
-        account = self.db.one("SELECT * FROM accounts WHERE id=?", (account_id,))
+        account = self.db.required("SELECT * FROM accounts WHERE id=?", (account_id,))
         return {"account_id": account_id, "characters": self.auth.characters(account_id), "protocol": PROTOCOL,
                 "payer_code": row["code"], "balance": round(row["balance_isk"]), "paid_until": row["paid_until"],
                 "state": self.billing.evaluate(payer_id), "price_month": total, "prices": prices,
@@ -175,13 +175,13 @@ class Service:
         payer_id = self.maps.payer_for_account(account_id)
         owned = [each for each in self.maps.maps_of(account_id) if each["role"] == "owner"]
         return {
-            "account": dict(self.db.one("SELECT * FROM accounts WHERE id=?", (account_id,))),
+            "account": dict(self.db.required("SELECT * FROM accounts WHERE id=?", (account_id,))),
             "characters": [dict(row) for row in self.db.all("SELECT char_id, name, corp_id, linked_at FROM characters "
                                                             "WHERE account_id=?", (account_id,))],
             "sessions": self.auth.sessions(account_id),
             "memberships": [{"map_id": each["id"], "name": each["name"], "role": each["role"]}
                             for each in self.maps.maps_of(account_id)],
-            "billing": dict(self.db.one("SELECT code, balance_isk, paid_until, state FROM billing WHERE payer_id=?",
+            "billing": dict(self.db.required("SELECT code, balance_isk, paid_until, state FROM billing WHERE payer_id=?",
                                         (payer_id,))),
             "payments": [dict(row) for row in self.db.all("SELECT * FROM payments WHERE payer_id=?", (payer_id,))],
             "owned_maps": [{"id": each["id"], "name": each["name"],
@@ -208,7 +208,7 @@ class Service:
         Raises:
             MapError, BillingError: When a rule refuses it.
         """
-        account = self.db.one("SELECT map_limit FROM accounts WHERE id=?", (account_id,))
+        account = self.db.required("SELECT map_limit FROM accounts WHERE id=?", (account_id,))
         if corp:
             if char_id is None:
                 raise MapError("invalid", "A corp map needs the CEO character.")
@@ -370,7 +370,7 @@ class Service:
             AuthError: ``unauthorized`` for an unknown, used or expired key.
         """
         stored = (self._meta("receiver_link") or "").split()
-        if len(stored) != 2 or stored[0] != token_hash(key) or parse_iso(stored[1]) < utc_now():
+        if len(stored) != 2 or stored[0] != token_hash(key) or stored_time(stored[1]) < utc_now():
             raise AuthError("unauthorized", "This link is unknown, used or expired. Make a new one with "
                                             "homebound-server admin receiver-link.")
         if not (self.config.token_key or self.config.dev):
@@ -394,7 +394,7 @@ class Service:
         """
         stored = (self._meta("receiver_state") or "").split()
         self._set_meta("receiver_state", None)
-        if len(stored) != 2 or stored[0] != state or parse_iso(stored[1]) < utc_now():
+        if len(stored) != 2 or stored[0] != state or stored_time(stored[1]) < utc_now():
             raise AuthError("invalid", "The login took too long. Make a new link and try again.")
         if not (self.config.token_key or self.config.dev):
             self._seal("")                   # raises: set the key before the token arrives
@@ -432,8 +432,8 @@ class Service:
         """Queue the receipt mail for a counted payment."""
         is_corp = entry.get("ref_type") == "corporation_account_withdrawal"
         first = entry.get("first_party_id")
-        payer = self.db.one("SELECT kind, subject_id FROM payers WHERE id=?", (payer_id,))
-        if is_corp:
+        payer = self.db.required("SELECT kind, subject_id FROM payers WHERE id=?", (payer_id,))
+        if is_corp and first is not None:
             corp = self._corp_info(first)
             recipient, sender = corp.get("ceo_id"), f"the wallet of {corp['name']}"
         else:
@@ -454,7 +454,7 @@ class Service:
     def _payment_unassigned(self, entry: dict, problem_kind: str, values: dict) -> None:
         """Queue the mail telling the sender their payment couldn't be assigned."""
         recipient = entry.get("first_party_id")
-        if problem_kind == "corp_unknown":
+        if problem_kind == "corp_unknown" and recipient is not None:
             corp = self._corp_info(recipient)
             recipient, values = corp.get("ceo_id"), {"corp": corp["name"]}
         if not recipient:

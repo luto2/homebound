@@ -6,6 +6,7 @@ Money model: each payer (a person or a corp) has one balance. Costs are charged 
 seats or maps re-projects it. The balance never goes below zero: time without money isn't owed.
 """
 import re
+from collections.abc import Callable
 from datetime import datetime, timedelta
 
 from .access import account_owners
@@ -70,7 +71,8 @@ class Billing:
         """
         self.db, self.maps, self.tiers, self.included, self.events = database, maps, tiers, included_seats, events
         self.free_maps = free_maps or {}
-        self.on_payment = self.on_unmatched = None
+        self.on_payment: Callable[[dict, int], None] | None = None
+        self.on_unmatched: Callable[[dict, str, dict], None] | None = None
 
     # ------------------------------------------------------------ prices
     def payer_maps(self, payer_id: int, extra_seats: dict[str, int] | None = None,
