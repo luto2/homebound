@@ -75,9 +75,9 @@ a small change whose file and fix are named.
     Effort: 4/5 · Opus. New synced fields (`label`, `static`, `next_hole`), a migration that keeps
     today's names, and paste-time numbering that two cloud clients must agree on.
 
-15. The overlay keeps growing with the chain (user report, 2026-11-10). Show the systems 1–2 jumps
+15. **Done 2026-11-12 (`48a1e2e`).** The overlay keeps growing with the chain (user report, 2026-11-10). Show the systems 1–2 jumps
     around the character plus the path home, fold other branches into summary rows, mark branches with a
-    k-space or home exit, and cap the height. Plan: `docs/plans/plan-overlay-focus.md`.
+    k-space or home exit, and cap the height. Plan: `docs/plans/done/plan-overlay-focus.md`.
     Effort: 3/5 · Sonnet. A pure folding function in `chain.py` plus overlay painting and two settings.
 16. **Done 2026-11-12 (`45398b0`).** Opening two instances by accident breaks both until both are closed (user report, probably Windows).
     Make a second start raise the running window and exit. Plan: `docs/plans/done/plan-single-instance.md`.
@@ -86,7 +86,7 @@ a small change whose file and fix are named.
     in one undo step. Plan: `docs/plans/done/plan-multi-delete.md`.
     Effort: 1/5 · Haiku.
 
-18. Leftovers from tasks 5.1 and 6 (2026-11-11): the overlay's "follow" mode should skip characters whose
+18. **Follow-mode part done 2026-11-12 (`48a1e2e`).** Leftovers from tasks 5.1 and 6 (2026-11-11): the overlay's "follow" mode should skip characters whose
     client is closed (online-indicator plan step 5), and the lost-connection "CUT OFF" mark could sync
     through the protocol 2 gate (it is local-only now). Owner (2026-11-12): sync it, so every member sees
     the mark and the 1-hour removal happens for everyone; the watched-systems rule (stop mapping 1 hour

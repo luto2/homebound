@@ -18,7 +18,6 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [plan-watched-systems.md](plan-watched-systems.md) | 5. Watched systems with a connection alert | not started |
 | [plan-combat-scan.md](plan-combat-scan.md) | 8. Combat-scanned ships (and the paste bug behind it) | not started |
 | [plan-structure-list.md](plan-structure-list.md) | 9. Structure list, fed by combat scans | not started, after 8 |
-| [plan-overlay-focus.md](plan-overlay-focus.md) | 15. Overlay shows the nearby part of a big chain | not started |
 | [plan-overlay-shortcut.md](plan-overlay-shortcut.md) | Global shortcut to cycle the overlay mode | not started |
 | [plan-code-signing.md](plan-code-signing.md) | Windows code signing | not started |
 
@@ -75,3 +74,4 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [done/plan-single-instance.md](done/plan-single-instance.md) | 2026-11-12 (`45398b0`) | a run on Windows |
 | [done/plan-gate-connections.md](done/plan-gate-connections.md) | 2026-11-12 (`3dfeb27`) | line colour/token and corner look by eye |
 | [done/plan-system-sender.md](done/plan-system-sender.md) | 2026-11-12 (`b913596`) | real logs for other client languages (later) |
+| [done/plan-overlay-focus.md](done/plan-overlay-focus.md) | 2026-11-12 (`48a1e2e`) | look on screen at 11 and 14 px; follow-mode hide on X11/KWin and Windows |

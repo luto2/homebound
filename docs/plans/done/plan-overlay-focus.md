@@ -1,9 +1,6 @@
 # Plan: the overlay shows the nearby part of a big chain
 
-Status: not started. Owner task 15 in `TODO.md` (human-added, from a user, 2026-11-10): "does the overlay
-stop expanding at some point? the window gets quite big with a growing chain". The user's answer to what
-it should show: "like 1–2 jumps away, maybe with some highlight on chains that have connections towards
-k-space or home".
+Status: implemented (2026-11-12, `48a1e2e`). Deviations: the way home folds into "⋯ N systems on the way home"; everything below the character is shown past the radius; row cap 5–40; distances along the shown tree; HOME chip on summary rows.
 
 Depends on: nothing. Touches `mapping/chain.py`, `ui/overlay.py`, `settings.py`, the settings dialog's
 overlay page and their tests.
