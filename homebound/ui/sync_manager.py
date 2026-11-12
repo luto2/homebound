@@ -27,6 +27,8 @@ from ..validation import require_type
 
 log = logging.getLogger("homebound.sync")
 PING_MS = 30_000
+SCHEME_ROLES = ("owner", "manager")       # who may change a cloud map's naming scheme (the server checks it too)
+SCHEME_LOCKED = "Only the owner or a manager of this cloud map can change its naming scheme."
 
 
 def cloud_id(entry: dict) -> str | None:
@@ -72,6 +74,7 @@ class SyncManager(QObject):
         self.replica: LocalReplica | None = None
         self._shared: dict[tuple[str, int], tuple] = {}     # (map id, char id) -> (system, state) last sent
         self._warned: set[str] = set()
+        state.scheme_lock = self.scheme_lock
         self._attach()
         state.mapSwitched.connect(lambda _name: self._attach())
         state.characterMoved.connect(lambda _char: self.update_presence())
@@ -410,6 +413,17 @@ class SyncManager(QObject):
             self._apply_presence_view()
         self._update_status()
         self.infoChanged.emit(map_id)
+
+    def scheme_lock(self) -> str:
+        """Return why the open map's naming scheme can't be changed on this install, or "" if it can.
+
+        On a cloud map only the owner and managers may change it (the server refuses it from the
+        others). While the role isn't known (offline, not joined yet) nothing is locked.
+        """
+        info = self.active_info()
+        if info is None or info.role is None or info.role in SCHEME_ROLES:
+            return ""
+        return SCHEME_LOCKED
 
     def status_text(self) -> tuple[str, str]:
         """Return ``(level, text)`` for the sync pill: offline, syncing, live, warning or read-only."""

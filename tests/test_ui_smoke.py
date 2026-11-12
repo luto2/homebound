@@ -35,3 +35,13 @@ def test_window_builds_and_shows_the_map(window, qt_application) -> None:
     qt_application.processEvents()
     window.grab()
     assert window.scene.nodes and len(window.scene.edges) == 1
+
+
+def test_the_scheme_combo_is_off_where_the_scheme_is_locked(window) -> None:
+    """A cloud map member who may not change the scheme sees the combo disabled, with the reason as its tooltip."""
+    window.state.scheme_lock = lambda: "Only the owner or a manager of this cloud map can change its naming scheme."
+    window.state.settingsChanged.emit()
+    assert not window.scheme_combo.isEnabled() and "owner or a manager" in window.scheme_combo.toolTip()
+    window.state.scheme_lock = lambda: ""
+    window.state.settingsChanged.emit()
+    assert window.scheme_combo.isEnabled() and window.scheme_combo.toolTip() == "Naming scheme"

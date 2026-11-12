@@ -275,3 +275,37 @@ def test_members_dialog_edits_the_access_list(cloud) -> None:
 def test_isk_formatting() -> None:
     """ISK reads like in EVE."""
     assert (isk(125e6), isk(1.5e9), isk(2e9), isk(12345)) == ("125M ISK", "1.50B ISK", "2B ISK", "12,345 ISK")
+
+
+def test_only_the_owner_and_managers_change_a_cloud_maps_scheme(cloud) -> None:
+    """An editor's scheme controls are off with a reason; promoted to manager, they come back."""
+    from homebound.ui.settings_dialog import SettingsDialog
+    from homebound.ui.sync_manager import SCHEME_LOCKED
+    harness, kira, bob, code, statuses = cloud
+    name = bob.join_with_code(code)
+    bob.state.switch_map(name)
+    assert spin(lambda: bob.active_info() is not None and bob.active_info().role == "editor")
+    assert kira.scheme_lock() == "" and bob.scheme_lock() == SCHEME_LOCKED
+    assert bob.state.scheme_lock() == SCHEME_LOCKED          # what the toolbar and the settings dialog ask
+    dialog = SettingsDialog(None, bob.state)
+    assert all(not card.isEnabled() and card.toolTip() == SCHEME_LOCKED for card in dialog.scheme_cards.values())
+    assert all(card.isEnabled() for card in SettingsDialog(None, kira.state).scheme_cards.values())
+    bob_id = harness.api("GET", "/api/account", bob.api.token).json()["account_id"]
+    harness.api("PATCH", f"/api/maps/{bob.active_map_id}/members/{bob_id}", kira.api.token, json={"role": "manager"})
+    assert spin(lambda: bob.scheme_lock() == "")
+    local = next(entry for entry in bob.state.settings.maps if entry != name)
+    bob.state.switch_map(local)
+    assert bob.active_info() is None and bob.scheme_lock() == ""      # a local map is never locked
+
+
+def test_an_editors_scheme_change_is_refused_and_put_back(cloud) -> None:
+    """Should an editor's install send a scheme change anyway, the server refuses it and the map keeps its scheme."""
+    harness, kira, bob, code, statuses = cloud
+    name = bob.join_with_code(code)
+    bob.state.switch_map(name)
+    assert spin(lambda: bob.active_info() is not None and bob.active_info().joined)
+    notices = []
+    bob.notice.connect(lambda level, text: notices.append(text))
+    bob.state.store.set_map_setting("naming_scheme", "a2a")
+    assert spin(lambda: bool(notices) and bob.state.store.map_setting("naming_scheme") == "numeric")
+    assert "role doesn't allow" in notices[0] and kira.state.store.map_setting("naming_scheme") == "numeric"

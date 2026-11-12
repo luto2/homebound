@@ -117,7 +117,7 @@ What a version added to the ops is listed in `protocol.GATED_FIELDS` and `GATED_
 
 The server checks these, in this order, before a batch is applied:
 
-1. **Auth and role:** the session is valid, the account is a member, its role may edit, and the map isn't read-only. Changing `home_system` is owner-only. → `read_only` / `not_member` / `forbidden`
+1. **Auth and role:** the session is valid, the account is a member, its role may edit, and the map isn't read-only. Changing `home_system` is owner-only; changing `naming_scheme` needs the owner or a manager (since 2026-11-12; the app disables the scheme controls for the others, `SyncManager.scheme_lock`). → `read_only` / `not_member` / `forbidden`
 2. **Limits** (§8). → `too_large` / `rate_limited`
 3. **Shape:** known entity and field names, and types and value ranges that match the client schema (mass and lifetime enums, sig ID pattern `^[A-Z]{3}-\d{3}$`, notes up to 4,000 characters). → `invalid`
 4. **System IDs are real** solar systems. The server ships the same `universe.sqlite` as the client. It needs that file for prune ("path to home") anyway. → `invalid`

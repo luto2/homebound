@@ -19,7 +19,7 @@ from homebound.sync.protocol import (MAX_BATCH_OPS, MAX_ENTITIES_PER_MAP, PRESEN
                                      key_from_text, key_text, key_to_json, message_for_peer)
 
 from .db import Database, iso, utc_now
-from .maps import EDIT_ROLES, Maps
+from .maps import EDIT_ROLES, MANAGE_ROLES, Maps
 
 TAIL_DAYS = 7
 TAIL_MAX_OPS = 10_000
@@ -235,6 +235,9 @@ class Hub:
             return
         if role != "owner" and any(op.entity == "setting" and op.key == "home_system" for op in ops):
             reject("forbidden", "Only the owner can change the home system.")
+            return
+        if role not in MANAGE_ROLES and any(op.entity == "setting" and op.key == "naming_scheme" for op in ops):
+            reject("forbidden", "Only the owner or a manager can change the naming scheme.")
             return
         state = self.state(map_id)
         new_keys = {(op.entity, op.key) for op in ops} - set(state.entities)

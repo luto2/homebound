@@ -95,7 +95,7 @@ others show or edit it.
 
 | Feature | Logic | UI |
 |---|---|---|
-| The three schemes (numeric path, chain·depth·position, letter-numeric) | `mapping/naming.py` `Scheme` subclasses, `scheme_for_key` | toolbar combo in `ui/map_window.py` `_build_toolbar`; `ui/settings_dialog.py` |
+| The three schemes (numeric path, chain·depth·position, letter-numeric) | `mapping/naming.py` `Scheme` subclasses, `scheme_for_key` | toolbar combo in `ui/map_window.py` `_build_toolbar`; `ui/settings_dialog.py`; on a cloud map only the owner and managers may change it (`ui/sync_manager.py` `scheme_lock`, `AppState.scheme_lock`; server check in `homebound_server/hub.py` `Hub.push`) |
 | Hole numbers: a WH sig's number at paste, the per-system counter that never reuses one | `mapping/naming.py` `number_wormhole_signatures`, `number_signature`, `take_hole_number`; `MapSystem.next_hole`, raised in `mapdb/store.py` `Store._raise_hole_counters` | `ui/signature_table.py` `SignatureModel.bookmark_for` |
 | A new child takes its sig's number; static is a flag (`MapSystem.static`) | `mapping/tracker.py` `Tracker._attach`, `apply_naming` | STATIC tab in `ui/map_scene.py` `SystemNode._paint_tabs` |
 | "Was this the static?" guess and question | `mapping/naming.py` `guess_static`; `mapping/tracker.py` `NamingRequest`, `AutoNamed`, `apply_naming`, `preview_name` | `ui/dialogs.py` `NamingDialog`; `ui/map_window.py` `queue_naming`, `_next_naming`, `Scrim` |

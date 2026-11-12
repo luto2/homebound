@@ -288,6 +288,12 @@ class SettingsDialog(QDialog):
             self.scheme_cards[key] = card
             layout.addWidget(card)
         self.scheme_cards.get(self.edited.naming_scheme, self.scheme_cards["numeric"]).radio.setChecked(True)
+        locked = self.state.scheme_lock()
+        if locked:          # a cloud map whose scheme only its owner and managers change
+            for card in self.scheme_cards.values():
+                card.setEnabled(False)
+                card.setToolTip(locked)
+            layout.addWidget(help_label(locked))
         self.auto_name = QCheckBox("Don't ask \"was this the static?\" when the guess is certain")
         self.auto_name.setChecked(self.edited.auto_name_when_certain)
         layout.addWidget(self.auto_name)

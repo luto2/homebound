@@ -1,5 +1,6 @@
 """Shared application state: store, universe, naming, tracker, watcher, zKill, EVE-Scout -> Qt signals."""
 import sqlite3
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -176,6 +177,9 @@ class AppState(QObject):
         self.followed: int | None = None  # character whose client is focused
         # other members' shared characters on the open cloud map: char id -> {"name", "system_id", "afk"}
         self.remote_presence: dict[int, dict] = {}
+        # why the naming scheme of the open map can't be changed here ("" if it can); cloud sync sets it
+        # (only a cloud map's owner and managers may change it, see SyncManager.scheme_lock)
+        self.scheme_lock: Callable[[], str] = lambda: ""
         # names of the characters whose client window is open; None: this platform can't list windows
         self.open_characters: set[str] | None = None
         self.watcher = LogWatcher(settings.log_directory)

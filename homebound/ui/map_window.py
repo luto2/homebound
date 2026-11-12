@@ -393,6 +393,7 @@ class MapWindow(QMainWindow):
             self.cloud_menu = CloudMenu(self, self.sync, lambda kind, text: self.toasts.show(kind, text))
             toolbar.addWidget(self.cloud_menu.button)
             self.sync.notice.connect(lambda level, text: self.toasts.show(level, text))
+            self.sync.infoChanged.connect(lambda _map_id: self._sync_scheme_lock())
         fit_button = QPushButton("Fit chain")
         fit_button.clicked.connect(self.fit_chain)
         toolbar.addWidget(fit_button)
@@ -697,6 +698,7 @@ class MapWindow(QMainWindow):
         self.area.set_map_tag(settings.active_map if several_maps else None)
         self.home_button.setText(f"⌂ {settings.home_system}" if settings.home_system else "⌂ Set home")
         self.scheme_combo.setCurrentIndex(max(0, self.scheme_combo.findData(settings.naming_scheme)))
+        self._sync_scheme_lock()
         pinned = settings.overlay_pinned_character is not None
         for button in self.mode_buttons.buttons():
             button.setChecked(button.property("mode") == settings.overlay_mode)
@@ -709,6 +711,17 @@ class MapWindow(QMainWindow):
         elif "off" in scout.text() or scout.text() == "…":
             self._status("scout", "", "EVE-Scout …")
         self._sync_tray()
+
+    def _sync_scheme_lock(self) -> str:
+        """Disable the scheme combo where the open map's scheme can't be changed (a cloud map's member).
+
+        Returns:
+            Why it is locked, or "".
+        """
+        reason = self.state.scheme_lock()
+        self.scheme_combo.setEnabled(not reason)
+        self.scheme_combo.setToolTip(reason or "Naming scheme")
+        return reason
 
     def _scheme_changed(self, _index: int) -> None:
         """Apply the naming scheme picked in the toolbar (``schemeChanged`` then asks about renaming)."""
