@@ -445,3 +445,19 @@ read-only or locked file, is never moved: at start Homebound says why and quits.
 ```sh
 uv run python -m homebound.logs.replay path/to/Local_*.txt --home J161940 --scheme a2a
 ```
+
+---
+
+## 16. For developers: tooling
+
+**Git hooks.** A fresh clone must point git at the repo's hooks, or neither the push gate nor the graph refresh runs. Check the hooks path setting (`git config --get` with the key `core.hooksPath`): it should print `.githooks`. If it prints nothing, set it to `.githooks`.
+
+**Type check.** `uv run mypy` checks the `homebound` package (settings in `pyproject.toml`).
+
+**Using the graph.** `graphify-out/GRAPH_REPORT.md` and `graph.json` are tracked; the pre-push hook refreshes them in the background and writes its output to `graphify-out/refresh.log` (not tracked). Commit the refreshed files with the next unrelated commit. Caveats:
+
+- A missing incoming edge is not dead code. Method calls on other objects are mostly not extracted, so check with a text search before deleting.
+- Edges with `relation == "uses"` are mostly false (imports get attached to every class in a file). Skip them in `graph.json` before trusting a god node rank or a bridge score.
+- Docstring nodes are about half of the graph, so a query can land on one. Ignore results whose label is a sentence. The report's "isolated nodes" line is mostly these and is a false alarm.
+- `graphify` may not be on the shell PATH. Call `~/.local/bin/graphify`, or add `$HOME/.local/bin` to PATH. The hook adds the path itself.
+- `graphify update` refuses to write a graph with fewer nodes. After large deletions run `~/.local/bin/graphify update . --force` by hand; the refusal shows in `graphify-out/refresh.log`.

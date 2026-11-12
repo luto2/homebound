@@ -4,5 +4,6 @@ python3 "$(git rev-parse --show-toplevel)/tools/push_gate.py" pre-push "$@"
 status=$?
 # Refresh the local knowledge graph once the gate passed. Detached with its streams closed, so it can't read the
 # refs on stdin, hold up the push or change the result: the gate's status is all this hook ever returns.
-[ "$status" -eq 0 ] && (PATH="$PATH:$HOME/.local/bin" graphify update . </dev/null >/dev/null 2>&1 &)
+# Output goes to graphify-out/refresh.log (gitignored) so a failed refresh, or one refused for fewer nodes, can be found.
+[ "$status" -eq 0 ] && (mkdir -p graphify-out; PATH="$PATH:$HOME/.local/bin" graphify update . </dev/null >graphify-out/refresh.log 2>&1 &)
 exit "$status"
