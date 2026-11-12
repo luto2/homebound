@@ -32,28 +32,30 @@ class CharacterDelegate(QStyledItemDelegate):
         state = self.state
         rect = QRectF(option.rect)
         painter.save()
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        followed = character_id == state.followed
-        painting.row_background(painter, rect, followed, bool(option.state & QStyle.StateFlag.State_MouseOver))
-        if followed:
-            painter.fillRect(QRectF(rect.left(), rect.top(), 2, rect.height()), color("accent"))
-        x = rect.left() + PIXELS["sp-8"]
-        y = rect.top() + 6
-        painting.draw_character_marker(painter, x, y + 1, slot)
-        name_font = font("ui-body")
-        name_font.setBold(True)
-        painter.setFont(name_font)
-        painter.setPen(color("ink") if presence != "offline" else color("ink-muted"))
-        painter.drawText(QRectF(x + 20, y, rect.width() - 110, 16), Qt.AlignmentFlag.AlignVCenter,
-                         painter.fontMetrics().elidedText(name or str(character_id), Qt.TextElideMode.ElideRight,
-                                                          int(rect.width() - 110)))
-        painter.setFont(font("ui-small", 11))
-        painter.setPen(color(PRESENCE_TOKENS[presence]))
-        painter.drawText(QRectF(rect.right() - 96, y, 90, 16),
-                         Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                         self.online_text(character_id, presence))
-        self._paint_location(painter, rect, x + 20, rect.top() + 24, system_id)
-        painter.restore()
+        try:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            followed = character_id == state.followed
+            painting.row_background(painter, rect, followed, bool(option.state & QStyle.StateFlag.State_MouseOver))
+            if followed:
+                painter.fillRect(QRectF(rect.left(), rect.top(), 2, rect.height()), color("accent"))
+            x = rect.left() + PIXELS["sp-8"]
+            y = rect.top() + 6
+            painting.draw_character_marker(painter, x, y + 1, slot)
+            name_font = font("ui-body")
+            name_font.setBold(True)
+            painter.setFont(name_font)
+            painter.setPen(color("ink") if presence != "offline" else color("ink-muted"))
+            painter.drawText(QRectF(x + 20, y, rect.width() - 110, 16), Qt.AlignmentFlag.AlignVCenter,
+                             painter.fontMetrics().elidedText(name or str(character_id), Qt.TextElideMode.ElideRight,
+                                                              int(rect.width() - 110)))
+            painter.setFont(font("ui-small", 11))
+            painter.setPen(color(PRESENCE_TOKENS[presence]))
+            painter.drawText(QRectF(rect.right() - 96, y, 90, 16),
+                             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                             self.online_text(character_id, presence))
+            self._paint_location(painter, rect, x + 20, rect.top() + 24, system_id)
+        finally:
+            painter.restore()
 
     def online_text(self, character_id: int, presence: str) -> str:
         """Return "● online" (client open), "◐ recent" (log only), or "○ offline" with the time since the log was written."""

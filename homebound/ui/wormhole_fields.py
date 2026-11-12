@@ -125,14 +125,16 @@ class _TypeDelegate(QStyledItemDelegate):
                              color("line-1"))
             return
         painter.save()
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = QRectF(option.rect)
-        if option.state & QStyle.StateFlag.State_Selected:
-            painter.fillRect(rect, color("accent-dim"))
-            painter.fillRect(QRectF(rect.left(), rect.top(), 2, rect.height()), color("accent"))
-        code = index.data(Qt.ItemDataRole.UserRole)
-        paint_type_row(painter, rect, self.combo.rows[code], muted=bool(index.data(DIMMED_ROLE)))
-        painter.restore()
+        try:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            rect = QRectF(option.rect)
+            if option.state & QStyle.StateFlag.State_Selected:
+                painter.fillRect(rect, color("accent-dim"))
+                painter.fillRect(QRectF(rect.left(), rect.top(), 2, rect.height()), color("accent"))
+            code = index.data(Qt.ItemDataRole.UserRole)
+            paint_type_row(painter, rect, self.combo.rows[code], muted=bool(index.data(DIMMED_ROLE)))
+        finally:
+            painter.restore()
 
 
 class WormholeTypeCombo(QComboBox):
@@ -249,12 +251,14 @@ class _DestinationDelegate(QStyledItemDelegate):
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
         """Paint the selection and the class."""
         painter.save()
-        rect = QRectF(option.rect)
-        if option.state & QStyle.StateFlag.State_Selected:
-            painter.fillRect(rect, color("accent-dim"))
-            painter.fillRect(QRectF(rect.left(), rect.top(), 2, rect.height()), color("accent"))
-        paint_destination_row(painter, rect, index.data(Qt.ItemDataRole.UserRole) or "")
-        painter.restore()
+        try:
+            rect = QRectF(option.rect)
+            if option.state & QStyle.StateFlag.State_Selected:
+                painter.fillRect(rect, color("accent-dim"))
+                painter.fillRect(QRectF(rect.left(), rect.top(), 2, rect.height()), color("accent"))
+            paint_destination_row(painter, rect, index.data(Qt.ItemDataRole.UserRole) or "")
+        finally:
+            painter.restore()
 
 
 class DestinationCombo(QComboBox):
@@ -291,11 +295,13 @@ def draw_edge_icon(painter: QPainter, x: float, y: float, width: float, mass: st
     if mass not in painting.edge_pens():
         raise ValueError(f"unknown mass state {mass!r}")
     painter.save()
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    line = QPainterPath(QPointF(x + 3, y))
-    line.lineTo(x + width - 3, y)
-    painting.stroke_edge(painter, line, mass, lifetime)
-    painter.restore()
+    try:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        line = QPainterPath(QPointF(x + 3, y))
+        line.lineTo(x + width - 3, y)
+        painting.stroke_edge(painter, line, mass, lifetime)
+    finally:
+        painter.restore()
     return width
 
 

@@ -102,26 +102,28 @@ def draw_class_badge(painter: QPainter, x: float, y: float, system_class: str, s
     width = class_badge_width(system_class, security)
     rect = QRectF(x, y, width, height)
     painter.save()
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    if kind == "k":
-        painter.setPen(QPen(fill, 1.5))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(rect.adjusted(0.75, 0.75, -0.75, -0.75), PIXELS["radius-1"], PIXELS["radius-1"])
-        ink = fill
-    else:
-        painter.fillPath(_badge_shape(rect, kind), fill)
-        ink = color("ink-inverse")
-    painter.setPen(ink)
-    painter.setFont(_meta_font())
-    if kind == "k" and security is not None:
-        label_width = QFontMetricsF(_meta_font()).horizontalAdvance(system_class)
-        painter.drawText(QRectF(x + 4, y, label_width, height), Qt.AlignmentFlag.AlignVCenter, system_class)
-        painter.setFont(font("mono-small", 10))
-        painter.drawText(QRectF(x + 4 + label_width + 3, y, width, height), Qt.AlignmentFlag.AlignVCenter,
-                         f"{security:.1f}")
-    else:
-        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, system_class)
-    painter.restore()
+    try:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if kind == "k":
+            painter.setPen(QPen(fill, 1.5))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(rect.adjusted(0.75, 0.75, -0.75, -0.75), PIXELS["radius-1"], PIXELS["radius-1"])
+            ink = fill
+        else:
+            painter.fillPath(_badge_shape(rect, kind), fill)
+            ink = color("ink-inverse")
+        painter.setPen(ink)
+        painter.setFont(_meta_font())
+        if kind == "k" and security is not None:
+            label_width = QFontMetricsF(_meta_font()).horizontalAdvance(system_class)
+            painter.drawText(QRectF(x + 4, y, label_width, height), Qt.AlignmentFlag.AlignVCenter, system_class)
+            painter.setFont(font("mono-small", 10))
+            painter.drawText(QRectF(x + 4 + label_width + 3, y, width, height), Qt.AlignmentFlag.AlignVCenter,
+                             f"{security:.1f}")
+        else:
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, system_class)
+    finally:
+        painter.restore()
     return width
 
 
@@ -155,16 +157,18 @@ def draw_static(painter: QPainter, x: float, y: float, system_class: str, height
     arrow_width = metrics.horizontalAdvance("→")
     width = 3 + arrow_width + 2 + metrics.horizontalAdvance(system_class) + 4
     painter.save()
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setPen(QPen(color("line-1"), 1))
-    painter.setBrush(color("bg-3"))
-    painter.drawRoundedRect(QRectF(x + .5, y + .5, width - 1, height - 1), PIXELS["radius-1"], PIXELS["radius-1"])
-    painter.setFont(label_font)
-    painter.setPen(color("ink-faint"))
-    painter.drawText(QRectF(x + 3, y, arrow_width, height), Qt.AlignmentFlag.AlignVCenter, "→")
-    painter.setPen(color(token))
-    painter.drawText(QRectF(x + 5 + arrow_width, y, width, height), Qt.AlignmentFlag.AlignVCenter, system_class)
-    painter.restore()
+    try:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(color("line-1"), 1))
+        painter.setBrush(color("bg-3"))
+        painter.drawRoundedRect(QRectF(x + .5, y + .5, width - 1, height - 1), PIXELS["radius-1"], PIXELS["radius-1"])
+        painter.setFont(label_font)
+        painter.setPen(color("ink-faint"))
+        painter.drawText(QRectF(x + 3, y, arrow_width, height), Qt.AlignmentFlag.AlignVCenter, "→")
+        painter.setPen(color(token))
+        painter.drawText(QRectF(x + 5 + arrow_width, y, width, height), Qt.AlignmentFlag.AlignVCenter, system_class)
+    finally:
+        painter.restore()
     return width
 
 
@@ -305,13 +309,15 @@ def draw_character_marker(painter: QPainter, x: float, y: float, slot: int, size
     require_integer(slot, "slot", minimum=1)
     require_number(size, "size", minimum=1)
     painter.save()
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.translate(x, y)
-    painter.scale(size / 14, size / 14)
-    painter.setPen(QPen(color("ink-inverse"), 1))
-    painter.setBrush(color(f"char-{(slot - 1) % 6 + 1}"))
-    painter.drawPath(_character_marker_path(slot))
-    painter.restore()
+    try:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.translate(x, y)
+        painter.scale(size / 14, size / 14)
+        painter.setPen(QPen(color("ink-inverse"), 1))
+        painter.setBrush(color(f"char-{(slot - 1) % 6 + 1}"))
+        painter.drawPath(_character_marker_path(slot))
+    finally:
+        painter.restore()
     return size
 
 
@@ -346,14 +352,16 @@ def draw_zkill(painter: QPainter, x: float, y: float, level: str, recent: bool =
     bars = ZKILL_LEVELS.index(level) if level in ZKILL_LEVELS else 0
     fill = color(f"zk-{level}") if bars else color("zk-none")
     painter.save()
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    for index, bar_height in enumerate((5, 8, 11)):
-        lit = index < bars
-        painter.setPen(QPen(fill if lit else color("zk-none"), 1))
-        painter.setBrush(fill if lit else Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(QRectF(x + index * 4.5 + .5, y + height - bar_height + .5, 3, bar_height - 1), 1, 1)
-    width = 13.5
-    painter.restore()
+    try:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        for index, bar_height in enumerate((5, 8, 11)):
+            lit = index < bars
+            painter.setPen(QPen(fill if lit else color("zk-none"), 1))
+            painter.setBrush(fill if lit else Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(QRectF(x + index * 4.5 + .5, y + height - bar_height + .5, 3, bar_height - 1), 1, 1)
+        width = 13.5
+    finally:
+        painter.restore()
     if recent:
         draw_recent_kill(painter, x + width + 8, y + height / 2)
         width += 16
@@ -367,18 +375,20 @@ def draw_recent_kill(painter: QPainter, center_x: float, center_y: float) -> flo
         The width used.
     """
     painter.save()
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    diamond = QPolygonF([QPointF(center_x, center_y - 6.5), QPointF(center_x + 6.5, center_y),
-                         QPointF(center_x, center_y + 6.5), QPointF(center_x - 6.5, center_y)])
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(color("zk-recent"))
-    painter.drawPolygon(diamond)
-    mark_font = font("node-meta", 9)
-    mark_font.setWeight(QFont.Weight.ExtraBold)
-    painter.setFont(mark_font)
-    painter.setPen(color("ink-inverse"))
-    painter.drawText(QRectF(center_x - 6, center_y - 6, 12, 12), Qt.AlignmentFlag.AlignCenter, "!")
-    painter.restore()
+    try:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        diamond = QPolygonF([QPointF(center_x, center_y - 6.5), QPointF(center_x + 6.5, center_y),
+                             QPointF(center_x, center_y + 6.5), QPointF(center_x - 6.5, center_y)])
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(color("zk-recent"))
+        painter.drawPolygon(diamond)
+        mark_font = font("node-meta", 9)
+        mark_font.setWeight(QFont.Weight.ExtraBold)
+        painter.setFont(mark_font)
+        painter.setPen(color("ink-inverse"))
+        painter.drawText(QRectF(center_x - 6, center_y - 6, 12, 12), Qt.AlignmentFlag.AlignCenter, "!")
+    finally:
+        painter.restore()
     return 13.0
 
 
@@ -400,26 +410,28 @@ def draw_owner(painter: QPainter, x: float, y: float, ticker: str, slot: int, ho
     require_integer(slot, "slot", minimum=1)
     width = owner_width(ticker)
     painter.save()
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(color(f"owner-{(slot - 1) % 10 + 1}"))
-    painter.drawRoundedRect(QRectF(x, y, width, height), PIXELS["radius-1"], PIXELS["radius-1"])
-    ink = color("ink-inverse")
-    if home:
+    try:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(color(f"owner-{(slot - 1) % 10 + 1}"))
+        painter.drawRoundedRect(QRectF(x, y, width, height), PIXELS["radius-1"], PIXELS["radius-1"])
+        ink = color("ink-inverse")
+        if home:
+            painter.setPen(ink)
+            painter.setFont(font("node-meta"))
+            painter.drawText(QRectF(x + 5, y, 9, height), Qt.AlignmentFlag.AlignVCenter, "⌂")
+        else:
+            dot = QColor(ink)
+            dot.setAlphaF(.55)
+            painter.setBrush(dot)
+            painter.drawRoundedRect(QRectF(x + 6, y + height / 2 - 2.5, 5, 5), 1, 1)
+        ticker_font = font("mono-small", 10)
+        ticker_font.setWeight(QFont.Weight.Bold)
+        painter.setFont(ticker_font)
         painter.setPen(ink)
-        painter.setFont(font("node-meta"))
-        painter.drawText(QRectF(x + 5, y, 9, height), Qt.AlignmentFlag.AlignVCenter, "⌂")
-    else:
-        dot = QColor(ink)
-        dot.setAlphaF(.55)
-        painter.setBrush(dot)
-        painter.drawRoundedRect(QRectF(x + 6, y + height / 2 - 2.5, 5, 5), 1, 1)
-    ticker_font = font("mono-small", 10)
-    ticker_font.setWeight(QFont.Weight.Bold)
-    painter.setFont(ticker_font)
-    painter.setPen(ink)
-    painter.drawText(QRectF(x + 15, y, width, height), Qt.AlignmentFlag.AlignVCenter, ticker)
-    painter.restore()
+        painter.drawText(QRectF(x + 15, y, width, height), Qt.AlignmentFlag.AlignVCenter, ticker)
+    finally:
+        painter.restore()
     return width
 
 
@@ -435,14 +447,16 @@ def draw_chip(painter: QPainter, x: float, y: float, text: str, background: QCol
     chip_font = font("edge-label", 9)
     width = QFontMetricsF(chip_font).horizontalAdvance(text) + 6
     painter.save()
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(background)
-    painter.drawRoundedRect(QRectF(x, y, width, height), 2, 2)
-    painter.setFont(chip_font)
-    painter.setPen(ink or color("ink-inverse"))
-    painter.drawText(QRectF(x, y, width, height), Qt.AlignmentFlag.AlignCenter, text)
-    painter.restore()
+    try:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(background)
+        painter.drawRoundedRect(QRectF(x, y, width, height), 2, 2)
+        painter.setFont(chip_font)
+        painter.setPen(ink or color("ink-inverse"))
+        painter.drawText(QRectF(x, y, width, height), Qt.AlignmentFlag.AlignCenter, text)
+    finally:
+        painter.restore()
     return width
 
 
@@ -508,10 +522,12 @@ def stroke_edge(painter: QPainter, path: QPainterPath, mass: str, lifetime: int,
     if wider:
         pen.setWidthF(pen.widthF() + 1)
     painter.save()
-    if lifetime == LIFETIME_EXPIRED:   # fading out
-        painter.setOpacity(0.4)
-    painter.strokePath(path, pen)
-    painter.restore()
+    try:
+        if lifetime == LIFETIME_EXPIRED:   # fading out
+            painter.setOpacity(0.4)
+        painter.strokePath(path, pen)
+    finally:
+        painter.restore()
 
 
 EDGE_CHIPS = {"reduced": ("R", "edge-reduced"), "critical": ("CRIT", "edge-critical"), "unknown": ("?", "edge-unknown")}
