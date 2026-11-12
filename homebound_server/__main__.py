@@ -59,6 +59,7 @@ def admin(options: argparse.Namespace) -> int:
             raise SystemExit(f"no account for {value!r}")
         return row["account_id"]
 
+    result: dict | list                # printed as JSON; the commands below give a dict or a list
     if command == "lookup":
         account_id = account_of(args[0])
         result = service.account(account_id)
