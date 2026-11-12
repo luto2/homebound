@@ -342,6 +342,8 @@ def test_overlay_defaults(dialog) -> None:
     assert dialog.mode_cards["follow"].radio.isChecked()
     assert dialog.pinned.currentData() is None
     assert dialog.opacity.value() == round(dialog.state.settings.overlay_opacity * 100)
+    assert dialog.focus_radius.currentData() == 2 and dialog.max_rows.value() == 15
+    assert (dialog.max_rows.minimum(), dialog.max_rows.maximum()) == settings_module.OVERLAY_MAX_ROWS_RANGE
     assert dialog.opacity_label.text() == f"{dialog.opacity.value()}%"
 
 
@@ -484,6 +486,8 @@ def test_save_writes_settings(dialog, state, tmp_path) -> None:
     dialog.opacity.setValue(80)
     dialog.text_size.setValue(13)
     dialog.radius.setValue(4)
+    dialog.focus_radius.setCurrentIndex(dialog.focus_radius.findData(1))
+    dialog.max_rows.setValue(9)
     dialog.rescan_due.setValue(6)
     dialog.zkill.setChecked(True)
     applied = []
@@ -498,6 +502,7 @@ def test_save_writes_settings(dialog, state, tmp_path) -> None:
     assert settings.overlay_opacity == 0.8
     assert settings.overlay_text_size == 13
     assert settings.known_space_radius == 4
+    assert settings.overlay_focus_radius == 1 and settings.overlay_max_rows == 9
     assert settings.rescan_due_hours == 6
     assert settings.zkill_enabled is True
     assert applied

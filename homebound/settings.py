@@ -36,8 +36,11 @@ OVERLAY_OPACITY_RANGE = (0.55, 0.92)
 OVERLAY_TEXT_SIZE_RANGE = (11, 14)        # px
 KNOWN_SPACE_RADIUS_RANGE = (0, 15)        # gate jumps
 RESCAN_DUE_HOURS_RANGE = (1, 72)          # hours
+OVERLAY_FOCUS_RADIUS_RANGE = (0, 2)       # jumps around the character; 0 = whole chain
+OVERLAY_MAX_ROWS_RANGE = (5, 40)          # rows
 SETTING_RANGES = {"overlay_opacity": OVERLAY_OPACITY_RANGE, "overlay_text_size": OVERLAY_TEXT_SIZE_RANGE,
-                  "known_space_radius": KNOWN_SPACE_RADIUS_RANGE, "rescan_due_hours": RESCAN_DUE_HOURS_RANGE}
+                  "known_space_radius": KNOWN_SPACE_RADIUS_RANGE, "rescan_due_hours": RESCAN_DUE_HOURS_RANGE,
+                  "overlay_focus_radius": OVERLAY_FOCUS_RADIUS_RANGE, "overlay_max_rows": OVERLAY_MAX_ROWS_RANGE}
 
 
 def clamp_to_range(key: str, value: int | float) -> int | float:
@@ -65,6 +68,8 @@ class Settings:
     overlay_opacity: float = 0.78
     overlay_text_size: int = 12           # px
     overlay_positions: dict = field(default_factory=dict)        # mode -> [x, y]
+    overlay_focus_radius: int = 2         # jumps around the character the overlay shows; 0 = whole chain
+    overlay_max_rows: int = 15            # the overlay never grows past this many rows
     known_space_radius: int = 5
     zkill_enabled: bool = True
     rescan_due_hours: int = 24            # a system's last paste this old is due for a rescan

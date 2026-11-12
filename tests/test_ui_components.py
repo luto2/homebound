@@ -1154,3 +1154,45 @@ def test_dock_delegate_paints_hover(dock_setup) -> None:
         images[flag] = pixmap.toImage()
     plain, hovered = images.values()
     assert plain.pixelColor(150, 40) != hovered.pixelColor(150, 40)
+
+
+def test_overlay_height_follows_the_folded_rows(overlay_setup) -> None:
+    """A long chain is folded to the row cap, and the window height follows the folded count."""
+    overlay, _, state = overlay_setup
+    state.settings.overlay_mode, state.settings.overlay_pinned_character = "pinned_always", 5
+    previous = HOME.id
+    line = []
+    for system_class in ("C1", "C2", "C3", "C4", "C6") * 4:
+        system = next(each for each in UNIVERSE.all_systems()
+                      if each.system_class == system_class and each.id != HOME.id and each.id not in line)
+        state.tracker.add_wormhole(previous, system.id)
+        line.append(system.id)
+        previous = system.id
+    put_character(state, 5, "Pilot", line[-1])
+    state.settings.overlay_focus_radius, state.settings.overlay_max_rows = 2, 15
+    overlay.refresh()
+    assert len(overlay.chain.rows) == 5 and any(row.kind == "path" for row in overlay.chain.rows)
+    small = overlay.height()
+    state.settings.overlay_focus_radius = 0
+    overlay.refresh()
+    assert len(overlay.chain.rows) == 15 and overlay.height() > small
+    state.settings.overlay_max_rows = 7
+    overlay.refresh()
+    assert len(overlay.chain.rows) <= 7
+    assert overlay.grab().width() > 0                  # summary rows and markers paint
+
+
+def test_overlay_follow_skips_closed_clients(overlay_setup) -> None:
+    """In follow mode a character whose client window is closed is not followed; no window list means the focus decides."""
+    overlay, focus, state = overlay_setup
+    state.settings.overlay_mode = "follow"
+    put_character(state, 5, "Pilot", HOME.id)
+    focus.focusChanged.emit("Pilot", QRect(0, 0, 10, 10))
+    assert overlay.target == 5                          # no window list: trust the focus
+    state.set_open_characters({"Other"})
+    assert overlay.target is None and not overlay.isVisible()
+    state.set_open_characters({"Pilot", "Other"})
+    assert overlay.target == 5 and overlay.isVisible()
+    state.settings.overlay_mode, state.settings.overlay_pinned_character = "pinned_always", 5
+    state.set_open_characters(set())
+    assert overlay.target == 5                          # pinned modes don't care

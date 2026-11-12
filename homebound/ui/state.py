@@ -10,7 +10,7 @@ from ..eve_scout import EveScoutFetcher
 from ..logs.parser import SystemChange
 from ..logs.watcher import LogWatcher
 from ..mapdb.store import LEGACY_NAMES_KEY, Action, Store, utc_now_iso
-from ..mapping.chain import Chain, resolve_chain
+from ..mapping.chain import Chain, focus_rows, resolve_chain
 from ..mapping.naming import Namer, freeze_legacy_names, label_unnamed_systems, needs_label
 from ..mapping.scan_status import ScanStatus, age_text, format_duration, scan_status
 from ..mapping.tracker import AutoNamed, MapChanged, Moved, NamingRequest, Tracker, UnknownJump
@@ -781,9 +781,20 @@ class AppState(QObject):
                 return character_id
         return None
 
-    def chain_for_character(self, character_id: int | None) -> Chain | None:
-        """Return the chain a character is in, or None."""
+    def chain_for_character(self, character_id: int | None, focus: bool = False) -> Chain | None:
+        """Return the chain a character is in, or None.
+
+        Args:
+            character_id: The character.
+            focus: Fold the rows to the part around the character (the overlay's view, see
+                ``mapping.chain.focus_rows``; the settings give the radius and the row cap).
+        """
         if character_id is None:
             return None
-        return resolve_chain(self.store, self.universe, self.character_location(character_id), self.home_id,
-                             radius=self.settings.known_space_radius)
+        location = self.character_location(character_id)
+        chain = resolve_chain(self.store, self.universe, location, self.home_id,
+                              radius=self.settings.known_space_radius, max_depth=10_000 if focus else 4)
+        if chain and focus:
+            chain.rows = focus_rows(chain.rows, self.store, self.universe, radius=self.settings.overlay_focus_radius,
+                                    max_rows=self.settings.overlay_max_rows, home_id=self.home_id)
+        return chain

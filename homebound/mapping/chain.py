@@ -23,6 +23,14 @@ class ChainRow:
     jumps_from: int | None = None  # set for the virtual k-space row: jumps from the entrance
     entrance_id: int | None = None
     virtual: bool = False        # character's k-space system, not on the map
+    # Overlay focus (see focus_rows). kind "" is a real row; the others stand for hidden systems:
+    #   "branch": one hidden branch (system_id is its first system), summary_count systems
+    #   "more":   several hidden branches of system_id merged under the row cap, summary_count systems
+    #   "path":   systems folded out of the way to home, summary_count of them
+    kind: str = ""
+    summary_count: int = 0
+    exits: frozenset = frozenset()  # "high" | "low" | "null": holes into k-space on this row or in what it hides
+    leads_home: bool = False        # a summary row whose hidden part contains home
 
 
 @dataclass
@@ -165,3 +173,182 @@ def _chain_rows(store: Store, adjacency: dict[int, set[int]], members: set[int],
 
     walk(root, 0, "", True)
     return rows
+
+
+EXIT_CLASSES = {"HS": "high", "LS": "low", "NS": "null"}
+MIN_FOCUS_ROWS = 5   # home, the folded way, the character and one merged summary beside each
+
+
+def focus_rows(rows: list[ChainRow], store: Store, universe: Universe, current: int | None = None, radius: int = 2,
+               max_rows: int = 15, home_id: int | None = None) -> list[ChainRow]:
+    """Fold the full tree rows into the part around the character (the overlay's view of a big chain).
+
+    Shown: systems within ``radius`` jumps of the character (0 = no limit), the root (home) and the
+    path to it, and everything below the character's row (the way on, shown beyond the radius). Systems
+    folded out of the path to home become one ``"path"`` row; every other hidden branch becomes one
+    ``"branch"`` summary row. If more than ``max_rows`` would show, the farthest rows are folded first,
+    and then the hidden branches of a system merge into one ``"more"`` row.
+
+    ``exits`` holds the k-space classes (``"high"``, ``"low"``, ``"null"``) of the holes into k-space on
+    a wormhole row, or anywhere in what a summary row hides. Holes into w-space never count.
+
+    Args:
+        rows: The full rows of :func:`resolve_chain` (depth first; give it a large ``max_depth``).
+        store: The map (for the connections).
+        universe: Static data (for the security class).
+        current: The character's system; None takes the row flagged ``current``.
+        radius: Jumps from the character that are shown; 0 shows the whole chain (up to ``max_rows``).
+        max_rows: The most rows to return, at least :data:`MIN_FOCUS_ROWS`.
+        home_id: Home, for ``leads_home``.
+
+    Returns:
+        New rows with fresh tree prefixes and depths.
+    """
+    require_integer(current, "current", optional=True)
+    require_integer(radius, "radius", minimum=0)
+    require_integer(max_rows, "max_rows", minimum=MIN_FOCUS_ROWS)
+    require_integer(home_id, "home_id", optional=True)
+    here = next((index for index, row in enumerate(rows)
+                 if (row.current if current is None else row.system_id == current)), None)
+    if here is None:
+        return list(rows)
+    adjacency = wormhole_adjacency(store)
+    parent: dict[int, int | None] = {}
+    children: dict[int, list[int]] = {index: [] for index in range(len(rows))}
+    stack: list[int] = []
+    for index, row in enumerate(rows):
+        del stack[row.depth:]
+        parent[index] = stack[-1] if stack else None
+        if stack:
+            children[stack[-1]].append(index)
+        stack.append(index)
+
+    def exit_class(system_id: int) -> str | None:
+        system = universe.by_id(system_id)
+        return EXIT_CLASSES.get(system.system_class) if system else None
+
+    def own_exits(index: int) -> frozenset:
+        """The k-space class a row is, or (for a wormhole row) the classes it is connected to."""
+        system_id = rows[index].system_id
+        own = exit_class(system_id)
+        if own:
+            return frozenset({own})
+        return frozenset({exit_class(other) for other in adjacency.get(system_id, ())} - {None})
+
+    def subtree(index: int) -> list[int]:
+        found, todo = [], [index]
+        while todo:
+            node = todo.pop()
+            found.append(node)
+            todo.extend(children[node])
+        return found
+
+    def exits_of(indexes: list[int]) -> frozenset:
+        return frozenset().union(*(own_exits(index) for index in indexes))
+
+    def home_in(indexes: list[int]) -> bool:
+        return home_id is not None and any(rows[index].system_id == home_id for index in indexes)
+
+    ancestors = []  # from the parent of the character's row up to the root
+    node = parent[here]
+    while node is not None:
+        ancestors.append(node)
+        node = parent[node]
+    top = len(ancestors)  # position of the root on the path (the character is position 0)
+    position = {here: 0, **{node: place + 1 for place, node in enumerate(ancestors)}}
+    root = ancestors[-1] if ancestors else here
+    way_on = set(subtree(here))
+
+    def reach(index: int) -> tuple[int, int]:
+        """The position where the way from ``index`` joins the path, and the jumps from the character."""
+        steps, node = 0, index
+        while node not in position:
+            node, steps = parent[node], steps + 1
+        return position[node], steps + position[node]
+
+    reached = {index: reach(index) for index in range(len(rows))}
+
+    def build(window: int, show_single: bool) -> list[ChainRow] | None:
+        """Rows when ``window`` ancestors are shown, or None if the cap can't be met that way."""
+        window = min(window, top)
+        if show_single and top - 1 - window == 1:
+            window += 1  # folding a single system saves nothing
+        folded = [node for node in ancestors if window < position[node] < top]
+        keep = {index for index in range(len(rows))
+                if (reached[index][0] <= window or reached[index][0] == top)
+                and (radius == 0 or reached[index][1] <= radius or index in way_on)}
+        protected = {here, root} | {node for node in ancestors if position[node] <= window}
+        keep |= protected
+        merged: set[int] = set()
+
+        def hidden_of(node: int) -> list[int]:
+            return [child for child in children[node] if child not in keep and child not in folded]
+
+        def cost() -> int:
+            total = len(keep) + (1 if folded else 0)
+            for node in keep:
+                hidden = hidden_of(node)
+                total += 1 if node in merged and hidden else len(hidden)
+            return total
+
+        while cost() > max_rows:
+            leaves = [node for node in keep - protected if not any(child in keep for child in children[node])]
+            if not leaves:
+                return None
+            farthest = max(leaves, key=lambda node: (reached[node][1], node))
+            keep.discard(farthest)
+            merged.add(parent[farthest])
+        resume = ancestors[window - 1] if window else here
+        return render(keep, folded, merged, hidden_of, resume)
+
+    def render(keep: set[int], folded: list[int], merged: set[int], hidden_of, resume: int) -> list[ChainRow]:
+        """Lay the kept rows and the summary rows out with fresh prefixes."""
+        out: list[ChainRow] = []
+        resumed = set(subtree(resume))
+
+        def entries(node: int) -> list[tuple]:
+            """The output children of ``node``: kept rows, the path row, summaries."""
+            hidden = hidden_of(node)
+            collapse = node in merged and len(hidden) > 1
+            found: list[tuple] = []
+            for child in children[node]:
+                if child in keep:
+                    found.append(("row", child, []))
+                elif child in folded:
+                    found.append(("path", child, [each for each in subtree(child) if each not in resumed]))
+                elif not collapse:
+                    found.append(("branch", child, subtree(child)))
+            if collapse:
+                found.append(("more", node, [each for child in hidden for each in subtree(child)]))
+            return found
+
+        def walk(item: tuple, depth: int, lead: str, last: bool) -> None:
+            kind, node, members = item
+            branch = "" if depth == 0 else lead + ("└ " if last else "├ ")
+            below: list[tuple] = []
+            if kind == "row":
+                source = rows[node]
+                out.append(ChainRow(source.system_id, depth, branch, current=source.current,
+                                    jumps_from=source.jumps_from, entrance_id=source.entrance_id, virtual=source.virtual,
+                                    exits=frozenset() if exit_class(source.system_id) else own_exits(node)))
+                below = entries(node)
+            else:
+                count = len(folded) if kind == "path" else len(members)
+                out.append(ChainRow(rows[node].system_id, depth, branch, kind=kind, summary_count=count,
+                                    exits=exits_of(members), leads_home=home_in(members)))
+                if kind == "path":
+                    below = [("row", resume, [])]
+            next_lead = "" if depth == 0 else lead + ("  " if last else "│ ")
+            for place, child in enumerate(below):
+                walk(child, depth + 1, next_lead, place == len(below) - 1)
+
+        walk(("row", root, []), 0, "", True)
+        return out
+
+    window = top if radius == 0 else radius
+    while window >= 0:
+        result = build(window, True) or build(window, False)
+        if result is not None:
+            return result
+        window -= 1
+    return list(rows)[:max_rows]

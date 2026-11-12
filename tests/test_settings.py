@@ -92,6 +92,16 @@ def test_out_of_range_numbers_are_clamped_on_load(data_dir) -> None:
     assert settings.overlay_opacity == settings_module.OVERLAY_OPACITY_RANGE[0]
 
 
+def test_overlay_focus_settings_default_and_clamp(data_dir) -> None:
+    """The focus radius defaults to 2 jumps and the row cap to 15; hand-edited values are clamped."""
+    settings = Settings.load()
+    assert (settings.overlay_focus_radius, settings.overlay_max_rows) == (2, 15)
+    (data_dir / "settings.json").write_text(json.dumps({"overlay_focus_radius": 9, "overlay_max_rows": 1}))
+    settings = Settings.load()
+    assert settings.overlay_focus_radius == settings_module.OVERLAY_FOCUS_RADIUS_RANGE[1]
+    assert settings.overlay_max_rows == settings_module.OVERLAY_MAX_ROWS_RANGE[0]
+
+
 def test_clamp_to_range() -> None:
     """Values inside a range and settings without one pass unchanged; a non-text key is refused."""
     assert settings_module.clamp_to_range("known_space_radius", 7) == 7

@@ -19,6 +19,7 @@ from .focus import FocusTracker
 from .map_scene import hub_text
 from .state import AppState
 
+EXIT_ORDER = (("high", "HS", 0.8), ("low", "LS", 0.3), ("null", "NS", 0.0))   # marker class, system class, security shown
 MODE_LABELS = {"follow": "follow", "pinned_eve": "pinned", "pinned_always": "pinned · always"}
 HEADER_HEIGHT = 26
 
@@ -135,7 +136,12 @@ class Overlay(QWidget):
         """Return the character the overlay shows under the current mode."""
         mode = self._mode()
         if mode == "follow":
-            return self.state.character_by_name(self.focused_character) if self.focused_character else None
+            if not self.focused_character:
+                return None
+            open_clients = self.state.open_characters   # None: this platform can't list windows
+            if open_clients is not None and self.focused_character not in open_clients:
+                return None                             # that client is closed
+            return self.state.character_by_name(self.focused_character)
         if mode in ("pinned_eve", "pinned_always"):
             return self.state.settings.overlay_pinned_character
         return None
@@ -158,9 +164,9 @@ class Overlay(QWidget):
             Whether the overlay is shown.
         """
         self.target = self._target()
-        self.chain = self.state.chain_for_character(self.target)
+        self.chain = self.state.chain_for_character(self.target, focus=True)
         if self.chain:
-            self.state.zkill.request([row.system_id for row in self.chain.rows if not row.virtual])
+            self.state.zkill.request([row.system_id for row in self.chain.rows if not row.virtual and not row.kind])
         self._layout()
         if not self.should_show():
             self.hide()
@@ -282,6 +288,9 @@ class Overlay(QWidget):
         system = state.universe.by_id(row.system_id)
         if not system:
             return
+        if row.kind:
+            self._paint_summary(painter, row, y, row_height, fonts, muted)
+            return
         if row.current:
             painter.fillRect(QRectF(2, y, self.width() - 4, row_height), color("overlay-current"))
         baseline = y + row_height / 2 + QFontMetricsF(fonts.row).ascent() / 2 - 1
@@ -311,6 +320,46 @@ class Overlay(QWidget):
             if system.effect and x + 13 < right:
                 painting.draw_effect(painter, x, y + (row_height - 13) / 2, system.effect, 13)
 
+    def _paint_exits(self, painter: QPainter, exits: frozenset, right: float, center_y: float) -> float:
+        """Draw one dot per k-space class in ``exits`` (security colours) from the right edge.
+
+        Returns:
+            The x where the free space on the left ends.
+        """
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(color("overlay-frame"), 1))
+        for key, system_class, security in reversed(EXIT_ORDER):
+            if key in exits:
+                painter.setBrush(painting.security_color(system_class, security))
+                painter.drawEllipse(QPointF(right - 4, center_y), 4, 4)
+                right -= 12
+        painter.restore()
+        return right
+
+    def _paint_summary(self, painter: QPainter, row: ChainRow, y: float, row_height: float, fonts: OverlayFonts,
+                       muted: QColor) -> None:
+        """Draw a folded row: ``⋯ B-chain · 7 systems`` (muted) with the k-space markers on the right."""
+        baseline = y + row_height / 2 + QFontMetricsF(fonts.row).ascent() / 2 - 1
+        x = PIXELS["sp-8"] + 10
+        if row.prefix:
+            x += painting.draw_halo_text(painter, x, baseline, row.prefix, fonts.mono, muted)
+        noun = "system" if row.summary_count == 1 else "systems"
+        if row.kind == "path":
+            text = f"⋯ {row.summary_count} {noun} on the way home"
+        elif row.kind == "more":
+            text = f"⋯ {row.summary_count} {noun} in other branches"
+        else:
+            text = f"⋯ {self.state.namer.label(row.system_id)} · {row.summary_count} {noun}"
+        right = self._paint_exits(painter, row.exits, self.width() - PIXELS["sp-8"], y + row_height / 2)
+        if row.leads_home:
+            painting.draw_chip(painter, right - 34, y + (row_height - 12) / 2, "HOME", color("accent"))
+            right -= 38
+        available = right - x
+        metrics = QFontMetricsF(fonts.row)
+        painting.draw_halo_text(painter, x, baseline, metrics.elidedText(text, Qt.TextElideMode.ElideRight, available),
+                                fonts.row, muted)
+
     def _paint_row_right(self, painter: QPainter, row: ChainRow, y: float, row_height: float, baseline: float,
                          badge_y: float, fonts: OverlayFonts, ink: QColor, muted: QColor) -> float:
         """Draw owner, zKill numbers and, in high-/low-sec, the closest trade hub from the right edge.
@@ -319,7 +368,7 @@ class Overlay(QWidget):
             The x where the free space on the left ends.
         """
         state = self.state
-        right = self.width() - PIXELS["sp-8"]
+        right = self._paint_exits(painter, row.exits, self.width() - PIXELS["sp-8"], y + row_height / 2)
         mapped = state.store.system(row.system_id) if not row.virtual else None
         if mapped and mapped.owner_ticker:
             owner_width = painting.owner_width(mapped.owner_ticker)

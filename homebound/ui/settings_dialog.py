@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 from .. import app_version, backup, routing
 from ..logs.parser import LogFile
 from ..mapping.naming import SCHEMES, scheme_for_key
-from ..settings import (KNOWN_SPACE_RADIUS_RANGE, OVERLAY_OPACITY_RANGE, OVERLAY_TEXT_SIZE_RANGE,
+from ..settings import (KNOWN_SPACE_RADIUS_RANGE, OVERLAY_MAX_ROWS_RANGE, OVERLAY_OPACITY_RANGE, OVERLAY_TEXT_SIZE_RANGE,
                         RESCAN_DUE_HOURS_RANGE, TRADE_HUBS, detect_log_directories)
 from ..theme.qss import repolish
 from ..theme.tokens import PIXELS, color
@@ -409,6 +409,24 @@ class SettingsDialog(QDialog):
         radius_row.addStretch(1)
         layout.addLayout(radius_row)
         layout.addWidget(help_label("A character in k-space counts as in a chain while within this many gate jumps of an entrance."))
+        focus_row = QHBoxLayout()
+        focus_row.addWidget(caption("Show around the character"))
+        self.focus_radius = QComboBox()
+        for jumps, text in ((1, "1 jump"), (2, "2 jumps"), (0, "Whole chain")):
+            self.focus_radius.addItem(text, jumps)
+        self.focus_radius.setCurrentIndex(max(0, self.focus_radius.findData(self.edited.overlay_focus_radius)))
+        focus_row.addWidget(self.focus_radius)
+        focus_row.addSpacing(PIXELS["sp-16"])
+        focus_row.addWidget(caption("At most"))
+        self.max_rows = QSpinBox()
+        self.max_rows.setRange(*OVERLAY_MAX_ROWS_RANGE)
+        self.max_rows.setSuffix(" rows")
+        self.max_rows.setValue(self.edited.overlay_max_rows)
+        focus_row.addWidget(self.max_rows)
+        focus_row.addStretch(1)
+        layout.addLayout(focus_row)
+        layout.addWidget(help_label("Systems farther away fold into one line per branch, with a marker where a branch "
+                                    "leads to high-, low- or nullsec. The way home and the way on from the character stay shown."))
 
     # ------------------------------------------------------------ zKill
     def _build_zkill_page(self, layout: QVBoxLayout) -> None:
@@ -751,6 +769,8 @@ class SettingsDialog(QDialog):
         edited.overlay_opacity = self.opacity.value() / 100
         edited.overlay_text_size = self.text_size.value()
         edited.known_space_radius = self.radius.value()
+        edited.overlay_focus_radius = self.focus_radius.currentData()
+        edited.overlay_max_rows = self.max_rows.value()
         edited.rescan_due_hours = self.rescan_due.value()
         edited.zkill_enabled = self.zkill.isChecked()
         edited.eve_scout_enabled = self.eve_scout.isChecked()

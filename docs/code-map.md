@@ -77,7 +77,7 @@ others show or edit it.
 | Turning a jump into map changes (new system, new connection, unknown k-space jump) | `mapping/tracker.py` `Tracker.on_system_change`, `add_wormhole` | `ui/state.py` `AppState.dispatch`; `ui/map_window.py` `_unknown_jump` |
 | Is a jump a wormhole? (w-space, Thera, Pochven) | `mapping/tracker.py` `is_wormhole_side` | — |
 | Connection expiry and removal of orphaned systems | `mapping/tracker.py` `expires_at`, `Tracker.expire` | `ui/state.py` `AppState.expire` (timer); `ui/map_scene.py` `removed_in` |
-| Chain of a character (for the overlay) | `mapping/chain.py` `resolve_chain` | `ui/overlay.py` |
+| Chain of a character (for the overlay) | `mapping/chain.py` `resolve_chain`, `focus_rows` (folds a big chain to the part near the character; settings `overlay_focus_radius`, `overlay_max_rows`) | `ui/overlay.py` |
 | Adding a system by hand (unconfirmed until visited) | `mapping/tracker.py` `ensure_system`; `mapdb/store.py` `add_system` | `ui/map_window.py` `_add_system`; `ui/dialogs.py` `AddSystemDialog` |
 | Linking two systems by hand | `mapping/tracker.py` `add_wormhole(manual=True)` | `ui/map_window.py` `link_systems`; drag in `ui/map_scene.py` `MapScene` |
 | Mark as confirmed | `mapping/tracker.py` `Tracker.confirm` | `ui/map_window.py` `_confirm` |
