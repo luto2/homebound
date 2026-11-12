@@ -375,7 +375,7 @@ def test_draw_chip(canvas) -> None:
 def test_edge_pens(qt_application) -> None:
     """edge_pens has one pen per connection state with the spec's dash patterns, widths and selection alpha."""
     pens = edge_pens()
-    assert set(pens) == {"fresh", "reduced", "critical", "unknown", "frigate_only", "lifetime_4h",
+    assert set(pens) == {"fresh", "reduced", "critical", "unknown", "frigate_only", "gate", "lifetime_4h",
                          "lifetime_1h", "selected"}
     width = PIXELS["edge-w-critical"]
     assert pens["critical"].dashPattern() == pytest.approx([8 / width, 4 / width])

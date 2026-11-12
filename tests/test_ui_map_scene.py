@@ -1103,3 +1103,78 @@ class TestMapView:
         view.drawBackground(painter, QRectF(0, 0, 50, 50))
         painter.end()
         assert image.pixel(5, 5) != 0
+
+
+class TestGateConnection:
+    """A connection between stargate neighbours is drawn with 90 degree corners and has no wormhole state."""
+
+    @staticmethod
+    def gate_pair():
+        """Return two systems joined by a stargate."""
+        first = next(iter(UNIVERSE.gate_graph()))
+        return first, min(UNIVERSE.gate_neighbours(first))
+
+    @pytest.fixture
+    def gate_edge(self, state, scene):
+        """The edge of a gate pair placed side by side, not level."""
+        first, second = self.gate_pair()
+        state.store.add_system(first, x=600, y=300)
+        state.store.add_system(second, x=900, y=360)
+        state.store.add_connection(first, second)
+        state.mapChanged.emit()
+        return scene.edges[state.store.connection(first, second).id]
+
+    def test_orthogonal_path_side_by_side(self) -> None:
+        """Horizontal, vertical, horizontal with the middle segment halfway."""
+        path = map_scene.orthogonal_path(QPointF(0, 0), QPointF(100, 40), True)
+        points = [(path.elementAt(i).x, path.elementAt(i).y) for i in range(path.elementCount())]
+        assert points == [(0, 0), (50, 0), (50, 40), (100, 40)]
+
+    def test_orthogonal_path_stacked(self) -> None:
+        """Vertical, horizontal, vertical when the nodes are above each other."""
+        path = map_scene.orthogonal_path(QPointF(0, 0), QPointF(40, 100), False)
+        points = [(path.elementAt(i).x, path.elementAt(i).y) for i in range(path.elementCount())]
+        assert points == [(0, 0), (0, 50), (40, 50), (40, 100)]
+
+    def test_orthogonal_path_level_is_straight(self) -> None:
+        """Level ends give a straight line."""
+        path = map_scene.orthogonal_path(QPointF(0, 5), QPointF(100, 5), True)
+        assert {path.elementAt(i).y for i in range(path.elementCount())} == {5}
+
+    def test_orthogonal_path_validates(self) -> None:
+        """Wrong argument types raise TypeError."""
+        with pytest.raises(TypeError):
+            map_scene.orthogonal_path((0, 0), QPointF(1, 1), True)
+        with pytest.raises(TypeError):
+            map_scene.orthogonal_path(QPointF(0, 0), QPointF(1, 1), "yes")
+
+    def test_gate_check(self, state, scene) -> None:
+        """The universe knows the gate pair; the wormhole edges of the fixture are not gates."""
+        first, second = self.gate_pair()
+        assert UNIVERSE.gate_adjacent(first, second)
+        assert not any(edge.is_gate for edge in scene.edges.values())
+
+    def test_gate_edge_is_orthogonal(self, gate_edge) -> None:
+        """A gate edge has only horizontal or vertical segments and no label plate in its shape."""
+        assert gate_edge.is_gate
+        path = gate_edge.path
+        for i in range(1, path.elementCount()):
+            before, now = path.elementAt(i - 1), path.elementAt(i)
+            assert now.x == before.x or now.y == before.y
+        assert gate_edge.toolTip().startswith("Stargate")
+        assert gate_edge.shape().boundingRect().height() < gate_edge.path.boundingRect().height() + 20
+        assert gate_edge.boundingRect().contains(path.boundingRect())
+
+    def test_gate_edge_paints_without_decorations(self, gate_edge) -> None:
+        """Painting works at every zoom, selected or not, and draws nothing at the middle where a plate would sit."""
+        for zoom in (0.3, 1.0):
+            assert not paint_item(gate_edge, zoom).isNull()
+        assert not paint_item(gate_edge, 1.0, selected=True).isNull()
+        gate_edge.hoverEnterEvent(None)
+        assert not paint_item(gate_edge, 1.0).isNull()
+
+    def test_gate_dialog_has_no_wormhole_fields(self, state, gate_edge) -> None:
+        """The connection editor offers no wormhole state for a gate and saves nothing."""
+        from homebound.ui.dialogs import ConnectionDialog
+        dialog = ConnectionDialog(None, state, gate_edge.connection)
+        assert dialog.fields is None and dialog.values() == {}

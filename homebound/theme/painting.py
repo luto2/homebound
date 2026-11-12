@@ -452,7 +452,7 @@ def draw_chip(painter: QPainter, x: float, y: float, text: str, background: QCol
 def edge_pens() -> dict[str, QPen]:
     """Return the connection pens by state (built once; ``edge_pens.cache_clear()`` rebuilds them).
 
-    Keys: the mass states (fresh, reduced, critical, unknown), ``frigate_only``, ``lifetime_4h`` and
+    Keys: the mass states (fresh, reduced, critical, unknown), ``frigate_only``, ``gate`` (stargate link, solid grey), ``lifetime_4h`` and
     ``lifetime_1h`` (dotted casings), and ``selected``. Dash patterns are divided by the pen width,
     as Qt measures them in widths.
     """
@@ -462,6 +462,8 @@ def edge_pens() -> dict[str, QPen]:
         "critical": QPen(color("edge-critical"), PIXELS["edge-w-critical"], Qt.PenStyle.CustomDashLine),
         "unknown": QPen(color("edge-unknown"), PIXELS["edge-w-fresh"], Qt.PenStyle.CustomDashLine),
         "frigate_only": QPen(color("edge-frig"), PIXELS["edge-w-frig"]),
+        "gate": QPen(color("edge-unknown"), PIXELS["edge-w-fresh"], Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap,
+                     Qt.PenJoinStyle.MiterJoin),
         "lifetime_4h": QPen(color("edge-eol"), PIXELS["edge-w-eol"], Qt.PenStyle.CustomDashLine,
                             Qt.PenCapStyle.RoundCap),
         "lifetime_1h": QPen(color("edge-eol"), PIXELS["edge-w-eol"], Qt.PenStyle.CustomDashLine,

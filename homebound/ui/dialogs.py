@@ -359,11 +359,17 @@ class ConnectionDialog(BaseDialog):
         self.setMinimumWidth(480)
         self.setMaximumWidth(560)
         self.connection = connection
-        self.fields = WormholeFields(state, [connection.system_a, connection.system_b], {
-            "type": connection.wormhole_type, "size": connection.size, "lifetime": connection.lifetime,
-            "lifetime_set_at": connection.lifetime_set_at, "mass": connection.mass}, ask_destination=False)
-        self.fields.resized.connect(self.adjustSize)
-        self.body.addWidget(self.fields)
+        self.is_gate = bool(state.universe and state.universe.gate_adjacent(connection.system_a, connection.system_b))
+        self.fields = None
+        if self.is_gate:   # a stargate has no type, size, lifetime or mass
+            self.body.addWidget(banner("info", "⇄", "These systems are joined by a <b>stargate</b>. "
+                                                    "There is no wormhole state to edit."))
+        else:
+            self.fields = WormholeFields(state, [connection.system_a, connection.system_b], {
+                "type": connection.wormhole_type, "size": connection.size, "lifetime": connection.lifetime,
+                "lifetime_set_at": connection.lifetime_set_at, "mass": connection.mass}, ask_destination=False)
+            self.fields.resized.connect(self.adjustSize)
+            self.body.addWidget(self.fields)
         self.add_buttons(danger_button("✕ Collapse", lambda: (self.collapse.emit(), self.reject())))
         lost = QPushButton("Lost connection")
         lost.setToolTip("Remove the connection but keep both systems, e.g. to find a way out behind a closed hole")
@@ -371,7 +377,9 @@ class ConnectionDialog(BaseDialog):
         self.foot.insertWidget(1, lost)
 
     def values(self) -> dict:
-        """Return the connection columns to save."""
+        """Return the connection columns to save (none for a stargate)."""
+        if self.fields is None:
+            return {}
         values = self.fields.values()
         return {"wormhole_type": values["type"], "mass": values["mass"], "lifetime": values["lifetime"],
                 "size": values["size"], "frigate_only": values["frigate_only"]}
