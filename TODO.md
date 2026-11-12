@@ -78,7 +78,9 @@ a small change whose file and fix are named.
 
 18. Leftovers from tasks 5.1 and 6 (2026-11-11): the overlay's "follow" mode should skip characters whose
     client is closed (online-indicator plan step 5), and the lost-connection "CUT OFF" mark could sync
-    through the protocol 2 gate (it is local-only now).
+    through the protocol 2 gate (it is local-only now). Owner (2026-11-12): sync it, so every member sees
+    the mark and the 1-hour removal happens for everyone; the watched-systems rule (stop mapping 1 hour
+    after a cut) builds on it.
     Effort: 2/5 · Sonnet.
 
 19. Follow-ups from the owner's answers (2026-11-12). No plan yet; most are small.
@@ -99,6 +101,13 @@ a small change whose file and fix are named.
     - Tray menu shows the "Ctrl+Shift+O" overlay shortcut hint again (with `plan-overlay-shortcut.md`).
     - The "new" marker on sigs clears by itself after about 10 minutes.
     - Unused code and duplicate constants: one refactor pass at the end, not now.
+    - Same hole number twice in one system (cloud): the sig whose number reached the server first keeps
+      it; the other member gets a warning. Already synced numbers win over edits made offline. A system
+      re-linked under a new parent gets a new name (its bookmark must fit the system it now hangs off);
+      its children keep their names.
+    - "Return" always means the hole back towards home; a hole into a child system is a normal
+      connection, so no stored return flag.
+    - The damaged-map message texts are approved as they are.
     Effort: mostly 1–2/5 · Sonnet; the backfill and the admin-only scheme change 3/5 · Opus (sync).
 
 ## To do
