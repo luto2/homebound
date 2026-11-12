@@ -124,6 +124,12 @@ a small change whose file and fix are named.
     instead of the curve the wormhole lines use (owner, 2026-11-12).
     Effort: 2/5 · Sonnet. A check against the universe's gate list, a stored or derived flag, and a second
     path shape in the connection painter.
+21. Make the type check mandatory (owner, 2026-11-12; details to be discussed before building).
+    Once `uv run mypy` is at 0 errors: the CI step in `test.yml` fails the build, and the push gate
+    (`tools/push_gate.py`) runs mypy too, so a commit with type errors can't be pushed. Rule: mypy errors
+    are always fixed by a Haiku agent. Open: how the gate reports it, whether the rule is enforced in
+    the gate's failure message or only written down, and where agents read it.
+    Effort: 2/5 · Sonnet.
 
 ## To do
 
