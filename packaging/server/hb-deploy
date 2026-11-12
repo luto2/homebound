@@ -2,7 +2,8 @@
 # Deploy new commits on master to this server (hosting-hetzner.md §8).
 # Install to /usr/local/bin/hb-deploy; run every 5 minutes by homebound-deploy.timer, as root.
 # Asks GitHub for master's commit (one small request); when it moved, pulls, syncs the venv and
-# restarts homebound-sync. If the new version doesn't answer /api/health, it goes back to the old
+# restarts homebound-sync. Map data (universe.sqlite) that the checked-out code can't read, after a
+# schema change, is rebuilt before the restart. If the new version doesn't answer /api/health, it goes back to the old
 # commit, tells Discord (HB_DISCORD_WEBHOOK) and skips that commit until master moves again.
 # Holds deploys from 10:55 to 11:35 UTC, so the ESI pulls after EVE's downtime aren't interrupted.
 set -u
@@ -46,9 +47,25 @@ healthy() {
     return 1
 }
 
+universe_ok() {
+    # Loads the map data the way the server does (HB_UNIVERSE, else the default path); fails on a missing
+    # file or an older schema.
+    (cd "$REPO" && .venv/bin/python -c 'import os
+from homebound.universe.db import DEFAULT_PATH, Universe
+Universe(os.environ.get("HB_UNIVERSE") or DEFAULT_PATH)') >/dev/null 2>&1
+}
+
+ensure_universe() {
+    universe_ok && return 0
+    echo "map data missing or built by another version; rebuilding"
+    (cd "$REPO" && .venv/bin/homebound --build-static) && universe_ok
+}
+
 install_commit() {
+    # A rollback runs this too, so the old code gets map data in its own schema back.
     git -C "$REPO" reset --quiet --hard "$1" &&
         (cd "$REPO" && uv sync --quiet --extra server --no-dev --frozen) &&
+        ensure_universe &&
         systemctl restart homebound-sync &&
         healthy
 }
@@ -93,7 +110,7 @@ if install_commit "$remote"; then
 fi
 echo "$remote" > "$SKIP"
 if install_commit "$old"; then
-    notify "Homebound deploy of $(short "$remote") failed (no answer from /api/health); rolled back to $(short "$old"). See journalctl -u homebound-sync.
+    notify "Homebound deploy of $(short "$remote") failed (map data rebuild or /api/health); rolled back to $(short "$old"). See journalctl -u homebound-sync.
 $changes"
 else
     notify "Homebound deploy of $(short "$remote") failed AND the rollback to $(short "$old") isn't healthy either. The server is probably down: journalctl -u homebound-sync"

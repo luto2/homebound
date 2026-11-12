@@ -162,8 +162,8 @@ HB_RESTORE_HEALTHCHECK_URL=https://hc-ping.com/…   # the daily restore test re
 - **Merging to `master` is the deploy.** The server pulls; GitHub has no workflow, secret or SSH key for it, so nothing about the deploy is public and no key can reach the server from outside.
 - `hb-deploy` (in `packaging/server/`, run as root every 5 minutes by `homebound-deploy.timer`):
   1. `git ls-remote origin refs/heads/master`: one small HTTPS request (~5–10 KB, ~3 MB a day). Nothing more happens when the commit hasn't moved.
-  2. If it moved: `git fetch`, fast-forward the checkout, `uv sync --extra server --no-dev --frozen`, `systemctl restart homebound-sync`.
-  3. Waits up to a minute for `/api/health`. If the new version doesn't answer, it goes back to the old commit, posts to the Discord webhook, and skips that commit until `master` moves again.
+  2. If it moved: `git fetch`, fast-forward the checkout, `uv sync --extra server --no-dev --frozen`, rebuild `universe.sqlite` with `homebound --build-static` if the new code can't read it (missing, or a schema change: the server refuses old map data at startup), `systemctl restart homebound-sync`.
+  3. Waits up to a minute for `/api/health`. If the new version doesn't answer (or the map rebuild fails), it goes back to the old commit, rebuilding the map data for it too if needed, posts to the Discord webhook, and skips that commit until `master` moves again.
   - Holds deploys from 10:55 to 11:35 UTC, so the ESI pulls after EVE's downtime aren't interrupted.
   - Refuses (and posts to Discord once) when the checkout isn't on `master`, has local changes, or `master` was rewritten.
   - No tests on the server: the push gate already ran them before the commit reached GitHub, and the server venv has no dev tools.
