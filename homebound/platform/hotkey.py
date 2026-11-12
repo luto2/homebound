@@ -45,7 +45,7 @@ def parse_shortcut(text: str) -> tuple[Qt.KeyboardModifier, int, int] | None:
     sequence = QKeySequence(text.strip(), QKeySequence.SequenceFormat.PortableText)
     if sequence.count() != 1:
         return None
-    combined = sequence[0]
+    combined = sequence[0]  # type: ignore[index]  # PySide6 stub lacks QKeySequence.__getitem__; it returns a QKeyCombination
     modifiers = combined.keyboardModifiers() & ~Qt.KeyboardModifier.KeypadModifier
     key = combined.key()
     letter_or_digit = Qt.Key.Key_A <= key <= Qt.Key.Key_Z or Qt.Key.Key_0 <= key <= Qt.Key.Key_9

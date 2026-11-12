@@ -19,6 +19,8 @@ def _resolve(value: object) -> str:
     """Resolve a colour token value: pick the theme variant and follow ``{other-token}`` references."""
     if isinstance(value, dict):
         value = value.get(THEME) or next(iter(value.values()))
+    if not isinstance(value, str):
+        raise TypeError(f"a colour token value must be text, not {value!r}")
     match = _REFERENCE.fullmatch(value)
     return _resolve(RAW_COLORS[match.group(1)]) if match else value
 

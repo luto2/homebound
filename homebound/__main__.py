@@ -40,7 +40,9 @@ def main() -> int:
     from .platform.instance import acquire_single_instance
     from .theme.qss import apply_theme
 
-    application = QApplication.instance() or QApplication(sys.argv)
+    application = QApplication.instance()
+    if not isinstance(application, QApplication):
+        application = QApplication(sys.argv)
     application.setApplicationName("homebound")
     application.setApplicationDisplayName("Homebound")
     application.setDesktopFileName("homebound")
