@@ -178,7 +178,7 @@ def test_presence_is_shown_on_the_other_side(cloud) -> None:
 def test_location_is_shared_only_while_the_client_is_open(cloud) -> None:
     """A closed client ends sharing at once when windows can be listed; without a list a fresh log is enough.
 
-    Whether the client window is open (the presence state) is only sent when the user turns it on.
+    Whether the client window is open (the presence state) is sent by default; the user can turn it off.
     """
     harness, kira, bob, code, statuses = cloud
     name = bob.join_with_code(code)
@@ -190,15 +190,19 @@ def test_location_is_shared_only_while_the_client_is_open(cloud) -> None:
     kira.set_sharing(kira.active_map_id, 91000001, True)
     assert spin(lambda: 91000001 in bob.engine.info(bob.active_map_id).presence)
     entry = bob.engine.info(bob.active_map_id).presence[91000001]
-    assert entry.get("state") is None                          # the state isn't shared by default
+    assert entry.get("state") == "recent"                      # the state is shared by default
     kira.state.open_characters = set()                         # windows are listed and no client is open
     kira.update_presence()
     assert spin(lambda: 91000001 not in bob.engine.info(bob.active_map_id).presence)
-    assert kira.state.settings.sync_presence_state is False
-    kira.set_share_state(True)
+    assert kira.state.settings.sync_presence_state is True
+    kira.set_share_state(False)
     rows["presence"] = "online"
     kira.state.open_characters = {"Kira"}
     kira.update_presence()
+    assert spin(lambda: 91000001 in bob.engine.info(bob.active_map_id).presence
+                and bob.engine.info(bob.active_map_id).presence[91000001].get("state") is None)
+    assert kira.state.settings.sync_presence_state is False
+    kira.set_share_state(True)
     assert spin(lambda: bob.engine.info(bob.active_map_id).presence.get(91000001, {}).get("state") == "online")
     assert kira.state.settings.sync_presence_state is True
 
@@ -234,9 +238,9 @@ def test_cloud_menu_offers_what_fits(cloud) -> None:
     texts = [action.text() for action in menu.fill().actions()]
     assert "Invite …" in texts and "Members …" in texts and "Reset to shared layout" in texts and "Kira" in texts
     share_state = next(action for action in menu.fill().actions() if action.text() == "Also share whether the game is open")
-    assert share_state.isCheckable() and not share_state.isChecked()
+    assert share_state.isCheckable() and share_state.isChecked()          # on by default
     share_state.trigger()
-    assert kira.state.settings.sync_presence_state is True
+    assert kira.state.settings.sync_presence_state is False
     menu_b = CloudMenu(window, bob, lambda kind, text: None)
     assert "Make cloud map …" in [action.text() for action in menu_b.fill().actions()]
     bob.sign_out()

@@ -360,7 +360,7 @@ class SyncManager(QObject):
         self.update_presence()
 
     def set_share_state(self, on: bool) -> None:
-        """Turn on or off telling others whether a shared character's client is open (off by default)."""
+        """Turn on or off telling others whether a shared character's client is open (on by default)."""
         require_type(on, bool, "on")
         self.state.settings.sync_presence_state = on
         self.state.settings.save()
