@@ -65,9 +65,10 @@ def parse_free_maps(text: str) -> dict[tuple[str, int], int]:
     result: dict[tuple[str, int], int] = {}
     for entry in text.replace(";", ",").replace(",", " ").split():
         try:
-            owner, count = entry.split("=")
-            kind, owner_id = owner.split(":")
-            kind, owner_id, count = FREE_KINDS[kind.strip().lower()], int(owner_id), int(count)
+            owner, count_text = entry.split("=")
+            kind_text, owner_id_text = owner.split(":")
+            kind = FREE_KINDS[kind_text.strip().lower()]
+            owner_id, count = int(owner_id_text), int(count_text)
             if owner_id <= 0 or count < 0:
                 raise ValueError
         except (KeyError, ValueError):
