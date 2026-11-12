@@ -5,6 +5,7 @@ rows, so the panel, the node and the timer toast agree (plan-structure-list.md, 
 """
 from datetime import datetime, timedelta
 
+from ..http import parse_utc
 from ..mapdb.store import Ship, Structure
 from ..validation import require_type
 from .scan_status import format_duration
@@ -18,16 +19,6 @@ GROUP_BADGES = {"Control Tower": "POS", "Orbital Infrastructure": "POCO", "Skyho
                 "Mercenary Den": "Merc Den"}
 
 
-def _when(iso: str | None) -> datetime | None:
-    """Return an ISO timestamp as a datetime, or None for an empty or broken one."""
-    if not iso:
-        return None
-    try:
-        return datetime.fromisoformat(iso)
-    except ValueError:
-        return None
-
-
 def structure_badge(structure: Structure) -> str:
     """Return the type badge of a structure row: ``Fortizar``, ``POCO``, ``POS``, ``Skyhook``."""
     require_type(structure, Structure, "structure")
@@ -38,7 +29,7 @@ def timer_left(structure: Structure, now: datetime) -> timedelta | None:
     """Return how long until a structure's timer ends (negative once it has), or None without a timer."""
     require_type(structure, Structure, "structure")
     require_type(now, datetime, "now")
-    when = _when(structure.timer_at)
+    when = parse_utc(structure.timer_at)
     return None if when is None else when - now
 
 
@@ -83,7 +74,7 @@ def fresh_ships(ships: list[Ship], now: datetime) -> int:
     """Return how many ships (not deployables) were seen in the last 5 minutes, for the node's ⚔ chip."""
     require_type(ships, list, "ships")
     require_type(now, datetime, "now")
-    return sum(1 for ship in ships if ship.category == "ship" and (seen := _when(ship.seen_at)) is not None
+    return sum(1 for ship in ships if ship.category == "ship" and (seen := parse_utc(ship.seen_at)) is not None
                and now - seen <= SHIPS_FRESH)
 
 
