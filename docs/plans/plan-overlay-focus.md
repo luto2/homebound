@@ -69,3 +69,12 @@ over the game.
 - Highsec, lowsec and nullsec exits are three separate markers (each in its security colour), so a summary
   row can show any combination of them. `ChainRow` gets `exits: frozenset` of `"high" | "low" | "null"`
   instead of one `kspace_exit` flag; the tests check each class on its own and a branch with two classes.
+
+## Implementation notes
+
+- `focus_rows(rows, store, universe, current, radius, max_rows, home_id)` in `mapping/chain.py`; `AppState.chain_for_character(id, focus=True)` calls it for the overlay (settings `overlay_focus_radius` 0/1/2, `overlay_max_rows` 5-40).
+- `ChainRow` gained `kind` (`""`, `"branch"`, `"path"`, `"more"`), `summary_count`, `exits` (frozenset of `high|low|null`) and `leads_home`.
+- "The branch the character is in" is read as everything below the character (the way on); the way home stays folded at the radius into one `path` row (a single system is shown instead of folded).
+- Under the row cap the farthest rows fold first; then a system's hidden branches merge into one `more` row. The minimum cap is 5 so home, the path row, the character and two merged rows always fit.
+- The path row reads "⋯ N systems on the way home" (N folded systems), not "N jumps".
+- Follow mode: `Overlay._target` returns no target when the focused character is not in `AppState.open_characters` (only when the platform can list windows).
