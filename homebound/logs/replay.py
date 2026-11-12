@@ -48,7 +48,7 @@ def main(arguments: list[str] | None = None, universe: Universe | None = None) -
         universe: Static data, or None to load the default file.
 
     Returns:
-        The exit code: 0, or 2 for an unknown home system.
+        The exit code: 0, or 2 for an unknown home system or a log that can't be read.
     """
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("logs", nargs="+", type=Path)
@@ -69,7 +69,12 @@ def main(arguments: list[str] | None = None, universe: Universe | None = None) -
     if home:
         store.add_system(home.id)
 
-    changes = sorted((change for path in options.logs for change in parse_log_file(path)), key=lambda change: change.at)
+    try:
+        changes = sorted((change for path in options.logs for change in parse_log_file(path)),
+                         key=lambda change: change.at)
+    except OSError as error:   # a missing, unreadable or vanished log file
+        print(f"can't read the log: {error}", file=sys.stderr)
+        return 2
     for change in changes:
         prefix = f"{change.at:%F %T} {change.character_name}:"
         for event in tracker.on_system_change(change):

@@ -215,7 +215,7 @@ def zkill_statics(system_id: int) -> list[str] | None:
     except (urllib.error.URLError, TimeoutError) as error:
         print(f"  zKill page for system {system_id} could not be read: {error}", file=sys.stderr)
         return None
-    text =html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page.decode("utf-8", "replace"))))
+    text = html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page.decode("utf-8", "replace"))))
     match = re.search(r"Statics:(.*?)(Alltime|$)", text)
     if not match:
         return None
