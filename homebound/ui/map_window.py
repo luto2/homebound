@@ -1179,20 +1179,22 @@ class MapWindow(QMainWindow):
         if not connection.confirmed:
             menus.item(menu, "Mark as confirmed", lambda: self._confirm(connection_id=connection_id), icon=menus.confirm_icon())
             menu.addSeparator()
-        menus.item(menu, "Edit connection …", lambda: self.edit_connection(connection_id), "Enter")
-        menu.addSeparator()
-        menus.section(menu, "Mass")
-        group = QActionGroup(menu)
-        for key, label in (("fresh", "Fresh"), ("reduced", "Reduced · R"), ("critical", "Critical · CRIT")):
-            menus.item(menu, label, lambda key=key: self._set_connection(connection_id, mass=key),
-                       checked=connection.mass == key, group=group)
-        menu.addSeparator()
-        menus.section(menu, "Lifetime")
-        group = QActionGroup(menu)
-        for key, label in ((0, "Stable"), (1, "◷ < 4h"), (2, "◷ < 1h"), (3, "✕ Expired")):
-            menus.item(menu, label, lambda key=key: self._set_connection(connection_id, lifetime=key),
-                       checked=connection.lifetime == key, group=group)
-        menu.addSeparator()
+        universe = self.state.universe
+        if not (universe and universe.gate_adjacent(connection.system_a, connection.system_b)):
+            menus.item(menu, "Edit connection …", lambda: self.edit_connection(connection_id), "Enter")
+            menu.addSeparator()
+            menus.section(menu, "Mass")
+            group = QActionGroup(menu)
+            for key, label in (("fresh", "Fresh"), ("reduced", "Reduced · R"), ("critical", "Critical · CRIT")):
+                menus.item(menu, label, lambda key=key: self._set_connection(connection_id, mass=key),
+                           checked=connection.mass == key, group=group)
+            menu.addSeparator()
+            menus.section(menu, "Lifetime")
+            group = QActionGroup(menu)
+            for key, label in ((0, "Stable"), (1, "◷ < 4h"), (2, "◷ < 1h"), (3, "✕ Expired")):
+                menus.item(menu, label, lambda key=key: self._set_connection(connection_id, lifetime=key),
+                           checked=connection.lifetime == key, group=group)
+            menu.addSeparator()
         menus.item(menu, "Lost connection", lambda: self._lost_connection(connection_id))
         menus.item(menu, "Collapse", lambda: self._collapse(connection_id), danger=True)
         menu.exec(position)
@@ -1221,7 +1223,7 @@ class MapWindow(QMainWindow):
         dialog = ConnectionDialog(self, self.state, connection)
         dialog.collapse.connect(lambda: self._collapse(connection_id))
         dialog.lost.connect(lambda: self._lost_connection(connection_id))
-        if dialog.exec() != QDialog.DialogCode.Accepted:
+        if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.values():
             return False
         self._set_connection(connection_id, **dialog.values())
         return True

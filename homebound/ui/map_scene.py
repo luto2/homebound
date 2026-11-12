@@ -459,8 +459,40 @@ class SystemNode(QGraphicsObject):
             scene.store_moved_nodes(self)
 
 
+def orthogonal_path(start: QPointF, end: QPointF, horizontal: bool) -> QPainterPath:
+    """Return a path with 90 degree corners from ``start`` to ``end``.
+
+    Args:
+        start: The first point.
+        end: The last point.
+        horizontal: True for horizontal, vertical, horizontal (nodes side by side); False for vertical,
+            horizontal, vertical (nodes above each other). The middle segment sits halfway between the ends.
+
+    Returns:
+        The path; a straight line when the ends are level on the axis the middle segment would shift.
+
+    Raises:
+        TypeError: If an argument has the wrong type.
+    """
+    require_type(start, QPointF, "start")
+    require_type(end, QPointF, "end")
+    require_type(horizontal, bool, "horizontal")
+    path = QPainterPath(start)
+    if horizontal:
+        middle = (start.x() + end.x()) / 2
+        points = [QPointF(middle, start.y()), QPointF(middle, end.y())]
+    else:
+        middle = (start.y() + end.y()) / 2
+        points = [QPointF(start.x(), middle), QPointF(end.x(), middle)]
+    for point in points + [end]:
+        if point != path.currentPosition():
+            path.lineTo(point)
+    return path
+
+
 class ConnectionEdge(QGraphicsItem):
-    """A curved wormhole connection between two nodes with a label plate (type and state chips)."""
+    """A connection between two nodes: a curve with a label plate for a wormhole, or a plain
+    orthogonal line when the two systems are also joined by a stargate."""
 
     def __init__(self, state, connection: Connection, node_a: SystemNode, node_b: SystemNode) -> None:
         """Create the edge and attach it to both nodes.
@@ -487,18 +519,21 @@ class ConnectionEdge(QGraphicsItem):
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
         self.line = QLineF()
         self.path = QPainterPath()
+        self.is_gate = False
         self.adjust()
 
     def refresh(self, connection: Connection) -> None:
         """Show an updated connection and repaint."""
         require_type(connection, Connection, "connection")
         self.connection = connection
-        self.setToolTip(self._tooltip())
+        self.adjust()
         self.update()
 
     def _tooltip(self) -> str:
-        """Return the one-line tooltip: type, mass, lifetime, size, unconfirmed note and age."""
+        """Return the one-line tooltip: type, mass, lifetime, size, unconfirmed note and age (a gate: its name)."""
         connection = self.connection
+        if self.is_gate:
+            return "Stargate" + ("" if connection.confirmed else " · Unconfirmed: drawn by hand")
         parts = [connection.wormhole_type or "Unknown type",
                  {"fresh": "Mass fresh", "reduced": "Mass reduced (<50%)", "critical": "Mass critical (<10%)",
                   "unknown": "Mass unknown"}[connection.mass]]
@@ -516,8 +551,13 @@ class ConnectionEdge(QGraphicsItem):
         return " · ".join(parts)
 
     def adjust(self) -> None:
-        """Curve from the facing sides of the two nodes (horizontal ports when side by side)."""
+        """Curve from the facing sides of the two nodes (horizontal ports when side by side).
+
+        A connection between stargate neighbours gets 90 degree corners instead of the curve.
+        """
         self.prepareGeometryChange()
+        universe = self.state.universe
+        self.is_gate = bool(universe and universe.gate_adjacent(self.connection.system_a, self.connection.system_b))
         rect_a = self.node_a.sceneBoundingRect().adjusted(4, 12, -4, -4)
         rect_b = self.node_b.sceneBoundingRect().adjusted(4, 12, -4, -4)
         if rect_b.left() >= rect_a.right() or rect_a.left() >= rect_b.right():
@@ -525,27 +565,36 @@ class ConnectionEdge(QGraphicsItem):
             start, end = QPointF(left.right(), left.center().y()), QPointF(right.left(), right.center().y())
             half = (end.x() - start.x()) / 2
             control_a, control_b = start + QPointF(half, 0), end - QPointF(half, 0)
+            horizontal = True
         else:
             upper, lower = (rect_a, rect_b) if rect_a.center().y() <= rect_b.center().y() else (rect_b, rect_a)
             start, end = QPointF(upper.center().x(), upper.bottom()), QPointF(lower.center().x(), lower.top())
             half = (end.y() - start.y()) / 2
             control_a, control_b = start + QPointF(0, half), end - QPointF(0, half)
-        path = QPainterPath(start)
-        path.cubicTo(control_a, control_b, end)
+            horizontal = False
+        if self.is_gate:
+            path = orthogonal_path(start, end, horizontal)
+        else:
+            path = QPainterPath(start)
+            path.cubicTo(control_a, control_b, end)
         self.path = path
         self.line = QLineF(start, end)
         self.setToolTip(self._tooltip())
 
     def boundingRect(self) -> QRectF:
-        """Return the curve and its label plate with a margin."""
-        return self.path.boundingRect().united(self._plate_rect()).adjusted(-8, -8, 8, 8)
+        """Return the line and its label plate (none on a gate) with a margin."""
+        rect = self.path.boundingRect()
+        if not self.is_gate:
+            rect = rect.united(self._plate_rect())
+        return rect.adjusted(-8, -8, 8, 8)
 
     def shape(self) -> QPainterPath:
         """Return a 12 px wide stroke around the curve plus the label plate, used for hit testing."""
         stroker = QPainterPathStroker()
         stroker.setWidth(12)
         outline = stroker.createStroke(self.path)
-        outline.addRect(self._plate_rect())
+        if not self.is_gate:
+            outline.addRect(self._plate_rect())
         return outline
 
     def _chips(self) -> list[tuple[str, QColor]]:
@@ -581,6 +630,12 @@ class ConnectionEdge(QGraphicsItem):
         path = self.path
         if self.isSelected():
             painter.strokePath(path, painting.edge_pens()["selected"])
+        if self.is_gate:   # no mass, lifetime, size or label: a stargate is permanent
+            pen = QPen(painting.edge_pens()["gate"])
+            if self.hover:
+                pen.setWidthF(pen.widthF() + 1)
+            painter.strokePath(path, pen)
+            return
         if not connection.confirmed:
             casing = QPen(color("warning"), 7, Qt.PenStyle.DashLine, Qt.PenCapStyle.FlatCap)
             casing.setDashPattern([3, 2])
