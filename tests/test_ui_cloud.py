@@ -309,3 +309,26 @@ def test_an_editors_scheme_change_is_refused_and_put_back(cloud) -> None:
     bob.state.store.set_map_setting("naming_scheme", "a2a")
     assert spin(lambda: bool(notices) and bob.state.store.map_setting("naming_scheme") == "numeric")
     assert "role doesn't allow" in notices[0] and kira.state.store.map_setting("naming_scheme") == "numeric"
+
+
+def test_a_system_behind_a_renumbered_sig_follows_its_number(cloud) -> None:
+    """The server gave our sig another number: the system we mapped through it moves to that hole, and we are told."""
+    from homebound.mapdb.store import Signature
+    harness, kira, bob, code, statuses = cloud
+    store = kira.state.store
+    c3 = pick_system("C3").id
+    with store.batch():
+        store.upsert_signature(Signature(C5, "AAA-100", "wormhole", hole_index=1))
+        store.add_system(c3, parent_id=C5, hole_index=1, label="11")
+        store.add_connection(C5, c3)
+        store.set_connection_signature(store.connection(C5, c3).id, C5, "AAA-100")
+        store.add_system(pick_system("C2").id, parent_id=c3, hole_index=1, label="111")
+    notices = []
+    kira.notice.connect(lambda level, text: notices.append(text))
+    store.update_signature(C5, "AAA-100", hole_index=2)          # what the ack brought (a remote write in the app)
+    assert kira._renumbered(kira.active_map_id, [(C5, "AAA-100", 1, 2)]) == 1
+    assert (store.system(c3).hole_index, store.system(c3).label) == (2, "12")
+    assert store.system(pick_system("C2").id).label == "111"     # its children keep their names
+    assert "AAA-100 is hole 2 now (1-2)" in notices[0]
+    assert kira._renumbered("someone-else", [(C5, "BBB-200", 1, 3)]) == 0   # another map: only the warning
+    assert "BBB-200 is hole 3 now:" in notices[1]

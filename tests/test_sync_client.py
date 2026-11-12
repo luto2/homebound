@@ -357,3 +357,53 @@ def test_undo_of_a_synced_action_syncs_too(pair) -> None:
     pump_all(kira, bob)
     assert bob.store.has_system(C5) and bob.store.connection(HOME.id, C5) is not None
     assert map_rows(bob.store) == map_rows(kira.store)
+
+
+
+def wormhole_scan(*signature_ids: str) -> list:
+    """A scanner paste of unnamed WH sigs."""
+    return parse_scanner_text("".join(f"{signature_id}\tCosmic Signature\tWormhole\t\t100%\t1 AU\n"
+                                      for signature_id in signature_ids))
+
+
+def numbers(install: Install, system_id: int) -> dict:
+    """Signature ID -> bookmark number in one system."""
+    return {signature.signature_id: signature.hole_index for signature in install.store.signatures(system_id)}
+
+
+def test_a_number_given_twice_stays_with_the_sig_that_reached_the_server_first(pair) -> None:
+    """Bob, offline, numbers a different new sig 1 too: Kira's keeps it, Bob's becomes 2 everywhere and he is told."""
+    harness, kira, bob = pair
+    bob.disconnect()
+    merge_signatures(bob.store, C5, wormhole_scan("BBB-200"))
+    merge_signatures(kira.store, C5, wormhole_scan("AAA-100"))
+    pump_all(kira)
+    assert numbers(kira, C5) == {"AAA-100": 1} and numbers(bob, C5) == {"BBB-200": 1}
+    bob.connect()
+    pump_all(kira, bob)
+    pump_all(kira, bob)
+    assert numbers(kira, C5) == numbers(bob, C5) == {"AAA-100": 1, "BBB-200": 2}
+    assert any("BBB-200 is hole 2 now" in text and "number 1" in text for _, text in bob.notices)
+    assert not kira.notices
+    assert bob.store.system(C5).next_hole == kira.store.system(C5).next_hole == 2
+    merge_signatures(kira.store, C5, wormhole_scan("CCC-300"))
+    assert numbers(kira, C5)["CCC-300"] == 3                     # 2 isn't given again
+    pump_all(kira, bob)
+    assert numbers(bob, C5)["CCC-300"] == 3 and kira.replica.outbox() == []
+
+
+def test_an_already_synced_number_wins_over_the_same_sig_pasted_offline(pair) -> None:
+    """Kira numbered AAA 2 first; Bob's offline paste of it alone numbers it 1, and it comes back as 2."""
+    harness, kira, bob = pair
+    bob.disconnect()
+    merge_signatures(kira.store, C5, wormhole_scan("AAA-100", "BBB-200"))
+    pump_all(kira)
+    time.sleep(0.01)                              # Bob's paste is the newer one: plain LWW would let it win
+    merge_signatures(bob.store, C5, wormhole_scan("BBB-200"))
+    assert numbers(bob, C5) == {"BBB-200": 1}
+    bob.connect()
+    pump_all(kira, bob)
+    pump_all(kira, bob)
+    assert numbers(kira, C5) == numbers(bob, C5) == {"AAA-100": 1, "BBB-200": 2}
+    assert any("BBB-200 is hole 2 now" in text for _, text in bob.notices)
+    assert bob.replica.outbox() == []

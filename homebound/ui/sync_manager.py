@@ -18,7 +18,7 @@ from .. import settings as settings_module
 from ..settings import Settings
 from ..sync.api import ApiError, SyncApi
 from ..sync.client import SocketWorker
-from ..sync.engine import MapInfo, SyncEngine
+from ..sync.engine import MapInfo, SyncEngine, renumbered_text
 from ..sync.hlc import HybridClock
 from ..sync.local import LocalReplica
 from ..sync.protocol import peer_protocol
@@ -69,6 +69,7 @@ class SyncManager(QObject):
         self.engine.on_notice = self.notice.emit
         self.engine.on_unlinked = self._unlinked
         self.engine.on_session = self._session_problem
+        self.engine.on_renumbered = self._renumbered
         self.received.connect(self.engine.handle)
         self.socketState.connect(self._socket_state)
         self.replica: LocalReplica | None = None
@@ -161,6 +162,37 @@ class SyncManager(QObject):
             self.state.mapChanged.emit()
         if self.state.selected:
             self.state.systemUpdated.emit(self.state.selected)
+
+    def _renumbered(self, map_id: str, renumbered: list) -> int:
+        """The server kept another member's sig on a bookmark number we gave too: follow it and warn.
+
+        A system of ours hung off one of those sigs under the old number moves to the new one and
+        gets the name that number gives (its own children keep theirs). One local action.
+
+        Returns:
+            The number of systems moved.
+        """
+        moved = 0
+        active = map_id == self.active_map_id
+        state = self.state
+        if active:
+            store = state.store
+            with store.batch():
+                for system_id, signature_id, sent, kept in renumbered:
+                    if not store.has_system(system_id):
+                        continue
+                    for child in store.children(system_id):
+                        connection = store.connection(system_id, child.id)
+                        if child.hole_index == sent and connection and connection.signature_on(system_id) == signature_id:
+                            store.update_system(child.id, hole_index=kept)
+                            store.update_system(child.id, label=state.namer.attach_label(child.id))
+                            moved += 1
+        for system_id, signature_id, sent, kept in renumbered:
+            bookmark = state.namer.bookmark(system_id, kept) if active and state.store.has_system(system_id) else None
+            self.notice.emit("warn", renumbered_text(signature_id, sent, kept, bookmark))
+        if active:
+            state.mapChanged.emit()
+        return moved
 
     def _unlinked(self, map_id: str, reason: str) -> None:
         """The server dropped us from a map: keep it as a plain local map (plan §15)."""

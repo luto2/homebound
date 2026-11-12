@@ -119,6 +119,10 @@ No open decisions left.
   (`Store._raise_hole_counters`).
 - Two sigs with the same number (two members pasting different new sigs at once) get a ⚠ on
   their copy button and a tooltip; nothing is renumbered.
+  **2026-11-12 (owner):** on a cloud map the sig whose number reached the server first keeps it, and
+  the server gives the later one the next free number (`merge.settle_hole_numbers`, sync-protocol.md
+  §6 step 8); its member gets a warning. Already synced numbers win over edits made offline. The ⚠
+  stays for duplicates from before that server version.
 - A WH sig that comes without a number (from an older cloud client) shows the number it would get
   and stores it when its bookmark is copied, or at the next paste in that system.
 - A system that comes back without a sig keeps its old number while no hole of the new parent

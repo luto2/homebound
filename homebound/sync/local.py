@@ -253,6 +253,27 @@ class LocalReplica:
                 self.database.execute("INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('last_seq', ?)", (str(seq),))
         return action
 
+    def renumbered(self, batch_id: str, stamped: dict) -> list[tuple[int, str, int, int]]:
+        """Return the sigs of an outbox batch whose bookmark number the server changed (``settle_hole_numbers``).
+
+        Call it before :meth:`acknowledge`, which takes the batch out of the outbox.
+
+        Returns:
+            ``(system id, signature id, number sent, number kept)`` for each, in batch order.
+        """
+        row = self.database.execute("SELECT payload FROM sync_outbox WHERE batch_id=?", (batch_id,)).fetchone()
+        if row is None or not stamped:
+            return []
+        changed = []
+        for message in json.loads(row[0]):
+            sent = (message.get("f") or {}).get("hole_index")
+            if message.get("e") != "signature" or message.get("del") or not sent:
+                continue
+            kept = stamped.get(f"signature:{key_text(key_from_json('signature', message['k']))}", {}).get("hole_index")
+            if kept and kept != sent:
+                changed.append((message["k"][0], message["k"][1], sent, kept))
+        return changed
+
     def drop_batch(self, batch_id: str) -> None:
         """Forget a batch the server refused (it comes back right only through a fresh snapshot)."""
         self.database.execute("DELETE FROM sync_outbox WHERE batch_id=?", (batch_id,))
