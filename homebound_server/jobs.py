@@ -7,6 +7,7 @@ jobs run again at 11:30, and only a failure at 11:30 goes to the webhook.
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from datetime import date, datetime, time as clock, timezone
 
 import httpx
@@ -40,7 +41,7 @@ DOWNTIME_RETRY = clock(11, 30)                    # UTC; one more pull if ESI wa
 
 def run_job(service: Service, name: str):
     """Run one job by name (also used by the admin CLI)."""
-    return {
+    jobs: dict[str, Callable[[], object]] = {
         "expire_presence": service.hub.expire_presence,
         "prune": service.prune,
         "sweep_billing": service.sweep_billing,
@@ -52,7 +53,8 @@ def run_job(service: Service, name: str):
         "check_disk": service.check_disk,
         "purge_old_records": service.purge_old_records,
         "flush_events": service.events.flush,
-    }[name]()
+    }
+    return jobs[name]()
 
 
 def is_downtime_error(error: BaseException) -> bool:
