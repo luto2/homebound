@@ -9,7 +9,8 @@ instead of the newest, which has the same three properties.
 
 On top of that the server checks a batch before it applies it (:func:`check_batch`): references
 to systems that don't exist, cycles and taken ``(parent_id, hole_index)`` slots are rejected (first
-to reach the server wins, plan §3 "Structural fields").
+to reach the server wins, plan §3 "Structural fields"). The same rule settles hole numbers given
+twice in one system (:func:`settle_hole_numbers`).
 """
 import copy
 from collections.abc import Callable, Iterable
@@ -227,6 +228,94 @@ def check_batch(state: MapState, ops: list[Op], system_exists: Callable[[int], b
             raise BatchRejected("conflict", f"placing {system_id} under {parent} makes a loop",
                                 [("system", system_id), ("system", parent)])
     return after
+
+
+def settle_hole_numbers(state: MapState, ops: list[Op], after: MapState | None = None) -> tuple[list[Op], dict]:
+    """Keep each hole number to the sig whose number reached the server first (owner, 2026-11-12).
+
+    Two members who paste different new sigs in one system at the same time (or one of them offline)
+    can give both the same bookmark number. The server sees the batches one after the other (its
+    ``seq``), so the number stays with the sig that has it already and the sig of the later batch
+    gets the next free number of that system. The same goes for a number that a hole of the system
+    (a child placed there) already has, unless that child hangs off this very sig. And a sig that
+    another member numbered first keeps that number when a batch made offline pastes it again with
+    another one (a full upsert of a live sig): already synced numbers win over offline edits.
+
+    Every client gets the changed number: the sender in ``ack.stamped``, the others in the ops,
+    so all of them agree. Numbers the batch only moves between its own sigs (a return-hole swap) are
+    left alone.
+
+    Args:
+        state: The map as the server has it before the batch.
+        ops: The checked batch.
+        after: The state after the batch, if the caller has it (:func:`check_batch` returns it).
+
+    Returns:
+        ``(ops, settled)``: the batch with the changed numbers (and the raised ``next_hole`` of each
+        system concerned), and ``"signature:<key json>" -> {"hole_index": n}`` for the ``ack``.
+    """
+    numbered = [index for index, op in enumerate(ops)
+                if op.entity == "signature" and not op.delete and op.fields.get("hole_index")]
+    if not numbered:
+        return ops, {}
+    if after is None:
+        after = state.overlay()
+        after.apply_batch(ops)
+    systems = {ops[index].key[0] for index in numbered}
+    numbered_here = {op.key for op in ops if op.entity == "signature" and not op.delete and "hole_index" in op.fields}
+    placed_here = {op.key for op in ops if op.entity == "system" and op.has_placement}
+    numbers: dict[int, dict[str, int]] = {system_id: {} for system_id in systems}    # live sigs -> number
+    holes: dict[int, dict[int, int]] = {system_id: {} for system_id in systems}      # live children -> hole
+    links: dict[tuple[int, int], str | None] = {}                                     # (system, child) -> its sig
+    highest = dict.fromkeys(systems, 0)                                               # every number seen, dead too
+    for (entity, key), entity_state in after.entities.items():
+        values = entity_state.fields
+        if entity == "signature" and key[0] in systems and values.get("hole_index"):
+            highest[key[0]] = max(highest[key[0]], values["hole_index"])
+            if entity_state.exists:
+                numbers[key[0]][key[1]] = values["hole_index"]
+        elif entity == "system":
+            parent, hole = entity_state.placement
+            if parent in systems and hole:
+                highest[parent] = max(highest[parent], hole)
+                if entity_state.exists:
+                    holes[parent][key] = hole
+            if key in systems:
+                highest[key] = max(highest[key], values.get("next_hole") or 0)
+        elif entity == "connection" and entity_state.exists:
+            for end, other, name in ((key[0], key[1], "signature_a"), (key[1], key[0], "signature_b")):
+                if end in systems:
+                    links[(end, other)] = values.get(name)
+    settled: dict[str, dict] = {}
+    raised: dict[int, int] = {}
+    ops = list(ops)
+    for index in numbered:
+        op = ops[index]
+        system_id, signature_id = op.key
+        number = op.fields["hole_index"]
+        before = state.get("signature", op.key)
+        current = before.fields.get("hole_index") if before is not None and before.exists else None
+        if current == number:
+            continue                     # not a new number
+        if op.full and current:
+            target = current             # pasted again offline: the number it got first stays
+        else:
+            taken = any(other != signature_id and held == number and (system_id, other) not in numbered_here
+                        for other, held in numbers[system_id].items())
+            taken = taken or any(hole == number and child not in placed_here and links.get((system_id, child)) != signature_id
+                                 for child, hole in holes[system_id].items())
+            if not taken:
+                continue
+            target = highest[system_id] = highest[system_id] + 1
+            raised[system_id] = target
+        ops[index] = op.with_fields(hole_index=target)
+        numbers[system_id][signature_id] = target
+        settled[f"signature:{key_text(op.key)}"] = {"hole_index": target}
+    for system_id, counter in sorted(raised.items()):
+        if after.live("system", system_id):
+            sender = ops[numbered[0]]
+            ops.append(Op("system", system_id, {"next_hole": counter}, sender.hlc, sender.client_id))
+    return ops, settled
 
 
 def referenced_systems(op: Op) -> list[int]:

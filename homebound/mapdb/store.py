@@ -57,6 +57,9 @@ class MapSystem:
     static: int = 0              # 1: reached through its parent's static (a flag, not a hole number)
     next_hole: int = 0           # highest hole number given out in this system; numbers are never reused
     cut_off_at: str | None = None  # when a lost connection cut this system's piece off from home (Tracker.disconnect)
+    # the parent it hung off before it was detached (local, not synced): coming back under the same
+    # parent it keeps its number and name, under another one it gets new ones; None while attached or unknown
+    detached_from: int | None = None
 
 
 @dataclass
@@ -243,6 +246,10 @@ VOLATILE_COLUMNS = {"updated_at", "next_hole"}
 # key_value entry of a map file that predates stored names: its labels are still to be filled in
 # with the names it showed before (``naming.freeze_legacy_names``). "1" pending, "0" done.
 LEGACY_NAMES_KEY = "legacy_names"
+# key_value entry of a cloud map's file: whether names and numbers that only this file has (labels from
+# before protocol 2, names given to systems an older client placed, numbers the legacy freeze filled
+# in) still have to go to the server once (``LocalReplica.backfill``). Missing or "pending": to do; "done".
+NAMES_BACKFILL_KEY = "names_backfill"
 
 
 @dataclass
@@ -349,6 +356,7 @@ COLUMN_ADDITIONS = [
     ("systems", "static", "INTEGER DEFAULT 0"),
     ("systems", "next_hole", "INTEGER DEFAULT 0"),
     ("systems", "cut_off_at", "TEXT"),
+    ("systems", "detached_from", "INTEGER"),
 ]
 
 
@@ -702,8 +710,18 @@ class Store:
                               list(row.values()))
 
     def _update_row(self, entity: str, key: Any, values: dict) -> None:
-        """Set columns of an existing entity's row."""
+        """Set columns of an existing entity's row.
+
+        A system that loses its parent remembers it in ``detached_from`` (every way a system is
+        detached ends here, sync included); one that gets a parent forgets it.
+        """
         self._touch(entity, key)
+        if entity == "system" and "parent_id" in values and "detached_from" not in values:
+            current = self._row("system", key)
+            if values["parent_id"] is not None:
+                values = values | {"detached_from": None}
+            elif current is not None and current["parent_id"] is not None:
+                values = values | {"detached_from": current["parent_id"]}
         table, where = ALL_ENTITY_TABLES[entity], ALL_ENTITY_WHERE[entity]
         keys = key_values(key)
         self.database.execute(f"UPDATE {table} SET {', '.join(f'{_quoted(column)}=?' for column in values)} "

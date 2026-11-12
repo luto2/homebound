@@ -427,3 +427,21 @@ def test_a_new_client_sends_the_presence_state_only_to_a_new_server(server, send
     engine.handle({"t": "presence", "map": "m_1", "char_id": 7, "name": "Bob", "system_id": C5, "afk": False,
                    "at": "x", "state": "recent"})
     assert engine.info("m_1").presence[7]["state"] == "recent"
+
+
+
+def test_the_backfill_waits_for_a_server_that_knows_names() -> None:
+    """With an old server the local-only names stay local and the backfill stays due; a new one gets them."""
+    sent: list[dict] = []
+    engine, replica = engine_on({"protocol": 1}, sent)
+    with replica.store.batch(origin="remote"):
+        replica.store.update_system(HOME.id, label="Mine")
+    assert replica.backfill_pending
+    assert engine.backfill("m_1", replica) is None and replica.backfill_pending
+    engine.join("m_1")
+    assert replica.backfill_pending and len(replica.outbox()) == 1           # only the add of home
+    engine.handle({"t": "welcome", "account_id": 1, "characters": [], "protocol": 2})
+    engine.join("m_1")
+    assert not replica.backfill_pending
+    backfill = replica.outbox()[-1]["ops"]
+    assert backfill == [{"e": "system", "k": HOME.id, "f": {"label": "Mine"}, "hlc": backfill[0]["hlc"], "c": A}]

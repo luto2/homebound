@@ -175,6 +175,9 @@ def test_viewers_and_web_views_cant_push_and_home_is_owner_only(harness) -> None
     socket.join(map_id)
     home = {"e": "setting", "k": "home_system", "f": {"value": "J100001"}, "hlc": format_hlc(20, 0), "c": B}
     assert socket.push(map_id, [home])["code"] == "forbidden"
+    scheme = {"e": "setting", "k": "naming_scheme", "f": {"value": "a2a"}, "hlc": format_hlc(20, 1), "c": B}
+    refused = socket.push(map_id, [scheme])
+    assert (refused["code"], refused["detail"]) == ("forbidden", "Only the owner or a manager can change the naming scheme.")
     bob_id = harness.api("GET", "/api/account", bob).json()["account_id"]
     assert harness.api("PATCH", f"/api/maps/{map_id}/members/{bob_id}", kira, json={"role": "viewer"}).status_code == 200
     status = socket.until("status")
@@ -231,6 +234,23 @@ def test_managers_invite_but_cant_make_managers(harness) -> None:
     assert harness.api("POST", f"/api/maps/{map_id}/invites", bob, json={"role": "manager"}).status_code == 403
     carl = harness.login(91000005, "Carl")
     assert harness.api("POST", f"/api/maps/{map_id}/invites", carl, json={"role": "viewer"}).status_code == 403
+
+
+def test_the_owner_and_managers_change_the_naming_scheme(harness) -> None:
+    """The scheme is a map admin's setting: a manager's and the owner's changes go through and reach the others."""
+    map_id, kira, bob = setup_map(harness)
+    bob_id = harness.api("GET", "/api/account", bob).json()["account_id"]
+    harness.api("PATCH", f"/api/maps/{map_id}/members/{bob_id}", kira, json={"role": "manager"})
+    owner, manager = Socket(harness, kira, A), Socket(harness, bob, B)
+    owner.join(map_id)
+    manager.join(map_id)
+    scheme = {"e": "setting", "k": "naming_scheme", "f": {"value": "a2a"}, "hlc": format_hlc(30, 0), "c": B}
+    assert manager.push(map_id, [scheme])["t"] == "ack"
+    assert owner.until("ops")["ops"][0]["f"] == {"value": "a2a"}
+    back = {"e": "setting", "k": "naming_scheme", "f": {"value": "numeric"}, "hlc": format_hlc(31, 0), "c": A}
+    assert owner.push(map_id, [back])["t"] == "ack"
+    owner.close()
+    manager.close()
 
 
 def test_the_longest_standing_manager_takes_over_and_pays(harness) -> None:

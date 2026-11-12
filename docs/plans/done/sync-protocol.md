@@ -80,7 +80,7 @@ What a version added to the ops is listed in `protocol.GATED_FIELDS` and `GATED_
 | S→C | `presence` | `map`, `char_id`, `name`, `system_id`, `at`, `afk`, `state` (protocol 2) |
 | S→C | `presence_all` | `map`, `entries[]` (sent on join) |
 
-- **Protocol 2** adds `state` to both directions (`protocol.GATED_PRESENCE_FIELDS`): `"online"` (the character's client window is open) or `"recent"` (no window list on that computer, but the log was written in the last 30 minutes). The client sends it only to a protocol 2 server and only when the user turned on "Also share whether the game is open" (off by default); the server relays `null` for "not said" (an old client, or the switch off) and strips the field for protocol 1 sockets. Any other value counts as `null`.
+- **Protocol 2** adds `state` to both directions (`protocol.GATED_PRESENCE_FIELDS`): `"online"` (the character's client window is open) or `"recent"` (no window list on that computer, but the log was written in the last 30 minutes). The client sends it only to a protocol 2 server and unless the user turned off "Also share whether the game is open" (on by default since 2026-11-12); the server relays `null` for "not said" (an old client, or the switch off) and strips the field for protocol 1 sockets. Any other value counts as `null`.
 - A client shares a character while it is playing: its client window is open, or, where windows can't be listed, its log was written in the last 30 minutes. A client that is seen to close sends `system_id: null` at once (before protocol 2 the client kept sharing for 24 hours after the last log write).
 - Presence is kept in memory only. After 1 h without an update the character shows as AFK. `system_id: null`, or the client's socket being gone for 10 minutes, drops it (plan §3).
 - The S→C `presence` also carries `afk: true|false`.
@@ -116,17 +116,20 @@ What a version added to the ops is listed in `protocol.GATED_FIELDS` and `GATED_
 - A batch is **atomic**: either all of its ops apply, or the whole batch is rejected.
 - One user action is one batch. A sig paste of 30 rows is one batch, and so is a system delete together with its cascades.
 
+- **Backfill (since 2026-11-12):** once per map file, a client sends the server what only it has: labels, the static flag (when the server never had one), a higher `next_hole` and sig numbers the server lacks (`LocalReplica.backfill`). These are plain updates whose `hlc` is just above the stamp of the value they fill, not the clock of now, so they lose to anything the server got meanwhile. Only to a protocol 2 server.
+
 ## 6. Server-side checks
 
 The server checks these, in this order, before a batch is applied:
 
-1. **Auth and role:** the session is valid, the account is a member, its role may edit, and the map isn't read-only. Changing `home_system` is owner-only. → `read_only` / `not_member` / `forbidden`
+1. **Auth and role:** the session is valid, the account is a member, its role may edit, and the map isn't read-only. Changing `home_system` is owner-only; changing `naming_scheme` needs the owner or a manager (since 2026-11-12; the app disables the scheme controls for the others, `SyncManager.scheme_lock`). → `read_only` / `not_member` / `forbidden`
 2. **Limits** (§8). → `too_large` / `rate_limited`
 3. **Shape:** known entity and field names, and types and value ranges that match the client schema (mass and lifetime enums, sig ID pattern `^[A-Z]{3}-\d{3}$`, notes up to 4,000 characters). → `invalid`
 4. **System IDs are real** solar systems. The server ships the same `universe.sqlite` as the client. It needs that file for prune ("path to home") anyway. → `invalid`
 5. **References:** a connection's two systems, and a sig's system, exist or are added in the same batch. Neither may be a tombstone that the batch doesn't re-add with `full`. → `conflict`
 6. **Structure:** a `placement` must not create a cycle or take a `(parent_id, hole_index)` slot that another live system holds. → `conflict`
 7. **Merge:** plain fields go through LWW (the batch can't fail here, it may just lose some fields). The batch gets the next `seq` and is broadcast.
+8. **Hole numbers given twice** (since 2026-11-12, `merge.settle_hole_numbers`): a sig whose new `hole_index` another live sig of that system already has, or a hole of that system (a child placed there that doesn't hang off this sig), gets the system's next free number instead (one past every number seen there, deleted sigs too), and the system's `next_hole` goes up in the same batch. A full upsert of a sig that is live with a number already (pasted again offline) keeps the server's number. So the number stays with the sig whose number reached the server first (`seq` order), and an already synced number wins over an edit made offline. The changed numbers go back in `ack.stamped` (`{"hole_index": n}`) and in the broadcast ops, so every client shows the same. The app warns the sender ("… is hole 2 now: number 1 was given to another sig there first") and moves a system it mapped through that sig to the new number. Numbers a batch only moves between its own sigs (a return-hole swap) are left alone. Older clients take the stamped number without the warning; before the server has this, the duplicate shows with a ⚠ as before.
 
 **`reject.current[]`** holds the server's current state of each entity behind the conflict. The client writes it locally (dropping its own losing ops for those entities), recomputes names and shows a short toast, e.g. "A3 was already mapped by Kira; your version was replaced".
 

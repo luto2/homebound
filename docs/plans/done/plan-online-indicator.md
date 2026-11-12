@@ -99,8 +99,8 @@ Sort order stays: online first, then recent, then offline, each by name.
 - **Cloud presence (protocol 2)**: a shared character is sent while it is playing: an open client, or a
   fresh log where windows can't be listed. A client seen to close stops sharing at once (it used to keep
   going for 24 h after the last log write). The `presence` message got an optional `state`
-  (`"online"`/`"recent"`), gated like the ops (`sync-protocol.md` §4 Presence). **Privacy default**: the
-  state is only sent when the user turns on Cloud → "Also share whether the game is open"
-  (`Settings.sync_presence_state`, off). The window list itself, and characters that aren't shared,
+  (`"online"`/`"recent"`), gated like the ops (`sync-protocol.md` §4 Presence). **Default**: the
+  state is sent unless the user turns off Cloud → "Also share whether the game is open"
+  (`Settings.sync_presence_state`; off at first, on by default since the owner's answer of 2026-11-12). The window list itself, and characters that aren't shared,
   never leave the computer. Other members see a shared "recent" character as "Name (recent)".
 - Not done: the overlay "follow" mode skipping closed clients (step 5, out of scope).

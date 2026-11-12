@@ -14,8 +14,9 @@ import json
 import uuid
 from typing import Any
 
-from ..mapdb.store import ENTITY_TABLES, ENTITY_WHERE, MAP_SETTING_KEYS, Action, Store, key_values, utc_now_iso
-from .hlc import HybridClock
+from ..mapdb.store import (ENTITY_TABLES, ENTITY_WHERE, MAP_SETTING_KEYS, NAMES_BACKFILL_KEY, Action, Store,
+                           key_values, utc_now_iso)
+from .hlc import MAX_COUNTER, HybridClock, format_hlc, parse_hlc
 from .merge import Effect, EntityState, MapState, apply_op
 from .protocol import (FIELDS, LAYOUT_FIELDS, PROTOCOL, Op, full_ops_for_rows, key_from_json, key_from_text, key_text,
                        op_from_json, ops_for_peer, ops_from_action, row_key)
@@ -153,6 +154,71 @@ class LocalReplica:
                 ops.append(Op("system", system_id, {"next_hole": counter}, hlc, client_id))
         return ops
 
+    @property
+    def backfill_pending(self) -> bool:
+        """Whether names and numbers only this file has still have to go to the server once."""
+        return self.store.get_value(NAMES_BACKFILL_KEY) != "done"
+
+    def backfill(self, client_id: str) -> dict | None:
+        """Send the server, once, the names and numbers that only this computer has (owner, 2026-11-12).
+
+        Labels from before protocol 2, names this install gave systems an older client placed, the
+        static flag and the numbers the upgrade of an old map file filled in for unlinked sigs
+        (``naming.freeze_legacy_names``) never left this computer. Each one the merged state lacks
+        (no label, no number, a static flag never synced, a lower hole counter) goes into one outbox
+        batch, and the file is marked done.
+
+        The ops carry a stamp just above the one of the value they fill, not the clock of now: a
+        value someone set on the server meanwhile is newer and wins, so the backfill only fills what
+        is empty there, and two installs that backfill the same field end up with the same value.
+
+        Args:
+            client_id: This install's client ID.
+
+        Returns:
+            The ``push`` message, or None if there was nothing to send.
+        """
+        ops = []
+        for row in self.database.execute("SELECT id, label, static, next_hole FROM systems ORDER BY id").fetchall():
+            state = self.entity("system", row["id"])
+            if state is None or not state.exists:
+                continue
+            values = {}
+            if row["label"] and not state.fields.get("label"):
+                values["label"] = row["label"]
+            if row["static"] and "static" not in state.clocks:
+                values["static"] = 1
+            if (row["next_hole"] or 0) > (state.fields.get("next_hole") or 0):
+                values["next_hole"] = row["next_hole"]
+            if values:
+                ops.append(self._backfill_op("system", row["id"], values, state, client_id))
+        for row in self.database.execute("SELECT system_id, signature_id, hole_index FROM signatures "
+                                         "WHERE hole_index IS NOT NULL ORDER BY system_id, signature_id").fetchall():
+            key = (row["system_id"], row["signature_id"])
+            state = self.entity("signature", key)
+            if state is not None and state.exists and row["hole_index"] and not state.fields.get("hole_index"):
+                ops.append(self._backfill_op("signature", key, {"hole_index": row["hole_index"]}, state, client_id))
+        self.store.put_value(NAMES_BACKFILL_KEY, "done")
+        if not ops:
+            return None
+        for op in ops:
+            merged, _ = apply_op(self.entity(op.entity, op.key), op)
+            self._save_entity(op.entity, op.key, merged)
+        batch_id = f"{client_id}-{uuid.uuid4().hex[:12]}"
+        payload = [op.to_json() for op in ops]
+        self.database.execute("INSERT INTO sync_outbox (batch_id, payload, created_at) VALUES (?,?,?)",
+                              (batch_id, json.dumps(payload), utc_now_iso()))
+        self.store._commit()
+        return {"t": "push", "map": self.map_id, "batch_id": batch_id, "ops": payload}
+
+    @staticmethod
+    def _backfill_op(entity: str, key: Any, values: dict, state: EntityState, client_id: str) -> Op:
+        """Return a backfill op stamped just above the newest stamp of the fields it fills (or the entity's)."""
+        base = max([state.clocks.get(name, "") for name in values] + [state.alive]).split("@", 1)[0]
+        milliseconds, counter = parse_hlc(base) if base else (0, 0)
+        hlc = format_hlc(milliseconds, counter + 1) if counter < MAX_COUNTER else format_hlc(milliseconds + 1, 0)
+        return Op(entity, key, values, hlc, client_id)
+
     def outbox(self) -> list[dict]:
         """Return the unacknowledged batches as ``push`` messages, oldest first."""
         return [{"t": "push", "map": self.map_id, "batch_id": row[0], "ops": json.loads(row[1])}
@@ -252,6 +318,27 @@ class LocalReplica:
             elif seq == self.last_seq + 1:
                 self.database.execute("INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('last_seq', ?)", (str(seq),))
         return action
+
+    def renumbered(self, batch_id: str, stamped: dict) -> list[tuple[int, str, int, int]]:
+        """Return the sigs of an outbox batch whose bookmark number the server changed (``settle_hole_numbers``).
+
+        Call it before :meth:`acknowledge`, which takes the batch out of the outbox.
+
+        Returns:
+            ``(system id, signature id, number sent, number kept)`` for each, in batch order.
+        """
+        row = self.database.execute("SELECT payload FROM sync_outbox WHERE batch_id=?", (batch_id,)).fetchone()
+        if row is None or not stamped:
+            return []
+        changed = []
+        for message in json.loads(row[0]):
+            sent = (message.get("f") or {}).get("hole_index")
+            if message.get("e") != "signature" or message.get("del") or not sent:
+                continue
+            kept = stamped.get(f"signature:{key_text(key_from_json('signature', message['k']))}", {}).get("hole_index")
+            if kept and kept != sent:
+                changed.append((message["k"][0], message["k"][1], sent, kept))
+        return changed
 
     def drop_batch(self, batch_id: str) -> None:
         """Forget a batch the server refused (it comes back right only through a fresh snapshot)."""

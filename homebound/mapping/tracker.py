@@ -444,8 +444,10 @@ class Tracker:
 
         The child takes the number of that sig (its bookmark), else the parent's next number, and
         the static flag of the guess; its name is stored with it. A system that was detached (its
-        connection went) and comes back keeps its number: through the sig that has it, or without
-        a sig while no other hole there has it. It keeps its name too when that names the same place.
+        connection went) and comes back under the same parent keeps its number: through the sig that
+        has it, or without a sig while no other hole there has it. It keeps its name too when that
+        names the same place. Under another parent it gets a new number and name, so its bookmark
+        fits the system it hangs off now (owner, 2026-11-12); its children keep their names.
 
         Returns:
             A :class:`NamingRequest` or :class:`AutoNamed` event, or nothing if there is nothing to ask.
@@ -459,6 +461,8 @@ class Tracker:
                     "label": child.label}
         candidates = self.unlinked_wormhole_signatures(parent_id, child_class)
         own = child.hole_index if child.parent_id is None else None   # kept from where it was before
+        if child.detached_from is not None and child.detached_from != parent_id:
+            own = None             # re-linked under a new parent: that parent's numbering, not the old one's
         same_number = [signature_id for signature_id in candidates if own
                        and (signature := self.store.signature(parent_id, signature_id)) and signature.hole_index == own]
         taken = same_number[0] if same_number else (candidates[0] if len(candidates) == 1 else None)

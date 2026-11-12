@@ -178,7 +178,7 @@ def test_presence_is_shown_on_the_other_side(cloud) -> None:
 def test_location_is_shared_only_while_the_client_is_open(cloud) -> None:
     """A closed client ends sharing at once when windows can be listed; without a list a fresh log is enough.
 
-    Whether the client window is open (the presence state) is only sent when the user turns it on.
+    Whether the client window is open (the presence state) is sent by default; the user can turn it off.
     """
     harness, kira, bob, code, statuses = cloud
     name = bob.join_with_code(code)
@@ -190,15 +190,19 @@ def test_location_is_shared_only_while_the_client_is_open(cloud) -> None:
     kira.set_sharing(kira.active_map_id, 91000001, True)
     assert spin(lambda: 91000001 in bob.engine.info(bob.active_map_id).presence)
     entry = bob.engine.info(bob.active_map_id).presence[91000001]
-    assert entry.get("state") is None                          # the state isn't shared by default
+    assert entry.get("state") == "recent"                      # the state is shared by default
     kira.state.open_characters = set()                         # windows are listed and no client is open
     kira.update_presence()
     assert spin(lambda: 91000001 not in bob.engine.info(bob.active_map_id).presence)
-    assert kira.state.settings.sync_presence_state is False
-    kira.set_share_state(True)
+    assert kira.state.settings.sync_presence_state is True
+    kira.set_share_state(False)
     rows["presence"] = "online"
     kira.state.open_characters = {"Kira"}
     kira.update_presence()
+    assert spin(lambda: 91000001 in bob.engine.info(bob.active_map_id).presence
+                and bob.engine.info(bob.active_map_id).presence[91000001].get("state") is None)
+    assert kira.state.settings.sync_presence_state is False
+    kira.set_share_state(True)
     assert spin(lambda: bob.engine.info(bob.active_map_id).presence.get(91000001, {}).get("state") == "online")
     assert kira.state.settings.sync_presence_state is True
 
@@ -234,9 +238,9 @@ def test_cloud_menu_offers_what_fits(cloud) -> None:
     texts = [action.text() for action in menu.fill().actions()]
     assert "Invite …" in texts and "Members …" in texts and "Reset to shared layout" in texts and "Kira" in texts
     share_state = next(action for action in menu.fill().actions() if action.text() == "Also share whether the game is open")
-    assert share_state.isCheckable() and not share_state.isChecked()
+    assert share_state.isCheckable() and share_state.isChecked()          # on by default
     share_state.trigger()
-    assert kira.state.settings.sync_presence_state is True
+    assert kira.state.settings.sync_presence_state is False
     menu_b = CloudMenu(window, bob, lambda kind, text: None)
     assert "Make cloud map …" in [action.text() for action in menu_b.fill().actions()]
     bob.sign_out()
@@ -284,3 +288,81 @@ def test_each_process_signs_with_its_own_connection_id(monkeypatch, tmp_path, qt
     assert first.engine.hello("token")["client_id"] == first.connection_id
     assert first.connection_id != state.settings.sync_client_id
     assert state.settings.sync_client_id
+
+
+def test_only_the_owner_and_managers_change_a_cloud_maps_scheme(cloud) -> None:
+    """An editor's scheme controls are off with a reason; promoted to manager, they come back."""
+    from homebound.ui.settings_dialog import SettingsDialog
+    from homebound.ui.sync_manager import SCHEME_LOCKED
+    harness, kira, bob, code, statuses = cloud
+    name = bob.join_with_code(code)
+    bob.state.switch_map(name)
+    assert spin(lambda: bob.active_info() is not None and bob.active_info().role == "editor")
+    assert kira.scheme_lock() == "" and bob.scheme_lock() == SCHEME_LOCKED
+    assert bob.state.scheme_lock() == SCHEME_LOCKED          # what the toolbar and the settings dialog ask
+    dialog = SettingsDialog(None, bob.state)
+    assert all(not card.isEnabled() and card.toolTip() == SCHEME_LOCKED for card in dialog.scheme_cards.values())
+    assert all(card.isEnabled() for card in SettingsDialog(None, kira.state).scheme_cards.values())
+    bob_id = harness.api("GET", "/api/account", bob.api.token).json()["account_id"]
+    harness.api("PATCH", f"/api/maps/{bob.active_map_id}/members/{bob_id}", kira.api.token, json={"role": "manager"})
+    assert spin(lambda: bob.scheme_lock() == "")
+    local = next(entry for entry in bob.state.settings.maps if entry != name)
+    bob.state.switch_map(local)
+    assert bob.active_info() is None and bob.scheme_lock() == ""      # a local map is never locked
+
+
+def test_an_editors_scheme_change_is_refused_and_put_back(cloud) -> None:
+    """Should an editor's install send a scheme change anyway, the server refuses it and the map keeps its scheme."""
+    harness, kira, bob, code, statuses = cloud
+    name = bob.join_with_code(code)
+    bob.state.switch_map(name)
+    assert spin(lambda: bob.active_info() is not None and bob.active_info().joined)
+    notices = []
+    bob.notice.connect(lambda level, text: notices.append(text))
+    bob.state.store.set_map_setting("naming_scheme", "a2a")
+    assert spin(lambda: bool(notices) and bob.state.store.map_setting("naming_scheme") == "numeric")
+    assert "role doesn't allow" in notices[0] and kira.state.store.map_setting("naming_scheme") == "numeric"
+
+
+def test_a_system_behind_a_renumbered_sig_follows_its_number(cloud) -> None:
+    """The server gave our sig another number: the system we mapped through it moves to that hole, and we are told."""
+    from homebound.mapdb.store import Signature
+    harness, kira, bob, code, statuses = cloud
+    store = kira.state.store
+    c3 = pick_system("C3").id
+    with store.batch():
+        store.upsert_signature(Signature(C5, "AAA-100", "wormhole", hole_index=1))
+        store.add_system(c3, parent_id=C5, hole_index=1, label="11")
+        store.add_connection(C5, c3)
+        store.set_connection_signature(store.connection(C5, c3).id, C5, "AAA-100")
+        store.add_system(pick_system("C2").id, parent_id=c3, hole_index=1, label="111")
+    notices = []
+    kira.notice.connect(lambda level, text: notices.append(text))
+    store.update_signature(C5, "AAA-100", hole_index=2)          # what the ack brought (a remote write in the app)
+    assert kira._renumbered(kira.active_map_id, [(C5, "AAA-100", 1, 2)]) == 1
+    assert (store.system(c3).hole_index, store.system(c3).label) == (2, "12")
+    assert store.system(pick_system("C2").id).label == "111"     # its children keep their names
+    assert "AAA-100 is hole 2 now (1-2)" in notices[0]
+    assert kira._renumbered("someone-else", [(C5, "BBB-200", 1, 3)]) == 0   # another map: only the warning
+    assert "BBB-200 is hole 3 now:" in notices[1]
+
+
+
+def test_new_cloud_maps_have_nothing_to_backfill(cloud) -> None:
+    """An uploaded map and a fresh copy from an invite are marked done; a switch to a map with a pending backfill sends it."""
+    from homebound.mapdb.store import NAMES_BACKFILL_KEY, Store
+    harness, kira, bob, code, statuses = cloud
+    assert kira.state.store.get_value(NAMES_BACKFILL_KEY) == "done"
+    name = bob.join_with_code(code)
+    store = Store(bob.state.settings.map_path(name))
+    assert store.get_value(NAMES_BACKFILL_KEY) == "done"
+    store.close()
+    bob.state.switch_map(name)
+    assert spin(lambda: bob.active_info() is not None and bob.active_info().joined and bob.state.store.has_system(C5))
+    with bob.state.store.batch(origin="remote"):
+        bob.state.store.update_system(HOME.id, label="Mine")
+    bob.state.store.put_value(NAMES_BACKFILL_KEY, "pending")
+    local = next(entry for entry in bob.state.settings.maps if entry != name)
+    bob.state.switch_map(local)
+    bob.state.switch_map(name)                               # the app upgraded the file on the way in
+    assert spin(lambda: kira.state.store.system(HOME.id).label == "Mine")

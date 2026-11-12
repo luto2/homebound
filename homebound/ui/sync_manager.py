@@ -12,13 +12,13 @@ from collections.abc import Iterator
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from ..mapdb.store import SETTINGS_MIRRORED, Action, Store
+from ..mapdb.store import NAMES_BACKFILL_KEY, SETTINGS_MIRRORED, Action, Store
 from .. import app_version
 from .. import settings as settings_module
 from ..settings import Settings
 from ..sync.api import ApiError, SyncApi
 from ..sync.client import SocketWorker
-from ..sync.engine import MapInfo, SyncEngine
+from ..sync.engine import MapInfo, SyncEngine, renumbered_text
 from ..sync.hlc import HybridClock
 from ..sync.local import LocalReplica
 from ..sync.protocol import peer_protocol
@@ -27,6 +27,8 @@ from ..validation import require_type
 
 log = logging.getLogger("homebound.sync")
 PING_MS = 30_000
+SCHEME_ROLES = ("owner", "manager")       # who may change a cloud map's naming scheme (the server checks it too)
+SCHEME_LOCKED = "Only the owner or a manager of this cloud map can change its naming scheme."
 
 
 def cloud_id(entry: dict) -> str | None:
@@ -71,11 +73,13 @@ class SyncManager(QObject):
         self.engine.on_notice = self.notice.emit
         self.engine.on_unlinked = self._unlinked
         self.engine.on_session = self._session_problem
+        self.engine.on_renumbered = self._renumbered
         self.received.connect(self.engine.handle)
         self.socketState.connect(self._socket_state)
         self.replica: LocalReplica | None = None
         self._shared: dict[tuple[str, int], tuple] = {}     # (map id, char id) -> (system, state) last sent
         self._warned: set[str] = set()
+        state.scheme_lock = self.scheme_lock
         self._attach()
         state.mapSwitched.connect(lambda _name: self._attach())
         state.characterMoved.connect(lambda _char: self.update_presence())
@@ -111,6 +115,8 @@ class SyncManager(QObject):
             # the file doesn't know it (e.g. restored from a backup): it is a fresh copy of the cloud map
             self.replica.link(map_id, self.server)
         store.layout_local = bool(map_id)
+        if map_id and self.engine.connected:
+            self.engine.backfill(map_id, self.replica)   # e.g. an old map file just upgraded on a switch
         self.state.remote_presence = {}
         self._apply_presence_view()
         self._update_status()
@@ -162,6 +168,37 @@ class SyncManager(QObject):
             self.state.mapChanged.emit()
         if self.state.selected:
             self.state.systemUpdated.emit(self.state.selected)
+
+    def _renumbered(self, map_id: str, renumbered: list) -> int:
+        """The server kept another member's sig on a bookmark number we gave too: follow it and warn.
+
+        A system of ours hung off one of those sigs under the old number moves to the new one and
+        gets the name that number gives (its own children keep theirs). One local action.
+
+        Returns:
+            The number of systems moved.
+        """
+        moved = 0
+        active = map_id == self.active_map_id
+        state = self.state
+        if active:
+            store = state.store
+            with store.batch():
+                for system_id, signature_id, sent, kept in renumbered:
+                    if not store.has_system(system_id):
+                        continue
+                    for child in store.children(system_id):
+                        connection = store.connection(system_id, child.id)
+                        if child.hole_index == sent and connection and connection.signature_on(system_id) == signature_id:
+                            store.update_system(child.id, hole_index=kept)
+                            store.update_system(child.id, label=state.namer.attach_label(child.id))
+                            moved += 1
+        for system_id, signature_id, sent, kept in renumbered:
+            bookmark = state.namer.bookmark(system_id, kept) if active and state.store.has_system(system_id) else None
+            self.notice.emit("warn", renumbered_text(signature_id, sent, kept, bookmark))
+        if active:
+            state.mapChanged.emit()
+        return moved
 
     def _unlinked(self, map_id: str, reason: str) -> None:
         """The server dropped us from a map: keep it as a plain local map (plan §15)."""
@@ -291,6 +328,7 @@ class SyncManager(QObject):
         result = self.api.create_map(settings.active_map, self.engine.client_id, ops, corp, char_id)
         replica.link(result["map_id"], self.server)
         replica.seed(ops)
+        self.state.store.put_value(NAMES_BACKFILL_KEY, "done")     # the upload had every name
         settings.maps[settings.active_map]["cloud"] = result["map_id"]
         settings.save()
         self._attach()
@@ -322,6 +360,7 @@ class SyncManager(QObject):
         store = Store(path)
         try:
             LocalReplica(store).link(result["map_id"], self.server)
+            store.put_value(NAMES_BACKFILL_KEY, "done")            # a new copy has no names of its own
         finally:
             store.close()
         settings.save()
@@ -364,7 +403,7 @@ class SyncManager(QObject):
         self.update_presence()
 
     def set_share_state(self, on: bool) -> None:
-        """Turn on or off telling others whether a shared character's client is open (off by default)."""
+        """Turn on or off telling others whether a shared character's client is open (on by default)."""
         require_type(on, bool, "on")
         self.state.settings.sync_presence_state = on
         self.state.settings.save()
@@ -414,6 +453,17 @@ class SyncManager(QObject):
             self._apply_presence_view()
         self._update_status()
         self.infoChanged.emit(map_id)
+
+    def scheme_lock(self) -> str:
+        """Return why the open map's naming scheme can't be changed on this install, or "" if it can.
+
+        On a cloud map only the owner and managers may change it (the server refuses it from the
+        others). While the role isn't known (offline, not joined yet) nothing is locked.
+        """
+        info = self.active_info()
+        if info is None or info.role is None or info.role in SCHEME_ROLES:
+            return ""
+        return SCHEME_LOCKED
 
     def status_text(self) -> tuple[str, str]:
         """Return ``(level, text)`` for the sync pill: offline, syncing, live, warning or read-only."""

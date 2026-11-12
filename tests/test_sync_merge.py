@@ -6,7 +6,8 @@ import pytest
 from conftest import HOME, UNIVERSE, pick_system
 from homebound.mapdb.store import Signature, Store
 from homebound.sync.hlc import HybridClock, format_hlc, hlc_milliseconds, is_hlc, parse_hlc, stamp
-from homebound.sync.merge import BatchRejected, MapState, apply_op, check_batch, stamp_server_times
+from homebound.sync.merge import (BatchRejected, MapState, apply_op, check_batch, settle_hole_numbers,
+                                 stamp_server_times)
 from homebound.sync.protocol import (FIELDS, GATED_FIELDS, InvalidOp, Op, batch_from_json, full_ops_for_rows,
                                      op_from_json, ops_for_peer, ops_from_action)
 
@@ -358,3 +359,68 @@ def test_an_unknown_naming_scheme_is_refused() -> None:
     with pytest.raises(InvalidOp):
         op_from_json({"e": "setting", "k": "naming_scheme", "f": {"value": "chain_depth_position"},
                       "hlc": format_hlc(1, 0), "c": "aaaaaaaa"})
+
+
+# ---------------------------------------------------------------- hole numbers given twice
+
+def numbered_sig(system_id, signature_id, number, hlc_ms=1, client=0, full=True) -> Op:
+    """A WH sig with a bookmark number (a full upsert by default, as a paste makes it)."""
+    flags = {"full": True} if full else {}
+    return op("signature", [system_id, signature_id], hlc_ms, client, {"group": "wormhole", "hole_index": number},
+              **flags)
+
+
+def settle(state: MapState, batch: list[Op]) -> tuple[list[Op], dict]:
+    """Check a batch like the server does, then settle its numbers."""
+    return settle_hole_numbers(state, batch, check_batch(state, batch))
+
+
+def test_a_number_another_sig_has_already_goes_to_the_next_free_one() -> None:
+    """The sig whose number reached the server first keeps it; the later one gets the system's next number."""
+    state = MapState()
+    state.apply_batch([placed(1, None, None), numbered_sig(1, "AAA-100", 1), numbered_sig(1, "CCC-300", 2)])
+    batch = [numbered_sig(1, "BBB-200", 2, 2, 1), numbered_sig(1, "DDD-400", 3, 2, 1)]
+    ops, settled = settle(state, batch)
+    assert [item.fields["hole_index"] for item in ops[:2]] == [4, 3]           # 2 is taken; 3 is free, so it stays
+    assert settled == {'signature:[1, "BBB-200"]': {"hole_index": 4}}
+    assert (ops[2].entity, ops[2].key, ops[2].fields) == ("system", 1, {"next_hole": 4})
+    state.apply_batch(ops)
+    assert state.get("system", 1).fields["next_hole"] == 4
+    assert batch[0].fields["hole_index"] == 2                                  # the input isn't changed
+
+
+def test_a_free_number_an_unchanged_one_and_a_swap_stay() -> None:
+    """Nothing changes without a clash; numbers swapped inside one batch (a return hole) are the sender's own."""
+    state = MapState()
+    state.apply_batch([placed(1, None, None), numbered_sig(1, "AAA-100", 1), numbered_sig(1, "BBB-200", 2)])
+    for batch in ([numbered_sig(1, "CCC-300", 3, 2)],
+                  [numbered_sig(1, "AAA-100", 1, 2, full=False)],
+                  [numbered_sig(1, "AAA-100", 2, 2, full=False), numbered_sig(1, "BBB-200", 1, 2, full=False)],
+                  [op("signature", [1, "AAA-100"], 2, fields={"name": "Unstable"})]):
+        assert settle(state, batch) == (batch, {})
+
+
+def test_a_sig_pasted_again_offline_keeps_the_number_it_got_first() -> None:
+    """Already synced numbers win over edits made offline: a later full upsert can't change it."""
+    state = MapState()
+    state.apply_batch([placed(1, None, None), numbered_sig(1, "AAA-100", 3)])
+    ops, settled = settle(state, [numbered_sig(1, "AAA-100", 1, 5, 1)])
+    assert ops[0].fields["hole_index"] == 3 and settled == {'signature:[1, "AAA-100"]': {"hole_index": 3}}
+    assert len(ops) == 1                                                     # no new number, no counter op
+    unnumbered = MapState()
+    unnumbered.apply_batch([placed(1, None, None), op("signature", [1, "AAA-100"], 1, fields={"group": "wormhole"},
+                                                      full=True)])
+    assert settle(unnumbered, [numbered_sig(1, "AAA-100", 1, 5, 1)])[1] == {}  # a first number is taken as it is
+
+
+def test_a_number_a_hole_of_the_system_has_counts_as_taken() -> None:
+    """A child placed at hole 2 holds that number, unless it hangs off this very sig."""
+    state = MapState()
+    state.apply_batch([placed(1, None, None), placed(2, 1, 2),
+                       op("connection", [1, 2], 1, fields={"signature_a": "AAA-100"}, full=True)])
+    ops, settled = settle(state, [numbered_sig(1, "BBB-200", 2, 2, 1)])
+    assert ops[0].fields["hole_index"] == 3
+    assert settle(state, [numbered_sig(1, "AAA-100", 2, 2, 1)])[1] == {}     # the sig the child came through
+    # a deleted sig's number isn't given again either
+    state.apply_batch([numbered_sig(1, "CCC-300", 7), op("signature", [1, "CCC-300"], 3, **{"del": True})])
+    assert settle(state, [numbered_sig(1, "BBB-200", 2, 4, 1)])[0][0].fields["hole_index"] == 8

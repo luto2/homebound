@@ -17,6 +17,7 @@ from .local import LocalReplica
 from .protocol import GATED_PRESENCE_FIELDS, MIN_PROTOCOL, PROTOCOL, ops_for_peer, peer_protocol
 
 log = logging.getLogger("homebound.sync")
+BACKFILL_PROTOCOL = 2                  # the protocol that added the name fields the backfill sends
 REVERT_CODES = ("conflict", "read_only", "forbidden", "invalid", "too_large")
 NOTICES = {
     "conflict": "Someone else mapped that first; your version was replaced.",
@@ -76,6 +77,8 @@ class SyncEngine:
         self.on_notice: Callable[[str, str], object] = lambda level, text: None
         self.on_unlinked: Callable[[str, str], object] = lambda map_id, reason: None
         self.on_session: Callable[[str], object] = lambda code: None
+        # the server gave sigs of ours another bookmark number: (map id, [(system, sig, sent, kept)])
+        self.on_renumbered: Callable[[str, list], object] = self._notice_renumbered
 
     def info(self, map_id: str) -> MapInfo:
         """Return (and create) the info of a map."""
@@ -101,6 +104,7 @@ class SyncEngine:
         with self.open_replica(map_id) as replica:
             if replica is None:
                 return
+            self.backfill(map_id, replica)      # goes out with the outbox once the server's state is in
             last_seq = 0 if fresh else replica.last_seq
             newest = replica.newest_stamp()
         if newest:
@@ -118,6 +122,22 @@ class SyncEngine:
     def local_action(self, map_id: str, replica: LocalReplica, action: Action) -> dict | None:
         """Record a local action of a cloud map and push it (it waits in the outbox when offline)."""
         message = replica.record(action, self.clock, self.client_id)
+        if message is not None and self.connected and self.info(map_id).joined:
+            self._push(replica, message)
+        return message
+
+    def backfill(self, map_id: str, replica: LocalReplica) -> dict | None:
+        """Put the names and numbers only this computer has into the outbox, once per map file.
+
+        Only with a server that knows the name fields (protocol 2): with an older one it waits.
+        Pushed at once when the map is joined; otherwise it goes with the outbox after the join.
+
+        Returns:
+            The batch, or None if there was nothing to do.
+        """
+        if self.server_protocol < BACKFILL_PROTOCOL or not replica.backfill_pending:
+            return None
+        message = replica.backfill(self.client_id)
         if message is not None and self.connected and self.info(map_id).joined:
             self._push(replica, message)
         return message
@@ -225,8 +245,20 @@ class SyncEngine:
 
     def _on_ack(self, message: dict) -> None:
         map_id = message["map"]
-        self._with_replica(map_id, lambda replica: self._changed(
-            map_id, replica.acknowledge(message["batch_id"], message.get("seq", 0), message.get("stamped", {}))))
+
+        def work(replica: LocalReplica) -> list:
+            stamped = message.get("stamped", {})
+            renumbered = replica.renumbered(message["batch_id"], stamped)
+            self._changed(map_id, replica.acknowledge(message["batch_id"], message.get("seq", 0), stamped))
+            return renumbered
+        renumbered = self._with_replica(map_id, work)
+        if renumbered:
+            self.on_renumbered(map_id, renumbered)
+
+    def _notice_renumbered(self, map_id: str, renumbered: list) -> None:
+        """Warn that another member's sig got a bookmark number first (the default of ``on_renumbered``)."""
+        for _, signature_id, sent, kept in renumbered:
+            self.on_notice("warn", renumbered_text(signature_id, sent, kept))
 
     def _on_reject(self, message: dict) -> None:
         map_id, code = message["map"], message.get("code")
@@ -295,6 +327,13 @@ class SyncEngine:
             if state is not None and self.server_protocol >= GATED_PRESENCE_FIELDS["state"]:
                 message["state"] = state
             self.send(message)
+
+
+def renumbered_text(signature_id: str, sent: int, kept: int, bookmark: str | None = None) -> str:
+    """Return the warning for a sig whose bookmark number another member's sig had first."""
+    where = f" ({bookmark})" if bookmark else ""
+    return (f"{signature_id} is hole {kept} now{where}: number {sent} was given to another sig there first. "
+            f"Rename its bookmark in game if you made one.")
 
 
 @contextlib.contextmanager

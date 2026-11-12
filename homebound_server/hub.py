@@ -13,13 +13,14 @@ from datetime import timedelta
 from typing import Any
 
 from homebound.sync.hlc import HybridClock
-from homebound.sync.merge import BatchRejected, EntityState, MapState, check_batch, stamp_server_times
+from homebound.sync.merge import (BatchRejected, EntityState, MapState, check_batch, settle_hole_numbers,
+                                  stamp_server_times)
 from homebound.sync.protocol import (MAX_BATCH_OPS, MAX_ENTITIES_PER_MAP, PRESENCE_STATES, PROTOCOL, InvalidOp, Op,
                                      batch_from_json,
                                      key_from_text, key_text, key_to_json, message_for_peer)
 
 from .db import Database, iso, utc_now
-from .maps import EDIT_ROLES, Maps
+from .maps import EDIT_ROLES, MANAGE_ROLES, Maps
 
 TAIL_DAYS = 7
 TAIL_MAX_OPS = 10_000
@@ -236,19 +237,23 @@ class Hub:
         if role != "owner" and any(op.entity == "setting" and op.key == "home_system" for op in ops):
             reject("forbidden", "Only the owner can change the home system.")
             return
+        if role not in MANAGE_ROLES and any(op.entity == "setting" and op.key == "naming_scheme" for op in ops):
+            reject("forbidden", "Only the owner or a manager can change the naming scheme.")
+            return
         state = self.state(map_id)
         new_keys = {(op.entity, op.key) for op in ops} - set(state.entities)
         if len(state.entities) + len(new_keys) > MAX_ENTITIES_PER_MAP:
             reject("too_large", "This map has too many entities.")
             return
         try:
-            check_batch(state, ops, self.system_exists)
+            after = check_batch(state, ops, self.system_exists)
         except BatchRejected as error:
             reject(error.code, error.detail, self._current(map_id, error.current))
             return
         for op in ops:
             self.clock.observe(op.hlc)
-        seq, stamped = self.apply(map_id, ops, batch_id, connection.account_id, exclude=connection)
+        ops, settled = settle_hole_numbers(state, ops, after)     # a number given twice: the first one keeps it
+        seq, stamped = self.apply(map_id, ops, batch_id, connection.account_id, exclude=connection, settled=settled)
         connection.send({"t": "ack", "re": request_id, "map": map_id, "batch_id": batch_id, "seq": seq,
                          "stamped": stamped})
 
@@ -263,8 +268,11 @@ class Hub:
         return current
 
     def apply(self, map_id: str, ops: list[Op], batch_id: str, account_id: int | None,
-              exclude: Connection | None = None) -> tuple[int, dict]:
+              exclude: Connection | None = None, settled: dict | None = None) -> tuple[int, dict]:
         """Stamp, merge, store and broadcast a checked batch.
+
+        Args:
+            settled: Values the server changed in the batch already (``settle_hole_numbers``), for ``stamped``.
 
         Returns:
             ``(seq, stamped)``.
@@ -272,6 +280,8 @@ class Hub:
         state = self.state(map_id)
         now = utc_now()
         ops, stamped = stamp_server_times(state, ops, iso(now))
+        for key, values in (settled or {}).items():
+            stamped[key] = stamped.get(key, {}) | values
         effects = state.apply_batch(ops)
         payload = [op.to_json() for op in ops]
         with self.db.transaction():

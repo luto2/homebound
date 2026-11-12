@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS systems (
     label        TEXT,             -- scheme name given when attached; only explicit renames change it
     static       INTEGER DEFAULT 0, -- 1: reached through the static of the parent; a flag and not a number
     next_hole    INTEGER DEFAULT 0, -- highest hole number given out here; numbers are never reused
-    cut_off_at   TEXT              -- when a lost connection cut this piece off from home and NULL if never
+    cut_off_at   TEXT,             -- when a lost connection cut this piece off from home and NULL if never
+    detached_from INTEGER          -- the parent it hung off before it was detached; local and not synced
 );
 
 -- Remembered names of solar systems (this map only; synced on cloud maps with protocol 2). They outlive the system's place on the map;
