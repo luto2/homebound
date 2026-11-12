@@ -332,3 +332,24 @@ def test_a_system_behind_a_renumbered_sig_follows_its_number(cloud) -> None:
     assert "AAA-100 is hole 2 now (1-2)" in notices[0]
     assert kira._renumbered("someone-else", [(C5, "BBB-200", 1, 3)]) == 0   # another map: only the warning
     assert "BBB-200 is hole 3 now:" in notices[1]
+
+
+
+def test_new_cloud_maps_have_nothing_to_backfill(cloud) -> None:
+    """An uploaded map and a fresh copy from an invite are marked done; a switch to a map with a pending backfill sends it."""
+    from homebound.mapdb.store import NAMES_BACKFILL_KEY, Store
+    harness, kira, bob, code, statuses = cloud
+    assert kira.state.store.get_value(NAMES_BACKFILL_KEY) == "done"
+    name = bob.join_with_code(code)
+    store = Store(bob.state.settings.map_path(name))
+    assert store.get_value(NAMES_BACKFILL_KEY) == "done"
+    store.close()
+    bob.state.switch_map(name)
+    assert spin(lambda: bob.active_info() is not None and bob.active_info().joined and bob.state.store.has_system(C5))
+    with bob.state.store.batch(origin="remote"):
+        bob.state.store.update_system(HOME.id, label="Mine")
+    bob.state.store.put_value(NAMES_BACKFILL_KEY, "pending")
+    local = next(entry for entry in bob.state.settings.maps if entry != name)
+    bob.state.switch_map(local)
+    bob.state.switch_map(name)                               # the app upgraded the file on the way in
+    assert spin(lambda: kira.state.store.system(HOME.id).label == "Mine")

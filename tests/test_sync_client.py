@@ -7,7 +7,7 @@ import time
 import pytest
 
 from conftest import HOME, pick_system
-from homebound.mapdb.store import Signature, Store
+from homebound.mapdb.store import LEGACY_NAMES_KEY, NAMES_BACKFILL_KEY, Signature, Store
 from homebound.mapping.signature_parser import merge_signatures, parse_scanner_text
 from homebound.sync.engine import SyncEngine
 from homebound.sync.hlc import HybridClock
@@ -420,3 +420,87 @@ def test_a_system_detached_by_the_other_member_remembers_its_parent(pair) -> Non
     detached = bob.store.system(C5)
     assert (detached.parent_id, detached.hole_index, detached.detached_from) == (None, 1, HOME.id)
     assert bob.replica.outbox() == []                  # local bookkeeping, nothing to send
+
+
+
+def local_only(install: Install, work) -> None:
+    """Change an install's map without syncing it, as names from before protocol 2 or an old client's were."""
+    with install.store.batch(origin="remote"):
+        work(install.store)
+
+
+def test_names_and_numbers_only_one_computer_has_go_to_the_server_once(pair) -> None:
+    """Bob's local-only label, static flag and counter reach Kira at the next join; afterwards nothing is sent again."""
+    harness, kira, bob = pair
+    kira.store.upsert_signature(Signature(C5, "AAA-100", "wormhole"))        # numbered by nobody (an old client)
+    pump_all(kira, bob)
+    assert kira.store.system(C5).label is None and bob.replica.backfill_pending is False   # the first join did it
+    bob.disconnect()
+    local_only(bob, lambda store: (store.update_system(C5, label="1", static=1, next_hole=4),
+                                   store.update_signature(C5, "AAA-100", hole_index=4)))
+    bob.store.put_value(NAMES_BACKFILL_KEY, "pending")
+    bob.connect()
+    pump_all(kira, bob)
+    pump_all(kira, bob)
+    system = kira.store.system(C5)
+    assert (system.label, system.next_hole) == ("1", 4)
+    assert system.static == 0               # a static flag the server has a synced value for isn't backfilled
+    assert kira.store.signature(C5, "AAA-100").hole_index == 4
+    assert not bob.replica.backfill_pending and bob.replica.outbox() == []
+    local_only(bob, lambda store: store.update_system(HOME.id, label="Elsewhere"))
+    bob.disconnect()
+    bob.connect()
+    pump_all(kira, bob)
+    assert kira.store.system(HOME.id).label is None                      # once only
+
+
+def test_a_backfill_never_overwrites_what_the_server_got_meanwhile(pair) -> None:
+    """Kira named C5 while Bob was offline with a local-only name: Kira's name stays, and Bob's map takes it."""
+    harness, kira, bob = pair
+    bob.disconnect()
+    kira.store.update_system(C5, label="Farm")
+    pump_all(kira)
+    time.sleep(0.01)
+    local_only(bob, lambda store: store.update_system(C5, label="1"))
+    bob.store.put_value(NAMES_BACKFILL_KEY, "pending")
+    bob.connect()
+    pump_all(kira, bob)
+    pump_all(kira, bob)
+    assert kira.store.system(C5).label == bob.store.system(C5).label == "Farm"
+    assert bob.replica.outbox() == [] and not bob.replica.backfill_pending
+
+
+def test_two_backfills_of_one_name_agree(pair) -> None:
+    """Both members named C5 themselves (placed by an old client): after both backfill, both show the same name."""
+    harness, kira, bob = pair
+    for install, label in ((kira, "1"), (bob, "A")):
+        install.disconnect()
+        local_only(install, lambda store, label=label: store.update_system(C5, label=label))
+        install.store.put_value(NAMES_BACKFILL_KEY, "pending")
+    kira.connect()
+    bob.connect()
+    for _ in range(3):
+        pump_all(kira, bob)
+    assert kira.store.system(C5).label == bob.store.system(C5).label in ("1", "A")
+
+
+def test_the_upgrade_of_an_old_cloud_map_file_sends_its_bookmark_numbers(pair) -> None:
+    """The legacy freeze numbers unlinked sigs on Bob's computer; those numbers reach the server and Kira."""
+    from homebound.mapping.naming import freeze_legacy_names
+    from conftest import UNIVERSE
+    harness, kira, bob = pair
+    kira.store.upsert_signature(Signature(C5, "AAA-100", "wormhole"))
+    kira.store.upsert_signature(Signature(C5, "BBB-200", "wormhole"))
+    pump_all(kira, bob)
+    bob.disconnect()
+    bob.store.put_value(LEGACY_NAMES_KEY, "1")
+    bob.store.listeners.remove(bob._local)                 # the app upgrades the file before sync is attached
+    freeze_legacy_names(bob.store, UNIVERSE, "numeric", HOME.id)
+    bob.store.listeners.append(bob._local)
+    assert bob.replica.backfill_pending and bob.replica.outbox() == []
+    upgraded = numbers(bob, C5)
+    assert all(upgraded.values())
+    bob.connect()
+    pump_all(kira, bob)
+    pump_all(kira, bob)
+    assert numbers(kira, C5) == numbers(bob, C5) == upgraded

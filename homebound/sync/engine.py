@@ -17,6 +17,7 @@ from .local import LocalReplica
 from .protocol import GATED_PRESENCE_FIELDS, MIN_PROTOCOL, PROTOCOL, ops_for_peer, peer_protocol
 
 log = logging.getLogger("homebound.sync")
+BACKFILL_PROTOCOL = 2                  # the protocol that added the name fields the backfill sends
 REVERT_CODES = ("conflict", "read_only", "forbidden", "invalid", "too_large")
 NOTICES = {
     "conflict": "Someone else mapped that first; your version was replaced.",
@@ -103,6 +104,7 @@ class SyncEngine:
         with self.open_replica(map_id) as replica:
             if replica is None:
                 return
+            self.backfill(map_id, replica)      # goes out with the outbox once the server's state is in
             last_seq = 0 if fresh else replica.last_seq
             newest = replica.newest_stamp()
         if newest:
@@ -120,6 +122,22 @@ class SyncEngine:
     def local_action(self, map_id: str, replica: LocalReplica, action: Action) -> dict | None:
         """Record a local action of a cloud map and push it (it waits in the outbox when offline)."""
         message = replica.record(action, self.clock, self.client_id)
+        if message is not None and self.connected and self.info(map_id).joined:
+            self._push(replica, message)
+        return message
+
+    def backfill(self, map_id: str, replica: LocalReplica) -> dict | None:
+        """Put the names and numbers only this computer has into the outbox, once per map file.
+
+        Only with a server that knows the name fields (protocol 2): with an older one it waits.
+        Pushed at once when the map is joined; otherwise it goes with the outbox after the join.
+
+        Returns:
+            The batch, or None if there was nothing to do.
+        """
+        if self.server_protocol < BACKFILL_PROTOCOL or not replica.backfill_pending:
+            return None
+        message = replica.backfill(self.client_id)
         if message is not None and self.connected and self.info(map_id).joined:
             self._push(replica, message)
         return message

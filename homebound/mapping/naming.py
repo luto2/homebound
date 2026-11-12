@@ -16,7 +16,7 @@ home is "S-0".
 import re
 from dataclasses import dataclass
 
-from ..mapdb.store import LEGACY_NAMES_KEY, Change, MapSystem, Signature, Store
+from ..mapdb.store import LEGACY_NAMES_KEY, NAMES_BACKFILL_KEY, Change, MapSystem, Signature, Store
 from ..universe.db import Universe
 from ..validation import require_choice, require_integer, require_text, require_type
 
@@ -713,7 +713,8 @@ def freeze_legacy_names(store: Store, universe: Universe, scheme_key: str, home_
 
     Placed systems get their shown name as ``label`` and the static flag when they sat in a static
     slot; unnumbered WH sigs get the bookmark number they showed. One batch; the file is marked as
-    done (:data:`LEGACY_NAMES_KEY`), so this runs once per file.
+    done (:data:`LEGACY_NAMES_KEY`), so this runs once per file. On a cloud map what it filled in
+    goes to the server with the next backfill (:data:`NAMES_BACKFILL_KEY`, ``LocalReplica.backfill``).
 
     Args:
         store: The map, just opened.
@@ -747,6 +748,7 @@ def freeze_legacy_names(store: Store, universe: Universe, scheme_key: str, home_
             for signature_id, number in legacy_signature_numbers(store, universe, system.id).items():
                 store.update_signature(system.id, signature_id, hole_index=number)
         store.put_value(LEGACY_NAMES_KEY, "0")
+        store.put_value(NAMES_BACKFILL_KEY, "pending")
     return labelled
 
 

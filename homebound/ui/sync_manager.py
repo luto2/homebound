@@ -12,7 +12,7 @@ from collections.abc import Iterator
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from ..mapdb.store import MAP_SETTING_KEYS, Action, Store
+from ..mapdb.store import MAP_SETTING_KEYS, NAMES_BACKFILL_KEY, Action, Store
 from .. import app_version
 from .. import settings as settings_module
 from ..settings import Settings
@@ -111,6 +111,8 @@ class SyncManager(QObject):
             # the file doesn't know it (e.g. restored from a backup): it is a fresh copy of the cloud map
             self.replica.link(map_id, self.server)
         store.layout_local = bool(map_id)
+        if map_id and self.engine.connected:
+            self.engine.backfill(map_id, self.replica)   # e.g. an old map file just upgraded on a switch
         self.state.remote_presence = {}
         self._apply_presence_view()
         self._update_status()
@@ -322,6 +324,7 @@ class SyncManager(QObject):
         result = self.api.create_map(settings.active_map, self.engine.client_id, ops, corp, char_id)
         replica.link(result["map_id"], self.server)
         replica.seed(ops)
+        self.state.store.put_value(NAMES_BACKFILL_KEY, "done")     # the upload had every name
         settings.maps[settings.active_map]["cloud"] = result["map_id"]
         settings.save()
         self._attach()
@@ -353,6 +356,7 @@ class SyncManager(QObject):
         store = Store(path)
         try:
             LocalReplica(store).link(result["map_id"], self.server)
+            store.put_value(NAMES_BACKFILL_KEY, "done")            # a new copy has no names of its own
         finally:
             store.close()
         settings.save()

@@ -140,3 +140,12 @@ No open decisions left.
   install itself; that name stays local (not pushed), and a remote `null` label never clears one. Labels
   that existed before the upgrade stay local until someone renames the system: nothing is backfilled, so
   no install's names change at the upgrade.
+- **2026-11-12 (owner): one backfill per cloud map file.** Names and numbers only one computer has
+  (labels from before protocol 2, names given to systems an older client placed, a static flag never
+  synced, a higher hole counter, and the bookmark numbers the upgrade of an old map file fills in for
+  unlinked sigs) go to the server once, at the first join with a protocol 2 server
+  (`LocalReplica.backfill`, `SyncEngine.backfill`; key `names_backfill` in the file's `key_value`). The
+  legacy freeze marks it due again, so a map file upgraded later sends its numbers too. Each op is
+  stamped just above the stamp of the value it fills, so it only fills what is empty on the server: a
+  value set there meanwhile wins, and two installs backfilling one field agree. One install's local
+  names can change once, to what the other install sent first.

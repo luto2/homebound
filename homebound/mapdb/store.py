@@ -200,6 +200,10 @@ VOLATILE_COLUMNS = {"updated_at", "next_hole"}
 # key_value entry of a map file that predates stored names: its labels are still to be filled in
 # with the names it showed before (``naming.freeze_legacy_names``). "1" pending, "0" done.
 LEGACY_NAMES_KEY = "legacy_names"
+# key_value entry of a cloud map's file: whether names and numbers that only this file has (labels from
+# before protocol 2, names given to systems an older client placed, numbers the legacy freeze filled
+# in) still have to go to the server once (``LocalReplica.backfill``). Missing or "pending": to do; "done".
+NAMES_BACKFILL_KEY = "names_backfill"
 
 
 @dataclass

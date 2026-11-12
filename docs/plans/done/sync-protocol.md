@@ -113,6 +113,8 @@ What a version added to the ops is listed in `protocol.GATED_FIELDS` and `GATED_
 - A batch is **atomic**: either all of its ops apply, or the whole batch is rejected.
 - One user action is one batch. A sig paste of 30 rows is one batch, and so is a system delete together with its cascades.
 
+- **Backfill (since 2026-11-12):** once per map file, a client sends the server what only it has: labels, the static flag (when the server never had one), a higher `next_hole` and sig numbers the server lacks (`LocalReplica.backfill`). These are plain updates whose `hlc` is just above the stamp of the value they fill, not the clock of now, so they lose to anything the server got meanwhile. Only to a protocol 2 server.
+
 ## 6. Server-side checks
 
 The server checks these, in this order, before a batch is applied:
