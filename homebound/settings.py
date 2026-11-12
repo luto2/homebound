@@ -9,7 +9,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from .platform.paths import data_directory, documents_directory, is_windows
 from .mapping.naming import SCHEMES as NAMING_SCHEMES
-from .mapping.watch import WATCH_JUMPS
+from .mapping.watch import DEFAULT_WATCH_JUMPS, WATCH_JUMPS
 from .routing import PREFERENCES
 from .universe.db import SIZES, TRADE_HUBS
 from .validation import is_int, is_number, require_choice, require_integer, require_text, require_type
@@ -27,6 +27,7 @@ SETTING_CHOICES = {"route_preference": ROUTE_PREFERENCES, "route_ship_size": SIZ
                    "unknown_jump_default": UNKNOWN_JUMP_CHOICES, "naming_scheme": SCHEMES,
                    "watch_jumps": WATCH_JUMP_CHOICES}
 DEFAULT_MAP = "Main"
+DEFAULT_SHORTCUT = "Ctrl+Shift+O"          # the global key that cycles the overlay mode
 MAP_NAME_LIMIT = 32                       # characters
 MARKER_SLOTS = 6
 # settings.json keys from before abbreviations were spelled out -> current field names
@@ -69,7 +70,7 @@ class Settings:
     auto_name_when_certain: bool = False
     overlay_mode: str = "follow"
     overlay_pinned_character: int | None = None
-    overlay_shortcut: str = "Ctrl+Shift+O"   # global key that cycles the overlay mode; empty = none
+    overlay_shortcut: str = DEFAULT_SHORTCUT   # global key that cycles the overlay mode; empty = none
     overlay_opacity: float = 0.78
     overlay_text_size: int = 12           # px
     overlay_positions: dict = field(default_factory=dict)        # mode -> [x, y]
@@ -92,7 +93,7 @@ class Settings:
     # Watched systems (docs/plans/plan-watched-systems.md): this user's own list, never synced (the map's
     # list is a map setting), and how many gate jumps from a watched k-space system the chain may be.
     watched_private: list = field(default_factory=list)   # system names, all maps
-    watch_jumps: int = 5
+    watch_jumps: int = DEFAULT_WATCH_JUMPS
     # Cloud sync (docs/plans/done/cloud-sync-plan.md). A cloud map's entry in ``maps`` has "cloud": "<map id>".
     sync_server: str = "https://homebound.luthopian.de"
     sync_client_id: str = ""              # random per install, made on first use; each process signs with its own ID (SyncManager.connection_id)

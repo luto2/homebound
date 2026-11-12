@@ -15,9 +15,9 @@ from PySide6.QtWidgets import (
 from .. import app_version, backup, routing
 from ..logs.parser import LogFile
 from ..mapping.naming import SCHEMES, forget_alias, scheme_for_key
-from ..platform.hotkey import DEFAULT_SHORTCUT, normalize_shortcut
-from ..settings import (KNOWN_SPACE_RADIUS_RANGE, OVERLAY_MAX_ROWS_RANGE, OVERLAY_OPACITY_RANGE, OVERLAY_TEXT_SIZE_RANGE,
-                        RESCAN_DUE_HOURS_RANGE, detect_log_directories)
+from ..platform.hotkey import normalize_shortcut
+from ..settings import (DEFAULT_SHORTCUT, KNOWN_SPACE_RADIUS_RANGE, OVERLAY_MAX_ROWS_RANGE, OVERLAY_OPACITY_RANGE,
+                        OVERLAY_TEXT_SIZE_RANGE, RESCAN_DUE_HOURS_RANGE, detect_log_directories)
 from ..theme.qss import repolish
 from ..theme.tokens import PIXELS, color
 from ..universe.db import SIZE_NAMES, SIZES, TRADE_HUBS

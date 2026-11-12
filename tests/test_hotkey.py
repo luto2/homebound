@@ -5,10 +5,10 @@ from PySide6.QtGui import QKeySequence
 
 from homebound.platform import hotkey as hotkey_module
 from homebound.platform.hotkey import (
-    ACTION_ID, DEFAULT_SHORTCUT, HOTKEY_ID, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, WM_HOTKEY, GlobalHotkey, KdeBackend,
+    ACTION_ID, HOTKEY_ID, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, WM_HOTKEY, GlobalHotkey, KdeBackend,
     WindowsBackend, normalize_shortcut, parse_shortcut, windows_modifiers, windows_virtual_key,
 )
-from homebound.settings import Settings
+from homebound.settings import DEFAULT_SHORTCUT, Settings
 from homebound.ui.map_window import MapWindow
 from homebound.ui.settings_dialog import SettingsDialog
 from ui_helpers import FakeFocus, isolated_settings, make_state

@@ -16,7 +16,6 @@ from PySide6.QtGui import QKeySequence
 
 from ..validation import require_text
 
-DEFAULT_SHORTCUT = "Ctrl+Shift+O"
 MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, MOD_NOREPEAT = 0x0001, 0x0002, 0x0004, 0x0008, 0x4000
 WM_HOTKEY = 0x0312
 HOTKEY_ID = 0x4842                  # "HB"
