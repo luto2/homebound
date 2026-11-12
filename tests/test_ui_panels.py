@@ -1435,7 +1435,7 @@ def test_panel_marks_the_return_hole_with_one_undo(state, panel) -> None:
     assert state.store.signature(child.id, "KKK-001").destination is None
 
 
-def test_panel_tells_the_candidates_and_refuses_without_an_origin(state, panel) -> None:
+def test_panel_tells_the_candidates_and_refuses_without_an_origin(state, panel, modal) -> None:
     """Several types fit: the type stays empty and a toast names them. No origin: an error toast, nothing changes."""
     other = pick_system("C3")
     state.tracker.add_wormhole(HOME.id, other.id)
@@ -1449,8 +1449,39 @@ def test_panel_tells_the_candidates_and_refuses_without_an_origin(state, panel) 
     assert panel.mark_return("ZZZ-999", HOME.id) is True
     assert toasts[-1][0] == "ok" and "C008, N770" in toasts[-1][1]
     assert state.store.signature(other.id, "ZZZ-999").type is None
+    assert len(modal.dialogs) == 1                    # the editor opened by itself
     assert panel.mark_return("ZZZ-999", 0) is False and toasts[-1][0] == "err"
     assert panel.mark_return("ZZZ-999", 31337) is False
     assert panel.mark_return("NOPE-000", HOME.id) is False
     with pytest.raises(TypeError):
         panel.mark_return(5, HOME.id)
+
+
+def test_panel_opens_the_type_picker_when_several_types_fit(state, panel, modal, monkeypatch, qt_application) -> None:
+    """Marking a return hole whose type can be one of several opens the editor with the picker open and those types first."""
+    from homebound.ui.wormhole_fields import WormholeTypeCombo
+    other = pick_system("C3")
+    state.tracker.add_wormhole(HOME.id, other.id)
+    link = state.store.connection(HOME.id, other.id)
+    add_signature(state, "FAR-111", HOME.id, group="wormhole", type="K162")
+    state.store.set_connection_signature(link.id, HOME.id, "FAR-111")
+    add_signature(state, "ZZZ-999", other.id, group="wormhole")
+    state.select(other.id)
+    panel.set_system(other.id)
+    popups = []
+    monkeypatch.setattr(WormholeTypeCombo, "showPopup", lambda combo: popups.append(combo))
+    seen = []
+    modal.handler = lambda dialog: (seen.append(dialog), qt_application.processEvents(), 0)[2]
+    assert panel.mark_return("ZZZ-999", HOME.id) is True
+    assert len(seen) == 1 and seen[0].signature.signature_id == "ZZZ-999"
+    assert seen[0].wormhole.type.preferred == ("C008", "N770") and popups == [seen[0].wormhole.type]
+    assert state.store.signature(other.id, "ZZZ-999").destination == HOME.system_class   # cancelled: the mark stays
+
+
+def test_panel_does_not_open_the_picker_when_the_type_is_settled(state, panel, modal) -> None:
+    """A return hole whose type follows from the other side opens nothing."""
+    child, _ = return_scene(state)
+    state.select(child.id)
+    panel.set_system(child.id)
+    assert panel.mark_return("KKK-001", HOME.id) is True
+    assert modal.dialogs == []

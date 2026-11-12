@@ -415,8 +415,12 @@ class SystemPanel(QWidget):
         return next((connection for connection in self.state.store.connections_of_system(self.system_id)
                      if connection.signature_on(self.system_id) == signature_id), None)
 
-    def edit_signature(self, signature: Signature) -> bool:
+    def edit_signature(self, signature: Signature, open_type_picker: bool = False) -> bool:
         """Open the signature editor and save what it returns.
+
+        Args:
+            signature: The signature.
+            open_type_picker: Drop the wormhole type list open as soon as the editor shows.
 
         Returns:
             True if the dialog was accepted.
@@ -427,6 +431,8 @@ class SystemPanel(QWidget):
         connection = self.linked_connection(signature.signature_id)
         dialog = SignatureDialog(self.window(), state, signature, connection)
         dialog.delete.connect(lambda: self.delete_signatures([signature.signature_id]))
+        if open_type_picker:
+            QTimer.singleShot(0, dialog.wormhole.type.showPopup)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return False
         linked = state.tracker.save_signature(self.system_id, signature.signature_id, dialog.values())
@@ -464,6 +470,7 @@ class SystemPanel(QWidget):
         self.undoable.emit(f"{signature_id} is the hole back to {origin}", state.namer.display(self.system_id), action)
         if found.candidates and not found.code:
             self.toast.emit("ok", f"Pick its type: {', '.join(found.candidates)} lead to {origin}")
+            self.edit_signature(state.store.signature(self.system_id, signature_id), open_type_picker=True)
         return True
 
     def keep_missing(self) -> int:
