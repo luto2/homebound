@@ -98,7 +98,7 @@ What a version added to the ops is listed in `protocol.GATED_FIELDS` and `GATED_
 
 | field | meaning |
 |---|---|
-| `e` | entity: `system`, `connection`, `signature`, `setting`, and since protocol 2 `alias` |
+| `e` | entity: `system`, `connection`, `signature`, `setting`, and since protocol 2 `alias`, `ship`, `structure` |
 | `k` | natural key (plan §3). Connections use `[min, max]`. |
 | `f` | changed plain fields only |
 | `placement` | the structural compound field (systems only) |
@@ -109,6 +109,8 @@ What a version added to the ops is listed in `protocol.GATED_FIELDS` and `GATED_
 - The fields of each entity are `protocol.FIELDS`. **Protocol 2 added** (`protocol.GATED_FIELDS`, `GATED_ENTITIES`):
   - `system.label` (the scheme name stored when the system was attached, plan-stable-hole-names.md), `system.static` (reached through the parent's static, 0/1) and `system.next_hole` (the highest hole number given out in the system). A full upsert from an older client that brings a system back sets them to `null`, `0`, `0`. `next_hole` is a counter: it merges as the **highest** value, not the newest (`protocol.MAX_FIELDS`), and a client never writes a lower one into its map.
   - The `alias` entity (plan-system-alias.md): `{"e": "alias", "k": <solar system ID>, "f": {"name", "set_at"}}`, a remembered custom name that outlives the system's place on the map. The key must be a real solar system; it needn't be on the map. Removed with `del`; auto-prune never touches it.
+  - The `ship` entity (plan-combat-scan.md): `{"e": "ship", "k": [<system>, "<ship key>"], "f": {"type_name", "type_id", "group_name", "name", "distance", "category", "created_at", "seen_at"}}`. The key is the probe ID or `<type ID>-<count>` (`^[A-Za-z0-9-]{1,24}$`); `category` is `ship` or `deployable`. Like a sig, its system must be live; it goes with its system (and with auto-prune).
+  - The `structure` entity (plan-structure-list.md): `{"e": "structure", "k": [<system>, "<type name>", "<name>"], "f": {"type_id", "group_name", "owner_ticker", "timer_at", "timer_kind", "note", "source", "created_at", "seen_at"}}`. Like an alias, the system needn't be on the map and auto-prune never touches it. The "not in the last scan" mark is local, like a sig's missing mark.
   - A label never goes away through sync: a remote op whose label is `null` leaves a label the client already has. A system that arrives without a label (placed by an older client) is named by each install itself, and that name stays local (it isn't pushed), so two installs can't rename each other.
 - A batch is **atomic**: either all of its ops apply, or the whole batch is rejected.
 - One user action is one batch. A sig paste of 30 rows is one batch, and so is a system delete together with its cascades.

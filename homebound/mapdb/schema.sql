@@ -67,6 +67,41 @@ CREATE TABLE IF NOT EXISTS signatures (
     PRIMARY KEY (system_id, signature_id)
 );
 
+-- Ships and deployables of the last combat scan or directional scan pasted in a system (synced with protocol 2).
+-- The next such paste of the system replaces them; they go with the system.
+CREATE TABLE IF NOT EXISTS ships (
+    system_id  INTEGER NOT NULL REFERENCES systems(id) ON DELETE CASCADE,
+    ship_key   TEXT NOT NULL,      -- the probe ID (ABC-123) or type ID and count in the paste (587-2)
+    type_name  TEXT NOT NULL,      -- Rifter / Mobile Depot
+    type_id    INTEGER,
+    group_name TEXT,               -- Frigate / Mobile Depot
+    name       TEXT,               -- what the scan calls it (the ship name the pilot gave)
+    distance   TEXT,               -- as pasted: 5.0 AU
+    category   TEXT DEFAULT 'ship', -- ship or deployable
+    created_at TEXT NOT NULL,
+    seen_at    TEXT,
+    PRIMARY KEY (system_id, ship_key)
+);
+
+-- Structures known in a system: from combat or directional scans or added by hand (synced with protocol 2).
+-- Keyed by type and name. No foreign key: they outlive the system on the map and are there when it is mapped again.
+CREATE TABLE IF NOT EXISTS structures (
+    system_id  INTEGER NOT NULL,
+    type_name  TEXT NOT NULL,      -- Fortizar / Customs Office / Amarr Control Tower
+    name       TEXT NOT NULL,      -- J161940 - Perry
+    type_id    INTEGER,
+    group_name TEXT,               -- Citadel / Orbital Infrastructure / Control Tower
+    owner_ticker TEXT,
+    state      TEXT DEFAULT '',    -- local: empty / new / missing (not in the last scan of the system)
+    timer_at   TEXT,               -- when its timer ends
+    timer_kind TEXT,               -- armor / hull / anchoring / unanchoring
+    note       TEXT,
+    source     TEXT DEFAULT 'paste', -- paste or hand
+    created_at TEXT NOT NULL,      -- first seen
+    seen_at    TEXT,               -- last scan that had it
+    PRIMARY KEY (system_id, type_name, name)
+);
+
 CREATE TABLE IF NOT EXISTS characters (
     id          INTEGER PRIMARY KEY,
     name        TEXT,

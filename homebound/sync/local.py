@@ -264,14 +264,15 @@ class LocalReplica:
         state = self.state()
         visible = {key: entity for key, entity in state.entities.items() if entity.exists}
         for entity, table in (("signature", "signatures"), ("connection", "connections"), ("system", "systems"),
-                              ("setting", "map_settings"), ("alias", "aliases")):
+                              ("setting", "map_settings"), ("alias", "aliases"), ("ship", "ships"),
+                              ("structure", "structures")):
             for row in [dict(row) for row in self.database.execute(f"SELECT * FROM {table}")]:
                 key = row_key(entity, row)
                 if entity == "setting" and key not in MAP_SETTING_KEYS:
                     continue
                 if (entity, key) not in visible:
                     self._write(entity, key, None)
-        order = {"setting": 0, "system": 1, "connection": 2, "signature": 3, "alias": 4}
+        order = {"setting": 0, "system": 1, "connection": 2, "signature": 3, "alias": 4, "ship": 5, "structure": 6}
         for (entity, key), entity_state in sorted(visible.items(), key=lambda item: (order[item[0][0]], str(item[0][1]))):
             self._materialise(entity, key, entity_state, placement=False)
         self._fix_placements(force=True)
@@ -314,13 +315,14 @@ class LocalReplica:
                 for child in store.children(key):
                     store._update_row("system", child.id, {"parent_id": None})   # keeps its number (Store.remove_system)
                 self.database.execute("DELETE FROM signatures WHERE system_id=?", (key,))
+                self.database.execute("DELETE FROM ships WHERE system_id=?", (key,))   # structures stay
                 self.database.execute("DELETE FROM connections WHERE system_a=? OR system_b=?", (key, key))
                 self.database.execute("DELETE FROM layout_override WHERE system_id=?", (key,))
             self.database.execute(f"DELETE FROM {ENTITY_TABLES[entity]} WHERE {ENTITY_WHERE[entity]}", key_values(key))
             return
         if entity == "connection" and not (store.has_system(key[0]) and store.has_system(key[1])):
             return
-        if entity == "signature" and not store.has_system(key[0]):
+        if entity in ("signature", "ship") and not store.has_system(key[0]):
             return
         if current is not None:
             changes = {name: value for name, value in values.items()
@@ -351,6 +353,11 @@ class LocalReplica:
             row["seen_at"] = row["seen_at"] or now
         elif entity == "alias":
             row = {"system_id": key, "name": values.get("name"), "set_at": values.get("set_at") or now}
+        elif entity == "ship":
+            row = {"system_id": key[0], "ship_key": key[1], **values, "created_at": values.get("created_at") or now}
+        elif entity == "structure":
+            row = {"system_id": key[0], "type_name": key[1], "name": key[2], **values,
+                   "created_at": values.get("created_at") or now}
         else:
             row = {"key": key, "value": values.get("value")}
         row = {name: value for name, value in row.items() if value is not None or name in ("parent_id", "hole_index")}

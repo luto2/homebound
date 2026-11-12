@@ -13,6 +13,7 @@ from ..mapdb.store import LEGACY_NAMES_KEY, Action, Store, utc_now_iso
 from ..mapping.chain import Chain, resolve_chain
 from ..mapping.naming import Namer, freeze_legacy_names, label_unnamed_systems, needs_label
 from ..mapping.scan_status import ScanStatus, age_text, format_duration, scan_status
+from ..mapping.structures import TIMER_LABELS, fresh_ships, timer_tab_label, timers_to_warn
 from ..mapping.tracker import AutoNamed, MapChanged, Moved, NamingRequest, Tracker, UnknownJump
 from ..settings import Settings
 from ..universe.db import Universe
@@ -118,6 +119,7 @@ class AppState(QObject):
     followedChanged = Signal(object)      # character id or None (overlay target)
     scanAgeTick = Signal()                # once a minute: scan ages moved on, rescan states may change
     scoutUpdated = Signal()               # EVE-Scout's Thera/Turnur connections changed
+    structureTimerSoon = Signal(int, str)  # system id, toast text: a structure timer ends in 15 minutes
     _zkillUpdated = Signal(int)
     _zkillStatus = Signal(str, str)
     _scoutStatus = Signal(str, str)
@@ -191,6 +193,8 @@ class AppState(QObject):
         self.eve_scout.enabled = settings.eve_scout_enabled
         self._expiry_timer: QTimer | None = None
         self._scan_age_timer: QTimer | None = None
+        self._warned_timers: set[tuple] = set()   # (system, type, name, timer_at) already toasted
+        self.scanAgeTick.connect(self.check_structure_timers)
         self._ensure_home()
         self._constructed = True
 
@@ -533,6 +537,43 @@ class AppState(QObject):
         require_integer(system_id, "system_id")
         since = self.tracker.cut_off_since(system_id) if system_id > 0 else None
         return format_duration(datetime.now(timezone.utc) - since) if since else ""
+
+    def ship_chip(self, system_id: int, now: datetime | None = None) -> str:
+        """Return the node's ``⚔ 3`` chip while the system has ships seen in the last 5 minutes, else ""."""
+        require_integer(system_id, "system_id")
+        if not self.store.has_system(system_id):
+            return ""
+        count = fresh_ships(self.store.ships(system_id), now or datetime.now(timezone.utc))
+        return f"⚔ {count}" if count else ""
+
+    def timer_tab(self, system_id: int, now: datetime | None = None) -> str:
+        """Return the node's ``⏱ 4h`` tab while a structure timer of the system ends within 24 h, else ""."""
+        require_integer(system_id, "system_id")
+        return timer_tab_label(self.store.structures(system_id), now or datetime.now(timezone.utc))
+
+    def check_structure_timers(self, now: datetime | None = None) -> list[str]:
+        """Toast each structure timer of the map once, 15 minutes before it ends (on the minute tick).
+
+        Returns:
+            The toast texts sent.
+        """
+        now = now or datetime.now(timezone.utc)
+        sent = []
+        for structure in timers_to_warn(self.store.structures(), now):
+            key = (structure.system_id, structure.type_name, structure.name, structure.timer_at)
+            if key in self._warned_timers:
+                continue
+            self._warned_timers.add(key)
+            minutes = max(0, int((datetime.fromisoformat(structure.timer_at) - now).total_seconds() // 60))
+            where = self.namer.display(structure.system_id) if self.store.has_system(structure.system_id) else (
+                self.universe.by_id(structure.system_id).name if self.universe.by_id(structure.system_id)
+                else str(structure.system_id))
+            label = f"{TIMER_LABELS[structure.timer_kind]} timer" if structure.timer_kind in TIMER_LABELS else "Timer"
+            text = (f"{label} of {structure.type_name} "
+                    f"“{structure.name}” in {where} ends in {minutes} min")
+            self.structureTimerSoon.emit(structure.system_id, text)
+            sent.append(text)
+        return sent
 
     def mark_scanned(self, system_id: int) -> bool:
         """Set a system's last paste to now, e.g. for an empty system that gives nothing to paste.

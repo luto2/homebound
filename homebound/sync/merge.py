@@ -195,7 +195,7 @@ def check_batch(state: MapState, ops: list[Op], system_exists: Callable[[int], b
     for entity, key in touched:
         if not after.live(entity, key):
             continue   # an update to something deleted: merged, but nothing to check
-        ends = (key if entity == "connection" else (key[0],) if entity == "signature" else ())
+        ends = (key if entity == "connection" else (key[0],) if entity in ("signature", "ship") else ())
         missing = [end for end in ends if end not in systems]
         if missing:
             raise BatchRejected("conflict", f"{entity} {key} refers to a system that isn't on the map",
@@ -240,7 +240,7 @@ def referenced_systems(op: Op) -> list[int]:
             ids.append(op.placement[0])
     elif op.entity == "connection":
         ids.extend(op.key)
-    elif op.entity == "signature":
+    elif op.entity in ("signature", "ship", "structure"):
         ids.append(op.key[0])
     return ids
 

@@ -1,4 +1,4 @@
-"""Right dock: selected system details + signatures (spec: MapWindow right dock, SignatureTable)."""
+"""Right dock: selected system details, structures, ships + signatures (spec: MapWindow right dock, SignatureTable)."""
 
 from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QFontMetricsF, QIcon, QKeySequence, QPainter, QPaintEvent, QPixmap, QShortcut
@@ -17,6 +17,7 @@ from ..validation import require_integer, require_text, require_type
 from ..zkill import ZKILL_STALE_AFTER, age
 from ..mapping.scan_status import age_text
 from .activity_list import ActivityList
+from .scan_lists import ShipList, StructureList
 from .signature_table import SignatureTable
 from .state import AppState
 
@@ -56,6 +57,20 @@ def missing_banner_html(missing: list[Signature], all_signatures: list[Signature
     faint = color("ink-faint").name()
     return (f"<span style='color:{color('warning').name()}; font-weight:800'>▲</span>&nbsp; <b>{what} missing</b>"
             " from the last paste" + (f" <span style='color:{faint}'>· {untouched}</span>" if untouched else ""))
+
+
+def combat_summary(result: signature_parser.ScanResult) -> str:
+    """Return the toast text of a combat or directional scan paste, e.g. ``5 structures (5 new) · 2 ships``."""
+    require_type(result, signature_parser.ScanResult, "result")
+    structures = len(result.structures_added) + len(result.structures_seen)
+    parts = [plural(structures, "structure") + (f" ({len(result.structures_added)} new)" if result.structures_added
+                                                  else "")]
+    if result.structures_missing:
+        parts.append(f"{len(result.structures_missing)} not seen")
+    parts.append(plural(result.ships, "ship"))
+    if result.deployables:
+        parts.append(plural(result.deployables, "deployable"))
+    return " · ".join(parts)
 
 
 class BadgeStrip(QWidget):
@@ -167,6 +182,7 @@ class SystemPanel(QWidget):
         body.setSpacing(PIXELS["sp-8"])
         layout.addWidget(self.body, 1)
         self._build_details(body)
+        self._build_scan_lists(body)
         self._build_signatures(body)
         state.selectionChanged.connect(self.set_system)
         state.selectedCountChanged.connect(self.refresh_selected_note)
@@ -246,6 +262,15 @@ class SystemPanel(QWidget):
         divider.setFixedHeight(1)
         body.addWidget(divider)
 
+    def _build_scan_lists(self, body: QVBoxLayout) -> None:
+        """The structures of the system and the ships of its last combat or directional scan."""
+        self.structures = StructureList(self.state)
+        self.ships = ShipList(self.state)
+        for section in (self.structures, self.ships):
+            section.undoable.connect(self.undoable)
+            body.addWidget(section)
+        self.structures.toast.connect(self.toast)
+
     def _build_signatures(self, body: QVBoxLayout) -> None:
         """Title row, missing banner, table and delete button."""
         title_row = QHBoxLayout()
@@ -254,6 +279,8 @@ class SystemPanel(QWidget):
         self.signature_summary = ElideLabel()
         self.signature_summary.setProperty("role", "help")
         self.paste_button = QPushButton("Paste sigs (Ctrl+V)")
+        self.paste_button.setToolTip("Probe scanner, combat scan or directional scan: sigs go to the table, "
+                                     "ships and structures to their lists")
         self.paste_button.setProperty("variant", "primary")
         self.paste_button.clicked.connect(self.paste)
         title_row.addWidget(title)
@@ -364,6 +391,8 @@ class SystemPanel(QWidget):
             self.notes.blockSignals(False)
         self.zkill.setText(self.zkill_text())
         self.activity.load(self.system_id if state.settings.zkill_enabled else 0)
+        self.structures.load(self.system_id)
+        self.ships.load(self.system_id)
         self.table.load(self.system_id)
         signatures = self.table.signature_model.signatures
         missing = [signature for signature in signatures if signature.state == "missing"]
@@ -391,8 +420,11 @@ class SystemPanel(QWidget):
         self.table.viewport().update()
 
     # ------------------------------------------------------------ actions
-    def paste(self) -> signature_parser.MergeResult | None:
-        """Merge the probe scanner text on the clipboard into the shown system.
+    def paste(self) -> signature_parser.ScanResult | None:
+        """Merge the scanner text on the clipboard into the shown system (one Undo step).
+
+        Probe scanner signatures and anomalies go to the signature table; the ships, deployables and
+        structures of a combat-probe or directional scan go to their lists (``merge_scan``).
 
         Returns:
             What changed, or None if there was no system or no scanner text.
@@ -400,21 +432,29 @@ class SystemPanel(QWidget):
         if not self.system_id:
             self.toast.emit("err", "Select a system before pasting sigs")
             return None
-        parsed = signature_parser.parse_scanner_text(QApplication.clipboard().text())
-        if not parsed:
+        paste = signature_parser.parse_paste(QApplication.clipboard().text(), self.state.universe)
+        if not paste:
             self.toast.emit("err", "Clipboard has no scanner rows. Expected lines like ABC-123<tab>Cosmic Signature …")
             return None
         before = {signature.signature_id: signature.state for signature in self.state.store.signatures(self.system_id)}
-        result = signature_parser.merge_signatures(self.state.store, self.system_id, parsed)
-        # a paste opens the groups it changed: new rows, and rows that became missing (not ones already missing)
-        newly_missing = [signature_id for signature_id in result.missing if before.get(signature_id) != "missing"]
-        self.table.signature_model.open_groups(result.added + newly_missing)
-        anomalies = sum(1 for row in parsed if row.kind == "anom")
-        what = f"{len(parsed) - anomalies} sigs" + (f" + {anomalies} anoms" if anomalies else "")
-        self.toast.emit("ok", f"{what} · {len(result.added)} new · {len(result.updated)} updated · "
-                              f"{len(result.missing)} missing")
+        result = signature_parser.merge_scan(self.state.store, self.system_id, paste)
+        parts = []
+        if result.signatures is not None:
+            merged, parsed = result.signatures, paste.signatures
+            # a paste opens the groups it changed: new rows, and rows that became missing (not ones already missing)
+            newly_missing = [signature_id for signature_id in merged.missing if before.get(signature_id) != "missing"]
+            self.table.signature_model.open_groups(merged.added + newly_missing)
+            anomalies = sum(1 for row in parsed if row.kind == "anom")
+            what = f"{len(parsed) - anomalies} sigs" + (f" + {anomalies} anoms" if anomalies else "")
+            parts.append(f"{what} · {len(merged.added)} new · {len(merged.updated)} updated · "
+                         f"{len(merged.missing)} missing")
+        if result.combat:
+            parts.append(combat_summary(result))
+            if result.ships or result.deployables:
+                self.ships.set_expanded(True)
+        self.toast.emit("ok", " · ".join(parts))
         self.state.systemUpdated.emit(self.system_id)
-        self.table.flash([row.signature_id for row in parsed])   # added, updated and confirmed
+        self.table.flash([row.signature_id for row in paste.signatures])   # added, updated and confirmed
         return result
 
     def linked_connection(self, signature_id: str) -> Connection | None:

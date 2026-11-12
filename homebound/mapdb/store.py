@@ -135,6 +135,49 @@ class Signature:
 
 
 @dataclass
+class Ship:
+    """A ship or deployable of the last combat or directional scan pasted in a system.
+
+    The next such paste of the system replaces them all (``signature_parser.merge_scan``).
+    """
+
+    system_id: int
+    ship_key: str                # the probe ID (ABC-123) or "<type ID>-<count>" from a directional scan
+    type_name: str               # Rifter, Mobile Depot
+    type_id: int | None = None
+    group_name: str | None = None   # Frigate, Mobile Depot
+    name: str | None = None      # the name the scan shows (a ship's own name)
+    distance: str | None = None  # as pasted, e.g. "5.0 AU"
+    category: str = "ship"       # ship | deployable
+    created_at: str = ""
+    seen_at: str = ""
+
+
+@dataclass
+class Structure:
+    """A structure in a system, keyed by type and name; it stays when the system leaves the map."""
+
+    system_id: int
+    type_name: str               # Fortizar, Customs Office, Amarr Control Tower
+    name: str                    # J161940 - Perry
+    type_id: int | None = None
+    group_name: str | None = None   # Citadel, Orbital Infrastructure, Control Tower
+    owner_ticker: str | None = None
+    state: str = ""              # local only: "" | new | missing (not in the last scan of the system)
+    timer_at: str | None = None  # when its timer ends (ISO, UTC)
+    timer_kind: str | None = None   # one of TIMER_KINDS
+    note: str | None = None
+    source: str = "paste"        # paste | hand
+    created_at: str = ""         # first seen
+    seen_at: str = ""            # last scan that had it
+
+
+SHIP_CATEGORIES = ("ship", "deployable")
+TIMER_KINDS = ("armor", "hull", "anchoring", "unanchoring")
+STRUCTURE_SOURCES = ("paste", "hand")
+
+
+@dataclass
 class Alias:
     """A remembered name of a solar system: it stays when the system leaves the map (this map only)."""
 
@@ -171,14 +214,16 @@ class KillSummary:
 
 
 # The entities a map action changes, and how each is keyed: system -> id, connection -> (low id, high id),
-# signature -> (system id, signature id), setting -> key, alias -> system id. Characters, zKill and key_value
-# are local only. An alias syncs only with a server of protocol 2 or newer (``protocol.GATED_ENTITIES``).
-ENTITIES = ("system", "connection", "signature", "setting", "alias")
+# signature -> (system id, signature id), setting -> key, alias -> system id, ship -> (system id, ship key),
+# structure -> (system id, type name, name). Characters, zKill and key_value are local only. Aliases, ships
+# and structures sync only with a server of protocol 2 or newer (``protocol.GATED_ENTITIES``).
+ENTITIES = ("system", "connection", "signature", "setting", "alias", "ship", "structure")
 # each entity's table and the WHERE clause that finds one row by its key
 ENTITY_TABLES = {"system": "systems", "connection": "connections", "signature": "signatures",
-                 "setting": "map_settings", "alias": "aliases"}
+                 "setting": "map_settings", "alias": "aliases", "ship": "ships", "structure": "structures"}
 ENTITY_WHERE = {"system": "id=?", "connection": "system_a=? AND system_b=?",
-                "signature": "system_id=? AND signature_id=?", "setting": "key=?", "alias": "system_id=?"}
+                "signature": "system_id=? AND signature_id=?", "setting": "key=?", "alias": "system_id=?",
+                "ship": "system_id=? AND ship_key=?", "structure": "system_id=? AND type_name=? AND name=?"}
 
 
 # Entities that are undoable like the others but stay on this computer: sync never sends them
@@ -248,6 +293,8 @@ class Action:
 
 
 SIGNATURE_COLUMNS = [field.name for field in fields(Signature)]
+SHIP_COLUMNS = [field.name for field in fields(Ship)]
+STRUCTURE_COLUMNS = [field.name for field in fields(Structure)]
 SYSTEM_COLUMNS = [field.name for field in fields(MapSystem)]
 CONNECTION_COLUMNS = [field.name for field in fields(Connection)]
 # Systems as the app sees them: a local layout override (cloud maps) replaces the shared position.
@@ -625,6 +672,10 @@ class Store:
             self.delete_signatures(key[0], [key[1]])
         elif entity == "alias":
             self.delete_alias(key)
+        elif entity == "ship":
+            self.delete_ships(key[0], [key[1]])
+        elif entity == "structure":
+            self.delete_structure(*key)
         else:
             self._touch("setting", key)
             self.database.execute("DELETE FROM map_settings WHERE key=?", (key,))
@@ -638,7 +689,7 @@ class Store:
             row["parent_id"] = None   # the parent is gone since: put it back unplaced (number and name stay)
         if entity == "connection" and not (self.has_system(key[0]) and self.has_system(key[1])):
             return
-        if entity == "signature" and not self.has_system(key[0]):
+        if entity in ("signature", "ship") and not self.has_system(key[0]):
             return
         if entity == "connection" and self.database.execute("SELECT 1 FROM connections WHERE id=?",
                                                             (row.get("id"),)).fetchone():
@@ -743,7 +794,9 @@ class Store:
         return removed
 
     def remove_system(self, system_id: int) -> bool:
-        """Take a system off the map with its signatures and connections; its children lose their parent.
+        """Take a system off the map with its signatures, ships and connections; its children lose their parent.
+
+        Its structures stay: they are there again when the system is mapped again.
 
         The children keep their hole number and name.
 
@@ -758,6 +811,7 @@ class Store:
             return False
         with self.batch():
             self.delete_signatures(system_id, [signature.signature_id for signature in self.signatures(system_id)])
+            self.delete_ships(system_id, [ship.ship_key for ship in self.ships(system_id)])   # structures stay
             for connection in self.connections_of_system(system_id):
                 self.remove_connection(connection.id)
             for child in self.children(system_id):
@@ -1097,6 +1151,167 @@ class Store:
                                       (system_id, signature_id))
                 deleted += 1
         return deleted
+
+    # ------------------------------------------------------------ ships and deployables of the last scan
+    def ships(self, system_id: int) -> list[Ship]:
+        """Return the ships and deployables of a system: ships first, then by group and type."""
+        _check_system_id(system_id)
+        return [_from_row(Ship, row) for row in self.database.execute(
+            "SELECT * FROM ships WHERE system_id=? ORDER BY category DESC, group_name, type_name, ship_key",
+            (system_id,))]
+
+    def replace_ships(self, system_id: int, ships: list[Ship]) -> int:
+        """Make the ships of a system exactly ``ships``: the ones not in the list are deleted.
+
+        A ship that is there already keeps its ``created_at``. A system that isn't on the map gets none.
+
+        Returns:
+            The number of ships stored.
+
+        Raises:
+            ValueError: If a ship belongs to another system, or its key, type or category is bad.
+        """
+        _check_system_id(system_id)
+        require_type(ships, list, "ships")
+        for ship in ships:
+            require_type(ship, Ship, "ships item")
+            if ship.system_id != system_id:
+                raise ValueError(f"ship {ship.ship_key} is in system {ship.system_id}, not {system_id}")
+            require_text(ship.ship_key, "ship.ship_key")
+            require_text(ship.type_name, "ship.type_name")
+            require_choice(ship.category, SHIP_CATEGORIES, "ship.category")
+        if not self.has_system(system_id):
+            return 0
+        now = utc_now_iso()
+        keep = {ship.ship_key for ship in ships}
+        updated = ", ".join(f"{_quoted(column)}=excluded.{_quoted(column)}" for column in SHIP_COLUMNS
+                            if column not in ("system_id", "ship_key", "created_at"))
+        with self.batch():
+            self.delete_ships(system_id, [ship.ship_key for ship in self.ships(system_id) if ship.ship_key not in keep])
+            for ship in ships:
+                values = {column: getattr(ship, column) for column in SHIP_COLUMNS} | {
+                    "created_at": ship.created_at or now, "seen_at": ship.seen_at or now}
+                self._touch("ship", (system_id, ship.ship_key))
+                self.database.execute(
+                    f"INSERT INTO ships ({','.join(map(_quoted, SHIP_COLUMNS))}) VALUES ({','.join('?' * len(SHIP_COLUMNS))})"
+                    f" ON CONFLICT (system_id, ship_key) DO UPDATE SET {updated}", list(values.values()))
+        return len(ships)
+
+    def delete_ships(self, system_id: int, ship_keys: list[str]) -> int:
+        """Delete ships of one system by key.
+
+        Returns:
+            The number deleted.
+        """
+        _check_system_id(system_id)
+        require_type(ship_keys, (list, tuple, set), "ship_keys")
+        deleted = 0
+        with self.batch():
+            for ship_key in ship_keys:
+                require_text(ship_key, "ship_keys item")
+                if self._row("ship", (system_id, ship_key)) is None:
+                    continue
+                self._touch("ship", (system_id, ship_key))
+                self.database.execute("DELETE FROM ships WHERE system_id=? AND ship_key=?", (system_id, ship_key))
+                deleted += 1
+        return deleted
+
+    # ------------------------------------------------------------ structures
+    def structures(self, system_id: int | None = None) -> list[Structure]:
+        """Return the structures of a system (on the map or not), or of every system for None.
+
+        Ordered by group, type and name.
+        """
+        if system_id is None:
+            rows = self.database.execute("SELECT * FROM structures ORDER BY system_id, group_name, type_name, name")
+        else:
+            _check_system_id(system_id)
+            rows = self.database.execute(
+                "SELECT * FROM structures WHERE system_id=? ORDER BY group_name, type_name, name", (system_id,))
+        return [_from_row(Structure, row) for row in rows]
+
+    def structure(self, system_id: int, type_name: str, name: str) -> Structure | None:
+        """Return one structure, or None."""
+        _check_system_id(system_id)
+        require_text(type_name, "type_name")
+        require_text(name, "name")
+        return _from_row(Structure, self.database.execute(
+            "SELECT * FROM structures WHERE system_id=? AND type_name=? AND name=?",
+            (system_id, type_name, name)).fetchone())
+
+    @staticmethod
+    def _check_structure_values(values: dict) -> None:
+        """Reject a timer kind or source the app doesn't know.
+
+        Raises:
+            ValueError: If ``timer_kind`` or ``source`` is out of range.
+        """
+        if values.get("timer_kind") is not None:
+            require_choice(values["timer_kind"], TIMER_KINDS, "timer_kind")
+        if "source" in values:
+            require_choice(values["source"], STRUCTURE_SOURCES, "source")
+
+    def upsert_structure(self, structure: Structure) -> Structure:
+        """Insert a structure, or replace every column but its creation time if it exists.
+
+        Raises:
+            TypeError: If ``structure`` is not a :class:`Structure`.
+            ValueError: If its type or name is empty, or its timer kind or source is unknown.
+        """
+        require_type(structure, Structure, "structure")
+        _check_system_id(structure.system_id, "structure.system_id")
+        require_text(structure.type_name, "structure.type_name")
+        require_text(structure.name, "structure.name")
+        self._check_structure_values({"timer_kind": structure.timer_kind, "source": structure.source})
+        now = utc_now_iso()
+        values = {column: getattr(structure, column) for column in STRUCTURE_COLUMNS} | {
+            "created_at": structure.created_at or now, "seen_at": structure.seen_at or structure.created_at or now}
+        keep = ("system_id", "type_name", "name", "created_at")
+        updated = ", ".join(f"{_quoted(column)}=excluded.{_quoted(column)}" for column in STRUCTURE_COLUMNS
+                            if column not in keep)
+        key = (structure.system_id, structure.type_name, structure.name)
+        with self.batch():
+            self._touch("structure", key)
+            self.database.execute(
+                f"INSERT INTO structures ({','.join(map(_quoted, STRUCTURE_COLUMNS))})"
+                f" VALUES ({','.join('?' * len(STRUCTURE_COLUMNS))})"
+                f" ON CONFLICT (system_id, type_name, name) DO UPDATE SET {updated}", list(values.values()))
+        return self.structure(*key)
+
+    def update_structure(self, system_id: int, type_name: str, name: str, **changes: Any) -> bool:
+        """Change columns of one structure (not its key: delete it and add it again for that).
+
+        Returns:
+            True if the structure exists.
+
+        Raises:
+            ValueError: If a key is not a changeable column, or the timer kind or source is unknown.
+        """
+        _check_system_id(system_id)
+        require_text(type_name, "type_name")
+        require_text(name, "name")
+        _check_columns(changes, STRUCTURE_COLUMNS[3:], "structures")
+        self._check_structure_values(changes)
+        if self.structure(system_id, type_name, name) is None:
+            return False
+        if changes:
+            with self.batch():
+                self._update_row("structure", (system_id, type_name, name), changes)
+        return True
+
+    def delete_structure(self, system_id: int, type_name: str, name: str) -> bool:
+        """Delete one structure.
+
+        Returns:
+            True if it existed.
+        """
+        _check_system_id(system_id)
+        require_text(type_name, "type_name")
+        require_text(name, "name")
+        with self.batch():
+            self._touch("structure", (system_id, type_name, name))
+            return self.database.execute("DELETE FROM structures WHERE system_id=? AND type_name=? AND name=?",
+                                         (system_id, type_name, name)).rowcount > 0
 
     # ------------------------------------------------------------ map settings (home, naming scheme)
     def map_setting(self, key: str, default: str | None = None) -> str | None:

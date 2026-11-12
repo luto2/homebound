@@ -68,3 +68,18 @@ the combat-scan plan).
 - Structures are matched by name + type.
 - No list across all systems: the structure list is per system only.
 - Sync structures (protocol 2 gate).
+
+## Implementation notes (2026-11-12)
+
+- `structures` table keyed `(system_id, type_name, name)`, no foreign key (outlives the system); columns
+  as planned, with `created_at` / `seen_at` for first/last seen. `state` (`new` / `missing`) is local and
+  doesn't sync, like a sig's missing mark. Synced entity `structure`, gated at protocol 2; the server
+  checks only that the system is a real one; auto-prune never deletes structures.
+- `ui/scan_lists.py`: `StructureList` (folding section with "+ Add", double-click edit, menu: Edit, Set
+  timer, Use as system owner, Delete; Del key; undo toasts) and `StructureDialog` (type combo with every
+  known structure type, name, owner, timer in EVE time with kind, note). A rename deletes and re-adds in
+  one batch (one undo step).
+- Timer tab `⏱ 4h` on the node under 24 h; warning toast once per timer 15 minutes before
+  (`AppState.check_structure_timers` on the minute tick, for every structure of the map).
+- A probe-scanner structure row has no own name, so it is keyed `(type, type)` and won't match the same
+  structure from a d-scan.

@@ -53,8 +53,8 @@ def prune_ops(state: MapState, home_id: int | None, now: datetime, hlc: str, cli
             dead_connections.add((a, b))
     ops = [Op("connection", key, {}, hlc, client_id, delete=True) for key in sorted(dead_connections)]
     for (kind, key), entity in sorted(state.entities.items(), key=lambda item: str(item[0])):
-        if kind == "signature" and entity.exists and key[0] in dead_systems:
-            ops.append(Op("signature", key, {}, hlc, client_id, delete=True))
+        if kind in ("signature", "ship") and entity.exists and key[0] in dead_systems:   # structures stay
+            ops.append(Op(kind, key, {}, hlc, client_id, delete=True))
     for system_id, entity in sorted(systems.items()):
         if system_id not in dead_systems and entity.placement[0] in dead_systems:
             ops.append(Op("system", system_id, {}, hlc, client_id, (None, None), True))

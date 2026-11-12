@@ -329,7 +329,7 @@ def test_paste_merges_the_clipboard(state, panel, qt_application) -> None:
     toasts, updated = collect(panel.toast), collect(state.systemUpdated)
     QApplication.clipboard().setText(SCAN)
     result = panel.paste()
-    assert len(result.added) == 4
+    assert len(result.signatures.added) == 4
     assert toasts[-1] == ("ok", "3 sigs + 1 anoms · 4 new · 0 updated · 0 missing")
     assert (HOME.id,) in updated
     assert len(state.store.signatures(HOME.id)) == 4

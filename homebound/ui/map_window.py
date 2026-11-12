@@ -278,6 +278,7 @@ class MapWindow(QMainWindow):
         self.panel = SystemPanel(state)
         self.panel.toast.connect(lambda kind, text: self.toasts.show(kind, text))
         self.panel.undoable.connect(self.offer_undo)
+        state.structureTimerSoon.connect(lambda system_id, text: self.toasts.show("warn", text))
         dock = QDockWidget("System", self)
         dock.setObjectName("system")
         dock.setWidget(self.panel)
