@@ -70,7 +70,9 @@ def main() -> int:
         return 1
     focus = FocusTracker()
     sync = SyncManager(state)
-    window = MapWindow(state, focus, sync)
+    from .platform.hotkey import GlobalHotkey
+    hotkey = GlobalHotkey()
+    window = MapWindow(state, focus, sync, hotkey)
     state.start()
     focus.start()
     sync.start()

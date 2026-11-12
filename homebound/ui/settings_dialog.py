@@ -5,16 +5,17 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QCompleter, QDialog, QFileDialog, QFrame, QHBoxLayout,
-    QHeaderView, QLabel, QLineEdit, QListWidget, QPushButton, QSlider, QSpinBox, QStackedWidget, QTableWidget,
+    QHeaderView, QKeySequenceEdit, QLabel, QLineEdit, QListWidget, QPushButton, QSlider, QSpinBox, QStackedWidget, QTableWidget,
     QTableWidgetItem, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from .. import app_version, backup, routing
 from ..logs.parser import LogFile
 from ..mapping.naming import SCHEMES, scheme_for_key
+from ..platform.hotkey import DEFAULT_SHORTCUT, normalize_shortcut
 from ..settings import (KNOWN_SPACE_RADIUS_RANGE, OVERLAY_OPACITY_RANGE, OVERLAY_TEXT_SIZE_RANGE,
                         RESCAN_DUE_HOURS_RANGE, TRADE_HUBS, detect_log_directories)
 from ..theme.qss import repolish
@@ -381,6 +382,20 @@ class SettingsDialog(QDialog):
         self.pinned.setCurrentIndex(max(0, self.pinned.findData(self.edited.overlay_pinned_character)))
         pinned_row.addWidget(self.pinned, 1)
         layout.addLayout(pinned_row)
+        shortcut_row = QHBoxLayout()
+        shortcut_row.addWidget(caption("Shortcut"))
+        self.shortcut = QKeySequenceEdit(QKeySequence(self.edited.overlay_shortcut))
+        self.shortcut.setMaximumSequenceLength(1)
+        self.shortcut.setClearButtonEnabled(True)
+        self.shortcut.keySequenceChanged.connect(lambda _: self.validate_shortcut())
+        shortcut_row.addWidget(self.shortcut, 1)
+        reset_shortcut = QPushButton("Reset")
+        reset_shortcut.clicked.connect(lambda: self.shortcut.setKeySequence(QKeySequence(DEFAULT_SHORTCUT)))
+        shortcut_row.addWidget(reset_shortcut)
+        layout.addLayout(shortcut_row)
+        self.shortcut_help = help_label("")
+        layout.addWidget(self.shortcut_help)
+        self.validate_shortcut()
         look_row = QHBoxLayout()
         look_row.addWidget(caption("Background"))
         self.opacity = QSlider(Qt.Orientation.Horizontal)
@@ -409,6 +424,24 @@ class SettingsDialog(QDialog):
         radius_row.addStretch(1)
         layout.addLayout(radius_row)
         layout.addWidget(help_label("A character in k-space counts as in a chain while within this many gate jumps of an entrance."))
+
+    def validate_shortcut(self) -> str:
+        """Check the shortcut field and show the result.
+
+        Returns:
+            ``valid``, ``empty`` (no shortcut) or ``invalid``.
+        """
+        text = self.shortcut.keySequence().toString(QKeySequence.SequenceFormat.PortableText)
+        if not text:
+            set_help(self.shortcut_help, "No shortcut: the overlay mode only changes from the toolbar and the tray.", "help")
+            return "empty"
+        if not normalize_shortcut(text):
+            set_help(self.shortcut_help, "✕ Use Ctrl, Alt or Meta (and Shift if you like) with one letter, digit or F-key.",
+                     "help-err")
+            return "invalid"
+        set_help(self.shortcut_help, f"Works in every program, also while EVE has the focus. Each press moves to the "
+                 f"next mode. If another program uses {text}, the status bar says so.", "help")
+        return "valid"
 
     # ------------------------------------------------------------ zKill
     def _build_zkill_page(self, layout: QVBoxLayout) -> None:
@@ -734,7 +767,12 @@ class SettingsDialog(QDialog):
                      "…/EVE/logs/Chatlogs folder, or clear the field to set it later.", "help-err")
             self.log_directory.setFocus()
             return False
+        if self.validate_shortcut() == "invalid":
+            self.nav.setCurrentRow(PAGES.index("Overlay"))
+            self.shortcut.setFocus()
+            return False
         edited = self.edited
+        edited.overlay_shortcut = normalize_shortcut(self.shortcut.keySequence().toString(QKeySequence.SequenceFormat.PortableText))
         edited.log_directory = self.log_directory.text().strip()
         home_text = self.home.text().strip()
         if not home_text:

@@ -140,6 +140,7 @@ others show or edit it.
 |---|---|
 | Overlay window over the EVE client (chain rows, fonts, unlock to move) | `ui/overlay.py` `Overlay` |
 | Overlay modes (`off`, `follow`, `pinned_eve`, `pinned_always`) | `settings.py` `OVERLAY_MODES`; `ui/map_window.py` `set_overlay_mode`, toolbar segments in `_build_toolbar` |
+| Global overlay shortcut (default Ctrl+Shift+O, changeable in Settings; Windows `RegisterHotKey`, KDE global shortcut service; a failed registration shows on the status line, the tray hint hides) | `platform/hotkey.py` `GlobalHotkey`, `parse_shortcut`; `settings.py` `overlay_shortcut`; `ui/map_window.py` `cycle_overlay_mode`, `_apply_hotkey` | `ui/settings_dialog.py` Overlay page |
 | Tray icon and menu | `ui/map_window.py` `_build_tray_menu`, `_sync_tray`, `app_mark` |
 | Which client has focus (KWin script over D-Bus, xprop fallback, Windows user32) | `ui/focus.py`; `platform/focus_linux.py`; `homebound/kwin/homebound-focus/`; `platform/focus_windows.py` |
 | Desktop notifications while the window is hidden | `ui/notify.py` |

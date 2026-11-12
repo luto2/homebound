@@ -311,7 +311,7 @@ On Linux the overlay is an X11 override-redirect window, so it stays above fulls
 
 Closing the main window keeps Homebound running in the tray. The tray menu has:
 - Unlock overlay
-- the overlay modes
+- the overlay modes, and "Next overlay mode" with its shortcut
 - Show map window
 - Settings …
 - Quit

@@ -37,7 +37,7 @@ from .toast import ToastHost
 MODES = [("off", "Off"), ("follow", "Follow"), ("pinned_eve", "Pinned"), ("pinned_always", "Always")]
 TRAY_LABELS = {"off": "Off", "follow": "Follow active client", "pinned_eve": "Pinned character · over all clients",
                "pinned_always": "Pinned character · always shown"}
-STATUS_SOURCES = ("logs", "zkill", "scout", "kwin", "sync", "backup")
+STATUS_SOURCES = ("logs", "zkill", "scout", "kwin", "sync", "backup", "hotkey")
 STATUS_LEVELS = {"ok": ("✓", "success"), "warn": ("▲", "warning"), "err": ("✕", "danger")}
 PIN_FIRST_HINT = "Pin a character first (right-click it in the Characters list)"
 
@@ -234,16 +234,20 @@ class Legend(QWidget):
 class MapWindow(QMainWindow):
     """The main window: toolbar, map, character and system docks, status bar, tray and overlay."""
 
-    def __init__(self, state, focus, sync=None) -> None:
+    def __init__(self, state, focus, sync=None, hotkey=None) -> None:
         """Build the window and wire it to the application state.
 
         Args:
             state: The AppState.
             focus: The focus tracker (feeds the KWin status and the overlay).
             sync: The SyncManager, or None to run without cloud sync (tests).
+            hotkey: The :class:`~homebound.platform.hotkey.GlobalHotkey` for the overlay shortcut, or None to
+                run without one (tests).
         """
         super().__init__()
         self.state, self.focus, self.sync = state, focus, sync
+        self.hotkey = hotkey
+        self.hotkey_applied: str | None = None     # the shortcut text last handed to the hotkey
         self.setWindowTitle("Homebound")
         self.setWindowIcon(QIcon(app_mark(64)))
         self.resize(1600, 1000)
@@ -289,6 +293,8 @@ class MapWindow(QMainWindow):
         self.overlay = Overlay(state, focus)
         self.overlay.unlockedChanged.connect(lambda _: self._sync_tray())
         self._build_tray_menu()
+        if hotkey is not None:
+            hotkey.pressed.connect(self.cycle_overlay_mode)
 
         self.scene.nodeContextMenu.connect(self._node_menu)
         self.scene.edgeContextMenu.connect(self._edge_menu)
@@ -416,19 +422,24 @@ class MapWindow(QMainWindow):
                 status_bar.addWidget(separator)
                 if key == "backup":
                     self.backup_separator = separator
+                if key == "hotkey":
+                    self.hotkey_separator = separator
             label = QLabel("…")
             self.status_labels[key] = label
             status_bar.addWidget(label)
-        # the backup label only shows once there is something to say
+        # the backup and shortcut labels only show once there is something to say
         self.backup_separator.hide()
         self.status_labels["backup"].hide()
+        self.hotkey_separator.hide()
+        self.status_labels["hotkey"].hide()
         return self.status_labels
 
     def _status(self, source: str, level: str, text: str) -> bool:
         """Show a status line for one source; unknown sources are ignored.
 
         Args:
-            source: ``logs``, ``zkill``, ``scout``, ``kwin`` or ``backup`` (a backup warning also shows a toast).
+            source: ``logs``, ``zkill``, ``scout``, ``kwin``, ``sync``, ``hotkey`` (empty text hides it) or
+                ``backup`` (a backup warning also shows a toast).
             level: ``ok``, ``warn`` or ``err``; anything else shows no glyph.
             text: The message.
 
@@ -445,6 +456,9 @@ class MapWindow(QMainWindow):
             self.backup_separator.show()
             if level != "ok":
                 self.toasts.show("warn", text)
+        elif source == "hotkey":
+            label.setVisible(bool(text))
+            self.hotkey_separator.setVisible(bool(text))
         return True
 
     def _build_tray_menu(self) -> QMenu:
@@ -475,6 +489,10 @@ class MapWindow(QMainWindow):
             menu.addAction(action)
             self.mode_actions[key] = action
         self.mode_group.triggered.connect(lambda action: self.set_overlay_mode(action.data()))
+        self.shortcut_action = QAction("", menu)       # "Cycle overlay mode   Ctrl+Shift+O", shown once it works
+        self.shortcut_action.triggered.connect(self.cycle_overlay_mode)
+        self.shortcut_action.setVisible(False)
+        menu.addAction(self.shortcut_action)
         menu.addSeparator()
         menu.addAction("Show map window", self.raise_window)
         menu.addAction("Settings …", self.open_settings)
@@ -515,6 +533,9 @@ class MapWindow(QMainWindow):
             action.setEnabled(pinned or not needs_pin)
             action.setToolTip("" if pinned or not needs_pin else PIN_FIRST_HINT)
         self.tray.setIcon(QIcon(app_mark(32, dim=mode == "off")))
+        shortcut = self.hotkey.text if self.hotkey is not None else ""
+        self.shortcut_action.setVisible(bool(shortcut))
+        self.shortcut_action.setText(f"Next overlay mode\t{shortcut}")
 
     def raise_window(self) -> None:
         """Show the window, bring it to the front and focus it."""
@@ -708,7 +729,23 @@ class MapWindow(QMainWindow):
             self._status("scout", "", "EVE-Scout off")
         elif "off" in scout.text() or scout.text() == "…":
             self._status("scout", "", "EVE-Scout …")
+        self._apply_hotkey()
         self._sync_tray()
+
+    def _apply_hotkey(self) -> str:
+        """Register the overlay shortcut from the settings if it changed, and show whether it worked.
+
+        Returns:
+            ``""`` if the shortcut is registered or switched off, else why it isn't.
+        """
+        wanted = self.state.settings.overlay_shortcut
+        if self.hotkey is None or wanted == self.hotkey_applied:
+            return ""
+        self.hotkey_applied = wanted
+        reason = self.hotkey.set_shortcut(wanted)
+        label = wanted or "The overlay shortcut"
+        self._status("hotkey", "warn", f"Shortcut {label} off: {reason}" if reason else "")
+        return reason
 
     def _scheme_changed(self, _index: int) -> None:
         """Apply the naming scheme picked in the toolbar (``schemeChanged`` then asks about renaming)."""
@@ -751,11 +788,26 @@ class MapWindow(QMainWindow):
                                  f"Rename gives every system on the map its {title} name too (hole numbers "
                                  f"and custom names stay, Undo brings the old names back).")
 
-    def set_overlay_mode(self, mode: str) -> bool:
+    def cycle_overlay_mode(self) -> str:
+        """Move to the next overlay mode (off, follow, pinned, always, off ...), skipping modes that are refused.
+
+        Returns:
+            The mode now active.
+        """
+        keys = [key for key, _ in MODES]
+        start = keys.index(self.state.settings.overlay_mode)
+        for step in range(1, len(keys)):
+            candidate = keys[(start + step) % len(keys)]
+            if self.set_overlay_mode(candidate, quiet=True):
+                break
+        return self.state.settings.overlay_mode
+
+    def set_overlay_mode(self, mode: str, quiet: bool = False) -> bool:
         """Switch the overlay mode; the pinned modes need a pinned character.
 
         Args:
             mode: One of ``off``, ``follow``, ``pinned_eve``, ``pinned_always``.
+            quiet: Don't show the "pin a character first" message when the mode is refused.
 
         Returns:
             Whether the mode was applied.
@@ -766,7 +818,8 @@ class MapWindow(QMainWindow):
         require_choice(mode, [key for key, _ in MODES], "mode")
         settings = self.state.settings
         if mode.startswith("pinned") and settings.overlay_pinned_character is None:
-            self.toasts.show("err", "Pin a character first: right-click it in the Characters list")
+            if not quiet:
+                self.toasts.show("err", "Pin a character first: right-click it in the Characters list")
             self._sync_settings()
             return False
         if mode != "off":
