@@ -491,24 +491,26 @@ class SignatureDelegate(QStyledItemDelegate):
             self._paint_header(painter, rect, row, bool(option.state & QStyle.StateFlag.State_MouseOver))
             return
         painter.save()
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        selected = bool(option.state & QStyle.StateFlag.State_Selected)
-        if row.state == "missing":
-            painter.fillRect(rect, color("warning-dim"))
-        elif selected:
-            painter.fillRect(rect, color("accent-dim"))
-        elif option.state & QStyle.StateFlag.State_MouseOver:
-            painter.fillRect(rect, color("bg-4"))
-        if level := self.flash.level(row.signature_id):
-            flash = color("success")
-            flash.setAlpha(round(FLASH_PEAK_ALPHA * level))
-            painter.fillRect(rect, flash)
-        if selected and index.column() == 0:
-            painter.fillRect(QRectF(rect.left(), rect.top(), 2, rect.height()), color("accent"))
-        painter.setPen(QPen(color("line-1"), 1))
-        painter.drawLine(rect.bottomLeft(), rect.bottomRight())
-        self._paint_cell(painter, rect, row, index.column(), index.data() or "")
-        painter.restore()
+        try:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            selected = bool(option.state & QStyle.StateFlag.State_Selected)
+            if row.state == "missing":
+                painter.fillRect(rect, color("warning-dim"))
+            elif selected:
+                painter.fillRect(rect, color("accent-dim"))
+            elif option.state & QStyle.StateFlag.State_MouseOver:
+                painter.fillRect(rect, color("bg-4"))
+            if level := self.flash.level(row.signature_id):
+                flash = color("success")
+                flash.setAlpha(round(FLASH_PEAK_ALPHA * level))
+                painter.fillRect(rect, flash)
+            if selected and index.column() == 0:
+                painter.fillRect(QRectF(rect.left(), rect.top(), 2, rect.height()), color("accent"))
+            painter.setPen(QPen(color("line-1"), 1))
+            painter.drawLine(rect.bottomLeft(), rect.bottomRight())
+            self._paint_cell(painter, rect, row, index.column(), index.data() or "")
+        finally:
+            painter.restore()
 
     def _paint_cell(self, painter: QPainter, rect: QRectF, signature: Signature, column: int, text: str) -> None:
         """Paint the content of one signature cell."""
@@ -601,45 +603,47 @@ class SignatureDelegate(QStyledItemDelegate):
     def _paint_header(self, painter: QPainter, rect: QRectF, header: GroupHeader, hover: bool) -> None:
         """Paint a group header: caret, site icon, title, and the counts on the right."""
         painter.save()
-        painter.fillRect(rect, color("bg-4") if hover else color("bg-3"))
-        painter.setPen(QPen(color("line-1"), 1))
-        painter.drawLine(rect.bottomLeft(), rect.bottomRight())
-        painter.setFont(font("mono-small"))
-        painter.setPen(color("ink-muted"))
-        painter.drawText(rect.adjusted(PIXELS["sp-6"], 0, 0, 0), Qt.AlignmentFlag.AlignVCenter,
-                         "▸" if header.collapsed else "▾")
-        title_font = font("ui-small")
-        title_font.setWeight(title_font.Weight.DemiBold)
-        painting.draw_site(painter, rect.left() + PIXELS["sp-6"] + 12, rect.center().y() - 8, header.key.split(":", 1)[1])
-        text_rect = rect.adjusted(PIXELS["sp-6"] + 34, 0, -PIXELS["sp-8"], 0)
-        title = header.title
-        if title.startswith(ANOMALY_PREFIX):   # "Anomalies ·" muted and regular, the group name as usual
-            prefix_font = font("ui-small")
-            painter.setFont(prefix_font)
+        try:
+            painter.fillRect(rect, color("bg-4") if hover else color("bg-3"))
+            painter.setPen(QPen(color("line-1"), 1))
+            painter.drawLine(rect.bottomLeft(), rect.bottomRight())
+            painter.setFont(font("mono-small"))
             painter.setPen(color("ink-muted"))
-            painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, ANOMALY_PREFIX)
-            text_rect = text_rect.adjusted(QFontMetricsF(prefix_font).horizontalAdvance(ANOMALY_PREFIX), 0, 0, 0)
-            title = title[len(ANOMALY_PREFIX):]
-        painter.setFont(title_font)
-        painter.setPen(color("ink"))
-        painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, title)
-        # count, then "· 1 −" (warning) / "· 1 +" (success), right-aligned
-        count_font = font("mono-small")
-        metrics = QFontMetricsF(count_font)
-        painter.setFont(count_font)
-        parts = [(str(header.count), color("ink-faint"))]
-        if header.missing:
-            parts.append((f" · {header.missing} −", color("warning")))
-        if header.new:
-            parts.append((f" · {header.new} +", color("success")))
-        x = text_rect.right()
-        for text, ink in reversed(parts):
-            width = metrics.horizontalAdvance(text)
-            x -= width
-            painter.setPen(ink)
-            painter.drawText(QRectF(x, text_rect.top(), width + 1, text_rect.height()), Qt.AlignmentFlag.AlignVCenter,
-                             text)
-        painter.restore()
+            painter.drawText(rect.adjusted(PIXELS["sp-6"], 0, 0, 0), Qt.AlignmentFlag.AlignVCenter,
+                             "▸" if header.collapsed else "▾")
+            title_font = font("ui-small")
+            title_font.setWeight(title_font.Weight.DemiBold)
+            painting.draw_site(painter, rect.left() + PIXELS["sp-6"] + 12, rect.center().y() - 8, header.key.split(":", 1)[1])
+            text_rect = rect.adjusted(PIXELS["sp-6"] + 34, 0, -PIXELS["sp-8"], 0)
+            title = header.title
+            if title.startswith(ANOMALY_PREFIX):   # "Anomalies ·" muted and regular, the group name as usual
+                prefix_font = font("ui-small")
+                painter.setFont(prefix_font)
+                painter.setPen(color("ink-muted"))
+                painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, ANOMALY_PREFIX)
+                text_rect = text_rect.adjusted(QFontMetricsF(prefix_font).horizontalAdvance(ANOMALY_PREFIX), 0, 0, 0)
+                title = title[len(ANOMALY_PREFIX):]
+            painter.setFont(title_font)
+            painter.setPen(color("ink"))
+            painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter, title)
+            # count, then "· 1 −" (warning) / "· 1 +" (success), right-aligned
+            count_font = font("mono-small")
+            metrics = QFontMetricsF(count_font)
+            painter.setFont(count_font)
+            parts = [(str(header.count), color("ink-faint"))]
+            if header.missing:
+                parts.append((f" · {header.missing} −", color("warning")))
+            if header.new:
+                parts.append((f" · {header.new} +", color("success")))
+            x = text_rect.right()
+            for text, ink in reversed(parts):
+                width = metrics.horizontalAdvance(text)
+                x -= width
+                painter.setPen(ink)
+                painter.drawText(QRectF(x, text_rect.top(), width + 1, text_rect.height()), Qt.AlignmentFlag.AlignVCenter,
+                                 text)
+        finally:
+            painter.restore()
 
     def is_stale(self) -> bool:
         """Return whether a rescan of the system is due (rows are drawn faint)."""

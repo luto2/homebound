@@ -601,38 +601,40 @@ class _SystemCompleterDelegate(QStyledItemDelegate):
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
         """Paint one suggestion."""
         painter.save()
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = QRectF(option.rect)
-        enabled = bool(index.flags() & Qt.ItemFlag.ItemIsEnabled)
-        selected = enabled and bool(option.state & QStyle.StateFlag.State_Selected)
-        if selected:
-            painter.fillRect(rect, color("accent"))
-        ink = color("ink-inverse") if selected else color("ink") if enabled else color("ink-disabled")
-        name = index.data(Qt.ItemDataRole.DisplayRole)
-        typed = len(self.completer.completionPrefix())
-        name_font = font("mono-data")
-        name_font.setBold(True)
-        metrics = QFontMetricsF(name_font)
-        x = rect.left() + PIXELS["sp-8"]
-        painter.setFont(name_font)
-        head, tail = name[:typed], name[typed:]
-        painter.setPen(ink if selected or not enabled else color("accent"))
-        painter.drawText(QRectF(x, rect.top(), 200, rect.height()), Qt.AlignmentFlag.AlignVCenter, head)
-        head_width = metrics.horizontalAdvance(head)
-        painter.fillRect(QRectF(x, rect.center().y() + metrics.ascent() / 2 + 1, head_width, 1), painter.pen().color())
-        painter.setPen(ink)
-        painter.drawText(QRectF(x + head_width, rect.top(), 200, rect.height()), Qt.AlignmentFlag.AlignVCenter, tail)
-        x += metrics.horizontalAdvance(name) + PIXELS["sp-8"]
-        system_class = index.data(Qt.ItemDataRole.UserRole)
-        if system_class:
-            painting.draw_class_badge(painter, x, rect.center().y() - painting.BADGE_HEIGHT / 2, system_class)
-        reason = index.data(REASON_ROLE)
-        if reason:
-            painter.setFont(font("ui-small", 11))
-            painter.setPen(color("ink-inverse") if selected else color("ink-faint"))
-            painter.drawText(rect.adjusted(0, 0, -PIXELS["sp-8"], 0),
-                             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, reason)
-        painter.restore()
+        try:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            rect = QRectF(option.rect)
+            enabled = bool(index.flags() & Qt.ItemFlag.ItemIsEnabled)
+            selected = enabled and bool(option.state & QStyle.StateFlag.State_Selected)
+            if selected:
+                painter.fillRect(rect, color("accent"))
+            ink = color("ink-inverse") if selected else color("ink") if enabled else color("ink-disabled")
+            name = index.data(Qt.ItemDataRole.DisplayRole)
+            typed = len(self.completer.completionPrefix())
+            name_font = font("mono-data")
+            name_font.setBold(True)
+            metrics = QFontMetricsF(name_font)
+            x = rect.left() + PIXELS["sp-8"]
+            painter.setFont(name_font)
+            head, tail = name[:typed], name[typed:]
+            painter.setPen(ink if selected or not enabled else color("accent"))
+            painter.drawText(QRectF(x, rect.top(), 200, rect.height()), Qt.AlignmentFlag.AlignVCenter, head)
+            head_width = metrics.horizontalAdvance(head)
+            painter.fillRect(QRectF(x, rect.center().y() + metrics.ascent() / 2 + 1, head_width, 1), painter.pen().color())
+            painter.setPen(ink)
+            painter.drawText(QRectF(x + head_width, rect.top(), 200, rect.height()), Qt.AlignmentFlag.AlignVCenter, tail)
+            x += metrics.horizontalAdvance(name) + PIXELS["sp-8"]
+            system_class = index.data(Qt.ItemDataRole.UserRole)
+            if system_class:
+                painting.draw_class_badge(painter, x, rect.center().y() - painting.BADGE_HEIGHT / 2, system_class)
+            reason = index.data(REASON_ROLE)
+            if reason:
+                painter.setFont(font("ui-small", 11))
+                painter.setPen(color("ink-inverse") if selected else color("ink-faint"))
+                painter.drawText(rect.adjusted(0, 0, -PIXELS["sp-8"], 0),
+                                 Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, reason)
+        finally:
+            painter.restore()
 
 
 class _TabCompletion(QObject):

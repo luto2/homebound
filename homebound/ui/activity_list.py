@@ -115,25 +115,27 @@ class KillDelegate(QStyledItemDelegate):
         kill: KillSummary = index.data(Qt.ItemDataRole.UserRole)
         rect = QRectF(option.rect)
         painter.save()
-        painting.row_background(painter, rect, bool(option.state & QStyle.StateFlag.State_Selected),
-                                bool(option.state & QStyle.StateFlag.State_MouseOver))
-        chips = self.activity.chips(kill)
-        right = rect.right() - PIXELS["sp-8"]
-        for text in reversed(chips):
-            width = QFontMetricsF(font("edge-label", 9)).horizontalAdvance(text) + 6
-            background = color("accent") if text == "SOLO" else color("bg-4")
-            ink = color("ink-inverse") if text == "SOLO" else color("ink-muted")
-            chip_width = painting.draw_chip(painter, right - width, rect.top() + (rect.height() - 12) / 2, text,
-                                            background, ink=ink)
-            right -= chip_width + 4
-        painter.setFont(font("ui-small"))
-        painter.setPen(index.data(Qt.ItemDataRole.ForegroundRole).color())
-        text_width = int(right - rect.left() - PIXELS["sp-8"] * 2)
-        painter.drawText(QRectF(rect.left() + PIXELS["sp-8"], rect.top(), text_width, rect.height()),
-                         Qt.AlignmentFlag.AlignVCenter,
-                         painter.fontMetrics().elidedText(index.data(Qt.ItemDataRole.DisplayRole),
-                                                          Qt.TextElideMode.ElideRight, text_width))
-        painter.restore()
+        try:
+            painting.row_background(painter, rect, bool(option.state & QStyle.StateFlag.State_Selected),
+                                    bool(option.state & QStyle.StateFlag.State_MouseOver))
+            chips = self.activity.chips(kill)
+            right = rect.right() - PIXELS["sp-8"]
+            for text in reversed(chips):
+                width = QFontMetricsF(font("edge-label", 9)).horizontalAdvance(text) + 6
+                background = color("accent") if text == "SOLO" else color("bg-4")
+                ink = color("ink-inverse") if text == "SOLO" else color("ink-muted")
+                chip_width = painting.draw_chip(painter, right - width, rect.top() + (rect.height() - 12) / 2, text,
+                                                background, ink=ink)
+                right -= chip_width + 4
+            painter.setFont(font("ui-small"))
+            painter.setPen(index.data(Qt.ItemDataRole.ForegroundRole).color())
+            text_width = int(right - rect.left() - PIXELS["sp-8"] * 2)
+            painter.drawText(QRectF(rect.left() + PIXELS["sp-8"], rect.top(), text_width, rect.height()),
+                             Qt.AlignmentFlag.AlignVCenter,
+                             painter.fontMetrics().elidedText(index.data(Qt.ItemDataRole.DisplayRole),
+                                                              Qt.TextElideMode.ElideRight, text_width))
+        finally:
+            painter.restore()
 
 
 class ActivityList(QWidget):

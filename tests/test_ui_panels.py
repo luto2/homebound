@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, Qt
-from PySide6.QtGui import QContextMenuEvent, QKeySequence, QMouseEvent, QShortcut
+from PySide6.QtGui import QColor, QContextMenuEvent, QKeySequence, QMouseEvent, QShortcut
 from PySide6.QtWidgets import QApplication, QStyleOptionViewItem
 
 from conftest import HOME, SCAN, UNIVERSE, pick_system
@@ -1238,6 +1238,36 @@ def test_paint_delegate_directly_with_hover(state, table, qt_application) -> Non
         assert ground(row, QStyle.StateFlag.State_MouseOver) != plain
     assert ground(1, QStyle.StateFlag.State_Selected) != ground(1, QStyle.StateFlag.State_None)
     assert ground(1, QStyle.StateFlag.State_Selected) != ground(1, QStyle.StateFlag.State_MouseOver)
+
+
+def test_delegate_restores_the_painter_when_paint_raises(state, table, monkeypatch) -> None:
+    """A row or a header that raises mid-paint leaves the painter's pen as it was (its save is undone)."""
+    from PySide6.QtGui import QImage, QPainter
+    from PySide6.QtWidgets import QStyleOptionViewItem
+    mixed_signatures(state)
+    table.load(HOME.id)
+    delegate = table.signature_delegate
+    model = table.signature_model
+    assert isinstance(model.index(0, 0).data(Qt.ItemDataRole.UserRole), GroupHeader)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("paint failed")
+
+    image = QImage(400, 24, QImage.Format.Format_ARGB32)
+    painter = QPainter(image)
+    painter.setPen(QColor("#123456"))
+    option = QStyleOptionViewItem()
+    option.rect = QRect(0, 0, 400, 24)
+    monkeypatch.setattr(delegate, "_paint_cell", boom)
+    with pytest.raises(RuntimeError):
+        delegate.paint(painter, option, model.index(1, COLUMN_NAME))
+    assert painter.pen().color() == QColor("#123456")
+    monkeypatch.undo()
+    monkeypatch.setattr(painting, "draw_site", boom)
+    with pytest.raises(RuntimeError):
+        delegate.paint(painter, option, model.index(0, 0))
+    assert painter.pen().color() == QColor("#123456")
+    painter.end()
 
 
 def test_table_header_view_paints(table) -> None:

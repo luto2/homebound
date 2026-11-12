@@ -303,6 +303,7 @@ class MapWindow(QMainWindow):
         state.settingsChanged.connect(self._sync_settings)
         state.mapChanged.connect(self._refresh_find)
         state.status.connect(self._status)
+        state.notice.connect(lambda level, text: self.toasts.show(level, text))
         focus.status.connect(lambda level, text: self._status("kwin", level, text))
         focus.openCharactersChanged.connect(state.set_open_characters)    # the dock's "● online"
 

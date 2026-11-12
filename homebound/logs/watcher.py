@@ -3,6 +3,7 @@
 `LogScanner` is Qt-free (poll() returns events) so it can be tested and replayed;
 `LogWatcher` drives it from a QTimer and re-emits as Qt signals.
 """
+import logging
 import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -11,11 +12,13 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from ..validation import require_integer, require_type
-from .parser import BYTE_ORDER_MARK, LogFile, SystemChange, decode_log_bytes, parse_header, parse_system_change
+from .parser import (BYTE_ORDER_MARK, LogFile, SystemChange, decode_log_bytes, parse_header, parse_system_change,
+                     unlisted_system_sender)
 
 # A log written within this is "recent": the character was probably playing. An older log's last system is
 # still the last known location. Whether the client is open comes from its window (``ui/focus.py``), not the log.
 RECENT_WINDOW = timedelta(minutes=30)
+log = logging.getLogger("homebound.logs")
 
 
 @dataclass
@@ -50,6 +53,7 @@ class LogScanner:
         require_type(log_directory, (str, Path), "log_directory")
         self.log_directory = Path(log_directory)
         self.characters: dict[int, CharacterState] = {}
+        self.unlisted_senders: set[str] = set()  # EVE-prefixed system-looking senders that were ignored
 
     def valid(self) -> bool:
         """Return whether the log folder exists."""
@@ -144,6 +148,8 @@ class LogScanner:
         for line in lines:
             found = parse_system_change(line)
             if not found:
+                if sender := unlisted_system_sender(line):
+                    self.unlisted_senders.add(sender)
                 continue
             timestamp, system = found
             first = not state.session_seen_change
@@ -165,6 +171,7 @@ class LogWatcher(QObject):
     systemChanged = Signal(object)      # SystemChange
     charactersChanged = Signal()
     statusChanged = Signal(str, str)    # level ok|warn|err, text
+    notice = Signal(str, str)           # a toast: level, text (shown once per session)
 
     def __init__(self, log_directory: str, interval_ms: int = 1000, parent: QObject | None = None) -> None:
         """Create a watcher; call :meth:`start` to begin polling.
@@ -180,6 +187,7 @@ class LogWatcher(QObject):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.poll)
         self.interval_ms = interval_ms
+        self._warned_senders = False
 
     def start(self) -> None:
         """Poll once now, then every ``interval_ms``."""
@@ -203,6 +211,13 @@ class LogWatcher(QObject):
         result = self.scanner.poll()
         for change in result.changes:
             self.systemChanged.emit(change)
+        if self.scanner.unlisted_senders and not self._warned_senders:
+            self._warned_senders = True
+            names = ", ".join(sorted(self.scanner.unlisted_senders))
+            log.warning("Ignored Local chat from unlisted system sender(s): %s", names)
+            self.notice.emit("warn", f"Local chat from “{names}” was ignored: that sender name is not one Homebound "
+                                     "knows. Only the English game client is fully supported for now, so systems "
+                                     "may not be tracked.")
         if result.characters_changed:
             self.charactersChanged.emit()
         recent = sum(1 for character in self.scanner.characters.values() if character.recent)

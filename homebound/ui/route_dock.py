@@ -101,27 +101,29 @@ class RouteDelegate(QStyledItemDelegate):
         system = self.state.universe.by_id(destination_id)
         rect = QRectF(option.rect)
         painter.save()
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painting.row_background(painter, rect, bool(option.state & QStyle.StateFlag.State_Selected),
-                                bool(option.state & QStyle.StateFlag.State_MouseOver))
-        x, y = rect.left() + PIXELS["sp-8"], rect.top() + 5
-        x += painting.draw_class_badge(painter, x, y, system.system_class,
-                                       system.security if system.known_space else None) + 6
-        jumps = "—" if route is None else f"{route.jumps} j"
-        painter.setFont(font("mono-small"))
-        painter.setPen(color("ink") if route else color("ink-faint"))
-        painter.drawText(QRectF(rect.right() - 56, y, 48, 16),
-                         Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, jumps)
-        name_font = font("ui-body")
-        name_font.setBold(True)
-        painter.setFont(name_font)
-        painter.setPen(color("ink"))
-        width = rect.right() - 60 - x
-        painter.drawText(QRectF(x, y, width, 16), Qt.AlignmentFlag.AlignVCenter,
-                         painter.fontMetrics().elidedText(system_label(self.state, destination_id),
-                                                          Qt.TextElideMode.ElideRight, int(width)))
-        self._paint_strip(painter, *strip_origin(rect), route)
-        painter.restore()
+        try:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painting.row_background(painter, rect, bool(option.state & QStyle.StateFlag.State_Selected),
+                                    bool(option.state & QStyle.StateFlag.State_MouseOver))
+            x, y = rect.left() + PIXELS["sp-8"], rect.top() + 5
+            x += painting.draw_class_badge(painter, x, y, system.system_class,
+                                           system.security if system.known_space else None) + 6
+            jumps = "—" if route is None else f"{route.jumps} j"
+            painter.setFont(font("mono-small"))
+            painter.setPen(color("ink") if route else color("ink-faint"))
+            painter.drawText(QRectF(rect.right() - 56, y, 48, 16),
+                             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, jumps)
+            name_font = font("ui-body")
+            name_font.setBold(True)
+            painter.setFont(name_font)
+            painter.setPen(color("ink"))
+            width = rect.right() - 60 - x
+            painter.drawText(QRectF(x, y, width, 16), Qt.AlignmentFlag.AlignVCenter,
+                             painter.fontMetrics().elidedText(system_label(self.state, destination_id),
+                                                              Qt.TextElideMode.ElideRight, int(width)))
+            self._paint_strip(painter, *strip_origin(rect), route)
+        finally:
+            painter.restore()
 
     def hop_at(self, rect: QRectF, route: routing.Route | None, point: QPointF) -> routing.Hop | None:
         """Return the hop whose square in a row's strip is under ``point``, or None.
