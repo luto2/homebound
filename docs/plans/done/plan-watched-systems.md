@@ -106,3 +106,4 @@ What can be held back is what needs the server. Options:
   are cleared on the next disconnect or expiry. `Tracker.expire(occupied=)` keeps pieces that other
   members' shared characters are in, since the removal now syncs. Marks from the old local
   `key_value` `cut_off` row are not migrated (they last about an hour).
+- Owner (2026-11-12): removing a cut-off piece after the hour on every install is fine, even if a member is inside without sharing their location.
