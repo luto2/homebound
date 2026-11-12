@@ -6,69 +6,21 @@ Runs on Linux and Windows.
 
 ## Install on Linux
 
-Paste the block for your distribution into a terminal (bash, zsh or fish). It installs the two libraries the AppImage needs, downloads the latest release to `~/.local/bin/homebound` and adds Homebound to your app menu. Run the same block again to update.
-
-**Debian, Ubuntu, Mint, Pop!_OS**
+Paste this into a terminal (bash, zsh or fish). It installs the two libraries the AppImage needs (it asks for your password), downloads the latest release to `~/.local/bin/homebound` and adds Homebound to your app menu. Run it again to update. It knows apt (Debian, Ubuntu, Mint, Pop!_OS), dnf (Fedora), pacman (Arch, CachyOS, Manjaro, EndeavourOS) and zypper (openSUSE).
 
 ```sh
-sudo apt install -y curl fuse3 libxcb-cursor0 && \
-mkdir -p ~/.local/bin ~/.local/share/applications ~/.local/share/icons/hicolor/256x256/apps ~/.local/share/icons/hicolor/48x48/apps ~/.local/share/icons/hicolor/scalable/apps && \
-curl -fsSL https://api.github.com/repos/luto2/homebound/releases/latest | grep -o 'https://[^"]*x86_64\.AppImage' | head -n1 | xargs curl -fL -o ~/.local/bin/homebound && \
-chmod +x ~/.local/bin/homebound && \
-curl -fsSL -o ~/.local/share/icons/hicolor/256x256/apps/homebound.png https://raw.githubusercontent.com/luto2/homebound/master/packaging/icons/homebound.png && \
-curl -fsSL -o ~/.local/share/icons/hicolor/48x48/apps/homebound.png https://raw.githubusercontent.com/luto2/homebound/master/packaging/icons/homebound-48.png && \
-curl -fsSL -o ~/.local/share/icons/hicolor/scalable/apps/homebound.svg https://raw.githubusercontent.com/luto2/homebound/master/packaging/icons/homebound.svg && \
-curl -fsSL https://raw.githubusercontent.com/luto2/homebound/master/packaging/linux/homebound.desktop | sed "s|^Exec=.*|Exec=$HOME/.local/bin/homebound|" > ~/.local/share/applications/homebound.desktop && \
-echo "Homebound installed. Start it from the app menu or with ~/.local/bin/homebound"; \
-command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 >/dev/null 2>&1; command -v update-desktop-database >/dev/null && update-desktop-database ~/.local/share/applications
+curl -fsSL https://raw.githubusercontent.com/luto2/homebound/master/packaging/linux/install.sh | sh
 ```
 
-**Fedora**
+The script is [`packaging/linux/install.sh`](packaging/linux/install.sh) if you want to read it first.
+
+To uninstall:
 
 ```sh
-sudo dnf install -y curl fuse3 xcb-util-cursor && \
-mkdir -p ~/.local/bin ~/.local/share/applications ~/.local/share/icons/hicolor/256x256/apps ~/.local/share/icons/hicolor/48x48/apps ~/.local/share/icons/hicolor/scalable/apps && \
-curl -fsSL https://api.github.com/repos/luto2/homebound/releases/latest | grep -o 'https://[^"]*x86_64\.AppImage' | head -n1 | xargs curl -fL -o ~/.local/bin/homebound && \
-chmod +x ~/.local/bin/homebound && \
-curl -fsSL -o ~/.local/share/icons/hicolor/256x256/apps/homebound.png https://raw.githubusercontent.com/luto2/homebound/master/packaging/icons/homebound.png && \
-curl -fsSL -o ~/.local/share/icons/hicolor/48x48/apps/homebound.png https://raw.githubusercontent.com/luto2/homebound/master/packaging/icons/homebound-48.png && \
-curl -fsSL -o ~/.local/share/icons/hicolor/scalable/apps/homebound.svg https://raw.githubusercontent.com/luto2/homebound/master/packaging/icons/homebound.svg && \
-curl -fsSL https://raw.githubusercontent.com/luto2/homebound/master/packaging/linux/homebound.desktop | sed "s|^Exec=.*|Exec=$HOME/.local/bin/homebound|" > ~/.local/share/applications/homebound.desktop && \
-echo "Homebound installed. Start it from the app menu or with ~/.local/bin/homebound"; \
-command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 >/dev/null 2>&1; command -v update-desktop-database >/dev/null && update-desktop-database ~/.local/share/applications
+curl -fsSL https://raw.githubusercontent.com/luto2/homebound/master/packaging/linux/install.sh | sh -s -- --uninstall
 ```
 
-**Arch, CachyOS, Manjaro, EndeavourOS**
-
-```sh
-sudo pacman -S --needed --noconfirm curl fuse3 xcb-util-cursor && \
-mkdir -p ~/.local/bin ~/.local/share/applications ~/.local/share/icons/hicolor/256x256/apps ~/.local/share/icons/hicolor/48x48/apps ~/.local/share/icons/hicolor/scalable/apps && \
-curl -fsSL https://api.github.com/repos/luto2/homebound/releases/latest | grep -o 'https://[^"]*x86_64\.AppImage' | head -n1 | xargs curl -fL -o ~/.local/bin/homebound && \
-chmod +x ~/.local/bin/homebound && \
-curl -fsSL -o ~/.local/share/icons/hicolor/256x256/apps/homebound.png https://raw.githubusercontent.com/luto2/homebound/master/packaging/icons/homebound.png && \
-curl -fsSL -o ~/.local/share/icons/hicolor/48x48/apps/homebound.png https://raw.githubusercontent.com/luto2/homebound/master/packaging/icons/homebound-48.png && \
-curl -fsSL -o ~/.local/share/icons/hicolor/scalable/apps/homebound.svg https://raw.githubusercontent.com/luto2/homebound/master/packaging/icons/homebound.svg && \
-curl -fsSL https://raw.githubusercontent.com/luto2/homebound/master/packaging/linux/homebound.desktop | sed "s|^Exec=.*|Exec=$HOME/.local/bin/homebound|" > ~/.local/share/applications/homebound.desktop && \
-echo "Homebound installed. Start it from the app menu or with ~/.local/bin/homebound"; \
-command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 >/dev/null 2>&1; command -v update-desktop-database >/dev/null && update-desktop-database ~/.local/share/applications
-```
-
-**openSUSE**
-
-```sh
-sudo zypper install -y curl fuse3 libxcb-cursor0 && \
-mkdir -p ~/.local/bin ~/.local/share/applications ~/.local/share/icons/hicolor/256x256/apps ~/.local/share/icons/hicolor/48x48/apps ~/.local/share/icons/hicolor/scalable/apps && \
-curl -fsSL https://api.github.com/repos/luto2/homebound/releases/latest | grep -o 'https://[^"]*x86_64\.AppImage' | head -n1 | xargs curl -fL -o ~/.local/bin/homebound && \
-chmod +x ~/.local/bin/homebound && \
-curl -fsSL -o ~/.local/share/icons/hicolor/256x256/apps/homebound.png https://raw.githubusercontent.com/luto2/homebound/master/packaging/icons/homebound.png && \
-curl -fsSL -o ~/.local/share/icons/hicolor/48x48/apps/homebound.png https://raw.githubusercontent.com/luto2/homebound/master/packaging/icons/homebound-48.png && \
-curl -fsSL -o ~/.local/share/icons/hicolor/scalable/apps/homebound.svg https://raw.githubusercontent.com/luto2/homebound/master/packaging/icons/homebound.svg && \
-curl -fsSL https://raw.githubusercontent.com/luto2/homebound/master/packaging/linux/homebound.desktop | sed "s|^Exec=.*|Exec=$HOME/.local/bin/homebound|" > ~/.local/share/applications/homebound.desktop && \
-echo "Homebound installed. Start it from the app menu or with ~/.local/bin/homebound"; \
-command -v kbuildsycoca6 >/dev/null && kbuildsycoca6 >/dev/null 2>&1; command -v update-desktop-database >/dev/null && update-desktop-database ~/.local/share/applications
-```
-
-To uninstall: `rm ~/.local/bin/homebound ~/.local/share/applications/homebound.desktop ~/.local/share/icons/hicolor/256x256/apps/homebound.png ~/.local/share/icons/hicolor/48x48/apps/homebound.png ~/.local/share/icons/hicolor/scalable/apps/homebound.svg`. Your maps stay in `~/.local/share/homebound/`.
+Your maps stay in `~/.local/share/homebound/`.
 
 On first start Homebound offers to download the EVE game data (about 100 MB), then opens Settings on the log folder. [Getting started](#getting-started) has the rest.
 

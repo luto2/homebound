@@ -101,3 +101,10 @@ line. [Phobos](https://github.com/DarkFenX/Phobos) dumps client data if the name
    non-English clients, and with an exact sender it is safe. Recommended: keep.
 3. **Who supplies real localized logs?** Before release, one `Local_*.txt` per client language, with
    the name added to `SYSTEM_SENDERS` and a fixture under `tests/`.
+
+## Owner decisions (2026-11-12)
+
+- An `EVE`-prefixed sender that isn't in `SYSTEM_SENDERS` is ignored, and the user gets a warning that
+  only the English client is fully supported for now (also written to the log).
+- Keep the loose message match.
+- Collecting real logs for other languages is for later, once Homebound has enough users for it to pay off.

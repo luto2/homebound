@@ -58,3 +58,6 @@ Windows with real logs and a cloud map and note what broke, so the release note 
 
 - A second start from the app menu never opens a second window: it raises the running one and exits.
 - Two instances only with a developer flag at startup (`--allow-second-instance`).
+- The second start passes nothing on; it only raises the running window.
+- Each process gets its own sync connection ID, whatever step 1 shows, so two instances started with the
+  developer flag don't push each other off the server.

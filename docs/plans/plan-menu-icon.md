@@ -1,6 +1,6 @@
 # Plan: app menu icon after the README install
 
-Status: partly implemented (2026-11-10, commit `e6b86d3`): 48 px and SVG icons, cache refresh and uninstall line in the README. Not tested on a desktop; the investigation steps below are still open, and the fish syntax of the install lines wasn't checked.
+Status: partly implemented (2026-11-10, commit `e6b86d3`): 48 px and SVG icons, cache refresh and uninstall line in the README. Not tested on a desktop; the investigation steps below are still open, and since 2026-11-12 the install is one line running `packaging/linux/install.sh`.
 
 Depends on: nothing. Touches `README.md` (install commands), `packaging/linux/homebound.desktop` and
 possibly `packaging/linux/AppRun` / `build_appimage.sh`.
@@ -63,3 +63,9 @@ GNOME, from a clean `~/.local/share` (uninstall line first, then the install lin
 1. Should the README install become a small script (`packaging/linux/install.sh`) instead of a long
    one-liner? Recommended once it grows past the cache refresh: easier to read and to keep in step with
    the uninstall.
+
+## Owner decisions (2026-11-12)
+
+- The README install is now one line that runs `packaging/linux/install.sh` (done 2026-11-12); the same
+  script takes `--uninstall`. This also settles the fish syntax question: a pipe into `sh` works the same
+  in every shell.

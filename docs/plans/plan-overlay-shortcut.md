@@ -38,3 +38,8 @@ Another app may already hold the key, so registration has to fail quietly and sa
 
 1. Should the key be configurable in Settings? It conflicts with nothing in the app, but it can in other apps.
 2. Should the tray menu show the shortcut text? The mockups do. Show it only where registration worked.
+
+## Owner decisions (2026-11-12)
+
+- The key can be changed in Settings.
+- The tray menu shows the shortcut text (TODO item 19).

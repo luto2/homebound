@@ -80,3 +80,7 @@ What can be held back is what needs the server. Options:
   allowed once it is connected to the chain.
 - When a chain is deleted (or cut off, see `done/plan-disconnect-connection.md`), stop mapping new
   connections there after 1 hour.
+- Two watch lists: a **private** one (per user, never synced) and the **normal** one, which is a map
+  setting and syncs on cloud maps.
+- How far to look from a watched k-space system is a setting: direct (adjacent only), 2, 5 or 10 jumps;
+  default 5.
