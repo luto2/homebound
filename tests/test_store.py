@@ -595,3 +595,25 @@ def test_aliases_are_kept_in_the_file_and_old_files_get_the_empty_table(tmp_path
     copy.write_bytes(path.read_bytes())
     with Store(copy) as reopened:
         assert reopened.alias(JITA) == "Staging"
+
+
+
+def test_a_detached_system_remembers_its_parent(store) -> None:
+    """Losing the parent (a removed connection or parent, any write) keeps it in detached_from; a new parent clears it."""
+    c5, c3 = pick_system("C5", exclude={HOME.id}).id, pick_system("C3").id
+    store.add_system(HOME.id)
+    store.add_system(c5, parent_id=HOME.id, hole_index=1)
+    store.add_system(c3, parent_id=c5, hole_index=1)
+    store.add_connection(HOME.id, c5)
+    assert store.system(c5).detached_from is None
+    with store.batch() as action:
+        store.remove_system(c5)
+    assert (store.system(c3).parent_id, store.system(c3).hole_index, store.system(c3).detached_from) == (None, 1, c5)
+    store.undo(action)
+    assert (store.system(c3).parent_id, store.system(c3).detached_from) == (c5, None)
+    store.clear_broken_parents()                         # c5 to c3 never had a connection
+    assert store.system(c3).detached_from == c5
+    store.update_system(c3, parent_id=HOME.id, hole_index=2)
+    assert store.system(c3).detached_from is None
+    store.update_system(c3, notes="x")
+    assert store.system(c3).detached_from is None

@@ -201,6 +201,29 @@ def test_a_removed_connection_added_back_keeps_the_number_and_name(simulation) -
     assert store.connection(HOME.id, c3.id).signature_on(HOME.id) == "BBB-222"    # the sig with its number
 
 
+def test_a_system_relinked_under_a_new_parent_gets_a_new_number_and_name(simulation) -> None:
+    """Owner, 2026-11-12: its bookmark must fit the system it hangs off now; its children keep their names."""
+    store = simulation.store
+    c5, other, c3, c2 = (pick_system("C5", exclude={HOME.id}), pick_system("C4"), pick_system("C3"), pick_system("C2"))
+    with store.batch():
+        store.add_system(c5.id, parent_id=HOME.id, hole_index=1, label="1")
+        store.add_system(other.id, parent_id=HOME.id, hole_index=2, label="2")
+        store.add_system(c3.id, parent_id=c5.id, hole_index=1, label="11")
+        store.add_system(c2.id, parent_id=c3.id, hole_index=1, label="111")
+        for low, high in ((HOME.id, c5.id), (HOME.id, other.id), (c5.id, c3.id), (c3.id, c2.id)):
+            store.add_connection(low, high)
+    signature_parser.merge_signatures(store, other.id, signature_parser.parse_scanner_text(
+        "AAA-111\tCosmic Signature\tWormhole\t\t100%\t1 AU\n"))
+    store.delete_signatures(other.id, ["AAA-111"])          # number 1 of the other system was given out
+    store.remove_connection(store.connection(c5.id, c3.id).id)
+    store.clear_broken_parents()
+    assert (store.system(c3.id).parent_id, store.system(c3.id).detached_from) == (None, c5.id)
+    simulation.tracker.add_wormhole(other.id, c3.id, manual=True)
+    moved = store.system(c3.id)
+    assert (moved.parent_id, moved.hole_index, moved.label, moved.detached_from) == (other.id, 2, "22", None)
+    assert store.system(c2.id).label == "111" and simulation.namer.display(c2.id) == "111"   # children keep theirs
+
+
 def test_a_removed_parent_leaves_its_children_their_numbers(simulation) -> None:
     """Path 5 for remove_system and its undo: the children keep hole number and name."""
     c5 = pick_system("C5", exclude={HOME.id})

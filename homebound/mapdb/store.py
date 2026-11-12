@@ -56,6 +56,9 @@ class MapSystem:
     label: str | None = None     # scheme name given when the system was attached; None: not named yet
     static: int = 0              # 1: reached through its parent's static (a flag, not a hole number)
     next_hole: int = 0           # highest hole number given out in this system; numbers are never reused
+    # the parent it hung off before it was detached (local, not synced): coming back under the same
+    # parent it keeps its number and name, under another one it gets new ones; None while attached or unknown
+    detached_from: int | None = None
 
 
 @dataclass
@@ -298,6 +301,7 @@ COLUMN_ADDITIONS = [
     ("systems", "label", "TEXT"),
     ("systems", "static", "INTEGER DEFAULT 0"),
     ("systems", "next_hole", "INTEGER DEFAULT 0"),
+    ("systems", "detached_from", "INTEGER"),
 ]
 
 
@@ -647,8 +651,18 @@ class Store:
                               list(row.values()))
 
     def _update_row(self, entity: str, key: Any, values: dict) -> None:
-        """Set columns of an existing entity's row."""
+        """Set columns of an existing entity's row.
+
+        A system that loses its parent remembers it in ``detached_from`` (every way a system is
+        detached ends here, sync included); one that gets a parent forgets it.
+        """
         self._touch(entity, key)
+        if entity == "system" and "parent_id" in values and "detached_from" not in values:
+            current = self._row("system", key)
+            if values["parent_id"] is not None:
+                values = values | {"detached_from": None}
+            elif current is not None and current["parent_id"] is not None:
+                values = values | {"detached_from": current["parent_id"]}
         table, where = ALL_ENTITY_TABLES[entity], ALL_ENTITY_WHERE[entity]
         keys = key_values(key)
         self.database.execute(f"UPDATE {table} SET {', '.join(f'{_quoted(column)}=?' for column in values)} "

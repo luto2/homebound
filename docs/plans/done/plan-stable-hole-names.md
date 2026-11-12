@@ -126,7 +126,12 @@ No open decisions left.
 - A WH sig that comes without a number (from an older cloud client) shows the number it would get
   and stores it when its bookmark is copied, or at the next paste in that system.
 - A system that comes back without a sig keeps its old number while no hole of the new parent
-  has it, even if the parent is a different one.
+  has it, even if the parent is a different one. **Changed 2026-11-12 (owner):** only under the
+  same parent. A system re-linked under a new parent gets that parent's next number (or its sig's)
+  and a new name, so its bookmark fits the system it hangs off; its children keep their names. The
+  parent it hung off is kept in the local column `systems.detached_from` (set by `Store._update_row`
+  whenever a system loses its parent, sync included; `None` for systems detached before that, which
+  keep the old rule).
 - A scheme change from another cloud member asks the rename question too.
 - Marking a return hole ([`plan-return-hole.md`](plan-return-hole.md)) is the one explicit rename of a sig: its bookmark reads `-0` (towards the parent) while linked, but its stored number is kept, so nothing is lost on undo.
 - **2026-11-11: change 8 is done.** Protocol 2 has the version gate (`docs/plans/done/sync-protocol.md` §3),

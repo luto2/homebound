@@ -407,3 +407,16 @@ def test_an_already_synced_number_wins_over_the_same_sig_pasted_offline(pair) ->
     assert numbers(kira, C5) == numbers(bob, C5) == {"AAA-100": 1, "BBB-200": 2}
     assert any("BBB-200 is hole 2 now" in text for _, text in bob.notices)
     assert bob.replica.outbox() == []
+
+
+
+def test_a_system_detached_by_the_other_member_remembers_its_parent(pair) -> None:
+    """Kira's collapse detaches C5 on Bob's map too, and Bob's copy knows where it hung (to keep or renew its name)."""
+    harness, kira, bob = pair
+    with kira.store.batch():
+        kira.store.remove_connection(kira.store.connection(HOME.id, C5).id)
+        kira.store.clear_broken_parents()
+    pump_all(kira, bob)
+    detached = bob.store.system(C5)
+    assert (detached.parent_id, detached.hole_index, detached.detached_from) == (None, 1, HOME.id)
+    assert bob.replica.outbox() == []                  # local bookkeeping, nothing to send
