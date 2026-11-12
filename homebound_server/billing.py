@@ -121,7 +121,7 @@ class Billing:
     def row(self, payer_id: int) -> dict:
         """Return the payer's billing row, settled up to now."""
         self.settle(payer_id)
-        return dict(self.db.one("SELECT * FROM billing WHERE payer_id=?", (payer_id,)))
+        return dict(self.db.required("SELECT * FROM billing WHERE payer_id=?", (payer_id,)))
 
     def settle(self, payer_id: int, now: datetime | None = None) -> None:
         """Charge the cost since ``billed_until`` and project ``paid_until`` at today's price.
@@ -235,7 +235,7 @@ class Billing:
         if not self.maps.maps_of_payer(payer_id):
             if self.can_start_trial(account_id):
                 return "trial"
-            account = self.db.one("SELECT trial_used_at FROM accounts WHERE id=?", (account_id,))
+            account = self.db.required("SELECT trial_used_at FROM accounts WHERE id=?", (account_id,))
             if not account["trial_used_at"]:       # a character of this account had a trial elsewhere
                 if self.events is not None:
                     self.events.trial_refused(account_id)
@@ -259,7 +259,7 @@ class Billing:
     # ------------------------------------------------------------ lapse
     def paying_subject(self, payer_id: int) -> tuple[int | None, int | None]:
         """Return ``(character, corp)`` that strikes go against: the last payer character, else the first linked one."""
-        payer = self.db.one("SELECT kind, subject_id FROM payers WHERE id=?", (payer_id,))
+        payer = self.db.required("SELECT kind, subject_id FROM payers WHERE id=?", (payer_id,))
         if payer["kind"] == "corp":
             return None, payer["subject_id"]
         char_id = self.db.value("SELECT char_id FROM payments WHERE payer_id=? AND char_id IS NOT NULL "
@@ -296,7 +296,7 @@ class Billing:
         """
         now = now or utc_now()
         self.settle(payer_id, now)
-        row = dict(self.db.one("SELECT * FROM billing WHERE payer_id=?", (payer_id,)))
+        row = dict(self.db.required("SELECT * FROM billing WHERE payer_id=?", (payer_id,)))
         old = row["state"]
         paid_until, trial_until = parse_iso(row["paid_until"]), parse_iso(row["trial_until"])
         if row["comp"] or not self.maps.maps_of_payer(payer_id) or self.total(payer_id)[0] == 0:
@@ -311,7 +311,7 @@ class Billing:
                 lapsed_at = paid_until or now
                 char_id, corp_id = self.paying_subject(payer_id)
                 repeat = self.has_active_strike(char_id, corp_id, now)
-                payer = self.db.one("SELECT kind FROM payers WHERE id=?", (payer_id,))
+                payer = self.db.required("SELECT kind FROM payers WHERE id=?", (payer_id,))
                 if payer["kind"] == "corp":
                     self._strike("corp", corp_id, now)
                 else:
@@ -342,14 +342,16 @@ class Billing:
         warning = reason = None
         lapsed_at = parse_iso(row["lapsed_at"])
         if state == "warning":
+            assert lapsed_at is not None         # evaluate() sets lapsed_at for the two lapse states
             warning = (f"Payment missed. The map stays editable until "
                        f"{iso(lapsed_at + timedelta(days=GRACE_DAYS))}, then turns read-only.")
         elif state == "read_only":
+            assert lapsed_at is not None
             reason = "Payment missed: the map is read-only until it is paid."
             warning = f"The server deletes this map on {iso(lapsed_at + timedelta(days=DELETE_DAYS))}."
         elif state == "trial":
             warning = f"Free trial until {row['trial_until']}."
-        payer = self.db.one("SELECT kind FROM payers WHERE id=?", (payer_id,))
+        payer = self.db.required("SELECT kind FROM payers WHERE id=?", (payer_id,))
         return {"state": state, "paid_until": row["paid_until"], "warning": warning, "read_only_reason": reason,
                 "price_month": prices.get(map_id, 0), "payer_code": row["code"], "payer_kind": payer["kind"],
                 "balance": round(row["balance_isk"])}

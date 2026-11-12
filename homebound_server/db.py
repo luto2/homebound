@@ -270,6 +270,13 @@ class Database:
         with self.lock:
             return self.connection.execute(sql, parameters).fetchone()
 
+    def required(self, sql: str, parameters=()) -> sqlite3.Row:
+        """Return the first row of a query that must have one (LookupError if it hasn't)."""
+        row = self.one(sql, parameters)
+        if row is None:
+            raise LookupError(f"no row for {sql!r} {tuple(parameters)!r}")
+        return row
+
     def all(self, sql: str, parameters=()) -> list[sqlite3.Row]:
         """Return every row of a query."""
         with self.lock:
