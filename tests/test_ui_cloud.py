@@ -271,3 +271,16 @@ def test_members_dialog_edits_the_access_list(cloud) -> None:
 def test_isk_formatting() -> None:
     """ISK reads like in EVE."""
     assert (isk(125e6), isk(1.5e9), isk(2e9), isk(12345)) == ("125M ISK", "1.50B ISK", "2B ISK", "12,345 ISK")
+
+
+def test_each_process_signs_with_its_own_connection_id(monkeypatch, tmp_path, qt_application) -> None:
+    """Two SyncManagers on one install (two instances with --allow-second-instance) get different IDs in the hello and
+    on their ops; the install's own sync_client_id stays in the settings."""
+    harness = Harness()
+    state = make_state(monkeypatch, tmp_path)
+    first = make_sync(state, harness, tmp_path, "one")
+    second = make_sync(state, harness, tmp_path, "two")
+    assert first.engine.client_id != second.engine.client_id
+    assert first.engine.hello("token")["client_id"] == first.connection_id
+    assert first.connection_id != state.settings.sync_client_id
+    assert state.settings.sync_client_id

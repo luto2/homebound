@@ -81,7 +81,7 @@ class Settings:
     route_ship_size: str = "M"            # skip holes smaller than this (S/M/L/XL)
     # Cloud sync (docs/plans/done/cloud-sync-plan.md). A cloud map's entry in ``maps`` has "cloud": "<map id>".
     sync_server: str = "https://homebound.luthopian.de"
-    sync_client_id: str = ""              # random per install, the LWW tie-breaker; made on first use
+    sync_client_id: str = ""              # random per install, made on first use; each process signs with its own ID (SyncManager.connection_id)
     sync_presence: dict = field(default_factory=dict)   # cloud map id -> character IDs whose location is shared
     # also tell others whether a shared character's client window is open ("online") or only its log is fresh
     # ("recent"); off by default: only the location leaves the computer (docs/plans/done/plan-online-indicator.md)

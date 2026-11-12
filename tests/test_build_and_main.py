@@ -364,6 +364,10 @@ class FakeWindow:
         """Record the page."""
         self.settings_opened = page
 
+    def raise_window(self) -> None:
+        """Record the call."""
+        self.raised = True
+
 
 class FakeState:
     """Stands in for AppState."""
@@ -419,7 +423,7 @@ class FakeSettings:
 
 
 @pytest.fixture
-def fake_app(qt_application, monkeypatch) -> type:
+def fake_app(qt_application, monkeypatch, tmp_path) -> type:
     """Replace everything main() would start for real; QApplication.exec returns 0."""
     from PySide6.QtWidgets import QApplication
 
@@ -436,6 +440,7 @@ def fake_app(qt_application, monkeypatch) -> type:
     monkeypatch.setattr(homebound.ui.sync_manager, "SyncManager", FakeSync)
     monkeypatch.setattr("homebound.universe.db.open_universe", lambda: "universe")
     monkeypatch.setattr(entry_point.sys, "argv", ["homebound"])
+    monkeypatch.setattr(homebound.settings, "DATA_DIR", tmp_path)   # the lock goes in a folder of its own
     return homebound.settings.Settings
 
 
@@ -572,3 +577,46 @@ def test_main_version_and_build_static(monkeypatch, capsys) -> None:
 def test_module_exposes_main() -> None:
     """Importing homebound.__main__ gives a callable main()."""
     assert callable(entry_point.main) and "homebound.__main__" in sys.modules
+
+
+def test_main_exits_with_zero_when_another_instance_runs(fake_app, monkeypatch) -> None:
+    """A second start finds the data folder taken, starts nothing and exits 0."""
+    import homebound.platform.instance as instance
+    import homebound.settings
+    first = instance.acquire_single_instance(homebound.settings.DATA_DIR)
+    try:
+        assert entry_point.main() == 0
+        assert not FakeWindow.instances
+    finally:
+        first.release()
+
+
+def test_main_connects_the_guard_to_the_window_and_releases_it(fake_app, monkeypatch) -> None:
+    """The running instance raises its window on a request, and frees the folder when it ends."""
+    import homebound.platform.instance as instance
+    import homebound.settings
+    monkeypatch.setattr(fake_app, "load", classmethod(lambda cls: FakeSettings("/logs")))
+    guards = []
+    original = instance.acquire_single_instance
+    monkeypatch.setattr(instance, "acquire_single_instance", lambda folder: guards.append(original(folder)) or guards[-1])
+    assert entry_point.main() == 0
+    window = FakeWindow.instances[0]
+    guards[0].showRequested.emit()
+    assert window.raised
+    again = original(homebound.settings.DATA_DIR)
+    assert again is not None
+    again.release()
+
+
+def test_main_flag_skips_the_guard(fake_app, monkeypatch) -> None:
+    """--allow-second-instance starts even while another instance holds the folder."""
+    import homebound.platform.instance as instance
+    import homebound.settings
+    monkeypatch.setattr(fake_app, "load", classmethod(lambda cls: FakeSettings("/logs")))
+    monkeypatch.setattr(entry_point.sys, "argv", ["homebound", "--allow-second-instance"])
+    first = instance.acquire_single_instance(homebound.settings.DATA_DIR)
+    try:
+        assert entry_point.main() == 0
+        assert FakeWindow.instances and FakeWindow.instances[0].shown
+    finally:
+        first.release()
