@@ -174,6 +174,8 @@ def test_log_folder_unset(dialog) -> None:
 def test_save_blocked_by_missing_log_folder(dialog, state, tmp_path) -> None:
     """A folder that doesn't exist keeps the dialog open on the log page with the reason, and saves nothing."""
     before = state.settings.log_directory
+    settings_file = tmp_path / "settings.json"
+    file_before = settings_file.read_bytes() if settings_file.exists() else None
     dialog.nav.setCurrentRow(PAGES.index("Overlay"))
     dialog.log_directory.setText(str(tmp_path / "nope"))
     dialog.home.setText("")
@@ -182,7 +184,7 @@ def test_save_blocked_by_missing_log_folder(dialog, state, tmp_path) -> None:
     assert dialog.stack.currentIndex() == PAGES.index("Log folder")
     assert dialog.log_help.property("role") == "help-err" and "can't be saved" in dialog.log_help.text()
     assert state.settings.log_directory == before and state.settings.home_system == HOME.name
-    assert not (tmp_path / "settings.json").exists() or "nope" not in (tmp_path / "settings.json").read_text()
+    assert (settings_file.read_bytes() if settings_file.exists() else None) == file_before
 
 
 def test_save_allows_empty_log_folder(dialog, state) -> None:
