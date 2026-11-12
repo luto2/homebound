@@ -8,17 +8,17 @@ All of them raise ``TypeError`` for a value of the wrong type and ``ValueError``
 the right type that is out of range, so callers get the same errors everywhere.
 """
 from collections.abc import Collection
-from typing import Any, Literal, TypeVar, overload
+from typing import Any, Literal, TypeGuard, TypeVar, overload
 
 Value = TypeVar("Value")
 
 
-def is_int(value: object) -> bool:
+def is_int(value: object) -> TypeGuard[int]:
     """Return whether a value is an int (``bool`` doesn't count)."""
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def is_number(value: object) -> bool:
+def is_number(value: object) -> TypeGuard[int | float]:
     """Return whether a value is an int or float (``bool`` doesn't count)."""
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 

@@ -38,7 +38,7 @@ def parse_signatures(data: object, now: datetime | None = None) -> list[ScoutLin
             continue
         hub = str(entry.get("out_system_name", "")).lower()
         hub_id, system_id = entry.get("out_system_id"), entry.get("in_system_id")
-        if hub not in HUBS or not all(is_int(value) and value > 0 for value in (hub_id, system_id)):
+        if hub not in HUBS or not (is_int(hub_id) and is_int(system_id) and hub_id > 0 and system_id > 0):
             continue
         expires = parse_utc(entry.get("expires_at"))
         if expires is not None and expires <= now:

@@ -121,6 +121,8 @@ class LogScanner:
         Returns:
             The system changes found.
         """
+        if state.file is None:   # set by scan() right before each read
+            return []
         read_header = state.name is None
         try:
             with open(state.file.path, "rb") as log:

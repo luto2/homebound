@@ -101,7 +101,8 @@ def summarize_kills(system_id: int, kills: list[dict]) -> list[KillSummary]:
         attackers = kill.get("attackers")
         attackers = [entry for entry in attackers if isinstance(entry, dict)] if isinstance(attackers, list) else []
         ships = Counter(ship for ship in map(_ship_type_id, attackers) if ship)
-        zkb = kill.get("zkb") if isinstance(kill.get("zkb"), dict) else {}
+        zkb_raw = kill.get("zkb")
+        zkb = zkb_raw if isinstance(zkb_raw, dict) else {}
         value = zkb.get("totalValue")
         value = float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0.0
         rows[killmail_id] = KillSummary(
@@ -114,7 +115,8 @@ def summarize_kills(system_id: int, kills: list[dict]) -> list[KillSummary]:
 def is_fresh(stats: ZkillStats | None, now: datetime | None = None) -> bool:
     """Return whether cached stats are younger than CACHE_LIFETIME (None is never fresh)."""
     require_type(stats, (ZkillStats, type(None)), "stats")
-    return bool(stats) and age(stats, now) < CACHE_LIFETIME
+    stats_age = age(stats, now)
+    return stats_age is not None and stats_age < CACHE_LIFETIME
 
 
 def age(stats: ZkillStats | None, now: datetime | None = None) -> timedelta | None:
