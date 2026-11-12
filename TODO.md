@@ -252,12 +252,12 @@ P1 and P2 filtering (3/5) · Sonnet.
 - **Done 2026-11-12 (E21 `ab980e6`; E15, E16, E17 were already handled).** [1] Unhandled but unlikely: second `open_universe()` (E17), `build_static.py:187` `urlopen` without
   `with` (E15), bytes in `TimeoutExpired.stdout` in `push_gate.py:73` (E16), `OSError` in the replay
   CLI (E21).
-- [1] Unused code: `DEFAULT_DESTINATIONS`, `name_caption`, `LIFETIME_1H` and `LIFETIME_4H` in
+- **Done 2026-11-12 (`dedb5c9`; test helpers used by the fixtures kept).** [1] Unused code: `DEFAULT_DESTINATIONS`, `name_caption`, `LIFETIME_1H` and `LIFETIME_4H` in
   `map_scene.py`. Used only by tests: `add_shadow`, `draw_dot_grid`, `gate_neighbours`,
   `static_destination_classes`, `all_systems`, `load_universe`.
-- [1] Repeated constants and helpers listed in section 5 of `docs/findings/findings.md`. Start with `GRID` in
+- **Constants done 2026-11-12 (`7fd3c5e`, `13e559a`); the logic duplicates D1–D13 are left.** [1] Repeated constants and helpers listed in section 5 of `docs/findings/findings.md`. Start with `GRID` in
   `tracker.py:22` and the hard-coded range in `overlay.py:30,195`.
-- [1] Mockups differ from the app: Find placeholder, tray `Ctrl+Shift+O` and "Open map", StatusBar
+- **Done 2026-11-12 (`330351b`).** [1] Mockups differ from the app: Find placeholder, tray `Ctrl+Shift+O` and "Open map", StatusBar
   glyph label. The UI hint on map names describes a character rule nothing enforces.
 - **Done 2026-11-12 (`aa8942f`; 112 errors left, CI step non-blocking).** [1] No type checker in dev dependencies or CI. mypy's 259 errors are mostly PySide stub noise;
   `@overload` on `require_integer` and `require_text` would clear several.
