@@ -17,10 +17,10 @@ from ..logs.parser import LogFile
 from ..mapping.naming import SCHEMES, forget_alias, scheme_for_key
 from ..platform.hotkey import DEFAULT_SHORTCUT, normalize_shortcut
 from ..settings import (KNOWN_SPACE_RADIUS_RANGE, OVERLAY_MAX_ROWS_RANGE, OVERLAY_OPACITY_RANGE, OVERLAY_TEXT_SIZE_RANGE,
-                        RESCAN_DUE_HOURS_RANGE, TRADE_HUBS, detect_log_directories)
+                        RESCAN_DUE_HOURS_RANGE, detect_log_directories)
 from ..theme.qss import repolish
 from ..theme.tokens import PIXELS, color
-from ..universe.db import SIZE_NAMES, SIZES
+from ..universe.db import SIZE_NAMES, SIZES, TRADE_HUBS
 from ..validation import require_integer, require_text, require_type
 from .dialogs import PromptDialog, RestoreBackupDialog
 from .state import AppState

@@ -199,7 +199,7 @@ class Overlay(QWidget):
         """The fill opacity: fixed while unlocked, else the user's value within the token range."""
         if self.unlocked:
             return OPACITY["op-overlay-unlocked"]
-        return max(OPACITY["op-overlay-bg-min"], min(OPACITY["op-overlay-bg-max"], self.state.settings.overlay_opacity))
+        return clamp_to_range("overlay_opacity", self.state.settings.overlay_opacity)
 
     # ------------------------------------------------------------ paint
     def paintEvent(self, event: QPaintEvent) -> None:

@@ -30,6 +30,7 @@ from pathlib import Path
 
 from ..http import ssl_context, user_agent
 from ..platform.paths import RESOLVED_FILE, UNIVERSE_FILE, bundled_data_directory, static_build_directory
+from .db import SCHEMA_VERSION
 from ..validation import require_integer, require_number, require_text, require_type
 
 DATA = static_build_directory()
@@ -38,7 +39,6 @@ OUTPUT = DATA / UNIVERSE_FILE
 RESOLVED = DATA / RESOLVED_FILE
 SHIPPED_RESOLVED = bundled_data_directory() / RESOLVED_FILE   # the same file as RESOLVED in a checkout
 HEADERS = {"User-Agent": user_agent("personal offline mapper; build script")}
-SCHEMA_VERSION = "4"         # bump together with db.SCHEMA_VERSION
 
 SDE_URL = "https://developers.eveonline.com/static-data/eve-online-static-data-latest-jsonl.zip"
 WANDERER_URL = "https://raw.githubusercontent.com/wanderer-industries/wanderer/main/priv/repo/data/"

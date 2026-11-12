@@ -14,6 +14,7 @@ from PySide6.QtGui import (
 from PySide6.QtSvg import QSvgRenderer
 
 from ..lifetime import LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED
+from ..universe.db import KNOWN_SPACE_CLASSES
 from ..validation import require_integer, require_number, require_type
 from .tokens import OPACITY, PIXELS, color, font
 
@@ -27,7 +28,6 @@ CLASSES = {
     "PV": ("class-pochven", "pochven"),
     "HS": ("class-hs", "k"), "LS": ("class-ls", "k"), "NS": ("class-ns", "k"),
 }
-KNOWN_SPACE_CLASSES = {"HS", "LS", "NS"}
 
 BADGE_HEIGHT = PIXELS["size-badge"]
 

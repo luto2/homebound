@@ -8,19 +8,21 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from .platform.paths import data_directory, documents_directory, is_windows
-from .universe.db import SIZES
+from .mapping.naming import SCHEMES as NAMING_SCHEMES
+from .mapping.watch import WATCH_JUMPS
+from .routing import PREFERENCES
+from .universe.db import SIZES, TRADE_HUBS
 from .validation import is_int, is_number, require_choice, require_integer, require_text, require_type
 
 DATA_DIR = data_directory()
 SETTINGS_FILE = DATA_DIR / "settings.json"
 
 OVERLAY_MODES = ("off", "follow", "pinned_eve", "pinned_always")
-SCHEMES = ("numeric", "a2a", "letter_numeric")
+SCHEMES = tuple(NAMING_SCHEMES)             # the keys of naming.SCHEMES
 UNKNOWN_JUMP_CHOICES = ("add", "ignore")
-ROUTE_PREFERENCES = ("shortest", "safer", "less_secure")   # same as routing.PREFERENCES
-TRADE_HUBS = ["Jita", "Amarr", "Dodixie", "Rens", "Hek"]   # default route destinations
+ROUTE_PREFERENCES = PREFERENCES
 # settings that must be one of a few values; anything else keeps the default
-WATCH_JUMP_CHOICES = (1, 2, 5, 10)        # same as mapping.watch.WATCH_JUMPS; 1 is "adjacent only"
+WATCH_JUMP_CHOICES = WATCH_JUMPS
 SETTING_CHOICES = {"route_preference": ROUTE_PREFERENCES, "route_ship_size": SIZES, "overlay_mode": OVERLAY_MODES,
                    "unknown_jump_default": UNKNOWN_JUMP_CHOICES, "naming_scheme": SCHEMES,
                    "watch_jumps": WATCH_JUMP_CHOICES}
