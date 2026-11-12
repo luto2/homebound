@@ -1,0 +1,101 @@
+#!/bin/sh
+# Deploy new commits on master to this server (hosting-hetzner.md §8).
+# Install to /usr/local/bin/hb-deploy; run every 5 minutes by homebound-deploy.timer, as root.
+# Asks GitHub for master's commit (one small request); when it moved, pulls, syncs the venv and
+# restarts homebound-sync. If the new version doesn't answer /api/health, it goes back to the old
+# commit, tells Discord (HB_DISCORD_WEBHOOK) and skips that commit until master moves again.
+# Holds deploys from 10:55 to 11:35 UTC, so the ESI pulls after EVE's downtime aren't interrupted.
+set -u
+REPO=${HB_DEPLOY_REPO:-/opt/homebound}
+BRANCH=${HB_DEPLOY_BRANCH:-master}
+HEALTH=${HB_DEPLOY_HEALTH_URL:-http://127.0.0.1:8080/api/health}
+STATE=${STATE_DIRECTORY:-/var/lib/homebound-deploy}
+SKIP="$STATE/skip"          # the commit that failed or can't be fast-forwarded to; not tried again
+PROBLEM="$STATE/problem"    # the last problem told to Discord, so it's told once, not every 5 minutes
+export UV_PYTHON_PREFERENCE=only-system
+
+notify() {
+    echo "$1"
+    [ -n "${HB_DISCORD_WEBHOOK:-}" ] || return 0
+    "$REPO/.venv/bin/python" -c 'import json, sys; print(json.dumps({"content": sys.argv[1][:1900]}))' "$1" |
+        curl -fsS -m 10 --retry 3 -H 'Content-Type: application/json' --data-binary @- "$HB_DISCORD_WEBHOOK" >/dev/null ||
+        echo "Discord webhook failed"
+}
+
+short() {
+    printf %s "$1" | cut -c1-7
+}
+
+problem() {
+    if [ "$1" != "$(cat "$PROBLEM" 2>/dev/null)" ]; then
+        printf %s "$1" > "$PROBLEM"
+        notify "$1"
+    else
+        echo "$1"
+    fi
+    exit 1
+}
+
+healthy() {
+    tries=0
+    while [ $tries -lt 30 ]; do
+        sleep 2
+        curl -fsS -m 5 "$HEALTH" >/dev/null 2>&1 && return 0
+        tries=$((tries + 1))
+    done
+    return 1
+}
+
+install_commit() {
+    git -C "$REPO" reset --quiet --hard "$1" &&
+        (cd "$REPO" && uv sync --quiet --extra server --no-dev --frozen) &&
+        systemctl restart homebound-sync &&
+        healthy
+}
+
+now=$(date -u +%H%M)
+if [ "$now" -ge 1055 ] && [ "$now" -lt 1135 ]; then
+    exit 0                  # EVE downtime and the ESI pulls after it; the next run after 11:35 deploys
+fi
+
+remote=$(git -C "$REPO" ls-remote origin "refs/heads/$BRANCH" 2>/dev/null | cut -f1)
+if [ -z "$remote" ]; then
+    echo "GitHub not reachable; trying again next run"
+    exit 0
+fi
+old=$(git -C "$REPO" rev-parse HEAD)
+[ "$remote" = "$old" ] && exit 0
+[ "$remote" = "$(cat "$SKIP" 2>/dev/null)" ] && exit 0
+
+current=$(git -C "$REPO" branch --show-current)
+if [ "$current" != "$BRANCH" ]; then
+    problem "Homebound deploy: $REPO is on branch '$current', not '$BRANCH'. Nothing deployed; switch it with git checkout $BRANCH."
+fi
+if [ -n "$(git -C "$REPO" status --porcelain --untracked-files=no)" ]; then
+    problem "Homebound deploy: $REPO has local changes (see git status there). Nothing deployed."
+fi
+if ! git -C "$REPO" fetch --quiet origin "$BRANCH"; then
+    echo "git fetch failed; trying again next run"
+    exit 0
+fi
+if ! git -C "$REPO" merge-base --is-ancestor "$old" "$remote"; then
+    echo "$remote" > "$SKIP"
+    notify "Homebound deploy: $(short "$remote") isn't a fast-forward from $(short "$old") (was $BRANCH rewritten?). Nothing deployed."
+    exit 1
+fi
+
+changes=$(git -C "$REPO" log --format='- %s' "$old..$remote" | head -n 10)
+if install_commit "$remote"; then
+    rm -f "$SKIP" "$PROBLEM"
+    echo "deployed $remote"
+    echo "$changes"
+    exit 0
+fi
+echo "$remote" > "$SKIP"
+if install_commit "$old"; then
+    notify "Homebound deploy of $(short "$remote") failed (no answer from /api/health); rolled back to $(short "$old"). See journalctl -u homebound-sync.
+$changes"
+else
+    notify "Homebound deploy of $(short "$remote") failed AND the rollback to $(short "$old") isn't healthy either. The server is probably down: journalctl -u homebound-sync"
+fi
+exit 1

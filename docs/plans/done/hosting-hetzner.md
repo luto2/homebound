@@ -87,6 +87,7 @@ Everything runs on one machine, with one app process and one database file. Ther
   - `User=homebound` and `Restart=on-failure`
   - hardening: `ProtectSystem=strict`, `ReadWritePaths=/var/lib/homebound`, `PrivateTmp`, `NoNewPrivileges`, `MemoryMax=512M`
 - `litestream.service`: replicates `sync.db` to Hetzner Object Storage.
+- `homebound-deploy.timer` / `.service`: deploys new commits on `master` every 5 minutes (§8).
 - The wallet poller and prune timers run **inside** the app process, as asyncio tasks. That keeps it to one process.
 
 **Caddyfile, roughly:**
@@ -158,10 +159,15 @@ HB_RESTORE_HEALTHCHECK_URL=https://hc-ping.com/…   # the daily restore test re
 ## 8. Deploying updates
 
 - The server code lives in the same repo, as `homebound_server/` plus the shared `homebound/sync/protocol.py`, so that client and server use the same merge code.
-- Deploy is a small script, `deploy.sh`, run over SSH:
-  1. `git -C /opt/homebound pull --ff-only`
-  2. `UV_PYTHON_PREFERENCE=only-system uv sync --extra server --no-dev --frozen`
-  3. `systemctl restart homebound-sync`
+- **Merging to `master` is the deploy.** The server pulls; GitHub has no workflow, secret or SSH key for it, so nothing about the deploy is public and no key can reach the server from outside.
+- `hb-deploy` (in `packaging/server/`, run as root every 5 minutes by `homebound-deploy.timer`):
+  1. `git ls-remote origin refs/heads/master`: one small HTTPS request (~5–10 KB, ~3 MB a day). Nothing more happens when the commit hasn't moved.
+  2. If it moved: `git fetch`, fast-forward the checkout, `uv sync --extra server --no-dev --frozen`, `systemctl restart homebound-sync`.
+  3. Waits up to a minute for `/api/health`. If the new version doesn't answer, it goes back to the old commit, posts to the Discord webhook, and skips that commit until `master` moves again.
+  - Holds deploys from 10:55 to 11:35 UTC, so the ESI pulls after EVE's downtime aren't interrupted.
+  - Refuses (and posts to Discord once) when the checkout isn't on `master`, has local changes, or `master` was rewritten.
+  - No tests on the server: the push gate already ran them before the commit reached GitHub, and the server venv has no dev tools.
+- A deploy shows up in Discord as "server started". `journalctl -u homebound-deploy` lists every deploy with its commits.
 - Schema changes: so far the server only adds tables (`CREATE TABLE IF NOT EXISTS` at startup). Numbered migrations recorded in a `schema_version` table are still to be built, before the first change to an existing table.
 - Restarts drop the WebSockets for a few seconds. Clients reconnect with backoff and resend their outbox, so no data is lost.
 - **Protocol versioning:**
@@ -232,7 +238,7 @@ apt install git sqlite3 python3 python3-venv
 curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
 
 useradd --system --home /var/lib/homebound --create-home --shell /usr/sbin/nologin homebound
-git clone -b cloud-sync https://github.com/luto2/homebound.git /opt/homebound
+git clone -b master https://github.com/luto2/homebound.git /opt/homebound
 cd /opt/homebound
 UV_PYTHON_PREFERENCE=only-system uv sync --extra server --no-dev --frozen
 ```
@@ -343,10 +349,21 @@ chmod 755 /usr/local/bin/hb-admin
 4. Give 1M from a character that isn't linked: a problem mail in-game and an "Unmatched donation" in Discord. Refund it, then `hb-admin refunded <journal id>`.
 
 ### 9. Updates
+Updates deploy themselves: `hb-deploy` checks GitHub every 5 minutes and deploys new commits on `master` (§8).
 ```bash
-cd /opt/homebound && git pull --ff-only && UV_PYTHON_PREFERENCE=only-system uv sync --extra server --no-dev --frozen
-systemctl restart homebound-sync
+git -C /opt/homebound branch --show-current     # must be master
+git -C /opt/homebound status --short            # must show no changed files (untracked like data/ is fine)
+cd /opt/homebound/packaging/server
+install -m 755 hb-deploy /usr/local/bin/hb-deploy
+install -m 644 homebound-deploy.service homebound-deploy.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now homebound-deploy.timer
+systemctl start homebound-deploy && journalctl -u homebound-deploy -n 20   # the first run deploys if master moved
+systemctl list-timers homebound-deploy.timer                              # the next check
 ```
+- To deploy by hand anyway (e.g. during the 10:55–11:35 UTC hold): `systemctl start homebound-deploy` only works outside the hold, so run the old steps: `cd /opt/homebound && git pull --ff-only && UV_PYTHON_PREFERENCE=only-system uv sync --extra server --no-dev --frozen && systemctl restart homebound-sync`.
+- To pause deploys: `systemctl stop homebound-deploy.timer` (and `start` to resume).
+- `hb-deploy` copies itself only on install: after a change to `packaging/server/hb-deploy` or its units, run the `install` lines again.
 
 ### 10. Backups (Litestream to Hetzner Object Storage)
 **In the Hetzner Console:**
