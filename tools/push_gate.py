@@ -3,7 +3,9 @@
 
 Runs for one commit, in a throwaway worktree, so uncommitted changes never affect the result:
 
-1. Local CI replica: build the static data, then ``pytest -q`` on Python 3.14 and 3.12 (as ``test.yml``).
+1. Local CI replica: build the static data, then ``pytest -q`` on Python 3.14 and 3.12, and ``mypy`` (as
+   ``test.yml``). If mypy fails, ``claude -p --model haiku`` fixes the errors in the worktree; a fix that passes
+   mypy is committed and the pushed branch fast-forwarded onto it, so the pusher only has to push again.
 2. Two ``claude -p --model sonnet`` reviewers read the diff against ``origin/master``, and only what it
    touches: test quality (changed tests that can't fail or assert a bug) and duplicated implementations
    (changed code that re-implements something already in the codebase). A reviewer is skipped when the
@@ -32,6 +34,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -99,6 +102,78 @@ def local_tests(worktree: Path) -> tuple[bool, str]:
                 return False, f"`{' '.join(cmd)}` failed (Python {python}):\n{tail(out)}"
         report.append(f"Python {python}: {tail(out, 1)}")
     return True, "\n".join(report)
+
+
+# ---------------------------------------------------------------- 1b. mypy, fixed by Haiku
+
+FIX_MODEL = "haiku"
+MYPY_ENV = {"UV_PROJECT_ENVIRONMENT": str(STATE / "venv-mypy")}   # own venv: local_tests syncs its own in parallel
+MYPY = ["uv", "run", "-q", "--python", PYTHONS[0], "mypy"]
+MYPY_FIX_PROMPT = """`uv run mypy` reports these errors in this repository (a Python/PySide6 app):
+
+{errors}
+
+Fix them in the source. Rules:
+- Fix the types for real: correct the annotation, narrow an Optional with a check, fix the wrong call. Never
+  add `# type: ignore`, `cast(Any, ...)` or `Any` to silence an error, and never touch pyproject.toml.
+- Do not change behaviour, and do not touch code mypy did not complain about.
+- When done, run `uv run mypy` and repeat until it reports no issues.
+"""
+
+
+def mypy(sha: str, worktree: Path) -> tuple[bool, str]:
+    """Run mypy (as test.yml does); on errors, have Haiku fix them."""
+    say("mypy")
+    ok, out = run(MYPY, worktree, MYPY_ENV)
+    return (True, tail(out, 1)) if ok else (False, f"{tail(out)}\n\n{haiku_fix(sha, out)}")
+
+
+def branch_checkouts(sha: str) -> list[tuple[Path, str]]:
+    """(path, branch) of every checkout that has a branch checked out at ``sha``."""
+    blocks = [dict(line.split(" ", 1) for line in block.splitlines() if " " in line)
+              for block in git("worktree", "list", "--porcelain").split("\n\n")]
+    return [(Path(b["worktree"]), b["branch"].removeprefix("refs/heads/"))
+            for b in blocks if b.get("HEAD") == sha and "branch" in b]
+
+
+def haiku_fix(sha: str, errors: str) -> str:
+    """Let Haiku fix the mypy errors, then fast-forward the pushed branch onto the fix. Returns what happened.
+
+    The push stays blocked either way (the commit being pushed is still the broken one); the pusher only has
+    to push again. Haiku gets its own checkout outside .git/ (Claude Code refuses edits under .git/, and the
+    gate's worktree is busy running pytest).
+    """
+    say(f"mypy: {FIX_MODEL} fixing")
+    worktree = Path(tempfile.mkdtemp(prefix=f"push-gate-fix-{sha[:12]}-"))
+    git("worktree", "add", "--detach", str(worktree), sha)
+    try:
+        return _haiku_fix(sha, worktree, errors)
+    finally:
+        git("worktree", "remove", "--force", str(worktree), check=False)
+        shutil.rmtree(worktree, ignore_errors=True)
+
+
+def _haiku_fix(sha: str, worktree: Path, errors: str) -> str:
+    tools = ["Read", "Edit", "Grep", "Glob", "Bash(uv run mypy:*)"]
+    cmd = ["claude", "-p", "--model", FIX_MODEL, "--no-session-persistence", "--permission-mode", "dontAsk",
+           "--allowedTools", *tools, "--", MYPY_FIX_PROMPT.format(errors=tail(errors, 200))]
+    _, said = run(cmd, worktree, {**MYPY_ENV, "PUSH_GATE_INNER": "1"}, timeout=REVIEW_TIMEOUT)
+    changed = git("diff", "--name-only", cwd=worktree).splitlines()
+    if not changed:
+        return f"{FIX_MODEL} could not fix it (no changes). It said:\n{tail(said, 10)}"
+    added = git("diff", "-U0", "--", *changed, cwd=worktree)
+    if not all(re.match(r"homebound(_server)?/.*\.py$", f) for f in changed) or "type: ignore" in added:
+        return f"{FIX_MODEL}'s fix rejected: it touched {', '.join(changed)} or added `# type: ignore`."
+    ok, out = run(MYPY, worktree, MYPY_ENV)
+    if not ok:
+        return f"{FIX_MODEL}'s fix still fails mypy:\n{tail(out)}"
+    git("commit", "-q", "-m", f"Fix mypy errors ({FIX_MODEL}, via the push gate)", "--", *changed, cwd=worktree)
+    fix = git("rev-parse", "HEAD", cwd=worktree)
+    landed = [branch for path, branch in branch_checkouts(sha)
+              if run(["git", "merge", "--ff-only", "-q", fix], path)[0]]
+    where = f"committed on {', '.join(landed)}" if landed else "not on any branch (checkout moved or dirty)"
+    return (f"{FIX_MODEL} fixed it ({', '.join(changed)}): {fix[:12]} {where}.\n"
+            + ("Push again." if landed else f"Run `git cherry-pick {fix[:12]}`, then push again."))
 
 
 # ---------------------------------------------------------------- 2. GitHub CI
@@ -250,6 +325,7 @@ def check(sha: str, with_ci: bool = False) -> tuple[bool, str]:
         jobs, skipped = {}, []
         if not stamp(sha).exists():
             jobs["local tests (py " + "/".join(PYTHONS) + ")"] = lambda: local_tests(worktree)
+            jobs["mypy"] = lambda: mypy(sha, worktree)
             for name, (relevant, prompt) in REVIEWERS.items():
                 if any(relevant.search(f) for f in files):
                     jobs[f"reviewer: {name}"] = lambda n=name, p=prompt: reviewer(n, p, sha, base, files, worktree)

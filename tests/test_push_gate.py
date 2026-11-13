@@ -26,3 +26,13 @@ def test_timeout_message_decodes_partial_output(monkeypatch) -> None:
     monkeypatch.setattr(push_gate.subprocess, "run", slow)
     ok, text = push_gate.run(["pytest"], Path("."), timeout=1)
     assert ok is False and "outerr" in text and "b'" not in text
+
+
+def test_branch_checkouts_finds_branches_at_the_commit(monkeypatch) -> None:
+    """Only checkouts with a branch checked out at the commit get Haiku's fix; detached ones are skipped."""
+    porcelain = ("worktree /main\nHEAD aaa\nbranch refs/heads/master\n\n"
+                 "worktree /w/feature\nHEAD bbb\nbranch refs/heads/feature/x\n\n"
+                 "worktree /w/gate\nHEAD bbb\ndetached\n")
+    monkeypatch.setattr(push_gate, "git", lambda *args, **kw: porcelain)
+    assert push_gate.branch_checkouts("bbb") == [(Path("/w/feature"), "feature/x")]
+    assert push_gate.branch_checkouts("ccc") == []
