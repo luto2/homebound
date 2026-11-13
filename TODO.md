@@ -139,6 +139,11 @@ a small change whose file and fix are named.
     hard crashes (`crash.log`), an error toast pointing at the log, a tray entry to open the folder,
     `build-static.log` for the terminal build, and no secrets in the file. Plan: `docs/plans/plan-logging.md`.
     Effort: 3/5 · Sonnet. The plan pins it down, but it touches start-up, threads and many error paths.
+23. The tray menu's "OVERLAY MODE" caption is an empty row on Plasma (owner screenshot, 2026-11-13).
+    It is a `QWidgetAction`; Plasma draws the tray menu itself from the DBus-exported menu, which
+    can't carry widgets. Make it a plain disabled "Overlay mode" item and guard against widget actions
+    in the tray menu. Plan: `docs/plans/plan-tray-caption.md`.
+    Effort: 1/5 · Haiku.
 
 ## To do
 
