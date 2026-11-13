@@ -454,7 +454,7 @@ uv run python -m homebound.logs.replay path/to/Local_*.txt --home J161940 --sche
 
 **Type check.** `uv run mypy` checks the `homebound` package (settings in `pyproject.toml`).
 
-**Using the graph.** `graphify-out/GRAPH_REPORT.md` and `graph.json` are tracked; the pre-push hook refreshes them in the background and writes its output to `graphify-out/refresh.log` (not tracked). Commit the refreshed files with the next unrelated commit. Caveats:
+**Using the graph.** `graphify-out/` is not tracked (its `graph.html` alone outweighed the Python and turned GitHub's language bar to HTML). The pre-push hook refreshes the local graph in the background and writes its output to `graphify-out/refresh.log`. On a fresh clone, build it once with `~/.local/bin/graphify update .`. Caveats:
 
 - A missing incoming edge is not dead code. Method calls on other objects are mostly not extracted, so check with a text search before deleting.
 - Edges with `relation == "uses"` are mostly false (imports get attached to every class in a file). Skip them in `graph.json` before trusting a god node rank or a bridge score.

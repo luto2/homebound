@@ -5,12 +5,7 @@ data/*.sqlite
 data/cache/
 build/
 dist/
-graphify-out/cache/
-graphify-out/manifest.json
-graphify-out/cost.json
-graphify-out/refresh.log
-graphify-out/.graphify_python
-graphify-out/.graphify_root
+graphify-out/
 
 # private operator notes, never committed
 docs/private/
