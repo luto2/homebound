@@ -568,16 +568,24 @@ def test_notify_paths(qt_application, monkeypatch) -> None:
             """Remember the arguments."""
             self.arguments = arguments
 
+        def setProcessEnvironment(self, environment) -> None:
+            """Remember the environment."""
+            self.environment = environment
+
         def startDetached(self) -> None:
             """Record the arguments instead of starting a process."""
             started.append(self.arguments)
+            environments.append(self.environment)
 
+    environments = []
     monkeypatch.setattr(notify_module, "QProcess", FakeProcess)
+    monkeypatch.setattr(notify_module, "host_environment", lambda: {"PATH": "/usr/bin"})
     monkeypatch.setattr(notify_module, "_icon_path", "")
     monkeypatch.setattr(notify_module.shutil, "which", lambda name: "/usr/bin/gdbus")
     assert notify_module.notify("Hello", QPixmap(4, 4)) == "gdbus"
     assert notify_module.notify("Hello") == "gdbus"
     assert len(started) == 2 and "'Hello'" in started[0]
+    assert environments[0].keys() == ["PATH"] and environments[0].value("PATH") == "/usr/bin"
     monkeypatch.setattr(notify_module.shutil, "which", lambda name: None)
     assert notify_module.notify("Hello") == ""
     messages = []

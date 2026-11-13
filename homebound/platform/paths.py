@@ -23,6 +23,24 @@ def is_windows() -> bool:
     return sys.platform == "win32"
 
 
+def host_environment() -> dict[str, str]:
+    """Return the environment for starting the system's own tools (kpackagetool6, xprop, gdbus).
+
+    The PyInstaller bootloader points ``LD_LIBRARY_PATH`` at the bundle's ``_internal`` folder, so a host program
+    started with our environment loads our older libstdc++ or liblzma and fails ("GLIBCXX_3.4.32 not found").
+    The bootloader keeps the user's own value in ``LD_LIBRARY_PATH_ORIG``; this puts it back, or drops the
+    variable when there was none. Outside a frozen build the environment is returned unchanged.
+    """
+    environment = dict(os.environ)
+    if getattr(sys, "frozen", False):
+        original = environment.pop("LD_LIBRARY_PATH_ORIG", None)
+        if original:
+            environment["LD_LIBRARY_PATH"] = original
+        else:
+            environment.pop("LD_LIBRARY_PATH", None)
+    return environment
+
+
 def data_directory() -> Path:
     """Return the folder for settings, maps and backups (not created here)."""
     if os.environ.get("HOMEBOUND_HOME"):

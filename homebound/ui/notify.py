@@ -7,10 +7,11 @@ gdbus (it reads the method signature from introspection) and only fall back to s
 import shutil
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, QStandardPaths
+from PySide6.QtCore import QProcess, QProcessEnvironment, QStandardPaths
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QSystemTrayIcon
 
+from ..platform.paths import host_environment
 from ..validation import require_integer, require_type
 
 _icon_path: str | None = None
@@ -61,6 +62,10 @@ def notify(text: str, pixmap: QPixmap | None = None, tray: QSystemTrayIcon | Non
     if gdbus:
         process = QProcess()
         process.setProgram(gdbus)
+        environment = QProcessEnvironment()
+        for name, value in host_environment().items():
+            environment.insert(name, value)
+        process.setProcessEnvironment(environment)
         process.setStandardOutputFile(QProcess.nullDevice())
         process.setArguments(notification_arguments(text, _icon_file(pixmap) if pixmap is not None else "",
                                                     timeout_ms))

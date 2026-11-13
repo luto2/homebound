@@ -10,6 +10,7 @@ from PySide6.QtCore import ClassInfo, QObject, QRect, QTimer, Slot
 from PySide6.QtDBus import QDBusConnection
 
 from ..ui.focus import eve_characters
+from .paths import host_environment
 
 if TYPE_CHECKING:
     from ..ui.focus import FocusTracker
@@ -101,13 +102,13 @@ class LinuxFocus(QObject):
         """Read the active window from the X server (XWayland) with xprop."""
         try:
             output = subprocess.run(["xprop", "-root", "_NET_ACTIVE_WINDOW"], capture_output=True, text=True,
-                                    timeout=1).stdout
+                                    env=host_environment(), timeout=1).stdout
             window_id = output.strip().split()[-1]
             if window_id in ("0x0", "0"):
                 self.tracker.report("", False, QRect())
                 return
             properties = subprocess.run(["xprop", "-id", window_id, "_NET_WM_NAME", "WM_CLASS"],
-                                        capture_output=True, text=True, timeout=1).stdout
+                                        capture_output=True, text=True, env=host_environment(), timeout=1).stdout
         except (OSError, subprocess.SubprocessError, IndexError):
             return
         self._apply_x11_properties(properties)
@@ -127,19 +128,21 @@ def x11_window_titles() -> list[str] | None:
     """
     try:
         if shutil.which("wmctrl"):
-            listing = subprocess.run(["wmctrl", "-l"], capture_output=True, text=True, timeout=2)
+            listing = subprocess.run(["wmctrl", "-l"], capture_output=True, text=True, env=host_environment(),
+                                     timeout=2)
             if listing.returncode != 0:
                 return None
             return [parts[3] for row in listing.stdout.splitlines() if len(parts := row.split(None, 3)) == 4]
         if not shutil.which("xprop"):
             return None
-        root = subprocess.run(["xprop", "-root", "_NET_CLIENT_LIST"], capture_output=True, text=True, timeout=2)
+        root = subprocess.run(["xprop", "-root", "_NET_CLIENT_LIST"], capture_output=True, text=True,
+                              env=host_environment(), timeout=2)
         if root.returncode != 0:
             return None
         titles = []
         for window_id in re.findall(r"0x[0-9a-fA-F]+", root.stdout.partition("#")[2]):
             output = subprocess.run(["xprop", "-id", window_id, "_NET_WM_NAME"], capture_output=True, text=True,
-                                    timeout=1).stdout
+                                    env=host_environment(), timeout=1).stdout
             name = re.search(r'_NET_WM_NAME\(\w+\) = "(.*)"', output)
             if name:
                 titles.append(name.group(1))
@@ -167,7 +170,8 @@ def _run_command(*command: str) -> subprocess.CompletedProcess:
     reason in ``stderr``) rather than an exception, so a settings button can't crash the app.
     """
     try:
-        return subprocess.run(command, capture_output=True, text=True, timeout=COMMAND_TIMEOUT_SECONDS)
+        return subprocess.run(command, capture_output=True, text=True, env=host_environment(),
+                              timeout=COMMAND_TIMEOUT_SECONDS)
     except (OSError, subprocess.TimeoutExpired) as error:
         return subprocess.CompletedProcess(command, 1, "", str(error))
 

@@ -139,3 +139,28 @@ def test_read_only_uri_opens_the_right_file_read_only(tmp_path, folder) -> None:
         with pytest.raises(sqlite3.OperationalError):
             database.execute("INSERT INTO marker VALUES ('written')")
     assert sorted(entry.name for entry in tmp_path.iterdir()) == [folder]
+
+
+def test_host_environment_restores_the_users_library_path(monkeypatch) -> None:
+    """A frozen build hands host tools the user's LD_LIBRARY_PATH, not the bundle's."""
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/bundle/_internal:/opt/lib")
+    monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", "/opt/lib")
+    environment = paths.host_environment()
+    assert environment["LD_LIBRARY_PATH"] == "/opt/lib"
+    assert "LD_LIBRARY_PATH_ORIG" not in environment
+
+
+def test_host_environment_drops_the_bundle_path_without_an_original(monkeypatch) -> None:
+    """Without a user value, a frozen build leaves LD_LIBRARY_PATH out entirely."""
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/bundle/_internal")
+    monkeypatch.delenv("LD_LIBRARY_PATH_ORIG", raising=False)
+    assert "LD_LIBRARY_PATH" not in paths.host_environment()
+
+
+def test_host_environment_unchanged_from_source(monkeypatch) -> None:
+    """Running from source keeps the environment as it is."""
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/opt/lib")
+    assert paths.host_environment()["LD_LIBRARY_PATH"] == "/opt/lib"
