@@ -15,6 +15,7 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | Plan | Task | State |
 |---|---|---|
 | [plan-code-signing.md](plan-code-signing.md) | Windows code signing | not started |
+| [plan-logging.md](plan-logging.md) | Diagnostic log file for the client | not started |
 
 ### Audit fixes (`TODO.md` "To do", findings in `docs/findings/findings.md`)
 

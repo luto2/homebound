@@ -132,6 +132,13 @@ a small change whose file and fix are named.
     `homebound_server/` too since `e2e39a1` (61 errors fixed). Still: the `[tool.mypy]` overrides for `ui`, `theme`, `platform`
     and `__main__` still hide error kinds such as `union-attr` there.
     Effort: 2/5 · Sonnet.
+22. A diagnostic log file for the client (owner, 2026-11-13). The installed Windows build writes no log
+    at all: no handler is set up and the windowed build has no stderr, so tracebacks and sync errors
+    are lost. Rotating `homebound.log` (1 MB × 4) in `%LOCALAPPDATA%\Homebound\logs` /
+    `~/.local/state/homebound`, a header with versions, hooks for uncaught exceptions, Qt warnings and
+    hard crashes (`crash.log`), an error toast pointing at the log, a tray entry to open the folder,
+    `build-static.log` for the terminal build, and no secrets in the file. Plan: `docs/plans/plan-logging.md`.
+    Effort: 3/5 · Sonnet. The plan pins it down, but it touches start-up, threads and many error paths.
 
 ## To do
 
