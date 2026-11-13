@@ -1,14 +1,16 @@
 #!/bin/sh
-# Deploy new commits on master to this server (hosting-hetzner.md §8).
+# Deploy the latest published GitHub release to this server (hosting-hetzner.md §8).
 # Install to /usr/local/bin/hb-deploy; run every 5 minutes by homebound-deploy.timer, as root.
-# Asks GitHub for master's commit (one small request); when it moved, pulls, syncs the venv and
-# restarts homebound-sync. Map data (universe.sqlite) that the checked-out code can't read, after a
+# Asks GitHub for the latest published release (drafts and pre-releases don't count, so pushes to
+# master and freshly tagged drafts never deploy); when it's a newer commit than the checkout, fetches
+# its tag, fast-forwards master to it, syncs the venv and restarts homebound-sync. Map data (universe.sqlite) that the checked-out code can't read, after a
 # schema change, is rebuilt before the restart. If the new version doesn't answer /api/health, it goes back to the old
-# commit, tells Discord (HB_DISCORD_WEBHOOK) and skips that commit until master moves again.
+# commit, tells Discord (HB_DISCORD_WEBHOOK) and skips that release until a newer one is published.
 # Holds deploys from 10:55 to 11:35 UTC, so the ESI pulls after EVE's downtime aren't interrupted.
 set -u
 REPO=${HB_DEPLOY_REPO:-/opt/homebound}
 BRANCH=${HB_DEPLOY_BRANCH:-master}
+GITHUB_REPO=${HB_DEPLOY_GITHUB_REPO:-luto2/homebound}
 HEALTH=${HB_DEPLOY_HEALTH_URL:-http://127.0.0.1:8080/api/health}
 STATE=${STATE_DIRECTORY:-/var/lib/homebound-deploy}
 SKIP="$STATE/skip"          # the commit that failed or can't be fast-forwarded to; not tried again
@@ -75,14 +77,27 @@ if [ "$now" -ge 1055 ] && [ "$now" -lt 1135 ]; then
     exit 0                  # EVE downtime and the ESI pulls after it; the next run after 11:35 deploys
 fi
 
-remote=$(git -C "$REPO" ls-remote origin "refs/heads/$BRANCH" 2>/dev/null | cut -f1)
+# /releases/latest is the newest published release that isn't a draft or a pre-release.
+tag=$(curl -fsS -m 10 -H 'Accept: application/vnd.github+json' \
+        "https://api.github.com/repos/$GITHUB_REPO/releases/latest" 2>/dev/null |
+    "$REPO/.venv/bin/python" -c 'import json, sys; print(json.load(sys.stdin)["tag_name"])' 2>/dev/null)
+if [ -z "$tag" ]; then
+    echo "GitHub not reachable or no published release; trying again next run"
+    exit 0
+fi
+# An annotated tag's ^{} line is its commit; a lightweight tag has only the plain line.
+remote=$(git -C "$REPO" ls-remote origin "refs/tags/$tag" "refs/tags/$tag^{}" 2>/dev/null |
+    sort -k2 | tail -n 1 | cut -f1)
 if [ -z "$remote" ]; then
-    echo "GitHub not reachable; trying again next run"
+    echo "tag $tag not found on origin; trying again next run"
     exit 0
 fi
 old=$(git -C "$REPO" rev-parse HEAD)
 [ "$remote" = "$old" ] && exit 0
 [ "$remote" = "$(cat "$SKIP" 2>/dev/null)" ] && exit 0
+# Already past this release (deployed by hand, or from master before deploys followed releases):
+# wait for the next one rather than going back.
+git -C "$REPO" merge-base --is-ancestor "$remote" "$old" 2>/dev/null && exit 0
 
 current=$(git -C "$REPO" branch --show-current)
 if [ "$current" != "$BRANCH" ]; then
@@ -91,28 +106,28 @@ fi
 if [ -n "$(git -C "$REPO" status --porcelain --untracked-files=no)" ]; then
     problem "Homebound deploy: $REPO has local changes (see git status there). Nothing deployed."
 fi
-if ! git -C "$REPO" fetch --quiet origin "$BRANCH"; then
+if ! git -C "$REPO" fetch --quiet origin "refs/tags/$tag:refs/tags/$tag"; then
     echo "git fetch failed; trying again next run"
     exit 0
 fi
 if ! git -C "$REPO" merge-base --is-ancestor "$old" "$remote"; then
     echo "$remote" > "$SKIP"
-    notify "Homebound deploy: $(short "$remote") isn't a fast-forward from $(short "$old") (was $BRANCH rewritten?). Nothing deployed."
+    notify "Homebound deploy: release $tag ($(short "$remote")) isn't a fast-forward from $(short "$old") (tagged off $BRANCH, or $BRANCH rewritten?). Nothing deployed."
     exit 1
 fi
 
 changes=$(git -C "$REPO" log --format='- %s' "$old..$remote" | head -n 10)
 if install_commit "$remote"; then
     rm -f "$SKIP" "$PROBLEM"
-    echo "deployed $remote"
+    echo "deployed $tag ($remote)"
     echo "$changes"
     exit 0
 fi
 echo "$remote" > "$SKIP"
 if install_commit "$old"; then
-    notify "Homebound deploy of $(short "$remote") failed (map data rebuild or /api/health); rolled back to $(short "$old"). See journalctl -u homebound-sync.
+    notify "Homebound deploy of $tag ($(short "$remote")) failed (map data rebuild or /api/health); rolled back to $(short "$old"). See journalctl -u homebound-sync.
 $changes"
 else
-    notify "Homebound deploy of $(short "$remote") failed AND the rollback to $(short "$old") isn't healthy either. The server is probably down: journalctl -u homebound-sync"
+    notify "Homebound deploy of $tag ($(short "$remote")) failed AND the rollback to $(short "$old") isn't healthy either. The server is probably down: journalctl -u homebound-sync"
 fi
 exit 1

@@ -1,5 +1,5 @@
 [Unit]
-Description=Deploy new Homebound commits from GitHub
+Description=Deploy the latest published Homebound release from GitHub
 After=network-online.target
 Wants=network-online.target
 

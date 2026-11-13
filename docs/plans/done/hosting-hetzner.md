@@ -159,13 +159,13 @@ HB_RESTORE_HEALTHCHECK_URL=https://hc-ping.com/…   # the daily restore test re
 ## 8. Deploying updates
 
 - The server code lives in the same repo, as `homebound_server/` plus the shared `homebound/sync/protocol.py`, so that client and server use the same merge code.
-- **Merging to `master` is the deploy.** The server pulls; GitHub has no workflow, secret or SSH key for it, so nothing about the deploy is public and no key can reach the server from outside.
+- **Publishing a GitHub release is the deploy.** Pushes to `master` and the draft release CI builds from a `v*` tag don't deploy; only publishing the draft does. The server pulls; GitHub has no workflow, secret or SSH key for it, so nothing about the deploy is public and no key can reach the server from outside.
 - `hb-deploy` (in `packaging/server/`, run as root every 5 minutes by `homebound-deploy.timer`):
-  1. `git ls-remote origin refs/heads/master`: one small HTTPS request (~5–10 KB, ~3 MB a day). Nothing more happens when the commit hasn't moved.
-  2. If it moved: `git fetch`, fast-forward the checkout, `uv sync --extra server --no-dev --frozen`, rebuild `universe.sqlite` with `homebound --build-static` if the new code can't read it (missing, or a schema change: the server refuses old map data at startup), `systemctl restart homebound-sync`.
-  3. Waits up to a minute for `/api/health`. If the new version doesn't answer (or the map rebuild fails), it goes back to the old commit, rebuilding the map data for it too if needed, posts to the Discord webhook, and skips that commit until `master` moves again.
+  1. Asks `api.github.com/repos/luto2/homebound/releases/latest` for the newest published release (not drafts or pre-releases; 12 unauthenticated requests an hour, under GitHub's 60), then `git ls-remote` for its tag's commit. Nothing more happens when that's the checked-out commit, or one the checkout is already past (it never goes back).
+  2. If it's newer: `git fetch` the tag, fast-forward `master` in the checkout to it, `uv sync --extra server --no-dev --frozen`, rebuild `universe.sqlite` with `homebound --build-static` if the new code can't read it (missing, or a schema change: the server refuses old map data at startup), `systemctl restart homebound-sync`.
+  3. Waits up to a minute for `/api/health`. If the new version doesn't answer (or the map rebuild fails), it goes back to the old commit, rebuilding the map data for it too if needed, posts to the Discord webhook, and skips that release until a newer one is published.
   - Holds deploys from 10:55 to 11:35 UTC, so the ESI pulls after EVE's downtime aren't interrupted.
-  - Refuses (and posts to Discord once) when the checkout isn't on `master`, has local changes, or `master` was rewritten.
+  - Refuses (and posts to Discord once) when the checkout isn't on `master`, has local changes, or the release isn't a fast-forward (tagged off another branch, or `master` was rewritten).
   - No tests on the server: the push gate already ran them before the commit reached GitHub, and the server venv has no dev tools.
 - A deploy shows up in Discord as "server started". `journalctl -u homebound-deploy` lists every deploy with its commits.
 - Schema changes: so far the server only adds tables (`CREATE TABLE IF NOT EXISTS` at startup). Numbered migrations recorded in a `schema_version` table are still to be built, before the first change to an existing table.
@@ -349,7 +349,7 @@ chmod 755 /usr/local/bin/hb-admin
 4. Give 1M from a character that isn't linked: a problem mail in-game and an "Unmatched donation" in Discord. Refund it, then `hb-admin refunded <journal id>`.
 
 ### 9. Updates
-Updates deploy themselves: `hb-deploy` checks GitHub every 5 minutes and deploys new commits on `master` (§8).
+Updates deploy themselves: `hb-deploy` checks GitHub every 5 minutes and deploys the latest published release (§8).
 ```bash
 git -C /opt/homebound branch --show-current     # must be master
 git -C /opt/homebound status --short            # must show no changed files (untracked like data/ is fine)
@@ -358,10 +358,10 @@ install -m 755 hb-deploy /usr/local/bin/hb-deploy
 install -m 644 homebound-deploy.service homebound-deploy.timer /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now homebound-deploy.timer
-systemctl start homebound-deploy && journalctl -u homebound-deploy -n 20   # the first run deploys if master moved
+systemctl start homebound-deploy && journalctl -u homebound-deploy -n 20   # the first run deploys if a newer release is published
 systemctl list-timers homebound-deploy.timer                              # the next check
 ```
-- To deploy by hand anyway (e.g. during the 10:55–11:35 UTC hold): `systemctl start homebound-deploy` only works outside the hold, so run the old steps: `cd /opt/homebound && git pull --ff-only && UV_PYTHON_PREFERENCE=only-system uv sync --extra server --no-dev --frozen && systemctl restart homebound-sync`.
+- To deploy by hand anyway (e.g. during the 10:55–11:35 UTC hold): `systemctl start homebound-deploy` only works outside the hold, so run the old steps: `cd /opt/homebound && git fetch --tags && git merge --ff-only v1.2.3 && UV_PYTHON_PREFERENCE=only-system uv sync --extra server --no-dev --frozen && systemctl restart homebound-sync`.
 - To pause deploys: `systemctl stop homebound-deploy.timer` (and `start` to resume).
 - `hb-deploy` copies itself only on install: after a change to `packaging/server/hb-deploy` or its units, run the `install` lines again.
 
