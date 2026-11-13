@@ -196,6 +196,29 @@ def test_x11_window_titles(monkeypatch) -> None:
     assert linux_module.x11_window_titles() is None
 
 
+def test_host_tools_get_the_host_environment(tracker, backend, monkeypatch) -> None:
+    """Every tool started here gets host_environment(), so the AppImage's LD_LIBRARY_PATH can't reach it."""
+    host = {"PATH": "/usr/bin"}
+    monkeypatch.setattr(linux_module, "host_environment", lambda: host)
+    environments = []
+
+    def run(command, **options):
+        """Record the environment and answer like xprop/wmctrl would."""
+        environments.append(options.get("env"))
+        return SimpleNamespace(returncode=0, stdout="_NET_CLIENT_LIST(WINDOW): window id # 0x4a00007")
+    monkeypatch.setattr(linux_module.subprocess, "run", run)
+    backend._poll_x11()
+    assert len(environments) == 2
+    monkeypatch.setattr(linux_module.shutil, "which", lambda name: "/usr/bin/" + name)
+    linux_module.x11_window_titles()                                    # wmctrl
+    assert len(environments) == 3
+    monkeypatch.setattr(linux_module.shutil, "which", lambda name: "/usr/bin/xprop" if name == "xprop" else None)
+    linux_module.x11_window_titles()                                    # xprop: client list, then one title
+    assert len(environments) == 5
+    linux_module._run_command("kpackagetool6", "--list")
+    assert len(environments) == 6 and all(environment is host for environment in environments)
+
+
 def test_x11_reads_survive_a_tool_that_vanishes(tracker, backend, monkeypatch) -> None:
     """A tool found by which() but gone when run (FileNotFoundError), or timing out, is a failure, not a crash."""
     def gone(*arguments: object, **options: object) -> NoReturn:
