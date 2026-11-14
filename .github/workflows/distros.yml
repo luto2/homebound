@@ -1,11 +1,12 @@
 name: distros
 
 # The test suite on other Linux distributions, as containers on an Ubuntu runner, with each distribution's own
-# Python. Runs only on a merge into master: the push gate waits for test.yml alone, so a rolling distribution that
-# breaks a library shows up here without blocking pushes. Plan: docs/plans/done/plan-distro-ci.md (TODO 25).
+# Python. Runs on the push gate's ci/<sha> branches, so the result shows on a commit before it lands, and on
+# master. The push gate waits for test.yml alone and GitHub doesn't require these jobs, so a rolling distribution
+# that breaks a library doesn't block pushes. Plan: docs/plans/done/plan-distro-ci.md (TODO 25).
 on:
   push:
-    branches: [master]
+    branches: [master, "ci/**"]
 
 env:
   QT_QPA_PLATFORM: offscreen
