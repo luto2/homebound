@@ -5,10 +5,10 @@ haven't touched yet, and when you need the file behind something you see in the 
 
 - **Audience:** anyone working on the code: the owner, contributors and coding agents.
 - **Scope:** the desktop app (`homebound/`), the sync server (`homebound_server/`), packaging,
-  tooling and tests. How to *use* the app is in the [user guide](user/README.md); how the UI should
+  tooling and tests. How to *use* the app is in the [user guide](user/README.md); how the parts fit together is in [`architecture.md`](architecture.md); how the UI should
   *look* is in [`design-system/`](../design-system/README.md); why things were built the way they
   are is in the plans in [`docs/plans/`](plans/README.md).
-- **Kept current:** checked against `master` at 1.0.0 (2026-11-09). Files and symbols are named
+- **Kept current:** checked against `master` at 1.0.0 (2026-11-09), with the docs paths and the doc check of 2026-11-14. Files and symbols are named
   instead of line numbers, because line numbers go stale with every edit. When you move a feature
   or add a module, update its row here in the same commit.
 
@@ -355,7 +355,8 @@ Server ops files (Litestream, restore test, `hb-deploy` auto-deploy timer) are i
 | App icon (drawn in code, rendered to PNG/SVG/ICO) | `ui/map_window.py` `app_mark`; `packaging/make_icons.py`; `packaging/icons/` |
 | Release build on a `v*` tag | `.github/workflows/release.yml` |
 | Tests on Linux and Windows on every push | `.github/workflows/test.yml` |
-| Push gate (local tests, CI, two reviewers) | `tools/push_gate.py`; `.githooks/pre-push` |
+| Push gate (doc check, local tests, CI, two reviewers) | `tools/push_gate.py`; `.githooks/pre-push` |
+| Doc check (dead links, header blocks); tests in `tests/test_check_docs.py` | `tools/check_docs.py`; CI step in `test.yml` |
 | Package metadata, scripts, coverage settings | `pyproject.toml` |
 | UI specs and mockups | `design-system/` (start at its `README.md`; Qt notes in `qt-implementation.md`) |
 

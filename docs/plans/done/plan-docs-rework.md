@@ -1,7 +1,6 @@
 # Plan: rework the documentation structure and guidelines
 
-Status: plan only, nothing implemented yet (2026-11-14). Decisions come from the owner interview on
-2026-11-14.
+Status: implemented (2026-11-14, branch `docs-redesign`). Deviations: the terms were written in English, so `terms.en.md` is the original and `terms.de.md` the German version, which the owner and a lawyer must check; `docs/user/` pages were split without re-checking their content against the app, so they may still lack 1.0.1 features (watched systems, structure list). Decisions come from the owner interview on 2026-11-14.
 
 - **Audience:** the owner and the coding agents that build this plan.
 - **Scope:** where every doc in the repo lives, the rules for writing and updating them, and the

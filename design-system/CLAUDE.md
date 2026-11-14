@@ -1,6 +1,6 @@
 # Design system: agent rules
 
-The look of Homebound. This folder is not reorganised (see [`docs/plans/plan-docs-rework.md`](../docs/plans/plan-docs-rework.md)); change its content only for a UI change.
+The look of Homebound. This folder is not reorganised (see [`docs/plans/done/plan-docs-rework.md`](../docs/plans/done/plan-docs-rework.md)); change its content only for a UI change.
 
 ## How the parts relate
 

@@ -3,7 +3,7 @@
 
 Runs for one commit, in a throwaway worktree, so uncommitted changes never affect the result:
 
-1. Local CI replica: build the static data, then ``pytest -q`` on Python 3.14 and 3.12 (as ``test.yml``).
+1. Local CI replica: the doc check, build the static data, then ``pytest -q`` on Python 3.14 and 3.12 (as ``test.yml``).
 2. Two ``claude -p --model sonnet`` reviewers read the diff against ``origin/master``, and only what it
    touches: test quality (changed tests that can't fail or assert a bug) and duplicated implementations
    (changed code that re-implements something already in the codebase). A reviewer is skipped when the
@@ -86,6 +86,10 @@ def tail(text: str, lines: int = 40) -> str:
 def local_tests(worktree: Path) -> tuple[bool, str]:
     env = {"QT_QPA_PLATFORM": "offscreen"}   # unlike CI, a uv-managed Python is fine here (3.12 is one)
     report = []
+    say("local: python3 tools/check_docs.py --strict")
+    ok, out = run(["python3", "tools/check_docs.py", "--strict"], worktree)
+    if not ok:
+        return False, f"the doc check failed (see docs/README.md, \"Checking\"):\n{tail(out)}"
     for i, python in enumerate(PYTHONS):
         venv = {**env, "UV_PROJECT_ENVIRONMENT": str(STATE / f"venv-{python}")}
         steps = [["uv", "sync", "--python", python]]

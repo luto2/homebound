@@ -40,6 +40,9 @@ jobs:
       - name: Build static data (the tests use the real universe)
         run: uv run python -m homebound.universe.build_static
       - run: uv run pytest -q
+      - name: Doc check (dead links, missing header blocks)
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
+        run: python3 tools/check_docs.py --strict
       - name: Type check
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
         run: uv run mypy

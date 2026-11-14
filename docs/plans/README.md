@@ -21,7 +21,6 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [plan-code-signing.md](plan-code-signing.md) | Windows code signing | not started |
 | [plan-logging.md](plan-logging.md) | Diagnostic log file for the client | not started |
 | [plan-tray-caption.md](plan-tray-caption.md) | Empty "OVERLAY MODE" caption in the Plasma tray menu | not started |
-| [plan-docs-rework.md](plan-docs-rework.md) | Documentation structure and guidelines | not started |
 
 ### Audit fixes (`TODO.md` "To do", findings in `docs/investigations/2026-11-06-audit-findings.md`)
 
@@ -82,3 +81,4 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [done/plan-overlay-shortcut.md](done/plan-overlay-shortcut.md) | 2026-11-12 (`d28cf66`) | a real key press on KDE/Wayland and Windows |
 | [done/plan-menu-icon.md](done/plan-menu-icon.md) | 2026-11-12 (`e6b86d3`) | — |
 | [done/plan-tooling.md](done/plan-tooling.md) | 2026-11-12 (`597e10e`) | hooks path check by hand; mypy to zero, then blocking; upstream graphify issues |
+| [done/plan-docs-rework.md](done/plan-docs-rework.md) | 2026-11-14 | the user pages still lack 1.0.1 features; the legal translations need the owner's and a lawyer's check |
