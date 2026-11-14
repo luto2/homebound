@@ -357,6 +357,7 @@ Server ops files (Litestream, restore test, `hb-deploy` auto-deploy timer) are i
 | App icon (drawn in code, rendered to PNG/SVG/ICO) | `ui/map_window.py` `app_mark`; `packaging/make_icons.py`; `packaging/icons/` |
 | Release build on a `v*` tag | `.github/workflows/release.yml` |
 | Tests on Linux and Windows on every push | `.github/workflows/test.yml` |
+| Tests on Arch, Fedora, Debian and openSUSE on a merge into master (containers, each distribution's Python, as a normal user) | `.github/workflows/distros.yml` |
 | Push gate (doc check, local tests, CI, two reviewers) | `tools/push_gate.py`; `.githooks/pre-push` |
 | Doc check (dead links, header blocks); tests in `tests/test_check_docs.py` | `tools/check_docs.py`; CI step in `test.yml` |
 | Package metadata, scripts, coverage settings | `pyproject.toml` |

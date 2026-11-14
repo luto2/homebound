@@ -1,0 +1,79 @@
+name: distros
+
+# The test suite on other Linux distributions, as containers on an Ubuntu runner, with each distribution's own
+# Python. Runs only on a merge into master: the push gate waits for test.yml alone, so a rolling distribution that
+# breaks a library shows up here without blocking pushes. Plan: docs/plans/done/plan-distro-ci.md (TODO 25).
+on:
+  push:
+    branches: [master]
+
+env:
+  QT_QPA_PLATFORM: offscreen
+  UV_PYTHON_PREFERENCE: only-system
+
+jobs:
+  pytest-distro:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Besides git, tar and zstd (checkout and cache) and Python: the system libraries the PySide6 wheels
+          # link against (glib, X11, EGL, GL, xkbcommon, fontconfig, freetype, D-Bus, brotli and krb5 for
+          # QtNetwork), and runuser and useradd for the test user.
+          - name: arch
+            image: archlinux:latest
+            install: >-
+              pacman -Syu --noconfirm --needed git tar zstd ca-certificates python glib2 libx11 libglvnd
+              libxkbcommon fontconfig freetype2 dbus brotli krb5 util-linux shadow
+          - name: fedora
+            image: fedora:latest
+            install: >-
+              dnf install -y --setopt=install_weak_deps=False git-core tar zstd ca-certificates python3 glib2
+              libX11 libglvnd-egl libglvnd-glx libxkbcommon fontconfig freetype dbus-libs brotli krb5-libs
+              util-linux-core shadow-utils
+          - name: debian
+            image: debian:stable
+            install: >-
+              apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends
+              git tar zstd ca-certificates python3 libglib2.0-0t64 libx11-6 libegl1 libgl1 libxkbcommon0
+              libfontconfig1 libfreetype6 libdbus-1-3 libbrotli1 libgssapi-krb5-2 util-linux passwd
+          - name: opensuse
+            image: opensuse/tumbleweed
+            install: >-
+              zypper --non-interactive install --no-recommends git-core tar zstd ca-certificates python3
+              libglib-2_0-0 libgthread-2_0-0 libX11-6 libEGL1 libGL1 libxkbcommon0 fontconfig libfreetype6
+              libdbus-1-3 libbrotlidec1 krb5 util-linux shadow
+    name: pytest (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    steps:
+      - name: Packages
+        run: ${{ matrix.install }}
+      - name: Test user (root would skip the read-only folder tests in test_backup.py)
+        run: |
+          useradd --create-home tester
+          git config --global --add safe.directory '*'   # root's git steps on the tester-owned checkout
+      - uses: actions/checkout@v4                   # with git installed, a real clone: test_push_gate runs git on it
+      - uses: astral-sh/setup-uv@v6
+      - name: uv for the test user
+        run: install -m 755 "$(command -v uv)" /usr/local/bin/uv
+      - name: Week number (static data cache key)
+        id: week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: static-sources-${{ steps.week.outputs.week }}   # the same key as test.yml, so they share it
+      - name: Hand the checkout to the test user
+        run: chown -R tester:tester "$GITHUB_WORKSPACE"
+      - name: Python version
+        run: python3 --version
+      # runuser resets HOME; UV_CACHE_DIR from setup-uv points at a root-owned folder, so it is replaced.
+      - name: Install
+        run: runuser -u tester -- env HOME=/home/tester UV_CACHE_DIR=/home/tester/.cache/uv uv sync --python python3
+      - name: Build static data (the tests use the real universe)
+        run: >-
+          runuser -u tester -- env HOME=/home/tester UV_CACHE_DIR=/home/tester/.cache/uv
+          uv run python -m homebound.universe.build_static
+      - name: Tests
+        run: runuser -u tester -- env HOME=/home/tester UV_CACHE_DIR=/home/tester/.cache/uv uv run pytest -q

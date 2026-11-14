@@ -2,7 +2,7 @@
 
 - **Audience:** the owner and coding agents.
 - **Scope:** open items only. Finished work is in plan status lines, `CHANGELOG.md` and git; the rules for numbering are below.
-- **Kept current:** checked against `8c371b5` (2026-11-14). Update it when an item is added, finished or changes.
+- **Kept current:** checked against `74263d9` (2026-11-14). Update it when an item is added, finished or changes.
 
 Open items only. Finished work is recorded in the plan's status line, in the "Done" table of
 [`docs/plans/README.md`](docs/plans/README.md), in [`CHANGELOG.md`](CHANGELOG.md) and in git. Item
