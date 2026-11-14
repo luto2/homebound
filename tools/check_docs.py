@@ -83,7 +83,7 @@ def main() -> int:
                 problems += check_links(path, text)
             if is_doc_needing_header(path):
                 problems += check_header(path, text)
-            if path.startswith("docs/plans/done/", "docs/plans/plan-docs-rework.md") or path.startswith("docs/investigations/"):
+            if path.startswith(("docs/plans/done/", "docs/investigations/")) or path == "docs/plans/plan-docs-rework.md":
                 continue
             problems += check_cited_paths(path, text)
         elif path.endswith((".py", ".yml", ".sh", ".iss", ".spec")) and not path.startswith("tools/check_docs"):
