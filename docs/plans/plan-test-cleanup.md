@@ -6,7 +6,7 @@ Depends on: nothing. It does not touch the paint tests (T1 has its own plan). Ru
 after every step; each group below is one commit.
 
 Source: T2 to T13 and the "Structure" list in `docs/findings/findings.md`, section 4, checked against
-the rules in `docs/plans/plan-test-fixes.md` (no tautologies, no `or` that loosens a stricter check,
+the rules in `docs/plans/done/plan-test-fixes.md` (no tautologies, no `or` that loosens a stricter check,
 docstrings claim no more than the test checks). Every entry was re-read against the tests as they are
 now. Several line numbers in the findings have moved by a few lines; the ones below are current.
 

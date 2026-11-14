@@ -90,7 +90,7 @@ class Settings:
     route_use_eol: bool = True            # route through holes at < 4h / < 1h
     route_use_mass_critical: bool = False
     route_ship_size: str = "M"            # skip holes smaller than this (S/M/L/XL)
-    # Watched systems (docs/plans/plan-watched-systems.md): this user's own list, never synced (the map's
+    # Watched systems (docs/plans/done/plan-watched-systems.md): this user's own list, never synced (the map's
     # list is a map setting), and how many gate jumps from a watched k-space system the chain may be.
     watched_private: list = field(default_factory=list)   # system names, all maps
     watch_jumps: int = DEFAULT_WATCH_JUMPS
