@@ -1,65 +1,65 @@
-> **DRAFT / WIP**: not legal advice; check before publishing.
-> It will later be served at `https://homebound.luthopian.de/terms`.
+> **ENTWURF / WIP**: keine Rechtsberatung; vor Veröffentlichung prüfen lassen.
+> Wird später unter `https://homebound.luthopian.de/terms` ausgeliefert.
 
-# Homebound Sync: Terms of Service
+# Homebound Sync: Nutzungsbedingungen
 
 - **Audience:** visitors of the sync service and the owner; the German text is binding.
-- **Scope:** the draft of the Homebound Sync: Terms of Service for the sync service. The English translation is the `.en.md` file next to it, once written.
-- **Kept current:** draft, to be checked by a lawyer before the sync service goes public (2026-11-14).
+- **Scope:** the German version of the Homebound Sync terms of service. The owner wrote the text in English ([`terms.en.md`](terms.en.md)); this German version was translated from it and has to be checked by the owner and a lawyer.
+- **Kept current:** draft, to be checked by a lawyer before the sync service goes public (2026-11-14). Update it together with `terms.en.md`.
 
-## 1. The service
-Homebound Sync is an unofficial, privately run service that synchronises Homebound wormhole maps between members of a group. The Homebound desktop app is free to use locally. Only cloud sync and the web view are paid. Operator: see [Impressum](impressum.de.md).
+## 1. Der Dienst
+Homebound Sync ist ein inoffizieller, privat betriebener Dienst, der Homebound-Wurmlochkarten zwischen den Mitgliedern einer Gruppe synchronisiert. Die Homebound-Desktop-App ist lokal kostenlos nutzbar. Kostenpflichtig sind nur die Cloud-Synchronisierung und die Web-Ansicht. Betreiber: siehe [Impressum](impressum.de.md).
 
-## 2. Payment (ISK only)
-- Payment is made **only in EVE Online ISK**, as a player donation to the receiving character named in the app. **Real money is never accepted.** Anyone who offers to take real money for Homebound is not us.
-- Prices per 30 days. Each map includes 3 seats:
+## 2. Zahlung (nur ISK)
+- Die Zahlung erfolgt **ausschließlich in EVE-Online-ISK** als Spende an den in der App genannten Empfangscharakter. **Echtgeld wird nie angenommen.** Wer anbietet, Echtgeld für Homebound anzunehmen, handelt nicht in unserem Namen.
+- Preise je 30 Tage. In jeder Karte sind 3 Plätze enthalten:
 
-  | | base | each seat after 3 |
+  | | Grundpreis | jeder Platz ab dem 4. |
   |---|---|---|
-  | Map 1 | 100M ISK | 25M ISK |
-  | Map 2 | 50M ISK | 15M ISK |
-  | Map 3 | 25M ISK | 5M ISK |
-  | Map 4 and later | free | free |
+  | Karte 1 | 100 Mio. ISK | 25 Mio. ISK |
+  | Karte 2 | 50 Mio. ISK | 15 Mio. ISK |
+  | Karte 3 | 25 Mio. ISK | 5 Mio. ISK |
+  | Karte 4 und folgende | kostenlos | kostenlos |
 
-  Maps are ranked by seat count. The map with the most seats is billed as map 1, the next as map 2, and so on.
-- Payments go into an ISK balance on your account. The app shows the date you're paid until.
-- Prices may change with at least 30 days' notice in the app. Time you have already paid for is not affected.
-- **ISK is not refunded**, except at the operator's discretion (for example a mistaken double payment).
+  Die Karten werden nach der Zahl ihrer Plätze geordnet. Die Karte mit den meisten Plätzen wird als Karte 1 abgerechnet, die nächste als Karte 2 und so weiter.
+- Zahlungen werden einem ISK-Guthaben auf deinem Konto gutgeschrieben. Die App zeigt das Datum, bis zu dem bezahlt ist.
+- Preise können mit mindestens 30 Tagen Vorankündigung in der App geändert werden. Bereits bezahlte Zeit bleibt davon unberührt.
+- **ISK wird nicht erstattet**, außer nach Ermessen des Betreibers (zum Beispiel bei einer versehentlichen Doppelzahlung).
 
-## 3. Missed payments
-- **First missed payment:** your maps stay editable for 7 days, with a warning. After that they become read-only.
-- **Repeat missed payment**, if the paying character or its corporation has missed a payment in the past 12 months: your maps become read-only immediately.
-- **2 months** after your paid period ends, maps are deleted from the server. Paying before then restores full access.
-- Local copies in members' desktop apps are never deleted by the server.
+## 3. Verpasste Zahlungen
+- **Erste verpasste Zahlung:** deine Karten bleiben 7 Tage lang mit einer Warnung bearbeitbar. Danach werden sie schreibgeschützt.
+- **Wiederholte verpasste Zahlung**, wenn der zahlende Charakter oder seine Corporation in den letzten 12 Monaten eine Zahlung verpasst hat: deine Karten werden sofort schreibgeschützt.
+- **2 Monate** nach Ende des bezahlten Zeitraums werden die Karten vom Server gelöscht. Zahlst du vorher, ist der volle Zugriff wieder da.
+- Lokale Kopien in den Desktop-Apps der Mitglieder werden vom Server nie gelöscht.
 
-## 4. Roles
-- The map **owner** pays, invites members and manages roles.
-- **Editors** can change the map.
-- **Viewers** can only look at it.
-- Every member can see the live locations that other members have chosen to share.
+## 4. Rollen
+- Der **Eigentümer** der Karte zahlt, lädt Mitglieder ein und verwaltet die Rollen.
+- **Editoren** dürfen die Karte ändern.
+- **Betrachter** dürfen sie nur ansehen.
+- Jedes Mitglied sieht die Live-Standorte, die andere Mitglieder freigegeben haben.
 
-## 5. Acceptable use
-Do not:
-- attack, overload or try to get around the service, its billing or its access controls
-- share invite links publicly in order to resell access
-- put unlawful content into notes
+## 5. Zulässige Nutzung
+Nicht erlaubt ist,
+- den Dienst, seine Abrechnung oder seine Zugriffskontrollen anzugreifen, zu überlasten oder zu umgehen,
+- Einladungslinks öffentlich zu teilen, um den Zugang weiterzuverkaufen,
+- rechtswidrige Inhalte in Notizen einzutragen.
 
-Accounts that break these rules can be suspended without refund.
+Konten, die gegen diese Regeln verstoßen, können ohne Erstattung gesperrt werden.
 
-## 6. Availability and liability
-- The service is provided **as is**, by a private individual, with no guaranteed uptime.
-- Maintenance and EVE downtime can interrupt it.
-- Your local app keeps working offline and merges again once the connection is back.
-- Liability is limited to intent and gross negligence, as far as the law allows. Losses in game (ships, structures, ISK) are not covered.
+## 6. Verfügbarkeit und Haftung
+- Der Dienst wird **wie besehen** von einer Privatperson angeboten, ohne zugesicherte Verfügbarkeit.
+- Wartung und der EVE-Downtime können ihn unterbrechen.
+- Deine lokale App funktioniert offline weiter und gleicht sich ab, sobald die Verbindung wieder da ist.
+- Die Haftung ist, soweit gesetzlich zulässig, auf Vorsatz und grobe Fahrlässigkeit beschränkt. Verluste im Spiel (Schiffe, Strukturen, ISK) sind nicht abgedeckt.
 
-## 7. Ending the service
-- You can stop paying at any time. Your maps then lapse as described in §3.
-- The operator may shut the service down with at least 30 days' notice. Remaining paid time would then be refunded in ISK.
+## 7. Einstellung des Dienstes
+- Du kannst jederzeit aufhören zu zahlen. Deine Karten laufen dann wie in Abschnitt 3 beschrieben aus.
+- Der Betreiber kann den Dienst mit mindestens 30 Tagen Vorankündigung einstellen. Verbleibende bezahlte Zeit würde dann in ISK erstattet.
 
 ## 8. Fenris Creations
-EVE Online and all related marks are the property of Fenris Creations (formerly CCP Games). Homebound is not affiliated with or endorsed by Fenris Creations. Use of EVE Online itself is governed by the EVE Online EULA.
+EVE Online und alle zugehörigen Marken sind Eigentum von Fenris Creations (vormals CCP Games). Homebound ist nicht mit Fenris Creations verbunden und wird von Fenris Creations nicht unterstützt. Für die Nutzung von EVE Online selbst gilt die EVE-Online-EULA.
 
-## 9. Law
-German law applies, as far as this doesn't take away consumer protections you have in your own country.
+## 9. Anwendbares Recht
+Es gilt deutsches Recht, soweit dadurch keine Verbraucherschutzvorschriften deines Heimatlandes entzogen werden.
 
-Last updated: 08.11.2026
+Stand: 08.11.2026

@@ -34,7 +34,7 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 
 | Draft | State |
 |---|---|
-| [docs/legal/](../legal/) (Impressum, Datenschutz, Terms) | WIP; to be checked before the sync service goes public |
+| [docs/legal/](../legal/) (Impressum, Datenschutz, Terms; German and English) | WIP; the English texts are translations (the terms were written in English, so the German terms are the translation); the owner and a lawyer check them before the sync service goes public |
 
 ## Done
 
