@@ -4,25 +4,15 @@ An offline wormhole mapper for EVE Online. Homebound follows your characters thr
 
 Runs on Linux and Windows.
 
-## Install on Linux
+## Install
 
-Paste this into a terminal (bash, zsh or fish). It installs the two libraries the AppImage needs (it asks for your password), downloads the latest release to `~/.local/bin/homebound` and adds Homebound to your app menu. Run it again to update. It knows apt (Debian, Ubuntu, Mint, Pop!_OS), dnf (Fedora), pacman (Arch, CachyOS, Manjaro, EndeavourOS) and zypper (openSUSE).
+On Linux, paste this into a terminal. It installs what the AppImage needs, downloads the latest release and adds Homebound to your app menu:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/luto2/homebound/master/packaging/linux/install.sh | sh
 ```
 
-The script is [`packaging/linux/install.sh`](packaging/linux/install.sh) if you want to read it first.
-
-To uninstall:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/luto2/homebound/master/packaging/linux/install.sh | sh -s -- --uninstall
-```
-
-Your maps stay in `~/.local/share/homebound/`.
-
-On first start Homebound offers to download the EVE game data (about 100 MB), then opens Settings on the log folder. [Getting started](#getting-started) has the rest.
+On Windows, download `Homebound-<version>-windows-setup.exe` from the [releases](https://github.com/luto2/homebound/releases). [Install and first start](docs/user/install.md) has the details, the uninstall command, the portable build and the unsigned-build warning.
 
 ![Homebound's main window with a small chain out of a C5 home](docs/images/main-window.png)
 
@@ -41,44 +31,14 @@ On first start Homebound offers to download the EVE game data (about 100 MB), th
   <img src="docs/images/signature-editor.png" alt="The signature editor" width="400">
 </p>
 
-## Install
-
-Releases on GitHub have ready-made packages:
-
-- **Linux**: `Homebound-<version>-x86_64.AppImage`. [Install on Linux](#install-on-linux) has a copy-paste command per distribution.
-- **Windows**: `Homebound-<version>-windows-setup.exe` installs for your user only (no admin rights), with a Start menu entry and optional autostart. `Homebound-<version>-windows-portable.zip` is the same program to unpack anywhere. The builds aren't signed yet, so SmartScreen warns on the first start: *More info → Run anyway*.
-
-The packages contain no EVE game data. On first start Homebound offers to download the EVE static data export and the community wormhole data (about 100 MB) and builds its universe data from them, which takes a minute or so.
-
 ## Getting started
 
 1. In EVE, turn on *Settings → Chat → Log chat to file*.
-2. Start Homebound. Settings opens on **Log folder**: click **Auto-detect** (it checks Steam/Proton prefixes on Linux and the Documents folder, OneDrive included, on Windows) or browse to your `Chatlogs` folder.
+2. Start Homebound. Settings opens on **Log folder**: click **Auto-detect** or browse to your `Chatlogs` folder.
 3. Set your home system and pick a naming scheme.
 4. Undock and jump. To add sigs, select a system, press Ctrl+A and Ctrl+C in the probe scanner, then Ctrl+V in Homebound.
 
-On KDE Plasma (Wayland), install the KWin focus script once under **Settings → KWin focus script** so the overlay can follow the focused client. On Windows, run EVE windowed or borderless: no window can sit above exclusive fullscreen.
-
-**[HOW_TO.md](HOW_TO.md) is the full manual**: naming and bookmarks, the signature table, editing the map by hand, several maps, the overlay modes, settings, keys, backups and troubleshooting.
-
-## Network access
-
-After the one-time data download, Homebound works offline. Two optional lookups remain, and both can be turned off in Settings:
-
-- zKillboard kill activity for systems in visible chains (one request per second at most, cached for 10 minutes).
-- EVE-Scout's public list of Thera and Turnur connections, for routes (every 5 minutes; nothing about you or your map is sent).
-
-Data lives in `~/.local/share/homebound/` on Linux and `%APPDATA%\Homebound\` on Windows. Each map is a plain SQLite file.
-
-## Run from source
-
-Python 3.12 or newer and [uv](https://docs.astral.sh/uv/):
-
-```sh
-uv sync
-uv run python -m homebound.universe.build_static   # once: EVE SDE + statics -> data/universe.sqlite
-uv run python -m homebound
-```
+**The [user guide](docs/user/README.md) is the full manual**: naming and bookmarks, the signature table, editing the map by hand, several maps, the overlay modes, settings, keys, backups and troubleshooting. After the one-time data download Homebound works offline; the two optional lookups it makes are listed in [Where your data lives](docs/user/data.md).
 
 ## Static data
 
@@ -89,8 +49,12 @@ uv run python -m homebound
 
 ## Development
 
+Run from source: [Install and first start](docs/user/install.md#from-source). Then:
+
 ```sh
 uv run pytest                     # --cov=homebound for coverage
+uv run mypy                       # type check of the homebound package (settings in pyproject.toml)
+python3 tools/check_docs.py       # dead links and missing header blocks in the docs
 uv run python -m homebound.logs.replay path/to/Local_*.txt --home J161940   # replay logs through the tracker
 ```
 
@@ -99,6 +63,18 @@ uv run python -m homebound.logs.replay path/to/Local_*.txt --home J161940   # re
 - Names are spelled out (no abbreviations), and every public entry point checks its arguments with `homebound/validation.py`.
 - The UI follows `design-system/`: tokens, component specs and Qt notes.
 - Known bugs and loose ends go in `TODO.md`. Design plans are in [docs/plans/](docs/plans/) (open ones at the top, finished ones in [done/](docs/plans/done/)); [docs/code-map.md](docs/code-map.md) says where each feature lives in the code.
+
+**Git hooks.** A fresh clone must point git at the repo's hooks, or neither the push gate nor the graph refresh runs. Check the hooks path setting (`git config --get` with the key `core.hooksPath`): it should print `.githooks`. If it prints nothing, set it to `.githooks`.
+
+**Type check.** `uv run mypy` checks the `homebound` package (settings in `pyproject.toml`).
+
+**Using the graph.** `graphify-out/` is not tracked (its `graph.html` alone outweighed the Python and turned GitHub's language bar to HTML). The pre-push hook refreshes the local graph in the background and writes its output to `graphify-out/refresh.log`. On a fresh clone, build it once with `~/.local/bin/graphify update .`. Caveats:
+
+- A missing incoming edge is not dead code. Method calls on other objects are mostly not extracted, so check with a text search before deleting.
+- Edges with `relation == "uses"` are mostly false (imports get attached to every class in a file). Skip them in `graph.json` before trusting a god node rank or a bridge score.
+- Docstring nodes are about half of the graph, so a query can land on one. Ignore results whose label is a sentence. The report's "isolated nodes" line is mostly these and is a false alarm.
+- `graphify` may not be on the shell PATH. Call `~/.local/bin/graphify`, or add `$HOME/.local/bin` to PATH. The hook adds the path itself.
+- `graphify update` refuses to write a graph with fewer nodes. After large deletions run `~/.local/bin/graphify update . --force` by hand; the refusal shows in `graphify-out/refresh.log`.
 
 Packages ([how they're built](docs/plans/done/plan-packaging.md)):
 

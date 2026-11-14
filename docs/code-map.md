@@ -5,7 +5,7 @@ haven't touched yet, and when you need the file behind something you see in the 
 
 - **Audience:** anyone working on the code: the owner, contributors and coding agents.
 - **Scope:** the desktop app (`homebound/`), the sync server (`homebound_server/`), packaging,
-  tooling and tests. How to *use* the app is in [`HOW_TO.md`](../HOW_TO.md); how the UI should
+  tooling and tests. How to *use* the app is in the [user guide](user/README.md); how the UI should
   *look* is in [`design-system/`](../design-system/README.md); why things were built the way they
   are is in the plans in [`docs/plans/`](plans/README.md).
 - **Kept current:** checked against `master` at 1.0.0 (2026-11-09). Files and symbols are named
