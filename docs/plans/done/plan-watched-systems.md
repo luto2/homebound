@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-12, `d1fed36`). Deviations: one per-user range setting (1, 2, 5, 10 jumps; default 5) from the Watch section's ⚙ menu; the map list is one synced value (two simultaneous edits: last wins); systems removed 1 h–2 days ago are not mapped from either.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: watched systems (alert when a chain reaches them)", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Touches `mapping/`, `routing.py`, `ui/state.py`, the route dock and toasts/notify.
 
 ## What there is now

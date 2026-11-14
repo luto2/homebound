@@ -1,5 +1,9 @@
 # Linux packaging
 
+- **Audience:** anyone building or changing the Linux packages.
+- **Scope:** the AppImage and the AUR package, the desktop entry and the code that has to agree with them. The shared build is in [`../README.md`](../README.md).
+- **Kept current:** checked against `8c371b5` (2026-11-14). Update it when the AppImage scripts, the desktop entry or the install script change.
+
 The Linux packages are an AppImage and an AUR package.
 
 `build_appimage.sh` wraps the PyInstaller folder `dist/homebound` into

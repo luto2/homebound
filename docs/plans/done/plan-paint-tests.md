@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-10, commits `9e72e56`, `a7980f7`). Deviations: edge tests assert at least 4 of 8 samples; the no-route row is compared with the routed paint (the text covers the base pixel); the old `render()` helper in `tests/test_ui_routes.py` and the other open decisions are left as they were.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: paint tests that can see a paint bug", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Step 1 (docstrings) and step 2 (pixel checks) are separate commits.
 
 Source: `TODO.md` item 8 and `docs/investigations/2026-11-06-audit-findings.md` T1. `plan-test-fixes.md` ("Not changing") accepts

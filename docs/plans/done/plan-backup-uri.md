@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-10, commit `ad64cb5`). Deviations: own `file_uri`/`read_only_uri` helpers in `platform/paths.py`; `_copy_database` refuses a database with a header but no `systems` table.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: read-only SQLite URIs that survive `#`, `?` and `%` in a path", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Each step stands alone and can be its own commit. Steps 1 to 3 belong in the same
 release, because step 3 alone would hide a failed open behind a default answer.
 

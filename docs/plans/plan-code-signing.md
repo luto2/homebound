@@ -2,6 +2,10 @@
 
 Status: plan only, nothing implemented yet (2026-11-01).
 
+- **Audience:** the owner and the coding agents that build this plan.
+- **Scope:** the plan "Plan: Windows code signing", not implemented yet. The state of every plan is in [`README.md`](README.md).
+- **Kept current:** written against `d70e407` (2026-11-12). Update it when the plan changes or the code it describes moves.
+
 Depends on: a public repo with an OSI licence (done: GPL-3.0-or-later) and the CI release build from [packaging](done/plan-packaging.md).
 
 Build order across the plans: [rescan status](done/plan-rescan-status.md) → [backups](done/plan-backups.md) → [Windows support](done/plan-windows-support.md) → [packaging](done/plan-packaging.md) → [code signing](plan-code-signing.md).

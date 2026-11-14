@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-12, `0402ae7`). Deviations: no universe schema bump (generated scan_type_table.py); ships in their own section; unknown scan groups still become sigs; the probe-scanner combat format is a guess.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: combat-probe results (ships, structures, deployables) in the paste", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Do it before the structure list. Touches `mapping/signature_parser.py`,
 `mapdb/store.py`, `sync/protocol.py` (and so the server), `ui/signature_table.py` and
 `ui/system_panel.py`.

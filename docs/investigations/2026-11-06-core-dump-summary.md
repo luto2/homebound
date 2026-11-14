@@ -1,5 +1,9 @@
 # Core dump summary: test suite segfaults
 
+- **Audience:** the owner and coding agents looking for what an old audit found.
+- **Scope:** a point-in-time analysis, Core dump summary: test suite segfaults. Code is not fixed by editing it; open items are in `TODO.md`.
+- **Kept current:** archived, not updated. Written 2026-11-06 against the code of that day.
+
 What the core dumps from 2026-11-06 show. The cores themselves stay out of the repo because they hold process
 memory; this file records their stacks only. Cause and fix are in `docs/plans/done/plan-test-segfault.md`.
 

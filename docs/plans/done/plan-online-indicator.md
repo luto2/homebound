@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-11, commits `6e0006c`, `b25df0b`, `3fcafca`, with the protocol 2 version gate). Deviations: step 5 (overlay "follow" skips closed clients) not done; location sharing now stops when the client window closes; sharing the online state is off by default; the KWin script is 1.1 (users press Install again).
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: a truthful online indicator in the character list", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Touches `logs/watcher.py`, the focus backends, `ui/state.py` and
 `ui/character_dock.py`.
 

@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-10, commit `e970367`). Deviations: certifi is loaded on top of the system store (not instead of it), `sync/api.py` is covered too, and the first-run dialog shows a certificate hint. Not yet tested on Arch: check that `certifi/cacert.pem` is in `dist/homebound/_internal` at the next build and that the AppImage downloads the data on CachyOS.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: TLS certificates in the packaged app (AppImage on Arch)", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. One commit for the fix, one for the test. Ship it in the next AppImage, because the
 bug stops the app before the first window.
 

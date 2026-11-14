@@ -1,5 +1,9 @@
 # Findings
 
+- **Audience:** the owner and coding agents looking for what an old audit found.
+- **Scope:** a point-in-time analysis, Findings. Code is not fixed by editing it; open items are in `TODO.md`.
+- **Kept current:** archived, not updated. Written 2026-11-06 against the code of that day.
+
 Code audit of commit `582ee55`, 2026-11-06. It lists everything found, including small items and
 tool noise, so a line here does not mean it needs fixing. Nothing in the code was changed.
 

@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-10, commit `334aa2c`). Deviations: a kept map entry's wrong `home_system` or `naming_scheme` is reset to its default (the plan's tests require it, its text said entries are never edited).
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: a bad settings.json must not crash the start or eat the map list", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Overlaps with the corrupt-map recovery item (TODO 1), see "Overlaps".
 
 ## What exists

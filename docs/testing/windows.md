@@ -1,5 +1,9 @@
 # Trying Homebound on Windows
 
+- **Audience:** testers trying Homebound on a Windows PC, with or without EVE installed.
+- **Scope:** a manual test script for the Windows build: Part A fakes the chat logs and the EVE window, Part B needs EVE. Other platforms' hand tests are in `packaging/CLAUDE.md`.
+- **Kept current:** checked against `8c371b5` (2026-11-14). Update it when the Windows installer, the overlay or the log detection change.
+
 Homebound is an offline wormhole mapper for EVE. It reads your Local chat logs and draws an
 overlay over the client. The Windows version has not run on a real Windows PC yet, so thanks for
 trying it.

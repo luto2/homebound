@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-12, `48a1e2e`). Deviations: the way home folds into "⋯ N systems on the way home"; everything below the character is shown past the radius; row cap 5–40; distances along the shown tree; HOME chip on summary rows.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: the overlay shows the nearby part of a big chain", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Touches `mapping/chain.py`, `ui/overlay.py`, `settings.py`, the settings dialog's
 overlay page and their tests.
 

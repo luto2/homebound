@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-11, commit `530ad2d`). Deviations: the cut-off mark is a local key_value entry (not synced); a cut-off piece is removed an hour after the last pilot left, pinned systems stay.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: remove a connection but keep its systems ("lost connection")", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Touches `ui/map_window.py`, `mapping/tracker.py`, `mapdb/store.py` and their tests.
 
 ## What there is now

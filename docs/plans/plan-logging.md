@@ -2,6 +2,10 @@
 
 Status: plan only, nothing implemented yet (2026-11-13).
 
+- **Audience:** the owner and the coding agents that build this plan.
+- **Scope:** the plan "Plan: a diagnostic log file for the client", not implemented yet. The state of every plan is in [`README.md`](README.md).
+- **Kept current:** written against `702f2d5` (2026-11-14). Update it when the plan changes or the code it describes moves.
+
 Depends on: nothing. Touches `homebound/__main__.py`, `homebound/platform/paths.py`, a new
 `homebound/diagnostics.py`, the tray menu in `homebound/ui/map_window.py`, a few error paths, the docs
 and tests.

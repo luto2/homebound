@@ -3,6 +3,10 @@
 Status: implemented 2026-11-10. Root cause confirmed with a deterministic reproduction; see the next
 section. The fix is test-only (`close_widgets` in `tests/conftest.py`); the app can't hit it.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: stop the UI test segfault", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Overlaps with `TODO.md` item 1 (corrupt map lockout), see "Can the app hit it".
 
 This covers `TODO.md` item 3, "[8] Test suite segfaults", and section 1 of `docs/investigations/2026-11-06-audit-findings.md`.

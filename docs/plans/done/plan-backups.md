@@ -3,6 +3,10 @@
 Status: implemented (2026-11-01). See "Implementation notes" at the end for where it differs from
 the plan.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: backups", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Should ship before [packaging](plan-packaging.md), since packaged users need it most.
 
 Build order across the plans: [rescan status](plan-rescan-status.md) → [backups](plan-backups.md) → [Windows support](plan-windows-support.md) → [packaging](plan-packaging.md) → [code signing](../plan-code-signing.md).

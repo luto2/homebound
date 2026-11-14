@@ -1,5 +1,9 @@
 # Homebound Cloud Sync: design plan
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Homebound Cloud Sync: design plan", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 > **STATUS: implemented (2026-11-08) and merged into `master` (1.0.0), phases 0–9 of §11. The web view (phase 10) is still deferred.**
 > Where the build differs from this design, or fills a gap in it, see §21. Open questions are in §20.
 > Design review 2026-11-07: decisions went into §3, §5–§8, §10, §11 and the new §15–§19. All items are decided, apart from the open questions in §20. The protocol is specified in [`sync-protocol.md`](sync-protocol.md).

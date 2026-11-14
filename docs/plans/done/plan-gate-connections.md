@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-12, `3dfeb27`). Deviations: none; the gate flag is derived from the universe, not stored or synced.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: gate connections (TODO human-added task 20)", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Goal: when two joined systems are also stargate neighbours, draw the connection with 90 degree corners
 instead of the wormhole curve, and leave out wormhole state.
 

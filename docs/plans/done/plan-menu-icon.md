@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-12, `e6b86d3`). Deviations: the cause stayed a stale Plasma cache; the install refreshes it and ships 48 px and SVG icons; confirmed working by the owner on 2026-11-12.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: app menu icon after the README install", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Touches `README.md` (install commands), `packaging/linux/homebound.desktop` and
 possibly `packaging/linux/AppRun` / `build_appimage.sh`.
 

@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-12, `45398b0`). Deviations: Qt's tryLock removes a dead PID's lock itself; the wire client_id is now a random per-process id (the stored sync_client_id stays unused); no server change. A hung (live) first instance is not taken over.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: a second Homebound start opens the running one instead of breaking both", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Touches `homebound/__main__.py`, a new `homebound/platform/instance.py`, and tests.
 
 ## What there is now

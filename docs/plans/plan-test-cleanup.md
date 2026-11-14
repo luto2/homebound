@@ -2,6 +2,10 @@
 
 Status: not started.
 
+- **Audience:** the owner and the coding agents that build this plan.
+- **Scope:** the plan "Plan: test cleanup (small items from the test findings)", not implemented yet. The state of every plan is in [`README.md`](README.md).
+- **Kept current:** written against `702f2d5` (2026-11-14). Update it when the plan changes or the code it describes moves.
+
 Depends on: nothing. It does not touch the paint tests (T1 has its own plan). Run `uv run pytest -q`
 after every step; each group below is one commit.
 

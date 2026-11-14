@@ -1,5 +1,9 @@
 # Graphify findings
 
+- **Audience:** the owner and coding agents looking for what an old audit found.
+- **Scope:** a point-in-time analysis, Graphify findings. Code is not fixed by editing it; open items are in `TODO.md`.
+- **Kept current:** archived, not updated. Written 2026-11-06 against the code of that day.
+
 Audit of `graphify-out/` on 2026-11-06, graph built at commit `582ee55` (HEAD at the time) with graphifyy 0.7.7. Size: 3740 nodes, 6712 edges, 249 communities.
 
 The graph is structurally sound: no dangling edges, no self-loops, and every source file still exists. Its relationship data has gaps, though. Most `uses` edges are wrong and most method calls between objects are missing, so edge counts and "no callers" results need checking against the code.

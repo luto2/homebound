@@ -1,5 +1,9 @@
 # Windows packaging
 
+- **Audience:** anyone building or changing the Windows packages.
+- **Scope:** the Inno Setup installer and the portable zip, and the code that has to agree with them. The shared build is in [`../README.md`](../README.md).
+- **Kept current:** checked against `8c371b5` (2026-11-14). Update it when `homebound.iss` or the Windows paths code change.
+
 `homebound.iss` is the Inno Setup script for the per-user installer. It packs the PyInstaller folder
 `dist\Homebound` into `dist\Homebound-<version>-windows-setup`, installing to
 `%LOCALAPPDATA%\Programs\Homebound` without admin rights. Maps, settings and backups stay in

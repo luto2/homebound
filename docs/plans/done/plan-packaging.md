@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-01), merged into `master`. The PyInstaller folder (including the first-start build into an empty data folder) and the wheel/AUR layout were tried locally on Linux; the AppImage, the Windows build and the workflows have not run yet (they run on the first `v*` tag).
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: packaging for Linux and Windows", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: [Windows support](plan-windows-support.md) for the Windows build. Signing: [code signing](../plan-code-signing.md).
 
 Build order across the plans: [rescan status](plan-rescan-status.md) → [backups](plan-backups.md) → [Windows support](plan-windows-support.md) → [packaging](plan-packaging.md) → [code signing](../plan-code-signing.md).

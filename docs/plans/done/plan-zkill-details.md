@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-10, commits `7e99e8d`, `0ae364d`, `1665163`). Deviations: NPC kills count toward the meter and the map like any other kill (owner, 2026-11-10: the "Count NPC kills" setting from the first build was removed; the list still dims NPC rows); the tooltip rows show on any hover of the node; no copy button, double-click/Enter opens the kill; fold state not saved; `tests/data/zkill_sample.json` is hand-built, not recorded. Universe schema 4: every user rebuilds the game data once.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: show what the zKill activity was, not just how much", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Touches the zKill worker, the map file schema, the universe build, the system panel
 and the node tooltip. Four commits, in the order of the steps below.
 

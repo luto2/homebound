@@ -1,5 +1,9 @@
 # Homebound Sync: protocol spec
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Homebound Sync: protocol spec", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 > **STATUS: implemented (2026-11-08) in `homebound/sync/` and `homebound_server/`. Differences: ops carry `c` (the sender's client ID), snapshots send each entity's full merged state with clocks, and the delete endpoints are POSTs (see the plan's §21).**
 > It belongs with [`cloud-sync-plan.md`](cloud-sync-plan.md), whose §3 has the merge rules and §5 the roles.
 

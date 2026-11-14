@@ -1,5 +1,9 @@
 # Plans
 
+- **Audience:** the owner and coding agents.
+- **Scope:** the index of open and finished plans, and how to finish one. The plans themselves are the other files in this folder.
+- **Kept current:** checked against `8c371b5` (2026-11-14). Update it when a plan is added, finished or moved.
+
 Design and fix plans for Homebound. Open plans sit in this folder; finished ones move to
 [`done/`](done/) with a status line that says when they were built and where the build differs from
 the plan. Bugs and loose ends without a plan yet are in [`TODO.md`](../../TODO.md). Where each feature

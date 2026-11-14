@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-10, commit `915fc63`). Deviations: Thera is written `TH` (the app's class label), not `Thera`; `<sig>` is the three letters.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: copy button gives the full bookmark text", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Works with [`plan-stable-hole-names.md`](plan-stable-hole-names.md) (task 14) in
 either order. One commit: `ui/signature_table.py` and its tests.
 

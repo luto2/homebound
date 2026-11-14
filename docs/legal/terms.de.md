@@ -3,6 +3,10 @@
 
 # Homebound Sync: Terms of Service
 
+- **Audience:** visitors of the sync service and the owner; the German text is binding.
+- **Scope:** the draft of the Homebound Sync: Terms of Service for the sync service. The English translation is the `.en.md` file next to it, once written.
+- **Kept current:** draft, to be checked by a lawyer before the sync service goes public (2026-11-14).
+
 ## 1. The service
 Homebound Sync is an unofficial, privately run service that synchronises Homebound wormhole maps between members of a group. The Homebound desktop app is free to use locally. Only cloud sync and the web view are paid. Operator: see [Impressum](impressum.de.md).
 

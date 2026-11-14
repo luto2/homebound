@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-10, commits `9ecbf07`, `2dfa959`). Deviations: the `needs_migration == _migrate() > 0` test can't work (opening a Store migrates), replaced by a per-step before/after test; a stale old key next to the new one no longer counts as a migration (fixes a repeated backup); collapse now keeps a system a character is in (owner decision 2026-11-06). The home-ID question stays open.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: duplicated logic that can drift (TODO item 9, findings D1 and D2)", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Check before building: is `state.home_id` always equal to `namer.home_id`? `state.home_id` is a
 property read from `settings.home_system`; `namer.home_id` is a copy set at start, in `switch_map` and in
 `apply_settings` (`ui/state.py:69,178,306`). Nobody has confirmed that every write to `home_system` goes

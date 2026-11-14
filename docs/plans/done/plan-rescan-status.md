@@ -7,6 +7,10 @@ Status: implemented 2026-11-01, except the optional overlay marker. Deviations f
   so the tab is left out there (the hatch and the tooltip remain).
 - The `NO SCAN` set is `System.wormhole_space` (not `not known_space`, which would include Pochven).
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: rescan status on systems", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing.
 
 Build order across the plans: [rescan status](plan-rescan-status.md) → [backups](plan-backups.md) → [Windows support](plan-windows-support.md) → [packaging](plan-packaging.md) → [code signing](../plan-code-signing.md).

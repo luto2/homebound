@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-10, commits `06f76b7`…`8495554`), see "As built". Deviations: `label`, `static` and `next_hole` are local-only until the protocol gets a version gate (`protocol.LOCAL_SYSTEM_FIELDS`), so a2a/letter names and STATIC badges can differ between cloud members; numbers sync. The a2a position letter is never given twice. Open owner questions are in the session report (migration numbers on cloud maps, a remote scheme change asking to rename, renumber action for duplicate numbers, k-space home's first chain is A).
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: hole numbers and system names never change", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Do it before [`plan-disconnect-connection.md`](plan-disconnect-connection.md)
 (task 5.1), which removes connections and would hit path 5 below. Touches `mapping/naming.py`,
 `mapping/tracker.py`, `mapping/signature_parser.py`, `mapdb/store.py` (schema and sync fields),

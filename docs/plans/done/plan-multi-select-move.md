@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-10, commit `1fe3fd2`). Deviations: the suspected bug was real (only the grabbed node was stored). The whole selection moves as one block instead of Qt's per-node move, so offsets don't drift; `AppState` got a selected count for the panel's "+N selected". Multi-delete not included.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: select several systems and move them together", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. One commit: `ui/map_scene.py` (nodes, scene and view) and its tests.
 
 ## What there is now

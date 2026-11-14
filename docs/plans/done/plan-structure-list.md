@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-12, `0402ae7`). Deviations: built with the combat scan; structures outlive the system; 'not in the last scan' is local.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: structure list per system", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: [`plan-combat-scan.md`](plan-combat-scan.md) (the parser has to recognise structure rows
 first).
 

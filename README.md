@@ -1,5 +1,9 @@
 # Homebound
 
+- **Audience:** people who find Homebound: players and contributors.
+- **Scope:** what Homebound is, the one-line install, a feature overview, and the developer entry points. Everything else is linked: the [user guide](docs/user/README.md), the [doc map](docs/README.md).
+- **Kept current:** checked against `8c371b5` (2026-11-14). Update it when the feature list, the install command or the development commands change.
+
 An offline wormhole mapper for EVE Online. Homebound follows your characters through EVE's Local chat logs, builds the chain as you jump, names new systems with the scheme you pick, and shows the chain your active character is in on a small overlay over the game. It needs no ESI login, and all map data stays on your machine.
 
 Runs on Linux and Windows.

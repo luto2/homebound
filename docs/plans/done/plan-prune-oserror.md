@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-10, commit `8142f01`). Deviations: `partial_cleanup` skips files too (owner decision); prune failures are reported as a warning through a `warnings` list.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: prune must not raise out of a finished backup", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Touches the same functions as the corrupt-map, backup-URI and damaged-backup plans, see "Overlaps".
 
 ## Problem as verified

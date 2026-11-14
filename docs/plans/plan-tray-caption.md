@@ -2,6 +2,10 @@
 
 Status: not started (owner screenshot, 2026-11-13).
 
+- **Audience:** the owner and the coding agents that build this plan.
+- **Scope:** the plan "Plan: the tray menu's "OVERLAY MODE" caption is an empty row on Plasma", not implemented yet. The state of every plan is in [`README.md`](README.md).
+- **Kept current:** written against `cb44ac6` (2026-11-13). Update it when the plan changes or the code it describes moves.
+
 Depends on: nothing. One commit: `homebound/ui/map_window.py`, its test and the TrayMenu spec.
 
 ## Problem (verified in the code)

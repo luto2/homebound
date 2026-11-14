@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-11, commit `4885d92`). Deviations: none; HOW_TO describes it too.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: Delete removes every selected system", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Touches `ui/map_window.py`, `ui/map_scene.py` (selection helper exists:
 `MapScene.selected_nodes`) and tests.
 

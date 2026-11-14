@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-10, commit `34c17f6`), see "As built". Deviations: an alias is a remembered `custom_name` and never touches `label`; aliases are local-only until the protocol gate exists (TODO at `LOCAL_ENTITIES` in `mapdb/store.py`); Delete in Settings acts at once, not on Save.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: persistent system aliases", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Touches `mapdb/store.py`, `mapping/naming.py`, the rename dialog and the system
 panel. If the alias should sync on cloud maps, it also touches `sync/protocol.py` and the server (see
 open decision 2).

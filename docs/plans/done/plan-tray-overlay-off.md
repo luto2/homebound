@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-10, commit `82d0d14`). Deviations: TrayMenu mockups lost the "Show overlay Ctrl+Shift+O" hint with the item; `plan-overlay-shortcut.md` may want it back.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: "Off" in the tray's overlay mode list", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. One commit: `homebound/ui/map_window.py`, its tests and the TrayMenu spec.
 
 ## Problem (verified in the code)

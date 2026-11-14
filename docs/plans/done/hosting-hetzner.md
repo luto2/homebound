@@ -1,5 +1,9 @@
 # Homebound Sync Server: Hetzner hosting spec
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Homebound Sync Server: Hetzner hosting spec", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 > **STATUS: the server is built and merged into `master` (1.0.0). §15 has the setup steps, command by command. Backups (§7) are set up in `packaging/server/` (Litestream to Hetzner Object Storage, encrypted with age, with a daily restore test).**
 > It belongs with [`cloud-sync-plan.md`](cloud-sync-plan.md). Open items are in §14.
 

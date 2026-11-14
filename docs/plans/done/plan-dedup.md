@@ -12,6 +12,10 @@ Status: implemented 2026-11-02 on branch `dedup`. Deviations from the plan:
 - Remaining `"K162"` hits outside the list below are deliberate K162 special cases
   (`naming.guess_static`, `tracker` copying a sig type to its connection, the signature table's K162 size).
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: remove duplicated functionality", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Each step stands alone and can be its own commit; steps 1 and 2 first,
 because they fix behaviour, the rest is cleanup.
 

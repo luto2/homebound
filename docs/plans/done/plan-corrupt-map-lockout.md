@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-10, commit `7be8fbb`). Deviations: the start-up error uses `QMessageBox.critical` (the plan said the app has none; it already had one). The damaged-file warning repeats at every start while a `.damaged` file exists; Settings opens by itself only on the start that set it aside.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: corrupt map locks the app out", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Touches the same files as the damaged-backup, prune-error and backup URI plans (see "Overlaps").
 
 ## Problem, as verified

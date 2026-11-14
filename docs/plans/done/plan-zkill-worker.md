@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-10, commit `3241a44`). Deviations: also restarts a dead worker thread from `request()` ("zKill worker restarted" on the status line); `eve_scout` closes its client in a `finally`.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: keep the zKill worker alive", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. One commit, `homebound/zkill.py` plus `tests/test_zkill.py`.
 
 Checked against the code on master (d11d146) on 2026-11-06. The findings table in

@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-12, `597e10e`). Deviations: mypy at 112 errors (from 342), CI step non-blocking; graphify extractor problems need an upstream fix, query habits documented in HOW_TO.md.
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: tooling (type checker, graphify)", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Each step stands alone and can be its own commit. Nothing here touches app
 behaviour, so none of it is urgent; the order is by value for the effort.
 

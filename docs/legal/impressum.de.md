@@ -3,6 +3,10 @@
 
 # Impressum
 
+- **Audience:** visitors of the sync service and the owner; the German text is binding.
+- **Scope:** the draft of the Impressum for the sync service. The English translation is the `.en.md` file next to it, once written.
+- **Kept current:** draft, to be checked by a lawyer before the sync service goes public (2026-11-14).
+
 **Angaben gemäß § 5 DDG**
 
 Tobias Luther

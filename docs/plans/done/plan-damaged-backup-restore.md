@@ -2,6 +2,10 @@
 
 Status: implemented (2026-11-10, commit `f2497b3`). Deviations: none; a malformed map entry is dropped and the rest kept (owner decision).
 
+- **Audience:** the owner and coding agents who need to know why something was built the way it is.
+- **Scope:** the record of "Plan: damaged backups and Restore", finished. The status line says where the build differs from the plan; where the code lives now is in [`code-map.md`](../../code-map.md).
+- **Kept current:** archived with the plan, not updated after it was implemented (see the status line). The rest of the text is the plan as it was written.
+
 Depends on: nothing. Touches the same file as the corrupt-map lockout, backup URI handling and prune-error plans (see "Overlaps").
 
 ## Problem, as verified
