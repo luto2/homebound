@@ -223,9 +223,10 @@ def make_worktree(sha: str) -> Path:
         shutil.rmtree(worktree, ignore_errors=True)
     git("worktree", "prune")
     git("worktree", "add", "--detach", str(worktree), sha)
-    # The design tokens are in the QWD submodule (design/qwd/); borrow the checkout's objects where it has them.
+    # The QWD submodule (design/qwd/, private), so the test that the committed design copies are current can run.
+    # Without access the test skips; borrow the checkout's objects where it has them.
     reference = ["--reference", str(REPO / "design" / "qwd")] if (REPO / "design" / "qwd" / ".git").exists() else []
-    git("submodule", "update", "--init", *reference, cwd=worktree)
+    git("submodule", "update", "--init", *reference, cwd=worktree, check=False)
     # The source downloads are 125 MB and change weekly; share the checkout's cache like CI caches it.
     cache = REPO / "data" / "cache"
     if cache.is_dir():

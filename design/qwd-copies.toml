@@ -1,0 +1,9 @@
+# Files this repo commits as copies of Quantum Works Design outputs (plan §13 of the QWD repo).
+# design/qwd/ is private, so public clones, the source tarball and the packages read these copies instead.
+# Never edit a copy by hand: after bumping the submodule, run
+#     python3 design/qwd/tools/hooks/sync_copies.py
+# and commit the pointer and the copies together. tests/test_theme.py fails when a copy is stale.
+
+[[copy]]
+from = "dist/homebound/dark/tokens.json"   # inside design/qwd/
+to = "homebound/theme/tokens.json"
