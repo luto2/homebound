@@ -21,6 +21,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true                          # design/qwd/: the design tokens (Quantum Works Design)
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}

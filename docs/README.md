@@ -19,7 +19,7 @@
 | Read the legal texts (German is binding) | [`docs/legal/`](legal/) |
 | Test a build by hand | [`docs/testing/`](testing/windows.md) |
 | Read an old audit or crash analysis | [`docs/investigations/`](investigations/) (dated, archived) |
-| Look up how the UI should look | [`design-system/`](../design-system/README.md) |
+| Look up how the UI should look | [`design/qwd/`](../design/qwd/README.md) (Quantum Works Design; Homebound's part is `design/qwd/projects/homebound/`) |
 | Build or ship a package | [`packaging/README.md`](../packaging/README.md) |
 
 `docs/images/` holds the screenshots and sketches the docs use. `docs/private/` is gitignored: operations notes with secrets-adjacent detail live there and are never linked from tracked docs.

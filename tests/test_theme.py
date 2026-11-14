@@ -1,4 +1,5 @@
 """Tests for the design tokens, the style sheet and the shared painting helpers."""
+import json
 import re
 
 import pytest
@@ -10,7 +11,7 @@ from PySide6.QtGui import (QBrush, QColor, QFont, QFontDatabase, QFontMetricsF, 
 from PySide6.QtWidgets import QLabel
 
 from homebound.mapdb.store import LIFETIME_1H, LIFETIME_4H, LIFETIME_EXPIRED, LIFETIME_STABLE
-from homebound.theme import painting
+from homebound.theme import painting, tokens
 from homebound.theme.painting import (
     CLASSES, EFFECTS, SITE_TOKENS, MARKER_POLYGONS, class_badge_width, draw_character_marker, draw_chip,
     draw_class_badge, draw_effect, draw_halo_text, draw_line_grid, draw_owner,
@@ -39,6 +40,30 @@ def painted(pixmap: QPixmap) -> bool:
 
 
 # ---------------------------------------------------------------- tokens
+
+def test_tokens_come_from_the_qwd_submodule() -> None:
+    """The app's colours are the generated QWD file's values (design/qwd/dist/homebound/dark/tokens.json)."""
+    assert tokens.SUBMODULE_TOKENS.is_file()
+    generated = {t["name"]: t["value"] for t in json.loads(tokens.SUBMODULE_TOKENS.read_text())["color"]["tokens"]}
+    assert HEX_COLORS["bg-0"] == generated["bg-0"]
+    assert tokens.RAW_COLORS == generated
+
+
+def test_tokens_prefer_the_submodule_then_the_bundled_copy(tmp_path, monkeypatch) -> None:
+    """A packaged build has no submodule: it reads the copy homebound.spec bundles next to tokens.py."""
+    submodule, bundled = tmp_path / "submodule.json", tmp_path / "bundle"
+    bundled.mkdir()
+    (bundled / "tokens.json").write_text('{"from": "bundle"}')
+    monkeypatch.setattr(tokens, "files", lambda package: bundled)
+    monkeypatch.setattr(tokens, "SUBMODULE_TOKENS", submodule)
+    assert tokens._load_tokens() == {"from": "bundle"}
+    submodule.write_text('{"from": "submodule"}')
+    assert tokens._load_tokens() == {"from": "submodule"}
+    submodule.unlink()
+    (bundled / "tokens.json").unlink()
+    with pytest.raises(FileNotFoundError, match="git submodule update --init"):
+        tokens._load_tokens()
+
 
 def test_alpha_is_last_in_tokens() -> None:
     """An 8-digit hex token is read in CSS order (#rrggbbaa) for both QColor values and style sheets."""

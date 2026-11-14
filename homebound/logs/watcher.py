@@ -54,10 +54,24 @@ class LogScanner:
         self.log_directory = Path(log_directory)
         self.characters: dict[int, CharacterState] = {}
         self.unlisted_senders: set[str] = set()  # EVE-prefixed system-looking senders that were ignored
+        self.ignored: set[int] = set()           # character IDs whose logs are skipped (test server copies)
 
     def valid(self) -> bool:
         """Return whether the log folder exists."""
         return self.log_directory.is_dir()
+
+    def ignore(self, character_ids: set[int]) -> bool:
+        """Skip the logs of these characters from now on and forget what was read of them.
+
+        Returns:
+            True if a character the scanner knew was dropped.
+        """
+        require_type(character_ids, (set, frozenset), "character_ids")
+        self.ignored |= character_ids
+        dropped = [character_id for character_id in character_ids if character_id in self.characters]
+        for character_id in dropped:
+            del self.characters[character_id]
+        return bool(dropped)
 
     def newest_files(self) -> dict[int, LogFile]:
         """Return the newest Local log of each character, by the start time in the file name."""
@@ -66,7 +80,7 @@ class LogScanner:
             return newest
         for path in self.log_directory.glob("Local_*.txt"):
             log_file = LogFile.from_path(path)
-            if log_file and (log_file.character_id not in newest
+            if log_file and log_file.character_id not in self.ignored and (log_file.character_id not in newest
                              or log_file.started > newest[log_file.character_id].started):
                 newest[log_file.character_id] = log_file
         return newest
@@ -197,8 +211,10 @@ class LogWatcher(QObject):
         self.timer.start(self.interval_ms)
 
     def set_log_directory(self, log_directory: str) -> None:
-        """Switch to another log folder and poll it at once."""
+        """Switch to another log folder and poll it at once; ignored characters stay ignored."""
+        ignored = self.scanner.ignored
         self.scanner = LogScanner(log_directory)
+        self.scanner.ignored = ignored
         self.poll()
 
     def poll(self) -> ScanResult | None:

@@ -6,9 +6,9 @@ haven't touched yet, and when you need the file behind something you see in the 
 - **Audience:** anyone working on the code: the owner, contributors and coding agents.
 - **Scope:** the desktop app (`homebound/`), the sync server (`homebound_server/`), packaging,
   tooling and tests. How to *use* the app is in the [user guide](user/README.md); how the parts fit together is in [`architecture.md`](architecture.md); how the UI should
-  *look* is in [`design-system/`](../design-system/README.md); why things were built the way they
+  *look* is in Quantum Works Design, the submodule [`design/qwd/`](../design/qwd/README.md); why things were built the way they
   are is in the plans in [`docs/plans/`](plans/README.md).
-- **Kept current:** checked against `master` at 1.0.0 (2026-11-09), with the docs paths and the doc check of 2026-11-14. Files and symbols are named
+- **Kept current:** checked against `master` at 1.0.0 (2026-11-09), with the docs paths and the doc check of 2026-11-14, and the ESI check of 2026-11-14 (`7af1861`). Files and symbols are named
   instead of line numbers, because line numbers go stale with every edit. When you move a feature
   or add a module, update its row here in the same commit.
 
@@ -27,9 +27,9 @@ haven't touched yet, and when you need the file behind something you see in the 
 ## 1. Layers at a glance
 
 ```
-             Local chat logs            probe scanner paste          zKill / EVE-Scout (HTTP)
+             Local chat logs            probe scanner paste       zKill / EVE-Scout / ESI (HTTP)
                    │                            │                              │
-          logs/ (parser, watcher)   mapping/signature_parser       zkill.py, eve_scout.py, http.py
+          logs/ (parser, watcher)   mapping/signature_parser   zkill.py, eve_scout.py, esi.py, http.py
                    │                            │                              │
                    └──────────► mapping/ (tracker, naming, chain, scan_status) ◄┘
                                                │
@@ -159,6 +159,7 @@ others show or edit it.
 | Route search over gates, map wormholes and Thera/Turnur links | `routing.py` `build_graph`, `search`, `routes`, `RouteOptions` |
 | Routes dock (trade hubs, own destinations, strip, copy route) | `ui/route_dock.py`; data from `ui/state.py` `AppState.routes`, `route_options` |
 | EVE-Scout Thera/Turnur connections | `eve_scout.py` `EveScoutFetcher`, `parse_signatures` |
+| Test server copies (two IDs with one name: ESI says which is on Tranquility, the others are deleted and ignored) | `esi.py` `DuplicateChecker`, `split_by_server`; started by `ui/state.py` `AppState.check_duplicate_names`, applied by `AppState.ignore_copies`; remembered in `settings.py` `Settings.ignored_characters`; skipped by `logs/watcher.py` `LogScanner.ignore` |
 | zKillboard activity (kills 1h/24h, pod kills, last kill) | `zkill.py` `ZkillFetcher`, `summarize`; cached in the map's `zkill` table (`mapdb/store.py` `ZkillStats`) |
 | zKill activity list (what died: ship, value, NPC/solo; folded section in the system panel, three rows in the node tooltip) | `ui/activity_list.py` `ActivityList`, `kill_text`; rows from `zkill.py` `summarize_kills`, stored in `zkill_kills` (`mapdb/store.py` `KillSummary`); ship names from `universe/db.py` `ship_name` |
 | zKill meter and recent-kill mark | `theme/painting.py` `draw_zkill`, `draw_recent_kill`; `ui/map_scene.py` `SystemNode`; `ui/overlay.py` |
@@ -203,6 +204,7 @@ detail.
 | `routing.py` | Route search |
 | `zkill.py` | zKill worker and activity summary |
 | `eve_scout.py` | EVE-Scout worker |
+| `esi.py` | ESI check for test server copies of a character |
 | `http.py` | HTTP client and the fetcher base class |
 | `validation.py` | Argument checks (`require_*`) used by every package |
 
@@ -253,7 +255,7 @@ detail.
 
 | Module | Owns |
 |---|---|
-| `tokens.py` | Design tokens from `design-system/tokens.json` as Qt values |
+| `tokens.py` | Design tokens from `design/qwd/dist/homebound/dark/tokens.json` (the QWD submodule) as Qt values |
 | `qss.py` | Style sheet and palette |
 | `painting.py` | QPainter helpers: badges, chips, markers, meters, edges, halo text, grids |
 | `fonts.py` | Bundled fonts |
@@ -358,7 +360,7 @@ Server ops files (Litestream, restore test, `hb-deploy` auto-deploy timer) are i
 | Push gate (doc check, local tests, CI, two reviewers) | `tools/push_gate.py`; `.githooks/pre-push` |
 | Doc check (dead links, header blocks); tests in `tests/test_check_docs.py` | `tools/check_docs.py`; CI step in `test.yml` |
 | Package metadata, scripts, coverage settings | `pyproject.toml` |
-| UI specs and mockups | `design-system/` (start at its `README.md`; Qt notes in `qt-implementation.md`) |
+| UI specs and mockups | `design/qwd/projects/homebound/` in the QWD submodule (Qt notes in `qt-implementation.md`); never edited here, changes are QWD requests |
 
 ## 8. Tests
 

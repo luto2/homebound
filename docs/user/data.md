@@ -2,7 +2,7 @@
 
 - **Audience:** players using Homebound.
 - **Scope:** The data folder, backups, restore and network access. The other topics are on the [contents page](README.md).
-- **Kept current:** checked against `702f2d5` (2026-11-14). Update it when the behaviour it describes changes.
+- **Kept current:** checked against `7af1861` (2026-11-14). Update it when the behaviour it describes changes.
 
 The data folder is `~/.local/share/homebound/` on Linux and `%APPDATA%\Homebound\` on Windows.
 
@@ -64,4 +64,4 @@ and restore the map with *Replace*. Homebound warns at every start while a `.dam
 there; delete it once the map is back. A map that can't be opened for another reason, such as a
 read-only or locked file, is never moved: at start Homebound says why and quits.
 
-**Network**: apart from the map data download on first start (and `--build-static`), the only requests go to zKillboard, for systems in visible chains, and to EVE-Scout (api.eve-scout.com), for the public list of Thera and Turnur connections. zKill requests are rate-limited to one per second and cached for 10 minutes; turn them off in Settings → zKill. EVE-Scout is asked once every 5 minutes and nothing about you or your map is sent; turn it off in Settings → Routes.
+**Network**: apart from the map data download on first start (and `--build-static`), the only requests go to zKillboard, for systems in visible chains, and to EVE-Scout (api.eve-scout.com), for the public list of Thera and Turnur connections. zKill requests are rate-limited to one per second and cached for 10 minutes; turn them off in Settings → zKill. EVE-Scout is asked once every 5 minutes and nothing about you or your map is sent; turn it off in Settings → Routes. ESI (EVE's public web API, no login) is asked only when two character IDs in your logs share a name, which happens when you played a test server (Singularity, Thunderdome) copy of a character: Homebound sends the two IDs, keeps the one Tranquility knows and ignores the other from then on.

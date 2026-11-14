@@ -2,7 +2,7 @@
 
 - **Audience:** people who find Homebound: players and contributors.
 - **Scope:** what Homebound is, the one-line install, a feature overview, and the developer entry points. Everything else is linked: the [user guide](docs/user/README.md), the [doc map](docs/README.md).
-- **Kept current:** checked against `8c371b5` (2026-11-14). Update it when the feature list, the install command or the development commands change.
+- **Kept current:** checked against `7af1861` (2026-11-14). Update it when the feature list, the install command or the development commands change.
 
 An offline wormhole mapper for EVE Online. Homebound follows your characters through EVE's Local chat logs, builds the chain as you jump, names new systems with the scheme you pick, and shows the chain your active character is in on a small overlay over the game. It needs no ESI login, and all map data stays on your machine.
 
@@ -42,7 +42,7 @@ On Windows, download `Homebound-<version>-windows-setup.exe` from the [releases]
 3. Set your home system and pick a naming scheme.
 4. Undock and jump. To add sigs, select a system, press Ctrl+A and Ctrl+C in the probe scanner, then Ctrl+V in Homebound.
 
-**The [user guide](docs/user/README.md) is the full manual**: naming and bookmarks, the signature table, editing the map by hand, several maps, the overlay modes, settings, keys, backups and troubleshooting. After the one-time data download Homebound works offline; the two optional lookups it makes are listed in [Where your data lives](docs/user/data.md).
+**The [user guide](docs/user/README.md) is the full manual**: naming and bookmarks, the signature table, editing the map by hand, several maps, the overlay modes, settings, keys, backups and troubleshooting. After the one-time data download Homebound works offline; the lookups it makes are listed in [Where your data lives](docs/user/data.md).
 
 ## Static data
 
@@ -65,7 +65,7 @@ uv run python -m homebound.logs.replay path/to/Local_*.txt --home J161940   # re
 - Only one Homebound runs per data folder: a second start raises the running window and exits with code 0. To run two on purpose (sync tests), start the second with `python -m homebound --allow-second-instance`, ideally with its own `HOMEBOUND_HOME` so the two don't share `settings.json` and map files. Each process signs its sync ops with its own connection ID.
 - `homebound/logs/` reads the chat logs, `homebound/mapping/` turns jumps into the map (tracker, naming, signature parsing), `homebound/mapdb/` stores it, `homebound/ui/` is the PySide6 interface.
 - Names are spelled out (no abbreviations), and every public entry point checks its arguments with `homebound/validation.py`.
-- The UI follows `design-system/`: tokens, component specs and Qt notes.
+- The UI follows Quantum Works Design, the git submodule at `design/qwd/` (tokens, component specs and Qt notes; Homebound's part is `design/qwd/projects/homebound/`). Clone with `--recurse-submodules`, or run `git submodule update --init`.
 - Known bugs and loose ends go in `TODO.md`. Design plans are in [docs/plans/](docs/plans/) (open ones at the top, finished ones in [done/](docs/plans/done/)); [docs/code-map.md](docs/code-map.md) says where each feature lives in the code.
 
 **Git hooks.** A fresh clone must point git at the repo's hooks, or neither the push gate nor the graph refresh runs. Check the hooks path setting (`git config --get` with the key `core.hooksPath`): it should print `.githooks`. If it prints nothing, set it to `.githooks`.

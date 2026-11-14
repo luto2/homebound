@@ -286,6 +286,22 @@ def test_marker_slots_fill_up_then_share() -> None:
         settings.slot_for("7")
 
 
+def test_ignore_character_drops_its_slot_pin_and_shared_location() -> None:
+    """An ignored character keeps its name in the settings and loses everything else that pointed at it."""
+    settings = Settings(overlay_pinned_character=8, sync_presence={"map-1": [7, 8], "map-2": [7]})
+    settings.slot_for(7), settings.slot_for(8)
+    assert settings.ignore_character(8, "Yaentei Tacia Ocaras")
+    assert settings.ignored_characters == {"8": "Yaentei Tacia Ocaras"} and settings.ignored_ids() == {8}
+    assert "8" not in settings.character_slots and "7" in settings.character_slots
+    assert settings.overlay_pinned_character is None
+    assert settings.sync_presence == {"map-1": [7], "map-2": [7]}
+    assert not settings.ignore_character(8, "Yaentei Tacia Ocaras")
+    settings.ignored_characters["not an id"] = "x"
+    assert settings.ignored_ids() == {8}
+    with pytest.raises(ValueError):
+        settings.ignore_character(8, "")
+
+
 def test_detect_log_directories_in_a_fake_home(tmp_path, monkeypatch) -> None:
     """A Proton prefix in a Steam library listed in libraryfolders.vdf is found."""
     monkeypatch.setattr(Path, "home", lambda: tmp_path)

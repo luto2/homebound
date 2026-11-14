@@ -424,6 +424,53 @@ def test_character_rows_merge_database_and_logs(state, tmp_path) -> None:
         state.character_location("2")
 
 
+def test_a_shared_name_asks_esi_once_and_only_then(state, tmp_path) -> None:
+    """Two IDs with one name queue one ESI check; distinct names and nameless logs queue none."""
+    write_character_log(tmp_path, 3, "Amy", HOME.name)
+    write_character_log(tmp_path, 4, "Bob", "Jita")
+    state.watcher.poll()
+    assert state.check_duplicate_names() == 0 and state.duplicate_checker.queue.empty()
+    write_character_log(tmp_path, 5, " amy ", "Jita")              # the same name, another ID
+    state.watcher.poll()                                            # charactersChanged runs the check
+    assert state.duplicate_checker.queue.get_nowait() == ("Amy", frozenset({3, 5}))
+    assert state.check_duplicate_names() == 0                       # asked recently: not again
+
+
+def test_a_test_server_copy_is_deleted_and_stays_ignored(state, tmp_path) -> None:
+    """Once ESI names the Tranquility ID, the copy leaves the map, the logs, the follow and the next map."""
+    write_character_log(tmp_path, 3, "Amy", HOME.name)
+    write_character_log(tmp_path, 5, "Amy", "Jita")
+    state.watcher.poll()
+    state.settings.slot_for(5)
+    state.set_followed(5)
+    notices = spy(state.notice)
+    assert state.ignore_copies("Amy", 3, [5]) == [5]
+    assert [row[0] for row in state.character_rows()] == [3]
+    assert [row["id"] for row in state.store.characters()] == [3]
+    assert state.followed is None and "5" not in state.settings.character_slots
+    assert notices[0][0] == "info" and "test server copy" in notices[0][1]
+    assert json.loads((tmp_path / "settings.json").read_text())["ignored_characters"] == {"5": "Amy"}
+    state.watcher.poll()                                            # its log is skipped from now on
+    assert set(state.watcher.characters) == {3}
+    assert state.ignore_copies("Amy", 3, [5, 3]) == [] and len(notices) == 1
+    state.stop()
+    state.store.set_character(5, "Amy", HOME.id, utc_now_iso())     # an old map that still has the copy
+    reopened = AppState(UNIVERSE, state.settings)
+    try:
+        assert [row["id"] for row in reopened.store.characters()] == [3]
+        assert 5 in reopened.watcher.scanner.ignored
+    finally:
+        reopened.stop()
+
+
+def test_esi_status_goes_to_the_log(caplog) -> None:
+    """A check that couldn't decide is a warning in the log, not on the status bar."""
+    with caplog.at_level("INFO", logger="homebound.state"):
+        AppState._log_esi_status("warn", "ESI: HTTP 502")
+        AppState._log_esi_status("ok", "fine")
+    assert [record.levelname for record in caplog.records] == ["WARNING", "INFO"]
+
+
 def test_characters_in_only_online(state) -> None:
     """Only online (client open) or recent (fresh log) characters count as being in a system."""
     state.store.set_character(2, "Zed", HOME.id, "2026-10-30T12:00:00+00:00")

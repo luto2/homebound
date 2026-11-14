@@ -1,9 +1,20 @@
 # Left out on request
 tools/
 
-# The summaries in design-system/summaries/ stand in for the mockups and their specs
-design-system/previews/
-design-system/components/
+# The QWD submodule: only Homebound's part, and its summaries stand in for the mockups and their specs
+design/qwd/projects/homebound/previews/
+design/qwd/projects/homebound/components/
+design/qwd/projects/imt/
+design/qwd/projects/tickerline/
+design/qwd/core/components/
+design/qwd/dist/
+design/qwd/generator/
+design/qwd/server/
+design/qwd/site/
+design/qwd/tools/
+design/qwd/tests/
+design/qwd/deploy/
+design/qwd/docs/
 
 # Images would each need a vision pass; the packaging and summary files name them instead
 *.png

@@ -166,6 +166,33 @@ def test_scanner_skips_a_bad_file_name(tmp_path) -> None:
     assert [change.system for change in scanner.poll().changes] == ["J161940"]
 
 
+def test_scanner_skips_ignored_characters(tmp_path) -> None:
+    """An ignored character is dropped at once and its logs are never read again; the others still track."""
+    write_log(tmp_path / "Local_20261028_165148_7.txt", HEADER)
+    write_log(tmp_path / "Local_20261028_165148_8.txt", HEADER)
+    scanner = LogScanner(tmp_path)
+    scanner.poll()
+    assert set(scanner.characters) == {7, 8}
+    assert scanner.ignore({8, 9})
+    assert set(scanner.characters) == {7} and set(scanner.newest_files()) == {7}
+    scanner.poll()
+    assert set(scanner.characters) == {7}
+    assert not scanner.ignore({9})
+    with pytest.raises(TypeError):
+        scanner.ignore([7])
+
+
+def test_watcher_keeps_ignored_characters_in_a_new_folder(tmp_path, qt_application) -> None:
+    """Switching the log folder doesn't forget who is ignored."""
+    watcher = LogWatcher(str(tmp_path))
+    watcher.scanner.ignore({8})
+    other = tmp_path / "other"
+    other.mkdir()
+    write_log(other / "Local_20261028_165148_8.txt", HEADER)
+    watcher.set_log_directory(str(other))
+    assert watcher.scanner.ignored == {8} and watcher.characters == {}
+
+
 def test_scanner_partial_write(tmp_path) -> None:
     """A half-written line waits for the rest."""
     path = tmp_path / "Local_20261028_165148_7.txt"

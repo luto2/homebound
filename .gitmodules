@@ -1,0 +1,3 @@
+[submodule "design/qwd"]
+	path = design/qwd
+	url = https://github.com/luto2/quantum-works-design.git

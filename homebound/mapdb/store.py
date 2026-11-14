@@ -1397,6 +1397,17 @@ class Store:
         self._commit()
         return previous
 
+    def delete_character(self, character_id: int) -> bool:
+        """Forget a character and where it was.
+
+        Returns:
+            True if the map had it.
+        """
+        require_integer(character_id, "character_id", minimum=1)
+        removed = self.database.execute("DELETE FROM characters WHERE id=?", (character_id,)).rowcount > 0
+        self._commit()
+        return removed
+
     def characters(self) -> list[sqlite3.Row]:
         """Return every known character, ordered by name."""
         return list(self.database.execute("SELECT * FROM characters ORDER BY name"))

@@ -185,6 +185,17 @@ def test_characters_remember_the_previous_system(store) -> None:
         store.set_character(7, "", JITA, utc_now_iso())
 
 
+def test_delete_character(store) -> None:
+    """A deleted character is gone from the map; deleting it again finds nothing."""
+    store.set_character(7, "Pilot", HOME.id, utc_now_iso())
+    store.set_character(8, "Other", JITA, utc_now_iso())
+    assert store.delete_character(7)
+    assert [row["id"] for row in store.characters()] == [8]
+    assert not store.delete_character(7)
+    with pytest.raises(ValueError):
+        store.delete_character(0)
+
+
 def test_zkill_stats_round_trip(store) -> None:
     """Stats are stored per system and replaced on the next fetch."""
     stats = ZkillStats(HOME.id, 1, 5, 0, None, utc_now_iso())

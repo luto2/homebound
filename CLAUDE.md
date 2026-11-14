@@ -15,7 +15,7 @@ Run from source, tests, mypy, the doc check, the push gate and the packaging com
 - **Every commit passes the push gate** (`tools/push_gate.py`: tests, GitHub CI and reviewers); do not bypass it.
 - **mypy errors are fixed by a Haiku agent.** `uv run mypy` stays at 0.
 - **Names are spelled out** (no abbreviations), and public entry points check arguments with `homebound/validation.py`.
-- **The UI follows `design-system/`.** The look is original; the game's own icons are fine to use.
+- **The UI follows Quantum Works Design**, the submodule at `design/qwd/` (see the section at the end). The look is original; the game's own icons are fine to use.
 - **Do not stage everything.** `.claude/worktrees/`, `.coverage` and `.vscode/` are untracked on purpose; add files by path.
 
 ## Where work is tracked
@@ -34,4 +34,4 @@ Each task in `TODO.md` ends with an effort rating from 1 (a few lines, the fix i
 
 ## Folder rules
 
-Each of these has its own `CLAUDE.md` with what matters while working there: [`homebound_server/`](homebound_server/CLAUDE.md), [`packaging/`](packaging/CLAUDE.md), [`tests/`](tests/CLAUDE.md), [`design-system/`](design-system/CLAUDE.md).
+Each of these has its own `CLAUDE.md` with what matters while working there: [`homebound_server/`](homebound_server/CLAUDE.md), [`packaging/`](packaging/CLAUDE.md), [`tests/`](tests/CLAUDE.md).

@@ -82,6 +82,8 @@ class Settings:
     unknown_jump_default: str = "ignore"  # "add" | "ignore"
     focus_on_wormhole_jump: bool = True   # centre the map on the system a character just jumped into by wormhole
     character_slots: dict = field(default_factory=dict)          # character id (str) -> marker slot 1..6
+    # test server copies (another ID with the name of a Tranquility character, see homebound/esi.py), never tracked
+    ignored_characters: dict = field(default_factory=dict)       # character id (str) -> name
     signature_column_widths: dict = field(default_factory=dict)  # sig table column (str) -> width px
     backup_copy_directory: str = ""       # also copy each backup here (e.g. a synced folder); empty = off
     route_destinations: list = field(default_factory=lambda: list(TRADE_HUBS))   # system names, all maps
@@ -355,6 +357,33 @@ class Settings:
             free = next((slot for slot in range(1, MARKER_SLOTS + 1) if slot not in used), None)
             self.character_slots[key] = free or len(self.character_slots) % MARKER_SLOTS + 1
         return self.character_slots[key]
+
+    def ignored_ids(self) -> set[int]:
+        """Return the IDs of the ignored characters (keys of ``ignored_characters`` that aren't IDs are skipped)."""
+        return {int(key) for key in self.ignored_characters if isinstance(key, str) and key.isdigit()}
+
+    def ignore_character(self, character_id: int, name: str) -> bool:
+        """Never track a character again, and drop its marker slot, overlay pin and shared location.
+
+        Args:
+            character_id: The character ID.
+            name: Its name, kept so the settings file says who it was.
+
+        Returns:
+            True if it wasn't ignored yet.
+        """
+        require_integer(character_id, "character_id", minimum=1)
+        require_text(name, "name")
+        key = str(character_id)
+        new = key not in self.ignored_characters
+        self.ignored_characters[key] = name
+        self.character_slots.pop(key, None)
+        if self.overlay_pinned_character == character_id:
+            self.overlay_pinned_character = None
+        for map_id, shared in self.sync_presence.items():
+            if isinstance(shared, list) and character_id in shared:
+                self.sync_presence[map_id] = [other for other in shared if other != character_id]
+        return new
 
 
 def steam_libraries() -> list[Path]:

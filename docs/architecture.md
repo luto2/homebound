@@ -2,7 +2,7 @@
 
 - **Audience:** someone who does not know the code yet: the owner, contributors and coding agents.
 - **Scope:** how the parts of Homebound fit together, what each owns and what it must never do. The file behind a feature is in [`code-map.md`](code-map.md); how to use the app is in the [user guide](user/README.md).
-- **Kept current:** checked against `302ae37` (2026-11-14). Update it when a part is added or removed, when data starts to flow a new way, or when the sync protocol number changes (now protocol 2, the oldest accepted is 1).
+- **Kept current:** checked against `7af1861` (2026-11-14). Update it when a part is added or removed, when data starts to flow a new way, or when the sync protocol number changes (now protocol 2, the oldest accepted is 1).
 
 ## The parts
 
@@ -21,6 +21,7 @@ flowchart LR
     state --> overlay["Overlay"]
     zkill["zKillboard"] --> state
     scout["EVE-Scout"] --> state
+    esi["ESI"] -->|"only for a shared name"| state
     state <--> sync["Sync client<br/>homebound/sync"]
     sync <-->|"WebSocket, protocol 2"| server["Sync server<br/>homebound_server"]
     sde["EVE SDE, Wanderer, anoik"] -->|"built once"| universe
@@ -50,10 +51,11 @@ Read the diagram left to right: log lines and pastes turn into map changes; the 
 - The overlay follows the focused EVE client through `homebound/platform/` (a KWin script on Plasma, X11 tools, or the Windows API).
 - Files: [code-map §1 and §3](code-map.md#1-layers-at-a-glance).
 
-### External services: zKillboard and EVE-Scout
+### External services: zKillboard, EVE-Scout and ESI
 
-- **Owns:** two optional lookups, `homebound/zkill.py` (kill activity for systems in visible chains, one request per second, cached 10 minutes) and `homebound/eve_scout.py` (public Thera and Turnur connections for routes, every 5 minutes), both through `homebound/http.py`.
-- **Never:** sends anything about the user or the map. Both can be turned off in Settings, and the app works without them.
+- **Owns:** two optional lookups, `homebound/zkill.py` (kill activity for systems in visible chains, one request per second, cached 10 minutes) and `homebound/eve_scout.py` (public Thera and Turnur connections for routes, every 5 minutes), and one check, `homebound/esi.py`. All three go through `homebound/http.py`.
+- **ESI** (EVE's public web API, no login) is asked only when two character IDs in the logs share a name. A character copied to a test server (Singularity, Thunderdome) gets another ID but writes its Local logs to the same folder under the same name. ESI only knows Tranquility, the live server, so the ID it knows under that name stays and the others are deleted from the map and ignored for good (`Settings.ignored_characters`). While no name is shared, nothing is asked.
+- **Never:** sends anything about the user or the map; the ESI check sends only the two character IDs. zKill and EVE-Scout can be turned off in Settings, and the app works without all three.
 
 ### Sync server and protocol
 

@@ -1,4 +1,5 @@
-"""Shared application state: store, universe, naming, tracker, watcher, zKill, EVE-Scout -> Qt signals."""
+"""Shared application state: store, universe, naming, tracker, watcher, zKill, EVE-Scout, ESI -> Qt signals."""
+import logging
 import sqlite3
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
@@ -7,6 +8,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from .. import backup, routing, settings as settings_module
+from ..esi import DuplicateChecker
 from ..eve_scout import EveScoutFetcher
 from ..logs.parser import SystemChange
 from ..logs.watcher import LogWatcher
@@ -27,6 +29,7 @@ EXPIRY_INTERVAL_MS = 5 * 60 * 1000
 WATCH_CHECK_DELAY_MS = 1000           # a burst of map changes is checked against the watch lists once
 SCAN_AGE_INTERVAL_MS = 60 * 1000
 PRESENCE_ORDER = {"online": 0, "recent": 1, "offline": 2}    # how character_rows sorts
+log = logging.getLogger("homebound.state")
 
 
 # SQLite errors that mean the file itself is damaged; locked, read-only or missing-folder errors don't count
@@ -131,6 +134,7 @@ class AppState(QObject):
     _zkillUpdated = Signal(int)
     _zkillStatus = Signal(str, str)
     _scoutStatus = Signal(str, str)
+    _duplicatesDecided = Signal(str, object, object)   # name, Tranquility ID, the other IDs (from the ESI thread)
 
     def __init__(self, universe: Universe, settings: Settings, database_path: str | None = None,
                  auto_backup: bool = False) -> None:
@@ -193,6 +197,7 @@ class AppState(QObject):
         # names of the characters whose client window is open; None: this platform can't list windows
         self.open_characters: set[str] | None = None
         self.watcher = LogWatcher(settings.log_directory)
+        self.watcher.scanner.ignore(settings.ignored_ids())
         self.watcher.systemChanged.connect(self.on_system_change)
         self.watcher.charactersChanged.connect(self.charactersChanged)
         self.watcher.statusChanged.connect(lambda level, text: self.status.emit("logs", level, text))
@@ -204,6 +209,9 @@ class AppState(QObject):
         self._scoutStatus.connect(lambda level, text: self.status.emit("scout", level, text))
         self.eve_scout = EveScoutFetcher(self.scoutUpdated.emit, self._scoutStatus.emit)
         self.eve_scout.enabled = settings.eve_scout_enabled
+        self._duplicatesDecided.connect(self.ignore_copies)
+        self.duplicate_checker = DuplicateChecker(self._duplicatesDecided.emit, self._log_esi_status)
+        self.charactersChanged.connect(self.check_duplicate_names)
         self._expiry_timer: QTimer | None = None
         self._scan_age_timer: QTimer | None = None
         self.watch_alerts = WatchAlerts()
@@ -307,8 +315,13 @@ class AppState(QObject):
             MapOpenError: If the file can't be opened or read.
         """
         store = self._open_store(path)
+        ignored = self.settings.ignored_ids()
         try:
+            for character_id in ignored:
+                store.delete_character(character_id)
             for row in characters:
+                if row["id"] in ignored:
+                    continue
                 if not all(isinstance(row[column], str) and row[column].strip() for column in ("name", "seen_at")):
                     continue  # legacy row without a name or time: set_character would refuse it
                 store.set_character(row["id"], row["name"], row["system_id"], row["seen_at"])
@@ -330,6 +343,8 @@ class AppState(QObject):
         self.watcher.start()
         self.zkill.start()
         self.eve_scout.start()
+        self.duplicate_checker.start()
+        self.check_duplicate_names()
         self.check_watches(silent=True)   # what the chain reaches already at start is listed, not alerted
         self.expire()
         self._expiry_timer = QTimer(self, interval=EXPIRY_INTERVAL_MS, timeout=self.expire)
@@ -358,6 +373,7 @@ class AppState(QObject):
         """Stop the background work."""
         self.zkill.stop()
         self.eve_scout.stop()
+        self.duplicate_checker.stop()
         self.watcher.timer.stop()
         if self._expiry_timer:
             self._expiry_timer.stop()
@@ -956,6 +972,61 @@ class AppState(QObject):
         rows = [(character_id, name, system_id, self.presence(character_id, name), self.settings.slot_for(character_id))
                 for character_id, name, system_id in merged.values()]
         return sorted(rows, key=lambda row: (PRESENCE_ORDER[row[3]], (row[1] or "").lower()))
+
+    def check_duplicate_names(self) -> int:
+        """Ask ESI which character is on Tranquility wherever two IDs share a name (see ``homebound/esi.py``).
+
+        Nothing is asked while every name has one ID. A group asked recently is not asked again.
+
+        Returns:
+            The number of groups queued.
+        """
+        by_name: dict[str, set[int]] = {}
+        names: dict[str, str] = {}
+        for character_id, name, *_ in self.character_rows():
+            if name and name != str(character_id):
+                key = " ".join(name.split()).casefold()
+                by_name.setdefault(key, set()).add(character_id)
+                names.setdefault(key, name)
+        return sum(self.duplicate_checker.request(names[key], ids) for key, ids in by_name.items() if len(ids) > 1)
+
+    def ignore_copies(self, name: str, tranquility_id: int, other_ids: list[int]) -> list[int]:
+        """Delete and ignore the characters that share a Tranquility character's name (test server copies).
+
+        Their rows leave the map, the log scanner skips their logs, and the settings remember them, so no
+        map opened later takes them back.
+
+        Args:
+            name: The shared name.
+            tranquility_id: The Tranquility character, which stays.
+            other_ids: The copies.
+
+        Returns:
+            The IDs newly ignored.
+        """
+        require_integer(tranquility_id, "tranquility_id", minimum=1)
+        require_type(other_ids, list, "other_ids")
+        copies = [character_id for character_id in other_ids if character_id != tranquility_id]
+        ignored = [character_id for character_id in copies if self.settings.ignore_character(character_id, name)]
+        for character_id in copies:
+            self.store.delete_character(character_id)
+        self.watcher.scanner.ignore(set(copies))
+        if self.followed in copies:
+            self.set_followed(None)
+        if not ignored:
+            return ignored
+        self.settings.save()
+        what = "the other one (a test server copy) is" if len(ignored) == 1 else "the others (test server copies) are"
+        self.notice.emit("info", f"“{name}” was seen with {len(copies) + 1} character IDs. Only {tranquility_id} "
+                                 f"is on Tranquility, so {what} no longer tracked.")
+        self.settingsChanged.emit()
+        self.charactersChanged.emit()
+        return ignored
+
+    @staticmethod
+    def _log_esi_status(level: str, text: str) -> None:
+        """Write a status of the ESI check to the log; it has no place on the status bar."""
+        log.log(logging.WARNING if level in ("warn", "err") else logging.INFO, text)
 
     def character_location(self, character_id: int) -> int | None:
         """Return the system a character is in, or None if unknown."""

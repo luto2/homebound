@@ -1,4 +1,4 @@
-"""Cloud sync UI: the Cloud menu and its dialogs (plan §10; mockups still missing, design-system §11).
+"""Cloud sync UI: the Cloud menu and its dialogs (plan §10; mockups still missing, QWD projects/homebound/missing-mockups §11).
 
 Everything here talks to :class:`homebound.ui.sync_manager.SyncManager`; server errors are shown in
 the dialog or as a toast, and local editing never depends on any of it.

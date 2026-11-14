@@ -1,4 +1,4 @@
-"""App stylesheet and palette built from tokens (design-system/qt-implementation.md §2)."""
+"""App stylesheet and palette built from tokens (design/qwd/projects/homebound/qt-implementation.md §2)."""
 import re
 from importlib.resources import files
 

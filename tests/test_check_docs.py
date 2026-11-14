@@ -30,6 +30,6 @@ def test_the_header_block_needs_all_three_fields() -> None:
 
 
 def test_design_system_and_private_docs_need_no_header() -> None:
-    assert not check_docs.is_doc_needing_header("design-system/README.md")
+    assert not check_docs.is_doc_needing_header("design/qwd/README.md")
     assert not check_docs.is_doc_needing_header("docs/private/operations.md")
     assert check_docs.is_doc_needing_header("docs/code-map.md")

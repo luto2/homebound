@@ -16,7 +16,9 @@ NAME = "Homebound" if WINDOWS else "homebound"
 # user's machine at first start. statics_resolved.json (the pinned answers to disputed statics) is shipped so
 # that build doesn't need to ask zKillboard.
 datas = [
-    *collect_data_files("homebound"),      # theme tokens, icons, fonts + licences, schema.sql, the KWin script
+    *collect_data_files("homebound"),      # icons, fonts + licences, schema.sql, the KWin script
+    # the design tokens, from the Quantum Works Design submodule; homebound/theme/tokens.py reads them there
+    (str(ROOT / "design/qwd/dist/homebound/dark/tokens.json"), "homebound/theme"),
     *copy_metadata("homebound"),           # app_version() reads the version from here
     (str(ROOT / "data/statics_resolved.json"), "data"),
     (str(ROOT / "LICENSE"), "."),

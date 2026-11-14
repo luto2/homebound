@@ -5,7 +5,7 @@ Run ``python tools/check_docs.py`` (report only) or with ``--strict`` (exit 1 on
 What it checks:
 - every relative Markdown link points to a file that exists;
 - every ``docs/....md`` path cited in a code comment or a doc exists;
-- every doc outside ``design-system/``, ``dist/``, ``build/`` and ``docs/private/`` opens with the
+- every doc outside ``design/`` (the QWD submodule), ``dist/``, ``build/`` and ``docs/private/`` opens with the
   header block (Audience / Scope / Kept current).
 
 It does not check that a doc is accurate.
@@ -25,7 +25,7 @@ DOC_PATH = re.compile(r"docs/[A-Za-z0-9_./-]+\.md")
 HEADER_FIELDS = ("**Audience:**", "**Scope:**", "**Kept current:**")
 # Files that are not docs in the sense of the header rule.
 HEADER_EXEMPT = {"LICENSE", "THIRD_PARTY_NOTICES.md", "CLAUDE.md"}
-HEADER_EXEMPT_DIRS = ("design-system/", "dist/", "build/", "docs/private/", "homebound/theme/", "packaging/icons/")
+HEADER_EXEMPT_DIRS = ("design/", "dist/", "build/", "docs/private/", "homebound/theme/", "packaging/icons/")
 
 
 def tracked_files() -> list[str]:
@@ -79,7 +79,7 @@ def main() -> int:
         full = ROOT / path
         if path.endswith(".md") and not path.startswith(("dist/", "build/", "docs/private/")):
             text = full.read_text(encoding="utf-8")
-            if not path.startswith("design-system/"):
+            if not path.startswith("design/"):
                 problems += check_links(path, text)
             if is_doc_needing_header(path):
                 problems += check_header(path, text)

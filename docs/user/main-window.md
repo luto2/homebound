@@ -2,12 +2,12 @@
 
 - **Audience:** players using Homebound.
 - **Scope:** The main window: its panels, system nodes, hole labels and routes. The other topics are on the [contents page](README.md).
-- **Kept current:** checked against `702f2d5` (2026-11-14). Update it when the behaviour it describes changes.
+- **Kept current:** checked against `7af1861` (2026-11-14). Update it when the behaviour it describes changes.
 
 | Part | What it does |
 |---|---|
 | Toolbar | Map menu `▦ Main ▾`, home system, naming scheme, overlay mode, find (Ctrl+F), Fit chain, Settings. |
-| Characters (left) | Every character found in the logs: marker, online state and current system. Double-click a row (or Space) to show its system. Right-click → *Pin overlay to this character*. The row the overlay follows is highlighted. |
+| Characters (left) | Every character found in the logs: marker, online state and current system. Double-click a row (or Space) to show its system. Right-click → *Pin overlay to this character*. The row the overlay follows is highlighted. A test server (Singularity, Thunderdome) copy of a character writes to the same logs under the same name; Homebound asks ESI which one is on Tranquility and drops the copy, with a short notice. |
 | Routes (left, under Characters) | Jumps and the way from the selected system (or, with nothing selected, the followed character's system) to the trade hubs and your own destinations. See [Routes](#routes). |
 | Map (centre) | Systems and connections. Drag to pan, wheel to zoom, drag a system to move it (it snaps to the grid). Ctrl+click adds systems to the selection, Ctrl+drag on empty canvas draws a selection rectangle, Ctrl+A selects all, Esc clears; dragging any selected system moves them all, and the arrow keys nudge the selection by one grid step (Shift: five). A moved group is one undo step. Legend bottom-left, zoom bottom-right. With more than one map, a `MAP Main` tag in the top-right corner says which map is open. |
 | System (right) | The selected system: custom name, owner, notes, zKill activity, and the signature table. |
