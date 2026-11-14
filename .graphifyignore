@@ -12,6 +12,7 @@ design-system/components/
 
 # Point-in-time audit, goes stale and would swamp the graph
 findings.md
+docs/investigations/
 
 # Downloaded sources and font licences
 data/

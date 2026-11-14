@@ -154,7 +154,7 @@ a small change whose file and fix are named.
 
 ## To do
 
-From the audit of `582ee55` (2026-11-06). IDs match `docs/findings/findings.md`. The list
+From the audit of `582ee55` (2026-11-06). IDs match `docs/investigations/2026-11-06-audit-findings.md`. The list
 is in suggested order: the cheap data-safety fixes come before the segfault hunt, which has no known
 cause yet. The number in brackets is criticality out of 10, from impact and how likely the problem
 is. The Effort line uses the same scale and models as the human-added tasks.
@@ -266,7 +266,7 @@ P1 and P2 filtering (3/5) · Sonnet.
   1989 of the first 4000 multiples of `GRID` land next to `GRID`. These inputs only reach the first
   arm, though, and `approx(0)` is too tight for larger coordinates. The test does catch a missing or
   wrong snap, and `done/plan-test-fixes.md` rules out `or` assertions like this.
-- **Done 2026-11-12 (`d7b6654`; T8 was already fine).** [1] Weak tests, from `docs/findings/findings.md` and not all re-checked: T2, T4 to T9, T12, T13.
+- **Done 2026-11-12 (`d7b6654`; T8 was already fine).** [1] Weak tests, from `docs/investigations/2026-11-06-audit-findings.md` and not all re-checked: T2, T4 to T9, T12, T13.
 - **Done 2026-11-12 (`1f6f5bd`; same-named tests, function-level imports and private-attribute reads left).** [1] Test structure: copied fixtures and helpers, the fixture imported at `test_ui_routes.py:19`.
 - **Already done (guard and test exist).** [1] `_set_home` (`map_window.py:1013`) has no loop guard. No way to create a parent loop was found,
   so this only matters for a damaged map (E12).
@@ -276,7 +276,7 @@ P1 and P2 filtering (3/5) · Sonnet.
 - **Done 2026-11-12 (`dedb5c9`; test helpers used by the fixtures kept).** [1] Unused code: `DEFAULT_DESTINATIONS`, `name_caption`, `LIFETIME_1H` and `LIFETIME_4H` in
   `map_scene.py`. Used only by tests: `add_shadow`, `draw_dot_grid`, `gate_neighbours`,
   `static_destination_classes`, `all_systems`, `load_universe`.
-- **Constants done 2026-11-12 (`7fd3c5e`, `13e559a`); the logic duplicates D1–D13 are left.** [1] Repeated constants and helpers listed in section 5 of `docs/findings/findings.md`. Start with `GRID` in
+- **Constants done 2026-11-12 (`7fd3c5e`, `13e559a`); the logic duplicates D1–D13 are left.** [1] Repeated constants and helpers listed in section 5 of `docs/investigations/2026-11-06-audit-findings.md`. Start with `GRID` in
   `tracker.py:22` and the hard-coded range in `overlay.py:30,195`.
 - **Done 2026-11-12 (`330351b`).** [1] Mockups differ from the app: Find placeholder, tray `Ctrl+Shift+O` and "Open map", StatusBar
   glyph label. The UI hint on map names describes a character rule nothing enforces.
@@ -284,7 +284,7 @@ P1 and P2 filtering (3/5) · Sonnet.
   `@overload` on `require_integer` and `require_text` would clear several.
 - **Done 2026-11-12 (`7059341`; graph stays tracked, refresh.log ignored).** [1] `graphify-out/` (12 MB) is untracked and not in `.gitignore`.
 
-From the graphify audit (2026-11-06). P numbers match the problems in `docs/findings/graphify-findings.md`.
+From the graphify audit (2026-11-06). P numbers match the problems in `docs/investigations/2026-11-06-graphify-findings.md`.
 These are tooling problems and none of them affects the app, so they sit low on
 the same scale. Test-only functions and `graphify-out/` are listed above.
 

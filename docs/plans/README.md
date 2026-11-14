@@ -19,7 +19,7 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [plan-tray-caption.md](plan-tray-caption.md) | Empty "OVERLAY MODE" caption in the Plasma tray menu | not started |
 | [plan-docs-rework.md](plan-docs-rework.md) | Documentation structure and guidelines | not started |
 
-### Audit fixes (`TODO.md` "To do", findings in `docs/findings/findings.md`)
+### Audit fixes (`TODO.md` "To do", findings in `docs/investigations/2026-11-06-audit-findings.md`)
 
 | Plan | To do item | State |
 |---|---|---|
@@ -30,7 +30,7 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 
 | Draft | State |
 |---|---|
-| [legal/](legal/) (Impressum, Datenschutz, Terms) | WIP; to be checked before the sync service goes public |
+| [docs/legal/](../legal/) (Impressum, Datenschutz, Terms) | WIP; to be checked before the sync service goes public |
 
 ## Done
 

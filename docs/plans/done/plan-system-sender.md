@@ -30,7 +30,7 @@ Only English is confirmed.
 
 | Language | Name in `SYSTEM_SENDERS` | Status |
 |---|---|---|
-| English | `EVE System` | Confirmed. Forum logs ([Local chat fix?](https://forums.eveonline.com/t/local-chat-fix/80331), [Local chat status updates](https://forums.eveonline.com/t/local-chat-status-updates/75662)), the sample output of [thebravyone/eve-chatlog](https://github.com/thebravyone/eve-chatlog), and every fixture in this repo (`tests/test_logs.py:27`, `tests/test_coverage_gaps.py:32`, `tests/test_ui_components.py:35`, `docs/windows-testing.md:76`). |
+| English | `EVE System` | Confirmed. Forum logs ([Local chat fix?](https://forums.eveonline.com/t/local-chat-fix/80331), [Local chat status updates](https://forums.eveonline.com/t/local-chat-status-updates/75662)), the sample output of [thebravyone/eve-chatlog](https://github.com/thebravyone/eve-chatlog), and every fixture in this repo (`tests/test_logs.py:27`, `tests/test_coverage_gaps.py:32`, `tests/test_ui_components.py:35`, `docs/testing/windows.md:76`). |
 | German | `EVE-System` | Not confirmed. Not found online. |
 | French | `Système EVE` | Not confirmed. |
 | Russian | `Система EVE` | Not confirmed. |

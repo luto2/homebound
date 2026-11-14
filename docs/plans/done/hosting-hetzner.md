@@ -197,7 +197,7 @@ HB_RESTORE_HEALTHCHECK_URL=https://hc-ping.com/…   # the daily restore test re
 ## 11. Legal and policy (to check before going public)
 
 - **Fenris Creations (formerly CCP) rules:** the third-party developer license allows tools, but forbids charging **real money**. ISK-only payments are what other EVE tools do. Re-read the current EVE Developer License Agreement and EULA before launch.
-- **German Impressum (DDG §5) and privacy policy:** drafts are in [`legal/`](../legal/) and will be served at `/impressum`, `/datenschutz` and `/terms`. The contact placeholders still need filling in. The service stores character IDs and names, and corp IDs, which are personal-ish data under GDPR.
+- **German Impressum (DDG §5) and privacy policy:** drafts are in [`docs/legal/`](../../legal/) and will be served at `/impressum`, `/datenschutz` and `/terms`. The contact placeholders still need filling in. The service stores character IDs and names, and corp IDs, which are personal-ish data under GDPR.
   - Data minimisation already helps: no emails, no IPs stored beyond the log retention, and presence never stored.
   - Hetzner offers a data processing agreement (AVV/DPA) in the console. Accept it.
 - A **Terms page:** ISK is non-refundable except at the admin's discretion, the service is provided as-is, and lapsed maps are deleted after 2 months.
@@ -218,7 +218,7 @@ HB_RESTORE_HEALTHCHECK_URL=https://hc-ping.com/…   # the daily restore test re
 - **Domain:** subdomain `homebound.luthopian.de`.
 - **Backup:** Hetzner Object Storage in another location (B2's EU region isn't offered to new accounts).
 - **Receiving character:** Homebound Billing (ID `2124836346`).
-- **Legal pages:** drafted now in [`legal/`](../legal/) (WIP).
+- **Legal pages:** drafted now in [`docs/legal/`](../../legal/) (WIP).
 
 ## 14. Open items
 

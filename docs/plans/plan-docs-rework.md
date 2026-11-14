@@ -208,7 +208,7 @@ them at the new pages. Done plans keep their text, but their links are fixed.
   `findings/findings.md`), `2026-11-06-graphify-findings.md`, `2026-11-06-core-dump-summary.md`,
   `2026-11-01-todo-sweep.md`.
 - They are archived: "Kept current: archived, not updated". Code is not fixed by editing them.
-- `docs/windows-testing.md` moves to `docs/testing/windows.md`.
+- `docs/testing/windows.md` moves to `docs/testing/windows.md`.
 
 ## Architecture doc
 

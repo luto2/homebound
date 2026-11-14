@@ -5,7 +5,7 @@ section. The fix is test-only (`close_widgets` in `tests/conftest.py`); the app 
 
 Depends on: nothing. Overlaps with `TODO.md` item 1 (corrupt map lockout), see "Can the app hit it".
 
-This covers `TODO.md` item 3, "[8] Test suite segfaults", and section 1 of `docs/findings/findings.md`.
+This covers `TODO.md` item 3, "[8] Test suite segfaults", and section 1 of `docs/investigations/2026-11-06-audit-findings.md`.
 The sections after "Root cause, confirmed" are the first investigation (2026-11-06), kept as found. It was
 run from `582ee55` code (`git diff 582ee55 HEAD -- homebound tests pyproject.toml uv.lock` was empty then).
 

@@ -4,7 +4,7 @@ Status: implemented (2026-11-10, commits `9e72e56`, `a7980f7`). Deviations: edge
 
 Depends on: nothing. Step 1 (docstrings) and step 2 (pixel checks) are separate commits.
 
-Source: `TODO.md` item 8 and `docs/findings/findings.md` T1. `plan-test-fixes.md` ("Not changing") accepts
+Source: `TODO.md` item 8 and `docs/investigations/2026-11-06-audit-findings.md` T1. `plan-test-fixes.md` ("Not changing") accepts
 that many paint tests only assert `not image.isNull()`, on the condition that their docstrings say no more
 than "doesn't raise". Six of them say more.
 

@@ -6,7 +6,7 @@ Depends on: nothing. Each step stands alone and can be its own commit. Nothing h
 behaviour, so none of it is urgent; the order is by value for the effort.
 
 Scope: the "No type checker" and `graphify-out/` bullets in `TODO.md`, and every bullet under "From the
-graphify audit (2026-11-06)", read with the P numbers in `docs/findings/graphify-findings.md`
+graphify audit (2026-11-06)", read with the P numbers in `docs/investigations/2026-11-06-graphify-findings.md`
 (not committed).
 
 ## What the check found

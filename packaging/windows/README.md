@@ -17,4 +17,4 @@ Code that has to agree with this script:
   leaves out `PySide6.QtDBus` on Windows, because only the Linux backend uses it.
 - `SetupIconFile` and the spec's `icon` use `packaging/icons/homebound.ico`.
 
-`docs/windows-testing.md` describes how to test a build.
+`docs/testing/windows.md` describes how to test a build.

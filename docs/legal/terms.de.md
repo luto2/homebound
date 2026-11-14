@@ -4,7 +4,7 @@
 # Homebound Sync: Terms of Service
 
 ## 1. The service
-Homebound Sync is an unofficial, privately run service that synchronises Homebound wormhole maps between members of a group. The Homebound desktop app is free to use locally. Only cloud sync and the web view are paid. Operator: see [Impressum](/impressum).
+Homebound Sync is an unofficial, privately run service that synchronises Homebound wormhole maps between members of a group. The Homebound desktop app is free to use locally. Only cloud sync and the web view are paid. Operator: see [Impressum](impressum.de.md).
 
 ## 2. Payment (ISK only)
 - Payment is made **only in EVE Online ISK**, as a player donation to the receiving character named in the app. **Real money is never accepted.** Anyone who offers to take real money for Homebound is not us.

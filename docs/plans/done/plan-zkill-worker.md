@@ -5,7 +5,7 @@ Status: implemented (2026-11-10, commit `3241a44`). Deviations: also restarts a 
 Depends on: nothing. One commit, `homebound/zkill.py` plus `tests/test_zkill.py`.
 
 Checked against the code on master (d11d146) on 2026-11-06. The findings table in
-`docs/findings/findings.md` is untracked, so these checks are the only record of what still holds.
+`docs/investigations/2026-11-06-audit-findings.md` is untracked, so these checks are the only record of what still holds.
 
 ## Problem as verified
 

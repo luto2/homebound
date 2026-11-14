@@ -129,7 +129,7 @@ The user sends this file to us by hand. It must be safe to paste into a GitHub i
 
 - `README.md` / `HOW_TO.md`: a short "Reporting a problem" section with the three folders, the tray
   entry, and `HOMEBOUND_LOG_LEVEL=DEBUG`.
-- `docs/windows-testing.md`: check that the windowed build writes the file and `crash.log`.
+- `docs/testing/windows.md`: check that the windowed build writes the file and `crash.log`.
 - `docs/code-map.md`: `diagnostics.py`.
 
 ## Tests
