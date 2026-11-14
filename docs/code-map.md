@@ -6,7 +6,7 @@ haven't touched yet, and when you need the file behind something you see in the 
 - **Audience:** anyone working on the code: the owner, contributors and coding agents.
 - **Scope:** the desktop app (`homebound/`), the sync server (`homebound_server/`), packaging,
   tooling and tests. How to *use* the app is in the [user guide](user/README.md); how the parts fit together is in [`architecture.md`](architecture.md); how the UI should
-  *look* is in Quantum Works Design, the submodule [`design/qwd/`](../design/qwd/README.md); why things were built the way they
+  *look* is in Quantum Works Design, the private submodule `design/qwd/`; why things were built the way they
   are is in the plans in [`docs/plans/`](plans/README.md).
 - **Kept current:** checked against `master` at 1.0.0 (2026-11-09), with the docs paths and the doc check of 2026-11-14, and the ESI check of 2026-11-14 (`7af1861`). Files and symbols are named
   instead of line numbers, because line numbers go stale with every edit. When you move a feature
@@ -255,7 +255,7 @@ detail.
 
 | Module | Owns |
 |---|---|
-| `tokens.py` | Design tokens from `design/qwd/dist/homebound/dark/tokens.json` (the QWD submodule) as Qt values |
+| `tokens.py` | Design tokens from `tokens.json`, a synced copy of the QWD submodule's `dist/homebound/dark/tokens.json` (`design/qwd-copies.toml`), as Qt values |
 | `qss.py` | Style sheet and palette |
 | `painting.py` | QPainter helpers: badges, chips, markers, meters, edges, halo text, grids |
 | `fonts.py` | Bundled fonts |

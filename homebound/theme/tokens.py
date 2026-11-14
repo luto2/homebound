@@ -1,8 +1,12 @@
-"""Design tokens from Quantum Works Design (the ``design/qwd/`` submodule), exposed as Qt-friendly values."""
+"""Design tokens, exposed as Qt-friendly values.
+
+``tokens.json`` next to this module is a committed copy of ``design/qwd/dist/homebound/dark/tokens.json``
+from Quantum Works Design (the private ``design/qwd/`` submodule), so public clones, the source tarball and
+the packages work without it. It is never edited by hand: see ``design/qwd-copies.toml``.
+"""
 import json
 import re
 from importlib.resources import files
-from pathlib import Path
 
 from PySide6.QtGui import QColor, QFont
 
@@ -10,25 +14,7 @@ from ..validation import require_integer, require_text
 
 THEME = "dark"
 
-# The generated tokens in the submodule; packaging/homebound.spec bundles the same file next to this module.
-SUBMODULE_TOKENS = Path(__file__).resolve().parents[2] / "design" / "qwd" / "dist" / "homebound" / THEME / "tokens.json"
-
-
-def _load_tokens() -> dict:
-    """Read the submodule's tokens, or the bundled copy in a packaged build.
-
-    Raises:
-        FileNotFoundError: If neither exists (the submodule is not checked out).
-    """
-    if SUBMODULE_TOKENS.is_file():
-        return json.loads(SUBMODULE_TOKENS.read_text(encoding="utf-8"))
-    bundled = files("homebound.theme").joinpath("tokens.json")
-    if bundled.is_file():
-        return json.loads(bundled.read_text(encoding="utf-8"))
-    raise FileNotFoundError(f"no design tokens at {SUBMODULE_TOKENS}; run `git submodule update --init`")
-
-
-_TOKENS = _load_tokens()
+_TOKENS = json.loads(files("homebound.theme").joinpath("tokens.json").read_text(encoding="utf-8"))
 
 RAW_COLORS: dict[str, object] = {token["name"]: token["value"] for token in _TOKENS["color"]["tokens"]}
 _REFERENCE = re.compile(r"\{(.+)\}")

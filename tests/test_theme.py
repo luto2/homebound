@@ -1,9 +1,11 @@
 """Tests for the design tokens, the style sheet and the shared painting helpers."""
 import json
+import tomllib
 import re
 
 import pytest
 from collections.abc import Iterator
+from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF
 from PySide6.QtGui import (QBrush, QColor, QFont, QFontDatabase, QFontMetricsF, QImage, QPainter, QPainterPath,
@@ -41,28 +43,24 @@ def painted(pixmap: QPixmap) -> bool:
 
 # ---------------------------------------------------------------- tokens
 
-def test_tokens_come_from_the_qwd_submodule() -> None:
-    """The app's colours are the generated QWD file's values (design/qwd/dist/homebound/dark/tokens.json)."""
-    assert tokens.SUBMODULE_TOKENS.is_file()
-    generated = {t["name"]: t["value"] for t in json.loads(tokens.SUBMODULE_TOKENS.read_text())["color"]["tokens"]}
-    assert HEX_COLORS["bg-0"] == generated["bg-0"]
-    assert tokens.RAW_COLORS == generated
+ROOT = Path(__file__).resolve().parents[1]
+QWD = ROOT / "design" / "qwd"
+COPIES = tomllib.loads((ROOT / "design" / "qwd-copies.toml").read_text(encoding="utf-8"))["copy"]
 
 
-def test_tokens_prefer_the_submodule_then_the_bundled_copy(tmp_path, monkeypatch) -> None:
-    """A packaged build has no submodule: it reads the copy homebound.spec bundles next to tokens.py."""
-    submodule, bundled = tmp_path / "submodule.json", tmp_path / "bundle"
-    bundled.mkdir()
-    (bundled / "tokens.json").write_text('{"from": "bundle"}')
-    monkeypatch.setattr(tokens, "files", lambda package: bundled)
-    monkeypatch.setattr(tokens, "SUBMODULE_TOKENS", submodule)
-    assert tokens._load_tokens() == {"from": "bundle"}
-    submodule.write_text('{"from": "submodule"}')
-    assert tokens._load_tokens() == {"from": "submodule"}
-    submodule.unlink()
-    (bundled / "tokens.json").unlink()
-    with pytest.raises(FileNotFoundError, match="git submodule update --init"):
-        tokens._load_tokens()
+def test_the_app_reads_the_committed_copy() -> None:
+    """The colours are homebound/theme/tokens.json's, the copy listed in design/qwd-copies.toml."""
+    assert [c["to"] for c in COPIES] == ["homebound/theme/tokens.json"]
+    committed = json.loads((ROOT / "homebound" / "theme" / "tokens.json").read_text(encoding="utf-8"))
+    assert tokens.RAW_COLORS == {t["name"]: t["value"] for t in committed["color"]["tokens"]}
+
+
+@pytest.mark.skipif(not (QWD / "dist").is_dir(), reason="the private QWD submodule is not checked out")
+@pytest.mark.parametrize("copy", COPIES, ids=lambda c: c["to"])
+def test_design_copies_match_the_submodule(copy) -> None:
+    """A copy differs from design/qwd/: run `python3 design/qwd/tools/hooks/sync_copies.py` and commit both."""
+    assert copy.get("mode", "file") == "file"
+    assert (ROOT / copy["to"]).read_bytes() == (QWD / copy["from"]).read_bytes(), copy["to"]
 
 
 def test_alpha_is_last_in_tokens() -> None:

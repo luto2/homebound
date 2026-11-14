@@ -15,7 +15,7 @@ Run from source, tests, mypy, the doc check, the push gate and the packaging com
 - **Every commit passes the push gate** (`tools/push_gate.py`: tests, GitHub CI and reviewers); do not bypass it.
 - **mypy errors are fixed by a Haiku agent.** `uv run mypy` stays at 0.
 - **Names are spelled out** (no abbreviations), and public entry points check arguments with `homebound/validation.py`.
-- **The UI follows Quantum Works Design**, the submodule at `design/qwd/` (see the section at the end). The look is original; the game's own icons are fine to use.
+- **The UI follows Quantum Works Design**, the private submodule at `design/qwd/` (see the section at the end); `homebound/theme/tokens.json` is a synced copy from it, never edited by hand (`design/qwd-copies.toml`). The look is original; the game's own icons are fine to use.
 - **Do not stage everything.** `.claude/worktrees/`, `.coverage` and `.vscode/` are untracked on purpose; add files by path.
 
 ## Where work is tracked
