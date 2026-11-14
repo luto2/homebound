@@ -54,8 +54,8 @@ def check_links(path: str, text: str) -> list[str]:
 def check_cited_paths(path: str, text: str) -> list[str]:
     problems = []
     for cited in sorted(set(DOC_PATH.findall(text))):
-        if "<" in cited or "*" in cited or "..." in cited:
-            continue
+        if "<" in cited or "*" in cited or "..." in cited or cited.startswith("docs/private/"):
+            continue   # placeholders, and the gitignored private folder, which a clean checkout lacks
         if not (ROOT / cited).exists():
             problems.append(f"{path}: cited path does not exist: {cited}")
     return problems
@@ -86,7 +86,7 @@ def main() -> int:
             if path.startswith(("docs/plans/done/", "docs/investigations/")):
                 continue
             problems += check_cited_paths(path, text)
-        elif path.endswith((".py", ".yml", ".sh", ".iss", ".spec")) and not path.startswith("tools/check_docs"):
+        elif path.endswith((".py", ".yml", ".sh", ".iss", ".spec")) and not path.startswith(("tools/check_docs", "tests/test_check_docs")):
             try:
                 text = full.read_text(encoding="utf-8")
             except UnicodeDecodeError:
