@@ -144,6 +144,13 @@ a small change whose file and fix are named.
     can't carry widgets. Make it a plain disabled "Overlay mode" item and guard against widget actions
     in the tray menu. Plan: `docs/plans/plan-tray-caption.md`.
     Effort: 1/5 · Haiku.
+24. Rework the documentation structure and guidelines (owner interview, 2026-11-14). A root `CLAUDE.md`
+    plus ones in `homebound_server/`, `design-system/`, `packaging/` and `tests/`; `HOW_TO.md` split into
+    `docs/user/`; `docs/legal/` (de + en), `docs/investigations/`, `docs/testing/`; `TODO.md` open items
+    only; `CHANGELOG.md`; `docs/architecture.md`; a header block on every doc; a doc link check in CI.
+    `design-system/` content is left alone. Plan: `docs/plans/plan-docs-rework.md`.
+    Effort: 3/5 · Sonnet. Mostly moves and writing the plan pins down; the owner reviews the
+    architecture doc and the legal translations.
 
 ## To do
 
