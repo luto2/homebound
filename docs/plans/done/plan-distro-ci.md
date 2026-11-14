@@ -11,6 +11,9 @@ Status: implemented (2026-11-14) in `.github/workflows/distros.yml`. Deviations 
 - No `design/qwd/` submodule in the checkout: the repository went private on 2026-11-14 and
   `f5933d7` made builds read the committed copy `homebound/theme/tokens.json` instead, the same as in
   `test.yml`.
+- The first run on master (`6af4ae2`, 2026-11-14) passed on Arch and Debian. Fedora needs `util-linux`
+  for `runuser` (`util-linux-core` lacks it), and openSUSE has no `libEGL1`/`libGL1` packages: the GL
+  and EGL loaders come from `libglvnd`. The workflow has the corrected lists.
 - uv is copied from `setup-uv` to `/usr/local/bin` so the test user can run it, and the uv steps set
   `HOME` and `UV_CACHE_DIR` for that user.
 - Since 2026-11-14 (after `6af4ae2`) the workflow also runs on the push gate's `ci/<sha>` branches, so
@@ -64,7 +67,7 @@ libraries the Ubuntu job installs with `apt-get`. Starting names, to be checked 
 | Image | Packages |
 |---|---|
 | Arch | `git tar zstd ca-certificates python libglvnd mesa libxkbcommon fontconfig dbus` |
-| Fedora | `git tar zstd ca-certificates python3 mesa-libEGL mesa-libGL libxkbcommon fontconfig dbus-libs` |
+| Fedora | `git tar zstd ca-certificates python3 mesa-libEGL mesa-libGL libxkbcommon fontconfig dbus-libs` (built: see the workflow) |
 | Debian | `git tar zstd ca-certificates curl python3 libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3` |
 | openSUSE | `git tar zstd ca-certificates python3 libEGL1 libGL1 libxkbcommon0 fontconfig libdbus-1-3` |
 
