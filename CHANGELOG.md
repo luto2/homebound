@@ -2,11 +2,17 @@
 
 - **Audience:** players using Homebound.
 - **Scope:** what changed for players in each release, newest first. Written from the GitHub release notes and the finished plans in [`docs/plans/done/`](docs/plans/README.md); the code-level story is in git. A release's section is its GitHub release notes: `release.yml` fails for a tag with no section here.
-- **Kept current:** checked against `4fe9e38` (2026-11-14). Every commit that changes what a player sees adds a line under "Unreleased".
+- **Kept current:** checked against `2a2ae5b` (2026-11-14). Every commit that changes what a player sees adds a line under "Unreleased".
 
 Each section is headed `## <version> (<date>)` with the groups Added, Changed and Fixed. When a release is cut, rename "Unreleased" to the version and date, and add a fresh "Unreleased" above it.
 
 ## Unreleased
+
+## 1.0.4 (2026-11-14)
+
+### Fixed
+
+- Arch Linux (AUR package) and the source archive: Homebound 1.0.3 didn't start, because the design tokens were missing from the archive. The AppImage and the Windows builds of 1.0.3 were not affected. This release includes all fixes of 1.0.3.
 
 ## 1.0.3 (2026-11-14)
 
