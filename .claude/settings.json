@@ -11,6 +11,15 @@
             "statusMessage": "Push gate: tests, GitHub CI and Sonnet reviewers"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/design/qwd/tools/hooks/guard_submodule.py\""
+          }
+        ]
       }
     ]
   }
