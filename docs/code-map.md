@@ -8,7 +8,7 @@ haven't touched yet, and when you need the file behind something you see in the 
   tooling and tests. How to *use* the app is in the [user guide](user/README.md); how the parts fit together is in [`architecture.md`](architecture.md); how the UI should
   *look* is in Quantum Works Design, the private submodule `design/qwd/`; why things were built the way they
   are is in the plans in [`docs/plans/`](plans/README.md).
-- **Kept current:** checked against `master` at 1.0.0 (2026-11-09), with the docs paths and the doc check of 2026-11-14, and the ESI check of 2026-11-14 (`7af1861`). Files and symbols are named
+- **Kept current:** checked against `master` at 1.0.0 (2026-11-09), with the docs paths and the doc check of 2026-11-14, the ESI check of 2026-11-14 (`7af1861`) and the distro CI of 2026-11-14 (`6af4ae2`). Files and symbols are named
   instead of line numbers, because line numbers go stale with every edit. When you move a feature
   or add a module, update its row here in the same commit.
 
@@ -357,7 +357,7 @@ Server ops files (Litestream, restore test, `hb-deploy` auto-deploy timer) are i
 | App icon (drawn in code, rendered to PNG/SVG/ICO) | `ui/map_window.py` `app_mark`; `packaging/make_icons.py`; `packaging/icons/` |
 | Release build on a `v*` tag | `.github/workflows/release.yml` |
 | Tests on Linux and Windows on every push | `.github/workflows/test.yml` |
-| Tests on Arch, Fedora, Debian and openSUSE on a merge into master (containers, each distribution's Python, as a normal user) | `.github/workflows/distros.yml` |
+| Tests on Arch, Fedora, Debian and openSUSE on the push gate's `ci/<sha>` branches and master, not blocking (containers, each distribution's Python, as a normal user) | `.github/workflows/distros.yml` |
 | Push gate (doc check, local tests, CI, two reviewers) | `tools/push_gate.py`; `.githooks/pre-push` |
 | Doc check (dead links, header blocks); tests in `tests/test_check_docs.py` | `tools/check_docs.py`; CI step in `test.yml` |
 | Package metadata, scripts, coverage settings | `pyproject.toml` |

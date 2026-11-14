@@ -13,10 +13,13 @@ Status: implemented (2026-11-14) in `.github/workflows/distros.yml`. Deviations 
   `test.yml`.
 - uv is copied from `setup-uv` to `/usr/local/bin` so the test user can run it, and the uv steps set
   `HOME` and `UV_CACHE_DIR` for that user.
+- Since 2026-11-14 (after `6af4ae2`) the workflow also runs on the push gate's `ci/<sha>` branches, so
+  a distro failure shows on the commit before it lands. Decision 1 still holds: the gate waits for
+  `test.yml` only, and the master ruleset on GitHub requires only the `test.yml` jobs.
 
 - **Audience:** the owner and the coding agents that build this plan.
 - **Scope:** running the test suite on Fedora, Arch, Debian and openSUSE in GitHub Actions (TODO 25). The AppImage start check and the AUR `makepkg` check on other distros are separate and not part of this plan. The state of every plan is in [`README.md`](../README.md).
-- **Kept current:** written against `74263d9` (2026-11-14). Update it when the plan changes or `.github/workflows/test.yml` changes shape.
+- **Kept current:** written against `74263d9` (2026-11-14), deviations checked against `6af4ae2`. Update it when the plan changes or `.github/workflows/test.yml` changes shape.
 
 ## Why
 

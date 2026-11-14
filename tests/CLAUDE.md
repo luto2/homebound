@@ -1,6 +1,6 @@
 # Tests: agent rules
 
-`uv run pytest` (add `--cov=homebound` for coverage; settings in `pyproject.toml`). The push gate runs the suite on Python 3.12 and 3.14, as `.github/workflows/test.yml` does on Linux and Windows. A merge into master also runs it on Arch, Fedora, Debian and openSUSE with their own Python, as a normal user (`.github/workflows/distros.yml`).
+`uv run pytest` (add `--cov=homebound` for coverage; settings in `pyproject.toml`). The push gate runs the suite on Python 3.12 and 3.14, as `.github/workflows/test.yml` does on Linux and Windows. GitHub CI also runs it on Arch, Fedora, Debian and openSUSE with their own Python, as a normal user (`.github/workflows/distros.yml`), on the push gate's `ci/<sha>` branches and on master; the gate doesn't wait for it.
 
 ## Rules
 
