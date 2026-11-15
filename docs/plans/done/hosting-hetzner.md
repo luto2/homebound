@@ -166,7 +166,7 @@ HB_RESTORE_HEALTHCHECK_URL=https://hc-ping.com/…   # the daily restore test re
 - **Publishing a GitHub release is the deploy.** Pushes to `master` and the draft release CI builds from a `v*` tag don't deploy; only publishing the draft does. The server pulls; GitHub has no workflow, secret or SSH key for it, so nothing about the deploy is public and no key can reach the server from outside.
 - `hb-deploy` (in `packaging/server/`, run as root every 5 minutes by `homebound-deploy.timer`):
   1. Asks `api.github.com/repos/luto2/homebound/releases/latest` for the newest published release (not drafts or pre-releases; 12 unauthenticated requests an hour, under GitHub's 60), then `git ls-remote` for its tag's commit. Nothing more happens when that's the checked-out commit, or one the checkout is already past (it never goes back).
-  2. If it's newer: `git fetch` the tag, fast-forward `master` in the checkout to it, `uv sync --extra server --no-dev --frozen`, rebuild `universe.sqlite` with `homebound --build-static` if the new code can't read it (missing, or a schema change: the server refuses old map data at startup), `systemctl restart homebound-sync`.
+  2. If it's newer: `git fetch` the tag and compare `VERSION` in `homebound_server/service.py` at the tag with the checkout's. The same version means a client-only release: it isn't deployed and isn't looked at again (`same-version` in the state folder). A bumped version (or one that can't be read): fast-forward `master` in the checkout to it, `uv sync --extra server --no-dev --frozen`, rebuild `universe.sqlite` with `homebound --build-static` if the new code can't read it (missing, or a schema change: the server refuses old map data at startup), `systemctl restart homebound-sync`.
   3. Waits up to a minute for `/api/health`. If the new version doesn't answer (or the map rebuild fails), it goes back to the old commit, rebuilding the map data for it too if needed, posts to the Discord webhook, and skips that release until a newer one is published.
   - Holds deploys from 10:55 to 11:35 UTC, so the ESI pulls after EVE's downtime aren't interrupted.
   - Refuses (and posts to Discord once) when the checkout isn't on `master`, has local changes, or the release isn't a fast-forward (tagged off another branch, or `master` was rewritten).
@@ -353,7 +353,7 @@ chmod 755 /usr/local/bin/hb-admin
 4. Give 1M from a character that isn't linked: a problem mail in-game and an "Unmatched donation" in Discord. Refund it, then `hb-admin refunded <journal id>`.
 
 ### 9. Updates
-Updates deploy themselves: `hb-deploy` checks GitHub every 5 minutes and deploys the latest published release (§8).
+Updates deploy themselves: `hb-deploy` checks GitHub every 5 minutes and deploys the latest published release when it bumps the server's `VERSION` (§8).
 ```bash
 git -C /opt/homebound branch --show-current     # must be master
 git -C /opt/homebound status --short            # must show no changed files (untracked like data/ is fine)
