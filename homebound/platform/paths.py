@@ -15,6 +15,7 @@ from ..validation import require_type
 APP_FOLDER = "Homebound"
 UNIVERSE_FILE = "universe.sqlite"
 RESOLVED_FILE = "statics_resolved.json"
+WORMHOLE_DATA_FILE = "wormhole_data.json"   # the shipped snapshot of the merged wormhole data
 FOLDERID_DOCUMENTS = "FDD39AD0-238F-46AF-ADB4-6C85480369C7"
 
 

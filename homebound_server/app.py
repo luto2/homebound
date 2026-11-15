@@ -9,11 +9,12 @@ from urllib.parse import urlencode
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from homebound.sync.protocol import CLIENT_ID, MAX_MESSAGE_BYTES, MIN_PROTOCOL, PROTOCOL, peer_protocol
+from homebound.universe.build_static import WORMHOLE_DATA_ROUTE
 
 from .auth import AuthError
 from .billing import BillingError
@@ -288,6 +289,14 @@ def create_app(service: Service) -> Starlette:
         return service.billing.quote(payer_id, new_map_seats=int(query["new_map_seats"]) if query.get("new_map_seats")
                                      else None)
 
+    async def wormhole_data(request: Request) -> Response:
+        # public: the clients' first-start build downloads it before anyone signs in
+        path = service.config.wormhole_data_path
+        if not path.is_file():
+            return JSONResponse({"error": "not_built", "detail": "The wormhole data isn't built yet."}, 503,
+                                headers={"Retry-After": "600"})
+        return FileResponse(path, media_type="application/json", headers={"Cache-Control": "public, max-age=3600"})
+
     async def health(request: Request) -> Response:
         try:
             return JSONResponse(service.health())
@@ -413,6 +422,7 @@ def create_app(service: Service) -> Starlette:
         Route("/api/invites/{code}/accept", api(invite_accept), methods=["POST"]),
         Route("/api/billing/quote", api(billing_quote)),
         Route("/api/health", health),
+        Route(WORMHOLE_DATA_ROUTE, wormhole_data),
         WebSocketRoute("/ws", websocket),
     ]
     app = Starlette(routes=routes)

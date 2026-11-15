@@ -14,11 +14,13 @@ NAME = "Homebound" if WINDOWS else "homebound"
 
 # universe.sqlite is not shipped: it's EVE game data, so Homebound downloads the sources and builds it on the
 # user's machine at first start. statics_resolved.json (the pinned answers to disputed statics) is shipped so
-# that build doesn't need to ask zKillboard.
+# that build doesn't need to ask zKillboard, and wormhole_data.json (the merged statics and wormhole types) so
+# it works when neither the sync server nor the community sources answer.
 datas = [
     *collect_data_files("homebound"),      # theme tokens, icons, fonts + licences, schema.sql, the KWin script
     *copy_metadata("homebound"),           # app_version() reads the version from here
     (str(ROOT / "data/statics_resolved.json"), "data"),
+    (str(ROOT / "data/wormhole_data.json"), "data"),
     (str(ROOT / "LICENSE"), "."),
     (str(ROOT / "THIRD_PARTY_NOTICES.md"), "."),
 ]

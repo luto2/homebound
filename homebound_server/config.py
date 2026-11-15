@@ -21,11 +21,17 @@ class Config:
     mute_billing: bool = False                       # no webhook posts for billing state changes (HB_MUTE_BILLING=1)
     disk_warn_percent: int = 80                      # webhook warning when the database's disk is fuller
     universe: Path | None = None                     # universe.sqlite; None: the client's usual place
+    wormhole_data: Path | None = None                # the merged file clients download (HB_WORMHOLE_DATA); None: next to the DB
     min_app: str = "0.1.0"
     free_maps: dict = field(default_factory=dict)     # (kind, id) -> free maps, from HB_FREE_MAPS
     pricing: dict = field(default_factory=lambda: {
         "tiers": [(100_000_000, 25_000_000), (50_000_000, 15_000_000), (25_000_000, 5_000_000)],
         "included_seats": 3})
+
+    @property
+    def wormhole_data_path(self) -> Path:
+        """Where the merged wormhole data is written and served from: ``wormhole_data``, else next to the DB."""
+        return self.wormhole_data or self.database.with_name("wormhole-data.json")
 
     @classmethod
     def from_environment(cls, dev: bool = False) -> "Config":
@@ -45,6 +51,7 @@ class Config:
             mute_billing=environment.get("HB_MUTE_BILLING") == "1",
             disk_warn_percent=int(environment.get("HB_DISK_WARN_PERCENT", "80") or 80),
             universe=Path(environment["HB_UNIVERSE"]) if environment.get("HB_UNIVERSE") else None,
+            wormhole_data=Path(environment["HB_WORMHOLE_DATA"]) if environment.get("HB_WORMHOLE_DATA") else None,
             min_app=environment.get("HB_MIN_APP", "0.1.0"),
             free_maps=parse_free_maps(environment.get("HB_FREE_MAPS", "")),
         )

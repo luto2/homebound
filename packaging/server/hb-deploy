@@ -67,7 +67,8 @@ Universe(os.environ.get("HB_UNIVERSE") or DEFAULT_PATH)') >/dev/null 2>&1
 ensure_universe() {
     universe_ok && return 0
     echo "map data missing or built by another version; rebuilding"
-    (cd "$REPO" && .venv/bin/homebound --build-static) && universe_ok
+    # --from-sources: the server builds its own wormhole data, it never asks itself (it may be restarting)
+    (cd "$REPO" && .venv/bin/homebound --build-static --from-sources) && universe_ok
 }
 
 install_commit() {

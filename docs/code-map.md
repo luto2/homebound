@@ -8,7 +8,7 @@ haven't touched yet, and when you need the file behind something you see in the 
   tooling and tests. How to *use* the app is in the [user guide](user/README.md); how the parts fit together is in [`architecture.md`](architecture.md); how the UI should
   *look* is in Quantum Works Design, the private submodule `design/qwd/`; why things were built the way they
   are is in the plans in [`docs/plans/`](plans/README.md).
-- **Kept current:** checked against `master` at 1.0.0 (2026-11-09), with the docs paths and the doc check of 2026-11-14, the ESI check of 2026-11-14 (`7af1861`) the distro CI of 2026-11-14 (`6af4ae2`) and the Python 3.15 fix of 2026-11-15 (`dc9ca41`). Files and symbols are named
+- **Kept current:** checked against `master` at 1.0.0 (2026-11-09), with the docs paths and the doc check of 2026-11-14, the ESI check of 2026-11-14 (`7af1861`) the distro CI of 2026-11-14 (`6af4ae2`) the Python 3.15 fix of 2026-11-15 (`dc9ca41`) and the wormhole data of 2026-11-15 (`cb566b0`). Files and symbols are named
   instead of line numbers, because line numbers go stale with every edit. When you move a feature
   or add a module, update its row here in the same commit.
 
@@ -184,6 +184,8 @@ others show or edit it.
 |---|---|
 | Building `universe.sqlite` from the SDE, Wanderer, anoik and whtype.info | `universe/build_static.py` `build`, `fetch`, `resolve_statics` |
 | Disagreeing statics, settled by zKill and pinned | `universe/build_static.py` `zkill_statics`; `data/statics_resolved.json` |
+| Wormhole data: from the sync server, the community sources or the shipped snapshot | `universe/build_static.py` `wormhole_data`, `wormhole_data_from_sources`, `validate_wormhole_data`, `fetch_wormhole_data`, `wormhole_data_url` |
+| Writing the wormhole data (server job, snapshot) | `universe/build_static.py` `export_wormhole_data`, `--export-wormhole-data`; `data/wormhole_data.json` |
 | Lookups (systems, gates, statics, wormhole types, trade hubs) | `universe/db.py` `Universe` |
 | Rebuild command for the way Homebound was installed | `universe/db.py` `build_command` |
 
@@ -317,8 +319,8 @@ and the server setup in [`plans/done/hosting-hetzner.md`](plans/done/hosting-het
 | Module | Owns |
 |---|---|
 | `__main__.py` | `homebound-server` and the admin CLI |
-| `service.py` | All parts wired together, periodic jobs |
-| `app.py` | Starlette HTTPS API and the WebSocket endpoint |
+| `service.py` | All parts wired together, periodic jobs; `refresh_wormhole_data` builds the wormhole data clients download |
+| `app.py` | Starlette HTTPS API and the WebSocket endpoint; `wormhole_data` serves `GET /api/static-data/wormhole-data.json` |
 | `hub.py` | Live map state, joins, pushes, broadcasts, presence |
 | `db.py` | Server SQLite database |
 | `auth.py` | Accounts, characters, sessions, SSO round trip |
@@ -331,7 +333,7 @@ and the server setup in [`plans/done/hosting-hetzner.md`](plans/done/hosting-het
 | `events.py` | Admin event outbox and Discord webhook |
 | `jobs.py` | Timers; EVE downtime grace (504s held 10:55–11:15 UTC, ESI pull at 11:15, retry 11:30) |
 | `prune.py` | Server-side auto-prune |
-| `config.py` | Settings from the environment |
+| `config.py` | Settings from the environment; `wormhole_data_path` (`HB_WORMHOLE_DATA`) |
 
 Server ops files (Litestream, restore test, `hb-deploy` auto-deploy timer) are in `packaging/server/`.
 
@@ -345,6 +347,8 @@ Server ops files (Litestream, restore test, `hb-deploy` auto-deploy timer) are i
 | Universe data | `data/universe.sqlite` in a checkout; rebuilt copy in the data folder in a package | `universe/build_static.py` |
 | Download cache for the build | `data/cache/` | `universe/build_static.py` `fetch` |
 | Pinned statics | `data/statics_resolved.json` (shipped) | by hand, from `resolve_statics` |
+| Wormhole data snapshot | `data/wormhole_data.json` (shipped) | by hand, `build_static --export-wormhole-data data/wormhole_data.json` |
+| Wormhole data the server serves | `wormhole-data.json` next to the server database, and its own `statics_resolved.json` | `homebound_server/service.py` `refresh_wormhole_data` |
 | Session token | system keyring, else a 0600 file in the data folder | `sync/token.py` |
 
 ## 7. Packaging, tooling and CI
