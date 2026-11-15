@@ -2,7 +2,7 @@
 
 - **Audience:** someone who does not know the code yet: the owner, contributors and coding agents.
 - **Scope:** how the parts of Homebound fit together, what each owns and what it must never do. The file behind a feature is in [`code-map.md`](code-map.md); how to use the app is in the [user guide](user/README.md).
-- **Kept current:** checked against `7af1861` (2026-11-14). Update it when a part is added or removed, when data starts to flow a new way, or when the sync protocol number changes (now protocol 2, the oldest accepted is 1).
+- **Kept current:** checked against `ece8567` (2026-11-15). Update it when a part is added or removed, when data starts to flow a new way, or when the sync protocol number changes (now protocol 2, the oldest accepted is 1).
 
 ## The parts
 
@@ -61,7 +61,7 @@ Read the diagram left to right: log lines and pastes turn into map changes; the 
 
 - **Owns:** shared cloud maps. Clients send operations (per-field changes with a hybrid logical clock); the server merges them last-writer-wins per field and broadcasts the result. Code shared by both sides lives in `homebound/sync/` (`protocol.py`, `merge.py`, `hlc.py`), so both merge the same way. The server (`homebound_server/`) also holds accounts through EVE SSO, billing by ISK payment to a receiving character, and presence.
 - **Never:** is required. A local map never touches the network. A client that cannot reach the server keeps working and resends its outbox when it reconnects.
-- A protocol change deploys the server first, then the client is released. The wire format is in [`plans/done/sync-protocol.md`](plans/done/sync-protocol.md), the design in [`plans/done/cloud-sync-plan.md`](plans/done/cloud-sync-plan.md) and the operation in [`plans/done/hosting-hetzner.md`](plans/done/hosting-hetzner.md).
+- A protocol change deploys the server first, then the client is released. The server deploys itself from a published GitHub release, but only one that bumps `VERSION` in `homebound_server/service.py`; a client-only release leaves it alone ([`homebound_server/CLAUDE.md`](../homebound_server/CLAUDE.md)). The wire format is in [`plans/done/sync-protocol.md`](plans/done/sync-protocol.md), the design in [`plans/done/cloud-sync-plan.md`](plans/done/cloud-sync-plan.md) and the operation in [`plans/done/hosting-hetzner.md`](plans/done/hosting-hetzner.md).
 - Files: [code-map §5](code-map.md#5-cloud-sync).
 
 ### Packaging

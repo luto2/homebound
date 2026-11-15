@@ -2,7 +2,7 @@
 
 - **Audience:** people who find Homebound: players and contributors.
 - **Scope:** what Homebound is, the one-line install, a feature overview, and the developer entry points. Everything else is linked: the [user guide](docs/user/README.md), the [doc map](docs/README.md).
-- **Kept current:** checked against `6af4ae2` (2026-11-14). Update it when the feature list, the install command or the development commands change.
+- **Kept current:** checked against `ece8567` (2026-11-15). Update it when the feature list, the install command or the development commands change.
 
 An offline wormhole mapper for EVE Online. Homebound follows your characters through EVE's Local chat logs, builds the chain as you jump, names new systems with the scheme you pick, and shows the chain your active character is in on a small overlay over the game. It needs no ESI login, and all map data stays on your machine.
 
@@ -88,7 +88,7 @@ packaging/linux/build_appimage.sh                                    # Linux: di
 iscc /DAppVersion=<version> packaging\windows\homebound.iss          # Windows: dist\Homebound-<version>-windows-setup.exe
 ```
 
-A `v*` tag runs `.github/workflows/release.yml`, which builds all of them on GitHub's runners and attaches them to a draft release. `test.yml` runs the tests on Linux and Windows on every push; `distros.yml` runs them on Arch, Fedora, Debian and openSUSE on the push gate's `ci/<sha>` branches and on master, without blocking a push. A ruleset on GitHub refuses a push to master unless the `test.yml` jobs have passed for that commit. The app icon is drawn in code; `packaging/make_icons.py` renders it to PNG, SVG and ICO.
+A `v*` tag runs `.github/workflows/release.yml`, which builds all of them on GitHub's runners and attaches them to a draft release. Publishing the draft also deploys the sync server, but only when the release bumps `VERSION` in `homebound_server/service.py` ([`homebound_server/CLAUDE.md`](homebound_server/CLAUDE.md)). `test.yml` runs the tests on Linux and Windows on every push; `distros.yml` runs them on Arch, Fedora, Debian and openSUSE on the push gate's `ci/<sha>` branches and on master, without blocking a push. A ruleset on GitHub refuses a push to master unless the `test.yml` jobs have passed for that commit. The app icon is drawn in code; `packaging/make_icons.py` renders it to PNG, SVG and ICO.
 
 ## License
 
