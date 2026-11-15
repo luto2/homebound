@@ -2,6 +2,8 @@
 import ctypes
 import io
 import json
+import os
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -646,3 +648,20 @@ def test_packaging_excludes_nothing_the_app_imports() -> None:
     clashes = {name for name in imported
                if any(name == gone or name.startswith(gone + ".") for gone in excluded)}
     assert not clashes, f"imported but excluded from the package: {sorted(clashes)}"
+
+
+def test_asyncio_threads_work_after_pyside6_is_loaded() -> None:
+    """Importing homebound before PySide6 keeps asyncio.to_thread working (Python 3.15 lazy imports, TODO 26).
+
+    Run in a fresh interpreter: in this test session the executor may already be resolved by an earlier test.
+    """
+    script = (
+        "import asyncio, homebound, PySide6.QtWidgets\n"
+        "async def main():\n"
+        "    return await asyncio.to_thread(lambda: 'ran')\n"
+        "print(asyncio.run(main()))\n"
+    )
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=60,
+                            env={**os.environ, "QT_QPA_PLATFORM": "offscreen"})
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "ran"
