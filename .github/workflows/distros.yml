@@ -55,6 +55,10 @@ jobs:
           useradd --create-home tester
           git config --global --add safe.directory '*'   # root's git steps on the tester-owned checkout
       - uses: actions/checkout@v4                   # with git installed, a real clone: test_push_gate runs git on it
+      # An image without a PATH of its own (opensuse/tumbleweed) gets only the $GITHUB_PATH entries once setup-uv
+      # adds one, and then no step finds sh. The standard folders on $GITHUB_PATH keep them on every image.
+      - name: System PATH
+        run: echo "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> "$GITHUB_PATH"
       - uses: astral-sh/setup-uv@v6
       - name: uv for the test user
         run: install -m 755 "$(command -v uv)" /usr/local/bin/uv

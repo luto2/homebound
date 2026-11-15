@@ -8,7 +8,7 @@ haven't touched yet, and when you need the file behind something you see in the 
   tooling and tests. How to *use* the app is in the [user guide](user/README.md); how the parts fit together is in [`architecture.md`](architecture.md); how the UI should
   *look* is in Quantum Works Design, the private submodule `design/qwd/`; why things were built the way they
   are is in the plans in [`docs/plans/`](plans/README.md).
-- **Kept current:** checked against `master` at 1.0.0 (2026-11-09), with the docs paths and the doc check of 2026-11-14, the ESI check of 2026-11-14 (`7af1861`) and the distro CI of 2026-11-14 (`6af4ae2`). Files and symbols are named
+- **Kept current:** checked against `master` at 1.0.0 (2026-11-09), with the docs paths and the doc check of 2026-11-14, the ESI check of 2026-11-14 (`7af1861`) the distro CI of 2026-11-14 (`6af4ae2`) and the Python 3.15 fix of 2026-11-15 (`dc9ca41`). Files and symbols are named
   instead of line numbers, because line numbers go stale with every edit. When you move a feature
   or add a module, update its row here in the same commit.
 
@@ -197,7 +197,7 @@ detail.
 | Module | Owns |
 |---|---|
 | `__main__.py` | Command line and app start |
-| `__init__.py` | `app_version` |
+| `__init__.py` | `app_version`; resolves `concurrent.futures.ThreadPoolExecutor` before PySide6 loads (Python 3.15 lazy imports) |
 | `settings.py` | The settings file, its fields, choices and ranges, log folder detection |
 | `backup.py` | Backup zips: create, list, prune, restore |
 | `hotkey.py` (platform) | Global overlay shortcut: Windows `RegisterHotKey`, KDE global shortcut service |

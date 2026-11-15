@@ -14,6 +14,11 @@ Status: implemented (2026-11-14) in `.github/workflows/distros.yml`. Deviations 
 - The first run on master (`6af4ae2`, 2026-11-14) passed on Arch and Debian. Fedora needs `util-linux`
   for `runuser` (`util-linux-core` lacks it), and openSUSE has no `libEGL1`/`libGL1` packages: the GL
   and EGL loaders come from `libglvnd`. The workflow has the corrected lists.
+- The second run on master (`05bd316`, 2026-11-14) failed on Fedora and openSUSE (TODO 26 and 27,
+  fixed 2026-11-15). `fedora:latest` ships Python 3.15, whose lazy imports break with PySide6 6.12:
+  `homebound/__init__.py` now resolves the executor before PySide6 loads. `opensuse/tumbleweed` has no
+  `PATH` in its image, so after `setup-uv` no step found `sh`; a "System PATH" step puts the standard
+  folders on `$GITHUB_PATH`.
 - uv is copied from `setup-uv` to `/usr/local/bin` so the test user can run it, and the uv steps set
   `HOME` and `UV_CACHE_DIR` for that user.
 - Since 2026-11-14 (after `6af4ae2`) the workflow also runs on the push gate's `ci/<sha>` branches, so
@@ -22,7 +27,7 @@ Status: implemented (2026-11-14) in `.github/workflows/distros.yml`. Deviations 
 
 - **Audience:** the owner and the coding agents that build this plan.
 - **Scope:** running the test suite on Fedora, Arch, Debian and openSUSE in GitHub Actions (TODO 25). The AppImage start check and the AUR `makepkg` check on other distros are separate and not part of this plan. The state of every plan is in [`README.md`](../README.md).
-- **Kept current:** written against `74263d9` (2026-11-14), deviations checked against `6af4ae2`. Update it when the plan changes or `.github/workflows/test.yml` changes shape.
+- **Kept current:** written against `74263d9` (2026-11-14), deviations checked against `dc9ca41` (2026-11-15). Update it when the plan changes or `.github/workflows/test.yml` changes shape.
 
 ## Why
 
