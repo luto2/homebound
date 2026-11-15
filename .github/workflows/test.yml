@@ -1,5 +1,8 @@
 name: test
 
+# Which jobs run depends on what the change touches (tools/ci_scope.py, shared with the push gate): docs only
+# runs the doc check, the server only runs mypy and the server tests on Linux, anything else runs everything.
+# A skipped job counts as passed, so the ruleset on master requires `ci-ok`, the one job that always runs.
 on:
   push:
   pull_request:
@@ -9,11 +12,35 @@ env:
   UV_PYTHON_PREFERENCE: only-system
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      scope: ${{ steps.scope.outputs.scope }}
+      tests: ${{ steps.scope.outputs.tests }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0                    # the diff against the previous push or origin/master
+      - id: scope
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python3 tools/ci_scope.py "$BASE" >> "$GITHUB_OUTPUT"
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Doc check (dead links, missing header blocks)
+        run: python3 tools/check_docs.py --strict
+
   pytest:
+    needs: changes
+    if: needs.changes.outputs.scope != 'docs'
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # The server runs on Linux only, so a server-only change skips Windows.
+        os: ${{ fromJSON(needs.changes.outputs.scope == 'full' && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
         python: ["3.14"]
         include:
           - os: ubuntu-latest
@@ -39,10 +66,18 @@ jobs:
       - run: uv sync --python ${{ matrix.python }}
       - name: Build static data (the tests use the real universe)
         run: uv run python -m homebound.universe.build_static
-      - run: uv run pytest -q
-      - name: Doc check (dead links, missing header blocks)
-        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
-        run: python3 tools/check_docs.py --strict
+      - name: Tests (all, or only the server tests for a server-only change)
+        run: uv run pytest -q ${{ needs.changes.outputs.tests }}
       - name: Type check
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.14'
         run: uv run mypy
+
+  ci-ok:
+    needs: [changes, docs, pytest]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every job passed or was skipped for this change
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+      - run: echo "scope ${{ needs.changes.outputs.scope }}"
