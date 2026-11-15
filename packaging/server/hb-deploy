@@ -3,7 +3,8 @@
 # Install to /usr/local/bin/hb-deploy; run every 5 minutes by homebound-deploy.timer, as root.
 # Asks GitHub for the latest published release (drafts and pre-releases don't count, so pushes to
 # master and freshly tagged drafts never deploy); when it's a newer commit than the checkout, fetches
-# its tag, fast-forwards master to it, syncs the venv and restarts homebound-sync. Map data (universe.sqlite) that the checked-out code can't read, after a
+# its tag and, only when the release bumps the server's VERSION (homebound_server/service.py), fast-forwards
+# master to it, syncs the venv and restarts homebound-sync. A client-only release is skipped. Map data (universe.sqlite) that the checked-out code can't read, after a
 # schema change, is rebuilt before the restart. If the new version doesn't answer /api/health, it goes back to the old
 # commit, tells Discord (HB_DISCORD_WEBHOOK) and skips that release until a newer one is published.
 # Holds deploys from 10:55 to 11:35 UTC, so the ESI pulls after EVE's downtime aren't interrupted.
@@ -15,6 +16,7 @@ HEALTH=${HB_DEPLOY_HEALTH_URL:-http://127.0.0.1:8080/api/health}
 STATE=${STATE_DIRECTORY:-/var/lib/homebound-deploy}
 SKIP="$STATE/skip"          # the commit that failed or can't be fast-forwarded to; not tried again
 PROBLEM="$STATE/problem"    # the last problem told to Discord, so it's told once, not every 5 minutes
+SAME="$STATE/same-version"  # the last release commit with the checkout's server VERSION; not looked at again
 export UV_PYTHON_PREFERENCE=only-system
 
 notify() {
@@ -23,6 +25,11 @@ notify() {
     "$REPO/.venv/bin/python" -c 'import json, sys; print(json.dumps({"content": sys.argv[1][:1900]}))' "$1" |
         curl -fsS -m 10 --retry 3 -H 'Content-Type: application/json' --data-binary @- "$HB_DISCORD_WEBHOOK" >/dev/null ||
         echo "Discord webhook failed"
+}
+
+server_version() {
+    # VERSION = "x.y.z" from homebound_server/service.py, read from stdin; empty when not found.
+    sed -n 's/^VERSION = "\([^"]*\)".*/\1/p' | head -n 1
 }
 
 short() {
@@ -95,6 +102,7 @@ fi
 old=$(git -C "$REPO" rev-parse HEAD)
 [ "$remote" = "$old" ] && exit 0
 [ "$remote" = "$(cat "$SKIP" 2>/dev/null)" ] && exit 0
+[ "$remote" = "$(cat "$SAME" 2>/dev/null)" ] && exit 0
 # Already past this release (deployed by hand, or from master before deploys followed releases):
 # wait for the next one rather than going back.
 git -C "$REPO" merge-base --is-ancestor "$remote" "$old" 2>/dev/null && exit 0
@@ -108,6 +116,15 @@ if [ -n "$(git -C "$REPO" status --porcelain --untracked-files=no)" ]; then
 fi
 if ! git -C "$REPO" fetch --quiet origin "refs/tags/$tag:refs/tags/$tag"; then
     echo "git fetch failed; trying again next run"
+    exit 0
+fi
+# Only a release that bumps the server's VERSION deploys; a client-only release leaves the server alone.
+# When either version can't be read, it deploys, and the health check guards the result.
+new_version=$(git -C "$REPO" show "$remote:homebound_server/service.py" 2>/dev/null | server_version)
+old_version=$(server_version < "$REPO/homebound_server/service.py" 2>/dev/null)
+if [ -n "$new_version" ] && [ "$new_version" = "$old_version" ]; then
+    echo "$remote" > "$SAME"
+    echo "release $tag keeps server version $old_version; not deployed"
     exit 0
 fi
 if ! git -C "$REPO" merge-base --is-ancestor "$old" "$remote"; then
