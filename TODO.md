@@ -2,7 +2,7 @@
 
 - **Audience:** the owner and coding agents.
 - **Scope:** open items only. Finished work is in plan status lines, `CHANGELOG.md` and git; the rules for numbering are below.
-- **Kept current:** checked against `74263d9` (2026-11-14). Update it when an item is added, finished or changes.
+- **Kept current:** checked against `05bd316` (2026-11-15). Update it when an item is added, finished or changes.
 
 Open items only. Finished work is recorded in the plan's status line, in the "Done" table of
 [`docs/plans/README.md`](docs/plans/README.md), in [`CHANGELOG.md`](CHANGELOG.md) and in git. Item
@@ -57,6 +57,21 @@ rating and a model suggestion; the scale is in [`CLAUDE.md`](CLAUDE.md) under "E
     can't carry widgets. Make it a plain disabled "Overlay mode" item and guard against widget actions
     in the tray menu. Plan: `docs/plans/plan-tray-caption.md`.
     Effort: 1/5 · Haiku.
+26. The distro CI fails on Fedora: `fedora:latest` ships Python 3.15 (found 2026-11-15 on `05bd316`,
+    run 43647880232). About 100 server and sync tests fail with `TypeError: 'lazy_import' object is not
+    callable`, raised where `asyncio.to_thread` builds its `concurrent.futures.ThreadPoolExecutor`
+    (`homebound_server/jobs.py`, `homebound_server/app.py`). Python 3.15 imports `ThreadPoolExecutor`
+    lazily (PEP 810). It reproduces locally with `uv run -p 3.15 pytest tests/test_jobs.py`; the same test
+    passes when called outside pytest, so it may be pytest, a plugin or CPython 3.15 rather than our code.
+    Find the cause, fix it here or report it upstream, and make sure the server works on 3.15.
+    Effort: 4/5 · Opus. The cause is unknown.
+27. The distro CI fails on openSUSE (found 2026-11-15 on `05bd316`, run 43647880232): the step "uv for
+    the test user" in `.github/workflows/distros.yml` stops with `exec: "sh": executable file not found
+    in $PATH`, right after `astral-sh/setup-uv`. Likely cause, not confirmed: the `opensuse/tumbleweed`
+    image sets no `PATH`, so once setup-uv adds its folder the container's PATH has little else. Try
+    writing the standard folders (`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`) to
+    `$GITHUB_PATH` before setup-uv, and check the run on a `ci/<sha>` branch.
+    Effort: 2/5 · Sonnet.
 
 ## To do
 
