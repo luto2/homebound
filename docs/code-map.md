@@ -8,7 +8,7 @@ haven't touched yet, and when you need the file behind something you see in the 
   tooling and tests. How to *use* the app is in the [user guide](user/README.md); how the parts fit together is in [`architecture.md`](architecture.md); how the UI should
   *look* is in Quantum Works Design, the private submodule `design/qwd/`; why things were built the way they
   are is in the plans in [`docs/plans/`](plans/README.md).
-- **Kept current:** checked against `master` at 1.0.0 (2026-11-09), with the docs paths and the doc check of 2026-11-14, the ESI check of 2026-11-14 (`7af1861`) the distro CI of 2026-11-14 (`6af4ae2`) the Python 3.15 fix of 2026-11-15 (`dc9ca41`) and the wormhole data of 2026-11-15 (`cb566b0`). Files and symbols are named
+- **Kept current:** checked against `master` at 1.0.0 (2026-11-09), with the docs paths and the doc check of 2026-11-14, the ESI check of 2026-11-14 (`7af1861`) the distro CI of 2026-11-14 (`6af4ae2`) the Python 3.15 fix of 2026-11-15 (`dc9ca41`) the wormhole data of 2026-11-15 (`cb566b0`) and the CI scope of 2026-11-16 (`bb7a318`). Files and symbols are named
   instead of line numbers, because line numbers go stale with every edit. When you move a feature
   or add a module, update its row here in the same commit.
 
@@ -360,10 +360,11 @@ Server ops files (Litestream, restore test, `hb-deploy` auto-deploy timer) are i
 | Windows installer (Inno Setup) | `packaging/windows/homebound.iss` |
 | App icon (drawn in code, rendered to PNG/SVG/ICO) | `ui/map_window.py` `app_mark`; `packaging/make_icons.py`; `packaging/icons/` |
 | Release build on a `v*` tag | `.github/workflows/release.yml` |
-| Tests on Linux and Windows on every push | `.github/workflows/test.yml` |
+| Tests on Linux and Windows on every push, only the jobs the change needs; `ci-ok` is the check master requires | `.github/workflows/test.yml` |
+| Which checks a change needs (docs, server or full), shared by CI and the push gate; tests in `tests/test_ci_scope.py` | `tools/ci_scope.py` `scope_of` |
 | Tests on Arch, Fedora, Debian and openSUSE on the push gate's `ci/<sha>` branches and master, not blocking (containers, each distribution's Python, as a normal user) | `.github/workflows/distros.yml` |
 | Push gate (doc check, local tests, CI, two reviewers) | `tools/push_gate.py`; `.githooks/pre-push` |
-| Doc check (dead links, header blocks); tests in `tests/test_check_docs.py` | `tools/check_docs.py`; CI step in `test.yml` |
+| Doc check (dead links, header blocks); tests in `tests/test_check_docs.py` | `tools/check_docs.py`; `docs` job in `test.yml` |
 | Package metadata, scripts, coverage settings | `pyproject.toml` |
 | UI specs and mockups | `design/qwd/projects/homebound/` in the QWD submodule (Qt notes in `qt-implementation.md`); never edited here, changes are QWD requests |
 

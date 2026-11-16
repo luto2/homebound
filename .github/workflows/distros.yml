@@ -4,6 +4,8 @@ name: distros
 # Python. Runs on the push gate's ci/<sha> branches, so the result shows on a commit before it lands, and on
 # master. The push gate waits for test.yml alone and GitHub doesn't require these jobs, so a rolling distribution
 # that breaks a library doesn't block pushes. Plan: docs/plans/done/plan-distro-ci.md (TODO 25).
+# Only a change with scope `full` runs here (tools/ci_scope.py): docs and the server don't depend on the
+# distribution's Qt libraries.
 on:
   push:
     branches: [master, "ci/**"]
@@ -13,7 +15,22 @@ env:
   UV_PYTHON_PREFERENCE: only-system
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      scope: ${{ steps.scope.outputs.scope }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: scope
+        env:
+          BASE: ${{ github.event.before }}
+        run: python3 tools/ci_scope.py "$BASE" >> "$GITHUB_OUTPUT"
+
   pytest-distro:
+    needs: changes
+    if: needs.changes.outputs.scope == 'full'
     strategy:
       fail-fast: false
       matrix:

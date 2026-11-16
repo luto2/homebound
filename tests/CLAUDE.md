@@ -2,6 +2,8 @@
 
 `uv run pytest` (add `--cov=homebound` for coverage; settings in `pyproject.toml`). The push gate runs the suite on Python 3.12 and 3.14, as `.github/workflows/test.yml` does on Linux and Windows. GitHub CI also runs it on Arch, Fedora, Debian and openSUSE with their own Python, as a normal user (`.github/workflows/distros.yml`), on the push gate's `ci/<sha>` branches and on master; the gate doesn't wait for it.
 
+CI and the push gate run only what a change needs (`tools/ci_scope.py`): docs only runs the doc check, and a change to `homebound_server/` or the server tests runs only the server tests on Linux. A server test is any file here that imports `homebound_server` or `server_helpers`; no list to keep. Anything else runs the full suite everywhere.
+
 ## Rules
 
 - **Qt runs offscreen.** `tests/conftest.py` sets `QT_QPA_PLATFORM=offscreen` before anything imports Qt, so no test window appears on the desktop. Keep that line first.

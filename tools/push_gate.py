@@ -4,6 +4,8 @@
 Runs for one commit, in a throwaway worktree, so uncommitted changes never affect the result:
 
 1. Local CI replica: the doc check, build the static data, then ``pytest -q`` on Python 3.14 and 3.12 (as ``test.yml``).
+   Like CI it runs only what the diff needs (``tools/ci_scope.py``): docs only runs the doc check, a server-only
+   change runs only the server tests.
 2. Two ``claude -p --model sonnet`` reviewers read the diff against ``origin/master``, and only what it
    touches: test quality (changed tests that can't fail or assert a bug) and duplicated implementations
    (changed code that re-implements something already in the codebase). A reviewer is skipped when the
@@ -36,6 +38,9 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ci_scope  # noqa: E402  (tools/ is not a package)
 
 REPO = Path(subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True,
                            cwd=Path(__file__).resolve().parent, check=True).stdout.strip())
@@ -83,19 +88,22 @@ def tail(text: str, lines: int = 40) -> str:
 
 # ---------------------------------------------------------------- 1. local tests
 
-def local_tests(worktree: Path) -> tuple[bool, str]:
+def local_tests(worktree: Path, files: list[str]) -> tuple[bool, str]:
     env = {"QT_QPA_PLATFORM": "offscreen"}   # unlike CI, a uv-managed Python is fine here (3.12 is one)
-    report = []
+    scope, tests = ci_scope.scope_of(files, worktree)
+    report = [f"scope {scope} (tools/ci_scope.py)"]
     say("local: python3 tools/check_docs.py --strict")
     ok, out = run(["python3", "tools/check_docs.py", "--strict"], worktree)
     if not ok:
         return False, f"the doc check failed (see docs/README.md, \"Checking\"):\n{tail(out)}"
+    if scope == ci_scope.DOCS:
+        return True, "\n".join(report + ["docs only: the doc check passed, no tests needed"])
     for i, python in enumerate(PYTHONS):
         venv = {**env, "UV_PROJECT_ENVIRONMENT": str(STATE / f"venv-{python}")}
         steps = [["uv", "sync", "--python", python]]
         if i == 0:
             steps.append(["uv", "run", "--python", python, "python", "-m", "homebound.universe.build_static"])
-        steps.append(["uv", "run", "--python", python, "pytest", "-q", "-p", "no:cacheprovider"])
+        steps.append(["uv", "run", "--python", python, "pytest", "-q", "-p", "no:cacheprovider", *tests])
         for cmd in steps:
             say(f"local: {' '.join(cmd)}")
             ok, out = run(cmd, worktree, venv)
@@ -257,7 +265,7 @@ def check(sha: str, with_ci: bool = False) -> tuple[bool, str]:
     try:
         jobs, skipped = {}, []
         if not stamp(sha).exists():
-            jobs["local tests (py " + "/".join(PYTHONS) + ")"] = lambda: local_tests(worktree)
+            jobs["local tests (py " + "/".join(PYTHONS) + ")"] = lambda: local_tests(worktree, files)
             for name, (relevant, prompt) in REVIEWERS.items():
                 if any(relevant.search(f) for f in files):
                     jobs[f"reviewer: {name}"] = lambda n=name, p=prompt: reviewer(n, p, sha, base, files, worktree)
