@@ -2,7 +2,7 @@
 
 - **Audience:** players installing Homebound.
 - **Scope:** every way to install and start Homebound, the one-time map data download and the first settings. Where the data ends up is in [Where your data lives](data.md).
-- **Kept current:** checked against `702f2d5` (2026-11-14). Update it when the installers, the packages or the first-start dialogs change.
+- **Kept current:** checked against `cb566b0` (2026-11-15). Update it when the installers, the packages or the first-start dialogs change.
 
 ## Linux: the install script
 
@@ -28,7 +28,7 @@ Download from the GitHub release page:
 
 ## Map data download
 
-Packages contain no EVE game data. On first start, a **Download map data** dialog explains that Homebound builds its map of New Eden once from the EVE static data export and the community wormhole data (about 100 MB). Click **Download**; a bar shows each step, and the main window opens when it's done. If the download fails (no network, say), the dialog shows why and **Download** becomes **Retry**. **Quit** stops the build and closes Homebound. In a package the downloads are deleted afterwards, so only the finished `universe.sqlite` (a few MB) stays in the data folder.
+Packages contain no copy of EVE's static data export. On first start, a **Download map data** dialog explains that Homebound builds its map of New Eden once from the EVE static data export and the community wormhole data (about 100 MB). The wormhole data (statics and wormhole types) comes from the Homebound server; if that doesn't answer, Homebound asks the community sites themselves, and if they don't answer either it uses a copy that comes with the app. So the first start works while one of those sites is down. Click **Download**; a bar shows each step, and the main window opens when it's done. If the download fails (no network, say), the dialog shows why and **Download** becomes **Retry**. **Quit** stops the build and closes Homebound. In a package the downloads are deleted afterwards, so only the finished `universe.sqlite` (a few MB) stays in the data folder.
 
 ## From source
 
@@ -44,7 +44,7 @@ uv run python -m homebound
 
 ### Refreshing the map data
 
-To refresh the universe data of an installed package (after a new wormhole type, say), run `homebound --build-static --refresh` (Windows: `Homebound.exe --build-static --refresh` in the install folder, which runs without a window or output for a minute or two; AppImage: `./Homebound-*.AppImage --build-static --refresh`). It writes a new `universe.sqlite` into the data folder. When a new Homebound version needs a newer format, the dialog appears again at start as **Map data needs an update**.
+To refresh the universe data of an installed package (after a new wormhole type, say), run `homebound --build-static --refresh` (Windows: `Homebound.exe --build-static --refresh` in the install folder, which runs without a window or output for a minute or two; AppImage: `./Homebound-*.AppImage --build-static --refresh`). It writes a new `universe.sqlite` into the data folder. Add `--from-sources` to merge the community wormhole sites on your machine instead of asking the Homebound server. When a new Homebound version needs a newer format, the dialog appears again at start as **Map data needs an update**.
 
 ## First start
 

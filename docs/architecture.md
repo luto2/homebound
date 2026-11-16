@@ -40,8 +40,9 @@ Read the diagram left to right: log lines and pastes turn into map changes; the 
 
 ### Static data: the universe file
 
-- **Owns:** `universe.sqlite`, a read-only database of systems, classes, gates, effects, statics and wormhole types. `homebound/universe/build_static.py` builds it once from the EVE SDE, the Wanderer and anoik.is statics and whtype.info. Where those disagree on a system's statics, zKillboard breaks the tie and the answer is pinned in `data/statics_resolved.json`.
-- **Never:** is shipped in a package. The data is CCP's, so each install builds it on first start.
+- **Owns:** `universe.sqlite`, a read-only database of systems, classes, gates, effects, statics and wormhole types. `homebound/universe/build_static.py` builds it once: systems, gates and effects from the EVE SDE (CCP's download), statics and wormhole types from the **wormhole data**, a merge of the Wanderer and anoik.is statics and whtype.info. Where Wanderer and anoik disagree on a system's statics, zKillboard breaks the tie and the answer is pinned in `data/statics_resolved.json`.
+- The build takes the wormhole data from the first of three places that answers with a file that passes `validate_wormhole_data`: the sync server (`GET /api/static-data/wormhole-data.json`, merged there daily), the community sources merged on the client, and the snapshot `data/wormhole_data.json` shipped in the package. So a first start works while a community site is down ([plan](plans/done/plan-own-wormhole-data.md)). The server's own build uses `--from-sources`, so it never asks itself.
+- **Never:** is shipped in a package. The SDE is CCP's, so each install builds it on first start. Only the wormhole data snapshot and the pinned statics ship.
 - Files: [code-map §4](code-map.md#4-modules-package-by-package), [data on disk](code-map.md#6-data-on-disk).
 
 ### UI and overlay
@@ -59,7 +60,7 @@ Read the diagram left to right: log lines and pastes turn into map changes; the 
 
 ### Sync server and protocol
 
-- **Owns:** shared cloud maps. Clients send operations (per-field changes with a hybrid logical clock); the server merges them last-writer-wins per field and broadcasts the result. Code shared by both sides lives in `homebound/sync/` (`protocol.py`, `merge.py`, `hlc.py`), so both merge the same way. The server (`homebound_server/`) also holds accounts through EVE SSO, billing by ISK payment to a receiving character, and presence.
+- **Owns:** shared cloud maps. Clients send operations (per-field changes with a hybrid logical clock); the server merges them last-writer-wins per field and broadcasts the result. Code shared by both sides lives in `homebound/sync/` (`protocol.py`, `merge.py`, `hlc.py`), so both merge the same way. The server (`homebound_server/`) also holds accounts through EVE SSO, billing by ISK payment to a receiving character, and presence, and serves the merged wormhole data for the clients' first-start build (public, no sign-in; see the static data section above).
 - **Never:** is required. A local map never touches the network. A client that cannot reach the server keeps working and resends its outbox when it reconnects.
 - A protocol change deploys the server first, then the client is released. The server deploys itself from a published GitHub release, but only one that bumps `VERSION` in `homebound_server/service.py`; a client-only release leaves it alone ([`homebound_server/CLAUDE.md`](../homebound_server/CLAUDE.md)). The wire format is in [`plans/done/sync-protocol.md`](plans/done/sync-protocol.md), the design in [`plans/done/cloud-sync-plan.md`](plans/done/cloud-sync-plan.md) and the operation in [`plans/done/hosting-hetzner.md`](plans/done/hosting-hetzner.md).
 - Files: [code-map §5](code-map.md#5-cloud-sync).

@@ -2,7 +2,7 @@
 
 - **Audience:** the owner and coding agents.
 - **Scope:** open items only. Finished work is in plan status lines, `CHANGELOG.md` and git; the rules for numbering are below.
-- **Kept current:** checked against `dc9ca41` (2026-11-15). Update it when an item is added, finished or changes.
+- **Kept current:** checked against `cb566b0` (2026-11-15). Update it when an item is added, finished or changes.
 
 Open items only. Finished work is recorded in the plan's status line, in the "Done" table of
 [`docs/plans/README.md`](docs/plans/README.md), in [`CHANGELOG.md`](CHANGELOG.md) and in git. Item
@@ -57,6 +57,13 @@ rating and a model suggestion; the scale is in [`CLAUDE.md`](CLAUDE.md) under "E
     can't carry widgets. Make it a plain disabled "Overlay mode" item and guard against widget actions
     in the tray menu. Plan: `docs/plans/plan-tray-caption.md`.
     Effort: 1/5 · Haiku.
+28. The privacy texts don't say what the app contacts at first start (found 2026-11-15, while building
+    `docs/plans/done/plan-own-wormhole-data.md`). `docs/legal/datenschutz.de.md` (binding) and `.en.md` say
+    that without the sync service no data leaves the computer apart from requests to zKillboard. The
+    first-start build also contacts CCP (the SDE), GitHub (Wanderer), anoik.is and whtype.info, and since
+    the wormhole data change the Homebound server first (IP address and user agent, like any request).
+    EVE-Scout is asked for routes too. Owner and lawyer task: the legal texts are theirs to change.
+    Effort: 1/5 · owner.
 
 ## To do
 

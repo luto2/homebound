@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import urllib.error
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,6 +13,7 @@ from typing import NoReturn
 
 import pytest
 
+from conftest import UNIVERSE
 from homebound import __main__ as entry_point
 from homebound.universe import build_static
 from homebound.universe.db import SCHEMA_VERSION, Universe, UniverseDataError
@@ -84,16 +86,31 @@ WHTYPE_SCRIPT = ("{wormhole:'H296', respawn:['Wandering'], spawn_in:['Class 5','
 
 @pytest.fixture
 def fake_sources(tmp_path, monkeypatch) -> dict:
-    """Redirect the build into tmp_path and serve fake source files instead of downloading."""
+    """Redirect the build into tmp_path and serve fake source files instead of downloading.
+
+    The sync server is unreachable unless a test puts the wormhole data it should answer in
+    ``state["server"]``; ``state["server_calls"]`` records the URLs asked.
+    """
     monkeypatch.setattr(build_static, "CACHE", tmp_path / "cache")
     monkeypatch.setattr(build_static, "OUTPUT", tmp_path / "universe.sqlite")
     monkeypatch.setattr(build_static, "RESOLVED", tmp_path / "resolved.json")
     monkeypatch.setattr(build_static, "SHIPPED_RESOLVED", tmp_path / "shipped.json")
-    state = {"sde_build": True, "calls": []}
+    monkeypatch.setattr(build_static, "SHIPPED_WORMHOLE_DATA", tmp_path / "shipped_wormhole_data.json")
+    monkeypatch.setattr(build_static, "MINIMUM_SYSTEMS_WITH_STATICS", 1)   # the fake SDE has two J-systems
+    state: dict = {"sde_build": True, "calls": [], "server": None, "server_calls": [], "failing": set()}
+
+    def fake_server(url: str) -> object:
+        """Answer like the sync server: the data in ``state["server"]``, or unreachable."""
+        state["server_calls"].append(url)
+        if state["server"] is None:
+            raise urllib.error.URLError("no server in tests")
+        return state["server"]
 
     def fake_fetch(url: str, destination: Path, refresh: bool, progress=None) -> Path:
         """Record the call and write the fake file for the source URL."""
         state["calls"].append((url, refresh))
+        if url in state["failing"]:
+            raise urllib.error.HTTPError(url, 503, "Service Unavailable", {}, None)  # type: ignore[arg-type]
         if url == build_static.SDE_URL:
             make_sde(destination, state["sde_build"])
         elif url.endswith("wormholeSystems.json"):
@@ -107,6 +124,7 @@ def fake_sources(tmp_path, monkeypatch) -> dict:
         return destination
 
     monkeypatch.setattr(build_static, "fetch", fake_fetch)
+    monkeypatch.setattr(build_static, "fetch_wormhole_data", fake_server)
     monkeypatch.setattr(build_static, "zkill_statics", lambda system_id: ["N110"])
     monkeypatch.setattr(build_static.time, "sleep", lambda seconds: None)
     state["tmp"] = tmp_path
@@ -226,13 +244,15 @@ def test_resolve_statics_single_source(fake_sources) -> None:
     assert build_static.resolve_statics({1: "J1", 2: "J2"}, {1: ["A"]}, {2: ["B"]}) == {1: ["A"], 2: ["B"]}
 
 
-def test_main_passes_refresh(monkeypatch) -> None:
-    """The build command passes --refresh on to build() and exits with 0 either way."""
+def test_main_passes_refresh_and_from_sources(monkeypatch) -> None:
+    """The build command passes --refresh and --from-sources on to build() and exits with 0 either way."""
     calls = []
-    monkeypatch.setattr(build_static, "build", lambda refresh=False: calls.append(refresh))
+    monkeypatch.setattr(build_static, "build",
+                        lambda refresh=False, from_server=True: calls.append((refresh, from_server)))
     assert build_static.main(["--refresh"]) == 0
     assert build_static.main([]) == 0
-    assert calls == [True, False]
+    assert build_static.main(["--from-sources"]) == 0
+    assert calls == [(True, True), (False, True), (False, False)]
 
 
 def test_fetch_reports_fractions(tmp_path, monkeypatch) -> None:
@@ -572,10 +592,11 @@ def test_main_version_and_build_static(monkeypatch, capsys) -> None:
     assert entry_point.main() == 0
     assert capsys.readouterr().out.startswith("Homebound ")
     calls = []
-    monkeypatch.setattr(build_static, "build", lambda refresh=False: calls.append(refresh))
-    monkeypatch.setattr(entry_point.sys, "argv", ["homebound", "--build-static", "--refresh"])
+    monkeypatch.setattr(build_static, "build",
+                        lambda refresh=False, from_server=True: calls.append((refresh, from_server)))
+    monkeypatch.setattr(entry_point.sys, "argv", ["homebound", "--build-static", "--refresh", "--from-sources"])
     assert entry_point.main() == 0
-    assert calls == [True]
+    assert calls == [(True, False)]
 
 
 def test_module_exposes_main() -> None:
@@ -665,3 +686,159 @@ def test_asyncio_threads_work_after_pyside6_is_loaded() -> None:
                             env={**os.environ, "QT_QPA_PLATFORM": "offscreen"})
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "ran"
+
+
+# ---------------------------------------------------------------- the wormhole data: server, sources, snapshot
+
+def wormhole_data_file(statics: dict[str, list[str]], built: str = "2026-11-15T12:00:00Z") -> dict:
+    """Return wormhole data (format 1) with these statics and one wormhole type, C247."""
+    return {"format": 1, "built": built, "sources": {}, "statics": statics,
+            "wormhole_types": [dict(zip(build_static.WORMHOLE_TYPE_COLUMNS,
+                                        ("C247", "C3", 16.0, 2000000000, 300000000, 0, 1, "C3", None)))]}
+
+
+def built_meta(fake_sources: dict) -> dict[str, str]:
+    """Return the meta rows of the fake build's universe.sqlite."""
+    return dict(Universe(fake_sources["tmp"] / "universe.sqlite").database.execute("SELECT key, value FROM meta"))
+
+
+def test_build_takes_the_wormhole_data_from_the_server_first(fake_sources) -> None:
+    """With the server up, its statics and types are used, only the SDE is downloaded, and meta records it."""
+    fake_sources["server"] = wormhole_data_file({"31000001": ["C247"], "31999999": ["X1"]})
+    universe = Universe(build_static.build())
+    assert universe.by_name("J100001").statics == ("C247",)
+    assert universe.by_name("J100002").statics == ()
+    assert universe.wormhole_type("C247").destinations == ("C3",) and universe.wormhole_type("H296") is None
+    assert [url for url, _ in fake_sources["calls"]] == [build_static.SDE_URL]
+    assert fake_sources["server_calls"] == [build_static.wormhole_data_url()]
+    meta = built_meta(fake_sources)
+    assert (meta["wormhole_data_origin"], meta["wormhole_data_built"]) == ("server", "2026-11-15T12:00:00Z")
+
+
+@pytest.mark.parametrize("answer", [
+    {"format": 2, "statics": {}, "wormhole_types": []},                       # a format this client doesn't know
+    "not a dict",
+    {"format": 1, "built": "x", "sources": {}, "statics": {"31999999": ["X1"]},  # only systems the SDE lacks
+     "wormhole_types": []},
+])
+def test_unusable_server_data_falls_back_to_the_sources(fake_sources, answer) -> None:
+    """Server data that fails the checks is skipped: the community sources are merged as before."""
+    fake_sources["server"] = answer
+    universe = Universe(build_static.build())
+    assert universe.by_name("J100001").statics == ("H296",)
+    assert built_meta(fake_sources)["wormhole_data_origin"] == "sources"
+
+
+def test_from_server_false_never_asks_the_server(fake_sources) -> None:
+    """The server's own build (--from-sources) merges the sources without asking any server."""
+    fake_sources["server"] = wormhole_data_file({"31000001": ["C247"]})
+    build_static.build(from_server=False)
+    assert fake_sources["server_calls"] == []
+    assert built_meta(fake_sources)["wormhole_data_origin"] == "sources"
+
+
+def test_build_falls_back_to_the_shipped_snapshot(fake_sources) -> None:
+    """Server unreachable and anoik.is down: the shipped snapshot gives the statics."""
+    fake_sources["failing"].add(build_static.ANOIK_URL)
+    (fake_sources["tmp"] / "shipped_wormhole_data.json").write_text(
+        json.dumps(wormhole_data_file({"31000002": ["N110"]}, built="2026-11-01T00:00:00Z")))
+    universe = Universe(build_static.build())
+    assert universe.by_name("J100002").statics == ("N110",)
+    meta = built_meta(fake_sources)
+    assert (meta["wormhole_data_origin"], meta["wormhole_data_built"]) == ("snapshot", "2026-11-01T00:00:00Z")
+
+
+def test_build_fails_without_any_wormhole_data_and_writes_nothing(fake_sources) -> None:
+    """No server, a source down and no snapshot: the build fails, naming all three, and writes no file."""
+    fake_sources["failing"].add(build_static.ANOIK_URL)
+    with pytest.raises(build_static.WormholeDataError, match="Homebound server.*community sources.*shipped snapshot"):
+        build_static.build()
+    assert not (fake_sources["tmp"] / "universe.sqlite").exists()
+
+
+@pytest.mark.parametrize(("data", "problem"), [
+    ({"format": 1, "built": "x", "statics": {"31000001": ["H296"]}}, "lacks"),
+    ({"format": 1, "built": "x", "statics": {"J100001": ["H296"]}, "wormhole_types": []}, "malformed statics"),
+    ({"format": 1, "built": "x", "statics": {"31000001": [5]}, "wormhole_types": []}, "malformed statics"),
+    ({"format": 1, "built": "x", "statics": {"31000001": ["H296"]}, "wormhole_types": []}, "no wormhole types"),
+    ({"format": 1, "built": "x", "statics": {"31000001": ["H296"]}, "wormhole_types": [{"name": "H296"}]},
+     "malformed wormhole type"),
+])
+def test_validate_wormhole_data_rejects_malformed_files(data, problem, monkeypatch) -> None:
+    """Missing parts, non-numeric system keys, non-text codes, no types or incomplete type rows are refused."""
+    monkeypatch.setattr(build_static, "MINIMUM_SYSTEMS_WITH_STATICS", 1)
+    with pytest.raises(build_static.WormholeDataError, match=problem):
+        build_static.validate_wormhole_data(data, {31000001})
+
+
+def test_validate_wormhole_data_needs_enough_known_systems(monkeypatch) -> None:
+    """Fewer known systems with statics than the minimum is refused; empty lists and unknown systems don't count."""
+    monkeypatch.setattr(build_static, "MINIMUM_SYSTEMS_WITH_STATICS", 2)
+    data = wormhole_data_file({"31000001": ["H296"], "31000002": [], "31999999": ["X1"]})
+    with pytest.raises(build_static.WormholeDataError, match="only 1 known systems"):
+        build_static.validate_wormhole_data(data, {31000001, 31000002})
+    assert build_static.validate_wormhole_data(data, {31000001, 31999999}) is data
+
+
+def test_export_writes_the_merged_data_and_keeps_a_cached_source(fake_sources) -> None:
+    """The export merges the sources into a valid file; with refresh, a source that fails keeps its cached copy."""
+    destination = fake_sources["tmp"] / "out" / "wormhole_data.json"
+    known = {31000001: "J100001", 31000002: "J100002"}
+    first = build_static.export_wormhole_data(destination, known)
+    assert json.loads(destination.read_text()) == first
+    assert first["statics"] == {"31000001": ["H296"], "31000002": ["N110"]}
+    assert {entry["state"] for entry in first["sources"].values()} == {"fresh"}
+    fake_sources["failing"].add(build_static.ANOIK_URL)
+    second = build_static.export_wormhole_data(destination, known, refresh=True)
+    assert second["sources"]["anoik.json"]["state"] == "kept" and "503" in second["sources"]["anoik.json"]["problem"]
+    assert second["sources"]["wormholes.json"]["state"] == "fresh" and second["statics"] == first["statics"]
+
+
+def test_export_without_a_cached_copy_fails_and_keeps_the_old_file(fake_sources) -> None:
+    """A source that fails with nothing cached fails the export, and the existing file stays as it was."""
+    destination = fake_sources["tmp"] / "wormhole_data.json"
+    destination.write_text("old")
+    fake_sources["failing"].add(build_static.ANOIK_URL)
+    with pytest.raises(urllib.error.HTTPError):
+        build_static.export_wormhole_data(destination, {31000001: "J100001"})
+    assert destination.read_text() == "old"
+
+
+def test_export_uses_its_own_pinned_answers(fake_sources) -> None:
+    """``resolved`` keeps the zKill answers out of RESOLVED, as the server does with its tracked checkout."""
+    own = fake_sources["tmp"] / "state" / "statics_resolved.json"
+    build_static.export_wormhole_data(fake_sources["tmp"] / "wormhole_data.json",
+                                      {31000001: "J100001", 31000002: "J100002"}, resolved=own)
+    assert json.loads(own.read_text())["J100002"]["source"] == "zkill"
+    assert not (fake_sources["tmp"] / "resolved.json").exists()
+
+
+def test_main_exports_the_wormhole_data(fake_sources, tmp_path) -> None:
+    """--export-wormhole-data builds the universe first when it's missing, then writes the file."""
+    destination = tmp_path / "snapshot.json"
+    assert build_static.main(["--export-wormhole-data", str(destination)]) == 0
+    assert json.loads(destination.read_text())["statics"]["31000001"] == ["H296"]
+    assert fake_sources["server_calls"] == []
+
+
+@pytest.mark.parametrize(("settings_text", "expected"), [
+    ('{"sync_server": "https://maps.example.org/"}', "https://maps.example.org"),
+    ('{"sync_server": "ftp://wrong"}', "https://homebound.luthopian.de"),
+    ("not json", "https://homebound.luthopian.de"),
+    (None, "https://homebound.luthopian.de"),
+])
+def test_wormhole_data_url_follows_the_sync_server_setting(tmp_path, monkeypatch, settings_text, expected) -> None:
+    """The URL uses sync_server from the settings file, and the default when it is missing, bad or not http(s)."""
+    settings_file = tmp_path / "settings.json"
+    if settings_text is not None:
+        settings_file.write_text(settings_text)
+    monkeypatch.setattr(build_static, "SETTINGS_FILE", settings_file)
+    assert build_static.wormhole_data_url() == expected + "/api/static-data/wormhole-data.json"
+
+
+def test_the_shipped_snapshot_is_valid_for_the_real_universe() -> None:
+    """data/wormhole_data.json, the snapshot the packages ship, passes the checks against the real SDE."""
+    snapshot = json.loads((Path(build_static.__file__).resolve().parents[2] / "data" / "wormhole_data.json")
+                          .read_text(encoding="utf-8"))
+    known = {system.id for system in UNIVERSE.all_systems()}
+    assert build_static.validate_wormhole_data(snapshot, known) is snapshot

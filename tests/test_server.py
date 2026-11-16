@@ -1,11 +1,14 @@
 """The sync server in-process: login, sessions, sync, conflicts, roles, billing, prune, presence, corp maps."""
+import json
 from datetime import timedelta
 
 import pytest
 
-from conftest import HOME, pick_system
+from conftest import HOME, UNIVERSE, pick_system
 from homebound.sync.hlc import format_hlc
+from homebound.universe import build_static
 from homebound_server.billing import map_price, monthly_total
+from homebound_server.config import Config
 from homebound_server.db import iso, parse_iso, utc_now
 from server_helpers import Harness, Socket, system_op
 
@@ -989,3 +992,51 @@ def test_deleted_accounts_are_purged_after_12_months(harness) -> None:
     assert count("SELECT count(*) FROM payments WHERE journal_id=2") == 1
     assert count("SELECT count(*) FROM outgoing_mails WHERE key='receipt:2'") == 1
     assert harness.api("GET", "/api/account", bob).status_code == 200
+
+
+# ---------------------------------------------------------------- wormhole data for the clients' first-start build
+
+def test_wormhole_data_is_served_once_built(tmp_path) -> None:
+    """The route answers 503 until the job has run; in dev mode the job serves the shipped snapshot, publicly."""
+    harness = Harness(tmp_path)
+    route = build_static.WORMHOLE_DATA_ROUTE
+    waiting = harness.client.get(route)
+    assert waiting.status_code == 503 and waiting.json()["error"] == "not_built"
+    assert harness.service.refresh_wormhole_data() == {"snapshot": True}
+    served = harness.client.get(route)                       # no session token: the build runs before sign-in
+    assert served.status_code == 200 and "public" in served.headers["cache-control"]
+    assert served.json() == json.loads(build_static.SHIPPED_WORMHOLE_DATA.read_text(encoding="utf-8"))
+    assert (tmp_path / "wormhole-data.json").is_file()       # next to the database by default
+
+
+def test_wormhole_data_job_merges_against_the_server_universe(tmp_path, monkeypatch, caplog) -> None:
+    """Outside dev mode the job exports from the sources with its own pinned answers and logs kept copies."""
+    harness = Harness(tmp_path)
+    harness.config.dev = False
+    harness.config.wormhole_data = tmp_path / "served" / "wormhole-data.json"
+    calls = []
+
+    def fake_export(destination, known, resolved=None, refresh=False):
+        """Record the call and answer like an export whose anoik download failed."""
+        calls.append((destination, len(known), resolved, refresh))
+        return {"statics": {"31000001": ["H296"]},
+                "sources": {"anoik.json": {"state": "kept", "problem": "HTTP Error 503"},
+                            "wormholes.json": {"state": "fresh"}}}
+
+    monkeypatch.setattr(build_static, "export_wormhole_data", fake_export)
+    with caplog.at_level("WARNING", logger="homebound.server"):
+        assert harness.service.refresh_wormhole_data() == {"systems": 1, "kept": ["anoik.json"]}
+    destination, known_count, resolved, refresh = calls[0]
+    assert destination == tmp_path / "served" / "wormhole-data.json" and refresh
+    assert resolved == tmp_path / "served" / "statics_resolved.json"   # never the checkout's tracked copy
+    assert known_count == len(list(UNIVERSE.all_systems()))
+    assert "anoik.json" in caplog.text and "503" in caplog.text
+
+
+def test_wormhole_data_path_comes_from_the_environment(monkeypatch, tmp_path) -> None:
+    """HB_WORMHOLE_DATA sets the file; without it, it sits next to HB_DB."""
+    monkeypatch.setenv("HB_DB", str(tmp_path / "db" / "server.sqlite"))
+    monkeypatch.delenv("HB_WORMHOLE_DATA", raising=False)
+    assert Config.from_environment().wormhole_data_path == tmp_path / "db" / "wormhole-data.json"
+    monkeypatch.setenv("HB_WORMHOLE_DATA", str(tmp_path / "www" / "w.json"))
+    assert Config.from_environment().wormhole_data_path == tmp_path / "www" / "w.json"
