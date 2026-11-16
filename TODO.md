@@ -2,7 +2,7 @@
 
 - **Audience:** the owner and coding agents.
 - **Scope:** open items only. Finished work is in plan status lines, `CHANGELOG.md` and git; the rules for numbering are below.
-- **Kept current:** checked against `cb566b0` (2026-11-15). Update it when an item is added, finished or changes.
+- **Kept current:** checked against `1dfca3b` (2026-11-16). Update it when an item is added, finished or changes.
 
 Open items only. Finished work is recorded in the plan's status line, in the "Done" table of
 [`docs/plans/README.md`](docs/plans/README.md), in [`CHANGELOG.md`](CHANGELOG.md) and in git. Item
@@ -64,6 +64,26 @@ rating and a model suggestion; the scale is in [`CLAUDE.md`](CLAUDE.md) under "E
     the wormhole data change the Homebound server first (IP address and user agent, like any request).
     EVE-Scout is asked for routes too. Owner and lawyer task: the legal texts are theirs to change.
     Effort: 1/5 · owner.
+29. Two open plans still point at the old `design-system/` folder, which phase 7 of the design system
+    plan removed (found 2026-11-16). `docs/plans/plan-tray-caption.md` step 3 changes
+    `design-system/components/TrayMenu/README.md`, and `docs/plans/plan-small-fixes.md` changes the
+    `PromptDialog` mockup and the `summaries/` notes. Those mockups now live in Quantum Works Design
+    (`projects/homebound/` in `design/qwd/`), which is never edited here: turn each such step into a request
+    (`qwd request new --product homebound`) and point the plan at it.
+    Effort: 1/5 · Haiku.
+30. Captions and overlay headers in sentence case (Quantum Works Design rule, 2026-11-14: UPPERCASE only
+    in badges and chips). Homebound still writes captions in caps: the overlay header
+    (`homebound/ui/overlay.py`: `FOLLOWING {name}`, `NO CHARACTER`), the toolbar captions in
+    `homebound/ui/map_window.py` (`OVERLAY MODE`) and the tray caption (item 23). File a QWD request to change Homebound's rules and mockups,
+    then change the code and the tests that check the texts.
+    Effort: 2/5 · Sonnet.
+31. Use the core token names, not the old ones (QWD plan phase 9; later, not urgent). Homebound still reads
+    its old names (`bg-0` … `bg-4`, `ink*`, `line-*`, `danger*` and the rest, 39 aliases in
+    `design/qwd/projects/homebound/aliases.yaml`), mostly in `homebound/theme/qss.py`. Rename them to the
+    core names (`surface-*`, `text-*`, `border*`, `error*`), keep the synced copy as it is, and tell QWD
+    when nothing reads an alias any more: a major QWD version drops the aliases once all three products
+    have moved.
+    Effort: 2/5 · Sonnet.
 
 ## To do
 
