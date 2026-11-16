@@ -2,11 +2,13 @@
 
 - **Audience:** players using Homebound.
 - **Scope:** what changed for players in each release, newest first. Written from the GitHub release notes and the finished plans in [`docs/plans/done/`](docs/plans/README.md); the code-level story is in git. A release's section is its GitHub release notes: `release.yml` fails for a tag with no section here.
-- **Kept current:** checked against `cb566b0` (2026-11-15). Every commit that changes what a player sees adds a line under "Unreleased".
+- **Kept current:** checked against `bb7a318` (2026-11-16). Every commit that changes what a player sees adds a line under "Unreleased".
 
 Each section is headed `## <version> (<date>)` with the groups Added, Changed and Fixed. When a release is cut, rename "Unreleased" to the version and date, and add a fresh "Unreleased" above it.
 
 ## Unreleased
+
+## 1.0.5 (2026-11-16)
 
 ### Changed
 
