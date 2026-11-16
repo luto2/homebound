@@ -2,11 +2,15 @@
 
 - **Audience:** players using Homebound.
 - **Scope:** what changed for players in each release, newest first. Written from the GitHub release notes and the finished plans in [`docs/plans/done/`](docs/plans/README.md); the code-level story is in git. A release's section is its GitHub release notes: `release.yml` fails for a tag with no section here.
-- **Kept current:** checked against `ece8567` (2026-11-15). Every commit that changes what a player sees adds a line under "Unreleased".
+- **Kept current:** checked against `cb566b0` (2026-11-15). Every commit that changes what a player sees adds a line under "Unreleased".
 
 Each section is headed `## <version> (<date>)` with the groups Added, Changed and Fixed. When a release is cut, rename "Unreleased" to the version and date, and add a fresh "Unreleased" above it.
 
 ## Unreleased
+
+### Changed
+
+- The first start no longer fails when a community wormhole site is down (anoik.is was down on 2026-11-15). Homebound gets the statics and wormhole types from its own server, falls back to the sites themselves, and then to a copy that ships with the app.
 
 ## 1.0.4 (2026-11-15)
 

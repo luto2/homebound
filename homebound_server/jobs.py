@@ -1,4 +1,5 @@
-"""The server's timers: prune, billing, wallet and mail polls, corp checks, tail trim, presence, webhook.
+"""The server's timers: prune, billing, wallet and mail polls, corp checks, tail trim, presence, webhook,
+and the daily wormhole data for the clients' first-start build.
 
 EVE's daily downtime starts at 11:00 UTC and ESI answers 502/503/504 while it lasts. Those errors are
 only logged from 10:55 to 11:15 UTC; at 11:15 every ESI job runs once. If ESI is still down then, the
@@ -29,6 +30,7 @@ SCHEDULE = [
     ("check_disk", 600, False),
     ("purge_old_records", 86400, False),
     ("flush_events", 60, True),
+    ("refresh_wormhole_data", 86400, True),   # downloads the community wormhole sources
 ]
 THREADED = {name: threaded for name, _, threaded in SCHEDULE}
 POLLER_SILENT_SECONDS = 2 * 3600
@@ -53,6 +55,7 @@ def run_job(service: Service, name: str):
         "check_disk": service.check_disk,
         "purge_old_records": service.purge_old_records,
         "flush_events": service.events.flush,
+        "refresh_wormhole_data": service.refresh_wormhole_data,
     }
     return jobs[name]()
 

@@ -2,7 +2,7 @@
 
 - **Audience:** anyone building or changing the packages.
 - **Scope:** how the PyInstaller folder build works and which code depends on being packaged. The Linux and Windows specifics are in the READMEs of their folders; agent rules are in [`CLAUDE.md`](CLAUDE.md).
-- **Kept current:** checked against `8c371b5` (2026-11-14). Update it when `homebound.spec`, the entry point or the packaged-path code change.
+- **Kept current:** checked against `cb566b0` (2026-11-15). Update it when `homebound.spec`, the entry point or the packaged-path code change.
 
 How Homebound is built into the packages it ships as. The platform folders are described in
 `linux/README.md` and `windows/README.md`, the app icons in `icons/README.md`.
@@ -11,8 +11,9 @@ How Homebound is built into the packages it ships as. The platform folders are d
 stay replaceable as the LGPL requires. The entry point is `launch.py`, which calls `main` in
 `homebound/__main__.py`. Its output is `dist/homebound/` on Linux and `dist/Homebound/` on Windows.
 
-The spec bundles `data/statics_resolved.json`, `LICENSE`, `THIRD_PARTY_NOTICES.md` and the package data of
-`homebound`. It does not bundle `universe.sqlite`, because that is EVE game data. The app builds it at first
+The spec bundles `data/statics_resolved.json`, the wormhole data snapshot `data/wormhole_data.json`, `LICENSE`,
+`THIRD_PARTY_NOTICES.md` and the package data of `homebound`. It does not bundle `universe.sqlite`, because that
+is EVE game data. The app builds it at first
 start through `BuildDataDialog` in `homebound/ui/dialogs.py`.
 
 Code that depends on being packaged:

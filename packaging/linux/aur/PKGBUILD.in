@@ -24,6 +24,8 @@ package() {
   python -m installer --destdir="$pkgdir" dist/*.whl
   # the first-start build starts from these pinned statics (bundled_data_directory() is <prefix>/share/homebound)
   install -Dm644 data/statics_resolved.json "$pkgdir/usr/share/homebound/statics_resolved.json"
+  # the wormhole data snapshot, used when neither the sync server nor the community sources answer
+  install -Dm644 data/wormhole_data.json "$pkgdir/usr/share/homebound/wormhole_data.json"
   install -Dm644 packaging/linux/homebound.desktop "$pkgdir/usr/share/applications/homebound.desktop"
   install -Dm644 packaging/icons/homebound.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/homebound.svg"
   install -Dm644 packaging/icons/homebound.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/homebound.png"

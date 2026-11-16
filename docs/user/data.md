@@ -2,7 +2,7 @@
 
 - **Audience:** players using Homebound.
 - **Scope:** The data folder, backups, restore and network access. The other topics are on the [contents page](README.md).
-- **Kept current:** checked against `7af1861` (2026-11-14). Update it when the behaviour it describes changes.
+- **Kept current:** checked against `cb566b0` (2026-11-15). Update it when the behaviour it describes changes.
 
 The data folder is `~/.local/share/homebound/` on Linux and `%APPDATA%\Homebound\` on Windows.
 
@@ -12,7 +12,7 @@ The data folder is `~/.local/share/homebound/` on Linux and `%APPDATA%\Homebound
 | Main map | `<data folder>/map.db` |
 | Other maps | `<data folder>/maps/<name>.db` |
 | Backups | `<data folder>/backups/` |
-| Static universe data | `<data folder>/universe.sqlite`, built on first start (packages); `data/universe.sqlite` in the project folder when run from source. The pinned statics answers (`statics_resolved.json`) ship with the package. |
+| Static universe data | `<data folder>/universe.sqlite`, built on first start (packages); `data/universe.sqlite` in the project folder when run from source. The pinned statics answers (`statics_resolved.json`) and a copy of the wormhole data (`wormhole_data.json`, used when neither the Homebound server nor the community sites answer) ship with the package. |
 
 Set `HOMEBOUND_HOME` to use a different folder for settings and maps, for example for a test setup. `HOMEBOUND_UNIVERSE` points at a different universe file.
 

@@ -122,6 +122,7 @@ HB_MUTE_BILLING=0           # 1: no posts for billing state changes
 HB_DISK_WARN_PERCENT=80
 HB_FREE_MAPS=alliance:99000001=1,corp:98000001=1   # free maps per owner (alliance|corp|char); alliance: members + executor corp
 HB_HEALTHCHECK_URL=https://hc-ping.com/…   # pinged after each successful wallet poll
+# HB_WORMHOLE_DATA=/var/lib/homebound/wormhole-data.json   # optional: the default, next to HB_DB
 LITESTREAM_ACCESS_KEY_ID=…       # object storage access key
 LITESTREAM_SECRET_ACCESS_KEY=…   # object storage secret key
 HB_BACKUP_ENDPOINT=hel1.your-objectstorage.com   # the bucket's location endpoint, without https://
@@ -166,7 +167,7 @@ HB_RESTORE_HEALTHCHECK_URL=https://hc-ping.com/…   # the daily restore test re
 - **Publishing a GitHub release is the deploy.** Pushes to `master` and the draft release CI builds from a `v*` tag don't deploy; only publishing the draft does. The server pulls; GitHub has no workflow, secret or SSH key for it, so nothing about the deploy is public and no key can reach the server from outside.
 - `hb-deploy` (in `packaging/server/`, run as root every 5 minutes by `homebound-deploy.timer`):
   1. Asks `api.github.com/repos/luto2/homebound/releases/latest` for the newest published release (not drafts or pre-releases; 12 unauthenticated requests an hour, under GitHub's 60), then `git ls-remote` for its tag's commit. Nothing more happens when that's the checked-out commit, or one the checkout is already past (it never goes back).
-  2. If it's newer: `git fetch` the tag and compare `VERSION` in `homebound_server/service.py` at the tag with the checkout's. The same version means a client-only release: it isn't deployed and isn't looked at again (`same-version` in the state folder). A bumped version (or one that can't be read): fast-forward `master` in the checkout to it, `uv sync --extra server --no-dev --frozen`, rebuild `universe.sqlite` with `homebound --build-static` if the new code can't read it (missing, or a schema change: the server refuses old map data at startup), `systemctl restart homebound-sync`.
+  2. If it's newer: `git fetch` the tag and compare `VERSION` in `homebound_server/service.py` at the tag with the checkout's. The same version means a client-only release: it isn't deployed and isn't looked at again (`same-version` in the state folder). A bumped version (or one that can't be read): fast-forward `master` in the checkout to it, `uv sync --extra server --no-dev --frozen`, rebuild `universe.sqlite` with `homebound --build-static --from-sources` if the new code can't read it (missing, or a schema change: the server refuses old map data at startup), `systemctl restart homebound-sync`.
   3. Waits up to a minute for `/api/health`. If the new version doesn't answer (or the map rebuild fails), it goes back to the old commit, rebuilding the map data for it too if needed, posts to the Discord webhook, and skips that release until a newer one is published.
   - Holds deploys from 10:55 to 11:35 UTC, so the ESI pulls after EVE's downtime aren't interrupted.
   - Refuses (and posts to Discord once) when the checkout isn't on `master`, has local changes, or the release isn't a fast-forward (tagged off another branch, or `master` was rewritten).
@@ -185,6 +186,7 @@ HB_RESTORE_HEALTHCHECK_URL=https://hc-ping.com/…   # the daily restore test re
 - **Wallet poller** pings healthchecks.io after each successful run. If no ping arrives within 2 h, you get an email. Silent payment failures would lock out paying users, so this check matters most.
 - **Logs:** journald, kept for 14 days. The app logs to stdout. Nothing sensitive is logged: no tokens, and only character IDs.
 - **Disk:** an alert at 80%. That should never happen at this data size.
+- **Wormhole data** (`GET /api/static-data/wormhole-data.json`, public; [plan](plan-own-wormhole-data.md)): the daily job `refresh_wormhole_data` downloads Wanderer, anoik.is and whtype.info and merges them. A source that fails keeps its last download, marked `kept` in the file's `sources` with the error, and the job logs a warning. `curl -s https://homebound.luthopian.de/api/static-data/wormhole-data.json | jq .sources` shows how old each input is. The route answers 503 until the job has run once (it runs on the server's first tick). Run it by hand with `hb-admin run refresh_wormhole_data`.
 
 ## 10. Security checklist
 
@@ -249,9 +251,9 @@ UV_PYTHON_PREFERENCE=only-system uv sync --extra server --no-dev --frozen
 - `only-system` makes the venv use Debian's Python (3.12 or newer is needed). Otherwise uv installs its own Python under `/root`, which the `homebound` user can't read.
 
 ### 3. Universe data
-The server checks system IDs against EVE's static data. Build it once (it downloads the sources; no display needed):
+The server checks system IDs against EVE's static data. Build it once (it downloads the sources; no display needed). `--from-sources` merges the community wormhole sources here instead of asking a Homebound server for them, since this server is the one that serves them:
 ```bash
-cd /opt/homebound && .venv/bin/homebound --build-static
+cd /opt/homebound && .venv/bin/homebound --build-static --from-sources
 ls -l data/universe.sqlite
 ```
 Run it again after EVE patches that add or change systems, then restart the service.

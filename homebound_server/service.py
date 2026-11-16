@@ -28,7 +28,7 @@ from .maps import MapError, Maps
 from .prune import prune_ops
 
 log = logging.getLogger("homebound.server")
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 RECEIVER_LINK_MINUTES = 30
 RETENTION_DAYS = 365           # payment records etc. after an account is deleted (privacy policy §7)
 
@@ -565,6 +565,36 @@ class Service:
             self.events.server_problem(f"The disk is {percent}% full ({disk.free / 2**30:.1f} GiB free).")
             self._set_meta("disk_warned_at", iso(utc_now()))
         return percent
+
+    def refresh_wormhole_data(self) -> dict:
+        """Rebuild the merged wormhole data that clients download at first start (daily job).
+
+        Downloads Wanderer, anoik.is and whtype.info again and merges them against this server's
+        ``universe.sqlite``; a source that fails keeps its last download (``kept``), and a result that fails
+        the checks is never written (plan: docs/plans/done/plan-own-wormhole-data.md). The pinned zKill answers
+        live next to the file, so the checkout's tracked copy never changes. In dev mode there are no outside
+        calls: the shipped snapshot is served instead.
+
+        Returns:
+            ``{"systems": …, "kept": [source, …]}``, or ``{"snapshot": True}`` in dev mode.
+        """
+        from homebound.universe import build_static
+
+        target = self.config.wormhole_data_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if self.config.dev:
+            partial = target.with_name(target.name + ".part")
+            shutil.copyfile(build_static.SHIPPED_WORMHOLE_DATA, partial)
+            partial.replace(target)
+            return {"snapshot": True}
+        known = {system.id: system.name for system in self.universe.all_systems()}
+        data = build_static.export_wormhole_data(target, known, resolved=target.with_name("statics_resolved.json"),
+                                                 refresh=True)
+        kept = sorted(name for name, source in data["sources"].items() if source["state"] == "kept")
+        if kept:
+            log.warning("wormhole data rebuilt with old copies of %s: %s", ", ".join(kept),
+                        "; ".join(data["sources"][name].get("problem", "") for name in kept))
+        return {"systems": len(data["statics"]), "kept": kept}
 
     def health(self) -> dict:
         """Return ``GET /api/health``: DB OK, the wallet poller's last run, the version."""

@@ -5,7 +5,7 @@ How the AppImage, the AUR package and the Windows installer and portable zip are
 ## Rules
 
 - **Host tools get the user's `LD_LIBRARY_PATH`, not the bundle's** (`25bffb7`). `kpackagetool6`, `kreadconfig6`, `qdbus6`, `xprop`, `wmctrl` and `gdbus` run through `host_environment()` in `homebound/platform/paths.py`; in the AppImage they failed on the bundle's older libraries otherwise.
-- **The packages never contain EVE game data.** `universe.sqlite` is built on first start. Only `data/statics_resolved.json`, `LICENSE`, `THIRD_PARTY_NOTICES.md` and the package data ship.
+- **The packages never contain the EVE SDE or `universe.sqlite`.** `universe.sqlite` is built on first start. Only `data/statics_resolved.json`, the wormhole data snapshot `data/wormhole_data.json` (statics and wormhole types merged from the community sources; owner decision 2026-11-15, [plan](../docs/plans/done/plan-own-wormhole-data.md)), `LICENSE`, `THIRD_PARTY_NOTICES.md` and the package data ship.
 - **PyInstaller builds a folder, not a single file**, so the Qt libraries stay replaceable as the LGPL requires.
 - **Code that depends on being packaged** (`homebound/platform/paths.py`, `build_command` in `homebound/universe/db.py`, `app_version` in `homebound/__init__.py`) must agree with the spec and the scripts here; change them together.
 - **Install or build changes also update** the [`install page`](../docs/user/install.md) and, for a release, `CHANGELOG.md`.

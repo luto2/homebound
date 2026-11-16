@@ -22,8 +22,11 @@ terms.
 
 ## Data
 
-The packages contain no EVE game data. On first start Homebound downloads the sources below and builds
-`universe.sqlite` on the user's machine (`homebound --build-static` does the same from a terminal).
+The packages contain no copy of the EVE Static Data Export. On first start Homebound downloads it and
+builds `universe.sqlite` on the user's machine (`homebound --build-static` does the same from a terminal).
+The wormhole statics and types come from the Homebound sync server, which merges the community sources
+below daily, or from those sources directly; the packages ship a snapshot of that merge for when neither
+answers.
 
 | Data | Source | Terms |
 |---|---|---|
@@ -32,6 +35,7 @@ The packages contain no EVE game data. On first start Homebound downloads the so
 | Statics (second source) | anoik.is `static.json`, downloaded at first start | Derived from EVE Online game data; no separate licence. |
 | Where each wormhole type can wander | whtype.info `wormholes.js`, downloaded at first start | Derived from EVE Online game data; no separate licence. |
 | Disputed statics (`statics_resolved.json`, shipped) | zKillboard system pages | Which of two sources is right for a handful of systems, looked up once and pinned. |
+| Merged statics and wormhole types (`wormhole_data.json`, shipped; also served by the Homebound sync server) | Wanderer, anoik.is and whtype.info above, merged by Homebound | The terms of those sources; the values come from EVE Online game data. |
 | Site bracket icons (`homebound/theme/sites/*.png`, shipped) | EVE Online Image Export Collection (Uprising V21.03) | EVE Online terms; see `homebound/theme/sites/NOTICE.md`. |
 
 All EVE Online related materials are property of Fenris Creations (formerly CCP Games).

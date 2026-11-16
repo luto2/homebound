@@ -2,7 +2,7 @@
 
 - **Audience:** anyone building or changing the Linux packages.
 - **Scope:** the AppImage and the AUR package, the desktop entry and the code that has to agree with them. The shared build is in [`../README.md`](../README.md).
-- **Kept current:** checked against `8c371b5` (2026-11-14). Update it when the AppImage scripts, the desktop entry or the install script change.
+- **Kept current:** checked against `cb566b0` (2026-11-15). Update it when the AppImage scripts, the desktop entry or the install script change.
 
 The Linux packages are an AppImage and an AUR package.
 
@@ -10,7 +10,7 @@ The Linux packages are an AppImage and an AUR package.
 `dist/Homebound-<version>-x86_64.AppImage`. `AppRun` is the image's entry point.
 
 `aur/PKGBUILD.in` is the template for the AUR package. The release workflow fills in the version and
-checksum. It installs the wheel, and puts `statics_resolved.json` in `/usr/share/homebound`.
+checksum. It installs the wheel, and puts `statics_resolved.json` and `wormhole_data.json` in `/usr/share/homebound`.
 
 `homebound.desktop` is the desktop entry both packages install. Its `Icon=homebound` uses the files in
 `packaging/icons/`.
