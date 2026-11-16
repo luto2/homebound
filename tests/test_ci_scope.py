@@ -11,7 +11,7 @@ spec.loader.exec_module(ci_scope)
 
 def test_docs_only_needs_no_tests() -> None:
     """Markdown anywhere, docs/ (images too) and LICENSE are docs; a server CLAUDE.md is a doc, not server code."""
-    files = ["README.md", "docs/user/map.md", "docs/images/overlay.png", "LICENSE", "homebound_server/CLAUDE.md"]
+    files = ["README.md", "docs/user/glossary.md", "docs/images/overlay.png", "LICENSE", "homebound_server/CLAUDE.md"]
     assert ci_scope.scope_of(files, REPO) == (ci_scope.DOCS, [])
 
 
