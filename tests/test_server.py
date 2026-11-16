@@ -1016,9 +1016,9 @@ def test_wormhole_data_job_merges_against_the_server_universe(tmp_path, monkeypa
     harness.config.wormhole_data = tmp_path / "served" / "wormhole-data.json"
     calls = []
 
-    def fake_export(destination, known, resolved=None, refresh=False):
+    def fake_export(destination, known, resolved=None, refresh=False, cache=None):
         """Record the call and answer like an export whose anoik download failed."""
-        calls.append((destination, len(known), resolved, refresh))
+        calls.append((destination, len(known), resolved, refresh, cache))
         return {"statics": {"31000001": ["H296"]},
                 "sources": {"anoik.json": {"state": "kept", "problem": "HTTP Error 503"},
                             "wormholes.json": {"state": "fresh"}}}
@@ -1026,9 +1026,10 @@ def test_wormhole_data_job_merges_against_the_server_universe(tmp_path, monkeypa
     monkeypatch.setattr(build_static, "export_wormhole_data", fake_export)
     with caplog.at_level("WARNING", logger="homebound.server"):
         assert harness.service.refresh_wormhole_data() == {"systems": 1, "kept": ["anoik.json"]}
-    destination, known_count, resolved, refresh = calls[0]
+    destination, known_count, resolved, refresh, cache = calls[0]
     assert destination == tmp_path / "served" / "wormhole-data.json" and refresh
     assert resolved == tmp_path / "served" / "statics_resolved.json"   # never the checkout's tracked copy
+    assert cache == tmp_path / "served" / "wormhole-sources"           # the checkout is read-only to the service
     assert known_count == len(list(UNIVERSE.all_systems()))
     assert "anoik.json" in caplog.text and "503" in caplog.text
 

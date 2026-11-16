@@ -794,6 +794,23 @@ def test_export_writes_the_merged_data_and_keeps_a_cached_source(fake_sources) -
     assert second["sources"]["wormholes.json"]["state"] == "fresh" and second["statics"] == first["statics"]
 
 
+def test_export_into_its_own_cache_starts_from_the_shared_copy(fake_sources) -> None:
+    """With ``cache``, downloads go there and the shared cache is untouched; a source missing there that then
+    fails keeps the shared cache's copy, with its download time (the server's first run after a deploy)."""
+    known = {31000001: "J100001", 31000002: "J100002"}
+    build_static.export_wormhole_data(fake_sources["tmp"] / "seed.json", known)   # fills the shared cache
+    shared = build_static.CACHE / "anoik.json"
+    os.utime(shared, (1_700_000_000, 1_700_000_000))
+    before = {path.name: path.read_bytes() for path in build_static.CACHE.iterdir()}
+    own = fake_sources["tmp"] / "state" / "wormhole-sources"
+    fake_sources["failing"].add(build_static.ANOIK_URL)
+    data = build_static.export_wormhole_data(fake_sources["tmp"] / "out.json", known, refresh=True, cache=own)
+    assert data["sources"]["anoik.json"]["state"] == "kept"
+    assert data["sources"]["anoik.json"]["fetched"] == build_static.utc_stamp(1_700_000_000)
+    assert data["sources"]["wormholes.json"]["state"] == "fresh" and (own / "wormholes.json").is_file()
+    assert {path.name: path.read_bytes() for path in build_static.CACHE.iterdir()} == before
+
+
 def test_export_without_a_cached_copy_fails_and_keeps_the_old_file(fake_sources) -> None:
     """A source that fails with nothing cached fails the export, and the existing file stays as it was."""
     destination = fake_sources["tmp"] / "wormhole_data.json"

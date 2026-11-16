@@ -8,6 +8,10 @@ Status: implemented (2026-11-15). Deviations from the plan:
 - `--export-wormhole-data` builds `universe.sqlite` from the sources first when it is missing, because the
   merge needs the SDE's system names.
 - The privacy follow-up below is TODO 28.
+- The server job keeps its downloads in `wormhole-sources/` next to the file (server 1.1.1, 2026-11-16). The
+  first deploy (1.0.5, server 1.1.0) wrote them to the checkout's `data/cache/`, which `ProtectSystem=strict`
+  makes read-only to the service, so every source stayed `kept` at its deploy-time copy. A source missing in
+  the new folder starts from the checkout's copy.
 - Tested by hand on 2026-11-15 while anoik.is answered 503: the server job kept anoik's last download and
   wrote the file; a client build against a local server used it; with the server stopped and no cached
   anoik file, the build used the shipped snapshot. Not tested: the packages (CI builds them on a tag) and
