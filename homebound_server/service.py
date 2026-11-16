@@ -28,7 +28,7 @@ from .maps import MapError, Maps
 from .prune import prune_ops
 
 log = logging.getLogger("homebound.server")
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 RECEIVER_LINK_MINUTES = 30
 RETENTION_DAYS = 365           # payment records etc. after an account is deleted (privacy policy §7)
 
@@ -572,8 +572,9 @@ class Service:
         Downloads Wanderer, anoik.is and whtype.info again and merges them against this server's
         ``universe.sqlite``; a source that fails keeps its last download (``kept``), and a result that fails
         the checks is never written (plan: docs/plans/done/plan-own-wormhole-data.md). The pinned zKill answers
-        live next to the file, so the checkout's tracked copy never changes. In dev mode there are no outside
-        calls: the shipped snapshot is served instead.
+        and the downloads (``wormhole-sources/``) live next to the file: the checkout is read-only to the
+        service, and its tracked copies never change. In dev mode there are no outside calls: the shipped
+        snapshot is served instead.
 
         Returns:
             ``{"systems": …, "kept": [source, …]}``, or ``{"snapshot": True}`` in dev mode.
@@ -588,8 +589,10 @@ class Service:
             partial.replace(target)
             return {"snapshot": True}
         known = {system.id: system.name for system in self.universe.all_systems()}
+        # The checkout's data/cache is read-only to the service (ProtectSystem=strict), so the downloads live
+        # next to the file, under the state folder.
         data = build_static.export_wormhole_data(target, known, resolved=target.with_name("statics_resolved.json"),
-                                                 refresh=True)
+                                                 refresh=True, cache=target.with_name("wormhole-sources"))
         kept = sorted(name for name, source in data["sources"].items() if source["state"] == "kept")
         if kept:
             log.warning("wormhole data rebuilt with old copies of %s: %s", ", ".join(kept),

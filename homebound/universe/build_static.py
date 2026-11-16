@@ -491,7 +491,7 @@ def known_systems(universe_path: Path) -> dict[int, str]:
 
 
 def export_wormhole_data(destination: Path, known: dict[int, str], resolved: Path | None = None,
-                         refresh: bool = False) -> dict:
+                         refresh: bool = False, cache: Path | None = None) -> dict:
     """Merge the community sources into the wormhole data and write it to ``destination`` atomically.
 
     The server's daily job and ``--export-wormhole-data`` (the shipped snapshot) use it. A source whose
@@ -503,17 +503,24 @@ def export_wormhole_data(destination: Path, known: dict[int, str], resolved: Pat
         known: ``{system_id: name}`` of every system in the SDE.
         resolved: The pinned zKill answers (see ``resolve_statics``).
         refresh: Download every source again instead of using the cache.
+        cache: The folder for the downloads, ``CACHE`` by default. The server passes one under its writable
+            state folder, because its checkout (and with it ``CACHE``) is read-only to the service; a source
+            missing there starts from ``CACHE``'s copy, so a failed first download still has one to keep.
 
     Returns:
         The data written.
     """
     require_type(destination, Path, "destination")
     require_type(refresh, bool, "refresh")
+    folder = CACHE if cache is None else cache
+    require_type(folder, Path, "cache")
     sources: dict[str, dict] = {}
 
     def download(url: str, name: str, label: str) -> Path:
         """Fetch one source into the cache; on failure keep the cached copy and record why."""
-        target = CACHE / name
+        target = folder / name
+        if not target.exists() and folder != CACHE and (CACHE / name).exists():
+            shutil.copy2(CACHE / name, target)   # keeps the modification time, so "fetched" stays true
         had_copy = target.exists()
         try:
             fetch(url, target, refresh)
@@ -526,7 +533,7 @@ def export_wormhole_data(destination: Path, known: dict[int, str], resolved: Pat
                          "fetched": utc_stamp(target.stat().st_mtime)}
         return target
 
-    CACHE.mkdir(parents=True, exist_ok=True)
+    folder.mkdir(parents=True, exist_ok=True)
     data = validate_wormhole_data(wormhole_data_from_sources(known, download, resolved, sources), known)
     destination.parent.mkdir(parents=True, exist_ok=True)
     partial = destination.with_name(destination.name + ".part")
