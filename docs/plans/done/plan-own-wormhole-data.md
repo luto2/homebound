@@ -7,7 +7,7 @@ Status: implemented (2026-11-15). Deviations from the plan:
 - In dev mode (`HB_DEV=1`, no outside calls) the server job serves the shipped snapshot instead of downloading.
 - `--export-wormhole-data` builds `universe.sqlite` from the sources first when it is missing, because the
   merge needs the SDE's system names.
-- The privacy follow-up below is TODO 28.
+- The privacy follow-up below was TODO 28; drafted 2026-11-17 (section 3 of the privacy texts), the lawyer check is open.
 - The server job keeps its downloads in `wormhole-sources/` next to the file (server 1.1.1, 2026-11-16). The
   first deploy (1.0.5, server 1.1.0) wrote them to the checkout's `data/cache/`, which `ProtectSystem=strict`
   makes read-only to the service, so every source stayed `kept` at its deploy-time copy. A source missing in
@@ -122,10 +122,10 @@ a test checks it passes `validate_wormhole_data`.
 
 ## Open for the owner
 
-- **Privacy texts (TODO 28).** The draft in [`docs/legal/`](../../legal/) says the app alone sends nothing except
-  requests to zKillboard. The first-start build already talks to CCP, GitHub, anoik.is and whtype.info,
-  and now also to our server (IP address and user agent, like any request). The legal texts are the
-  owner's and the lawyer's to change.
+- **Privacy texts (TODO 28, drafted 2026-11-17).** Section 3 of [`docs/legal/datenschutz.de.md`](../../legal/datenschutz.de.md)
+  now lists every service the app contacts (our server, CCP's SDE and ESI, GitHub, anoik.is, whtype.info,
+  zKillboard, EVE-Scout). Open: the lawyer's check of the bracketed note there (whether the app's
+  author is a controller for those requests, and so whether Chapter V GDPR applies to GitHub).
 - **`hb-deploy` and the new server.** The server picks up the route and the job only after a release
   with the new `VERSION` is published, and `hb-deploy` copies itself only when its `install` lines are
   run again (hosting plan §9).
