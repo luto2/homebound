@@ -2,7 +2,7 @@
 
 - **Audience:** the owner and coding agents.
 - **Scope:** the index of open and finished plans, and how to finish one. The plans themselves are the other files in this folder.
-- **Kept current:** checked against `cb566b0` (2026-11-15). Update it when a plan is added, finished or moved.
+- **Kept current:** checked against `9c545d7` (2026-11-17). Update it when a plan is added, finished or moved.
 
 Design and fix plans for Homebound. Open plans sit in this folder; finished ones move to
 [`done/`](done/) with a status line that says when they were built and where the build differs from
@@ -83,5 +83,5 @@ When you finish a plan: set its status line to "implemented (date)", list the de
 | [done/plan-tooling.md](done/plan-tooling.md) | 2026-11-12 (`597e10e`) | hooks path check by hand; mypy to zero, then blocking; upstream graphify issues |
 | [done/plan-docs-rework.md](done/plan-docs-rework.md) | 2026-11-14 | the user pages still lack 1.0.1 features; the legal translations need the owner's and a lawyer's check |
 | [done/plan-distro-ci.md](done/plan-distro-ci.md) | 2026-11-14 | the first run on master; the local container trial (step 1) and the openSUSE package names |
-| [done/plan-own-wormhole-data.md](done/plan-own-wormhole-data.md) | 2026-11-15 | the privacy texts (TODO 28); a run on the real server after the release |
+| [done/plan-own-wormhole-data.md](done/plan-own-wormhole-data.md) | 2026-11-15 | the lawyer's check of the privacy texts' section 3 (TODO 28, drafted 2026-11-17); a run on the real server after the release |
 | [done/plan-ci-scope.md](done/plan-ci-scope.md) | 2026-11-15 | — |
