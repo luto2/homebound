@@ -27,7 +27,8 @@ from ..universe.db import Universe
 from ..validation import is_int, require_integer, require_text, require_type
 from .chain import connected_component, wormhole_adjacency
 from .naming import (Namer, ReturnType, StaticGuess, guess_static, hole_path, is_numbered_kind, number_signature,
-                     return_type, static_slot_count, take_hole_number, used_hole_indices)
+                     restart_hole_numbers, return_type, static_slot_count, take_hole_number,
+                     used_hole_indices)
 from .watch import map_watch_list
 
 GRID = 62 / 3                          # map grid cell = 1/3 of the node height (token size-node-h)
@@ -158,7 +159,8 @@ def expires_at(connection: Connection, universe: Universe) -> datetime:
 class Tracker:
     """Applies character movements and the answers from the UI to the map."""
 
-    def __init__(self, store: Store, universe: Universe, namer: Namer, auto_when_certain: bool = False) -> None:
+    def __init__(self, store: Store, universe: Universe, namer: Namer, auto_when_certain: bool = False,
+                 renumber_after_return: bool = False) -> None:
         """Create a tracker.
 
         Args:
@@ -166,12 +168,15 @@ class Tracker:
             universe: Static data.
             namer: Names systems under the active scheme.
             auto_when_certain: Don't ask when the static guess is certain.
+            renumber_after_return: When a return hole gives up its number, move the higher numbers of
+                that system's unlinked sigs down by one (see :meth:`release_return_number`).
         """
         require_type(store, Store, "store")
         require_type(universe, Universe, "universe")
         require_type(namer, Namer, "namer")
         self.store, self.universe, self.namer = store, universe, namer
         self.auto_when_certain = bool(auto_when_certain)
+        self.renumber_after_return = bool(renumber_after_return)
         self.private_watched: set[int] = set()           # this user's own watch list (the map's is in the store)
         self.watch_store()
 
@@ -354,6 +359,15 @@ class Tracker:
             unlinked.append(signature.signature_id)
         return unlinked
 
+    def has_unscanned_signatures(self, system_id: int) -> bool:
+        """Return whether a system has a sig whose group isn't known yet (still to be scanned down).
+
+        Anomalies and sigs gone from the last paste don't count.
+        """
+        require_integer(system_id, "system_id", minimum=1)
+        return any(signature.kind != "anom" and signature.state != "missing" and not signature.group
+                   for signature in self.store.signatures(system_id))
+
     @_one_action
     def add_wormhole(self, system_a: int, system_b: int, character_name: str = "", manual: bool = False) -> list:
         """Connect two systems by wormhole, adding them to the map as needed.
@@ -470,6 +484,7 @@ class Tracker:
         same_number = [signature_id for signature_id in candidates if own
                        and (signature := self.store.signature(parent_id, signature_id)) and signature.hole_index == own]
         taken = same_number[0] if same_number else (candidates[0] if len(candidates) == 1 else None)
+        restart_hole_numbers(self.store, parent_id)
         if taken:
             hole = self._signature_number(parent_id, taken) or take_hole_number(self.store, parent_id)
         elif own and own not in used_hole_indices(self.store, parent_id):
@@ -670,8 +685,9 @@ class Tracker:
         (see :func:`~homebound.mapping.naming.return_type`; an unsettled type is left as it was).
         The connection's mass, lifetime, size and frigate-only are copied onto it, after the
         details the sig already had were carried to the connection (see :meth:`link_signature`).
-        The bookmark shows ``-0`` when the origin is this system's parent, or the origin's own hole
-        number when it is a child; that number moves to this sig (the sig it took it from gets this
+        When the origin is this system's parent the bookmark is the return one (``!RTB 12``) and the
+        sig gives its number back (:meth:`release_return_number`). When the origin is a child it shows
+        the child's hole number; that number moves to this sig (the sig it took it from gets this
         sig's old number). Otherwise the sig keeps its number.
 
         Args:
@@ -712,12 +728,58 @@ class Tracker:
                 self.store.update_signature(system_id, replaced.signature_id, hole_index=signature.hole_index)
             self.store.update_signature(system_id, signature_id, hole_index=mapped_origin.hole_index)
         self.link_signature(connection_id, system_id, signature_id)
+        mapped = self.store.system(system_id)
+        if mapped and mapped.parent_id == origin_id:   # the hole back: its bookmark is the return one, not a number
+            self.release_return_number(system_id, signature_id)
         connection = self.store.connection_by_id(connection_id)
         if connection is not None:
             self.store.update_signature(system_id, signature_id, mass=connection.mass, lifetime=connection.lifetime,
                                         lifetime_set_at=connection.lifetime_set_at, size=connection.size,
                                         frigate_only=connection.frigate_only)
         return found
+
+    def release_return_number(self, system_id: int, signature_id: str) -> int | None:
+        """Take the number back from a sig that is the hole to the system's parent.
+
+        Its bookmark is the return one (``!RTB 12``, ``*A1a-3``), so it doesn't use a number. With
+        :attr:`renumber_after_return` the unlinked WH sigs of the system above that number move
+        down by one (a sig with a system behind it keeps its number, the system is named after it).
+        On a local map the counter steps back as far as the freed number allows; a cloud map's counter
+        only goes up.
+
+        Args:
+            system_id: The system the return hole is in.
+            signature_id: The return hole.
+
+        Returns:
+            The number given back, or None if the sig had none.
+        """
+        require_integer(system_id, "system_id", minimum=1)
+        require_text(signature_id, "signature_id")
+        signature = self.store.signature(system_id, signature_id)
+        if signature is None or not signature.hole_index:
+            return None
+        number = signature.hole_index
+        before = used_hole_indices(self.store, system_id)
+        self.store.update_signature(system_id, signature_id, hole_index=None)
+        if self.renumber_after_return:
+            linked = {connection.signature_on(system_id) for connection in self.store.connections_of_system(system_id)}
+            taken = used_hole_indices(self.store, system_id)
+            movable = sorted((other for other in self.store.signatures(system_id)
+                              if other.hole_index and other.hole_index > number and other.signature_id not in linked),
+                             key=lambda other: other.hole_index or 0)
+            for other in movable:   # lowest first, so each one's old number is free for the next
+                hole = other.hole_index or 0
+                if hole - 1 >= 1 and hole - 1 not in taken:
+                    self.store.update_signature(system_id, other.signature_id, hole_index=hole - 1)
+                    taken = (taken - {hole}) | {hole - 1}
+        system = self.store.system(system_id)
+        highest = max(before)
+        if system and system.next_hole == highest and not self.store.layout_local:
+            after = used_hole_indices(self.store, system_id)
+            if highest not in after:   # only the top number came free: numbers given out below it stay given out
+                self.store.set_hole_counter(system_id, highest - 1)
+        return number
 
     # ------------------------------------------------------------ lost connections
     @_one_action

@@ -180,7 +180,10 @@ def test_naming_dialog_custom_name(state) -> None:
 
 
 def test_naming_dialog_signature_candidates(state) -> None:
-    """Each candidate is a row with a description; skip is preselected; picking returns the id."""
+    """Sigs that can lead here come first, then the other WH sigs, then "New hole"; picking returns the id.
+
+    Every sig is scanned, so the first that can lead here is preselected as the best guess.
+    """
     jump(state, HOME.name, 0)
     add_sig(state, "AAA-111", type="K162", destination="C3", scan_percent=100.0)
     add_sig(state, "BBB-222", type="K162", destination="C4")
@@ -192,13 +195,29 @@ def test_naming_dialog_signature_candidates(state) -> None:
     request = next(event for event in jump(state, c4.name) if isinstance(event, NamingRequest))
     dialog = NamingDialog(None, state, request)
     rows = dialog.signature_rows
-    assert "" in rows and rows[""].radio.isChecked() and dialog.signature_id() is None
-    ids = [signature_id for signature_id in rows if signature_id]
-    assert ids == request.signature_candidates
-    rows[ids[0]].radio.setChecked(True)
-    assert dialog.signature_id() == ids[0]
+    assert list(rows) == ["BBB-222", "CCC-333", "EEE-555", "FFF-666", "AAA-111", "DDD-444", ""]
+    assert rows["BBB-222"].radio.isChecked() and rows["BBB-222"].caption.text() == "BEST GUESS"
+    assert dialog.signature_id() == "BBB-222"
+    rows["DDD-444"].radio.setChecked(True)
+    assert dialog.signature_id() == "DDD-444"
     rows[""].radio.setChecked(True)
     assert dialog.signature_id() is None
+
+
+def test_naming_dialog_preselects_new_hole_while_a_sig_is_unscanned(state) -> None:
+    """A sig whose group isn't known yet may be the hole: "New hole" stays preselected."""
+    jump(state, HOME.name, 0)
+    add_sig(state, "AAA-111", type="K162")
+    add_sig(state, "BBB-222", type="K162")
+    add_sig(state, "ZZZ-999", group=None)
+    add_sig(state, "ANO-001", group="combat", kind="anom")
+    request = next(event for event in jump(state, pick_system("C4").name) if isinstance(event, NamingRequest))
+    assert state.tracker.has_unscanned_signatures(HOME.id)
+    dialog = NamingDialog(None, state, request)
+    assert dialog.signature_rows[""].radio.isChecked() and dialog.signature_id() is None
+    assert not dialog.signature_rows["AAA-111"].caption.isVisibleTo(dialog)
+    state.store.delete_signatures(HOME.id, ["ZZZ-999"])
+    assert not state.tracker.has_unscanned_signatures(HOME.id)   # an anomaly doesn't count
 
 
 def test_naming_dialog_name_follows_the_picked_sig(state) -> None:
@@ -210,7 +229,7 @@ def test_naming_dialog_name_follows_the_picked_sig(state) -> None:
     request = next(event for event in jump(state, c4.name) if isinstance(event, NamingRequest))
     dialog = NamingDialog(None, state, request)
     own = state.namer.label(c4.id)
-    assert dialog.name.text() == own == "8"
+    assert own == "8" and dialog.name.text() == "4"     # every sig is scanned: the first is preselected
     dialog.signature_rows["BBB-222"].radio.setChecked(True)
     assert dialog.name.text() == "7" and dialog.custom_name() is None
     dialog.signature_rows[""].radio.setChecked(True)
@@ -228,6 +247,8 @@ def test_signature_text_variants(state) -> None:
     assert text(Signature(1, "A", type="H296", scan_percent=50.0), "C5") == "H296 → C5 · 50%"
     assert text(Signature(1, "A"), "C5") == "type unknown"
     assert text(Signature(1, "A", type="ZZZZ"), "C5") == "type unknown"
+    assert text(Signature(HOME.id, "A", type="H296", hole_index=3), "C5") == \
+        f"{state.namer.bookmark(HOME.id, 3)} · H296 → C5"
 
 
 # ---------- connection dialog ----------

@@ -32,13 +32,19 @@ def test_maps_in_settings(data_dir) -> None:
     assert settings.switch_map("Corp chain") == "Corp chain"
     assert (settings.home_system, settings.naming_scheme) == ("J100551", "numeric")
     settings.naming_scheme = "letter_numeric"
+    settings.renumber_after_return = True                  # per map, like the scheme
     assert settings.save() == data_dir / "settings.json"
     settings = Settings.load()
     assert settings.active_map == "Corp chain"
     assert settings.maps["Corp chain"]["naming_scheme"] == "letter_numeric"
+    assert settings.maps["Corp chain"]["renumber_after_return"] is True
     assert settings.map_path() == data_dir / "maps/corp-chain.db"
     settings.switch_map("Main")
     assert (settings.home_system, settings.naming_scheme) == ("J161940", "a2a")
+    assert settings.renumber_after_return is False
+    settings.switch_map("Corp chain")
+    assert settings.renumber_after_return is True
+    settings.switch_map("Main")
     assert settings.rename_map("Corp chain", " Corp ") == "Corp"
     with pytest.raises(ValueError):
         settings.rename_map("Corp", "Main")
@@ -238,6 +244,13 @@ def test_map_entry_with_unknown_scheme_gets_numeric(data_dir) -> None:
     """A map whose naming scheme is not a known one loads with the numeric scheme."""
     (data_dir / "settings.json").write_text(json.dumps({"maps": {"Main": {"file": "map.db", "naming_scheme": "q"}}}))
     assert Settings.load().maps["Main"]["naming_scheme"] == "numeric"
+
+
+def test_map_entry_with_a_bad_renumber_flag_gets_off(data_dir) -> None:
+    """A map whose renumber_after_return isn't true or false loads with it off."""
+    (data_dir / "settings.json").write_text(json.dumps({"maps": {"Main": {"file": "map.db",
+                                                                          "renumber_after_return": "yes"}}}))
+    assert Settings.load().maps["Main"]["renumber_after_return"] is False
 
 
 def test_copy_failure_does_not_stop_the_load(data_dir, monkeypatch) -> None:

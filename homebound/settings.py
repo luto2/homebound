@@ -67,6 +67,9 @@ class Settings:
     log_directory: str = ""
     home_system: str = ""                 # system name, e.g. J161940
     naming_scheme: str = "numeric"
+    # When a sig is marked as the return hole it gives up its number; True also moves the higher unlinked
+    # numbers of that system down by one, so its holes start at 1. Per map, like naming_scheme.
+    renumber_after_return: bool = False
     auto_name_when_certain: bool = False
     overlay_mode: str = "follow"
     overlay_pinned_character: int | None = None
@@ -79,6 +82,8 @@ class Settings:
     known_space_radius: int = 5
     zkill_enabled: bool = True
     rescan_due_hours: int = 24            # a system's last paste this old is due for a rescan
+    # copy the bookmark text of the wormhole sig you just changed (paste, editor, return hole), all maps
+    copy_bookmark_on_change: bool = False
     unknown_jump_default: str = "ignore"  # "add" | "ignore"
     focus_on_wormhole_jump: bool = True   # centre the map on the system a character just jumped into by wormhole
     character_slots: dict = field(default_factory=dict)          # character id (str) -> marker slot 1..6
@@ -136,7 +141,8 @@ class Settings:
 
     def _store_active(self) -> None:
         """Copy the active map's home and scheme from the top-level fields into its entry."""
-        self.maps[self.active_map] |= {"home_system": self.home_system, "naming_scheme": self.naming_scheme}
+        self.maps[self.active_map] |= {"home_system": self.home_system, "naming_scheme": self.naming_scheme,
+                                       "renumber_after_return": self.renumber_after_return}
 
     def switch_map(self, name: str) -> str:
         """Make another map active and load its home and scheme.
@@ -153,6 +159,7 @@ class Settings:
         entry = self.maps[name]
         self.home_system = entry.get("home_system", "")
         self.naming_scheme = entry.get("naming_scheme", "numeric")
+        self.renumber_after_return = entry.get("renumber_after_return", False)
         return name
 
     def add_map(self, name: str, home_system: str = "", naming_scheme: str | None = None) -> Path:
@@ -304,6 +311,8 @@ class Settings:
                 entry["home_system"] = ""
             if "naming_scheme" in entry and entry["naming_scheme"] not in SCHEMES:
                 entry["naming_scheme"] = "numeric"
+            if "renumber_after_return" in entry and not isinstance(entry["renumber_after_return"], bool):
+                entry["renumber_after_return"] = False
             usable[name] = entry
         if dropped:
             noun = "entry" if dropped == 1 else "entries"

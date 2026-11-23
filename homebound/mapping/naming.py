@@ -107,6 +107,9 @@ def letters_for_number(number: int, upper: bool = True) -> str:
     return letters if upper else letters.lower()
 
 
+RETURN_BOOKMARK = "!RTB"   # numeric and letter-led start the return hole's bookmark with it
+
+
 @dataclass(frozen=True)
 class Scheme:
     """A naming scheme: turns a path of hole indices into a system name."""
@@ -283,6 +286,11 @@ def take_hole_number(store: Store, system_id: int) -> int:
     sig or hole can't end up on another one. The caller stores the number (on a sig or as a child's
     ``hole_index``); the system's ``next_hole`` follows when the batch ends.
 
+    On a local map a system that holds no numbered sig and no numbered child any more starts again
+    at 1 (a home system would otherwise count up forever); a caller that stores the number calls
+    :func:`restart_hole_numbers` first. A cloud map keeps counting, because the shared counter only
+    goes up.
+
     Args:
         store: The map.
         system_id: The system the hole is in.
@@ -292,7 +300,30 @@ def take_hole_number(store: Store, system_id: int) -> int:
     """
     require_integer(system_id, "system_id", minimum=1)
     system = store.system(system_id)
-    return max([system.next_hole if system else 0, *used_hole_indices(store, system_id)]) + 1
+    used = used_hole_indices(store, system_id)
+    counter = system.next_hole if system and (used or store.layout_local) else 0
+    return max([counter, *used]) + 1
+
+
+def restart_hole_numbers(store: Store, system_id: int) -> bool:
+    """Set a system's hole counter back to 0 if :func:`take_hole_number` starts it again at 1.
+
+    That is on a local map, when the system holds no numbered sig and no numbered child. Called
+    before a number is stored, so the counter counts on from the new number.
+
+    Args:
+        store: The map.
+        system_id: The system.
+
+    Returns:
+        True if the counter was set back.
+    """
+    require_integer(system_id, "system_id", minimum=1)
+    system = store.system(system_id)
+    if system is None or not system.next_hole or store.layout_local or used_hole_indices(store, system_id):
+        return False
+    store.set_hole_counter(system_id, 0)
+    return True
 
 
 def is_numbered_kind(signature: Signature) -> bool:
@@ -340,6 +371,7 @@ def number_signature(store: Store, system_id: int, signature_id: str) -> int | N
         return None
     if any(connection.signature_on(system_id) == signature_id for connection in store.connections_of_system(system_id)):
         return None
+    restart_hole_numbers(store, system_id)
     number = take_hole_number(store, system_id)
     store.update_signature(system_id, signature_id, hole_index=number)
     return number
@@ -539,13 +571,28 @@ class Namer:
         return label if root == self.home_id or self.home_id is None else "~" + label
 
     def bookmark(self, system_id: int, hole_index: int) -> str:
-        """Return the bookmark label of a hole: ``<label>-<hole index>``."""
+        """Return the bookmark label of a hole leading out of a system.
+
+        Numeric and letter-led: ``<label>-<hole index>``, e.g. ``12-3``. Chain · depth · position puts
+        a dot in front: ``.A1a-3``.
+        """
         require_integer(hole_index, "hole_index", minimum=0)
-        return f"{self.label(system_id)}-{hole_index}"
+        name = f"{self.label(system_id)}-{hole_index}"
+        return "." + name if isinstance(self.scheme, ChainDepthPositionScheme) else name
 
     def bookmark_home(self, system_id: int) -> str:
-        """Return the bookmark label of the hole leading back home: ``<label>-0``."""
-        return f"{self.label(system_id)}-0"
+        """Return the bookmark label of the hole leading back to the system's parent (the return hole).
+
+        Numeric and letter-led: ``!RTB <label>``, e.g. ``!RTB 12``. Chain · depth · position: a star and
+        the name the parent's bookmark of the same hole has, e.g. ``*A1a-3`` for the hole ``.A1a-3``
+        (``*<label>-0`` for a system without a parent or number).
+        """
+        if not isinstance(self.scheme, ChainDepthPositionScheme):
+            return f"{RETURN_BOOKMARK} {self.label(system_id)}"
+        mapped = self.store.system(system_id)
+        if mapped and mapped.parent_id is not None and mapped.hole_index:
+            return f"*{self.label(mapped.parent_id)}-{mapped.hole_index}"
+        return f"*{self.label(system_id)}-0"
 
 
 def needs_label(change: Change) -> bool:

@@ -98,7 +98,11 @@ def test_numeric_chain_and_bookmarks(simulation) -> None:
     simulation.tracker.apply_naming(simulation.naming_request(simulation.jump(next_system.name)), is_static=True)
     assert simulation.namer.display(next_system.id).split(" ")[0] == "11"
     assert simulation.namer.bookmark(c5.id, 1) == "1-1"
-    assert simulation.namer.bookmark_home(next_system.id).startswith("11")
+    assert simulation.namer.bookmark_home(next_system.id) == "!RTB 11"
+    simulation.namer.scheme_key = "a2a"                     # chain · depth · position: .<parent>-n out, *<same> back
+    assert simulation.namer.bookmark(c5.id, 1) == f".{simulation.namer.label(c5.id)}-1"
+    assert simulation.namer.bookmark_home(next_system.id) == f"*{simulation.namer.label(c5.id)}-1"
+    assert simulation.namer.bookmark_home(HOME.id) == "*Home-0"     # no parent
 
 
 def test_answer_no_keeps_the_number(simulation) -> None:
@@ -215,7 +219,9 @@ def test_a_system_relinked_under_a_new_parent_gets_a_new_number_and_name(simulat
             store.add_connection(low, high)
     signature_parser.merge_signatures(store, other.id, signature_parser.parse_scanner_text(
         "AAA-111\tCosmic Signature\tWormhole\t\t100%\t1 AU\n"))
-    store.delete_signatures(other.id, ["AAA-111"])          # number 1 of the other system was given out
+    signature_parser.merge_signatures(store, other.id, signature_parser.parse_scanner_text(
+        "AAA-111\tCosmic Signature\tWormhole\t\t100%\t1 AU\nBBB-222\tCosmic Signature\tWormhole\t\t100%\t1 AU\n"))
+    store.delete_signatures(other.id, ["AAA-111"])          # number 1 was given out; the hole goes through BBB-222 (2)
     store.remove_connection(store.connection(c5.id, c3.id).id)
     store.clear_broken_parents()
     assert (store.system(c3.id).parent_id, store.system(c3.id).detached_from) == (None, c5.id)
@@ -833,15 +839,49 @@ def jump_with_scans(simulation: MapSimulation, name: str, far_type: str | None =
 
 
 def test_return_hole_behind_a_real_type_is_a_k162_to_the_origin(simulation) -> None:
-    """Home's sig is H296: the sig in B becomes K162 towards home's class, linked on B's side, and keeps its number."""
+    """Home's sig is H296: the sig in B becomes K162 towards home's class, linked on B's side, and gives up its number."""
     b, connection = jump_with_scans(simulation, pick_system("C5", exclude={HOME.id}).name, "H296")
     assert connection.signature_on(HOME.id) == "ABC-123" and connection.signature_on(b.id) is None
-    number = simulation.store.signature(b.id, "NOP-222").hole_index
+    assert simulation.store.signature(b.id, "NOP-222").hole_index == 2
     assert simulation.tracker.mark_return(b.id, "NOP-222", connection.id) == ReturnType("K162")
     sig = simulation.store.signature(b.id, "NOP-222")
-    assert (sig.type, sig.destination, sig.hole_index) == ("K162", "C5", number)
+    assert (sig.type, sig.destination, sig.hole_index) == ("K162", "C5", None)   # its bookmark is !RTB …
+    assert simulation.store.system(b.id).next_hole == 1                           # 2 was the top: given again
     assert simulation.store.connection(HOME.id, b.id).signature_on(b.id) == "NOP-222"
     assert simulation.store.connection(HOME.id, b.id).wormhole_type == "H296"
+
+
+@pytest.mark.parametrize("renumber", [False, True])
+def test_a_return_hole_with_the_lowest_number_frees_it(simulation, renumber) -> None:
+    """The return sig had 1: off, the other sig keeps 2; on, it moves down to 1 and the counter follows."""
+    simulation.tracker.renumber_after_return = renumber
+    b, connection = jump_with_scans(simulation, pick_system("C5", exclude={HOME.id}).name, "H296")
+    assert simulation.store.signature(b.id, "KLM-111").hole_index == 1
+    simulation.tracker.mark_return(b.id, "KLM-111", connection.id)
+    assert simulation.store.signature(b.id, "KLM-111").hole_index is None
+    other = simulation.store.signature(b.id, "NOP-222").hole_index
+    counter = simulation.store.system(b.id).next_hole
+    assert (other, counter) == ((1, 1) if renumber else (2, 2))
+    assert simulation.tracker.release_return_number(b.id, "KLM-111") is None   # nothing left to give back
+
+
+def test_renumbering_after_a_return_skips_numbers_still_in_use(simulation) -> None:
+    """A sig with a system behind it keeps its number, and no sig moves onto it; a cloud map keeps its counter."""
+    tracker, store = simulation.tracker, simulation.store
+    tracker.renumber_after_return = True
+    b, connection = jump_with_scans(simulation, pick_system("C5", exclude={HOME.id}).name, "H296")
+    signature_parser.merge_signatures(store, b.id, signature_parser.parse_scanner_text(
+        WH_SCAN + "QRS-333\tCosmic Signature\tWormhole\tUnstable Wormhole\t100,0%\t3 AU\n"
+                  "TUV-444\tCosmic Signature\tWormhole\tUnstable Wormhole\t100,0%\t4 AU\n"))
+    child = pick_system("C3")
+    store.add_system(child.id, parent_id=b.id, hole_index=2)
+    link = store.add_connection(b.id, child.id)
+    store.set_connection_signature(link.id, b.id, "NOP-222")
+    store.layout_local = True
+    tracker.mark_return(b.id, "KLM-111", connection.id)
+    numbers = {signature.signature_id: signature.hole_index for signature in store.signatures(b.id)}
+    assert numbers == {"KLM-111": None, "NOP-222": 2, "QRS-333": 3, "TUV-444": 4}   # 2 is held, so 3 can't move
+    assert store.system(b.id).next_hole == 4
 
 
 def test_return_hole_behind_a_k162_takes_the_only_type_that_fits(simulation) -> None:

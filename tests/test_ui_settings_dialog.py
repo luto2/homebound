@@ -484,6 +484,8 @@ def test_save_writes_settings(dialog, state, tmp_path) -> None:
     dialog.home.setText(other.name.lower())
     dialog.scheme_cards[key].radio.setChecked(True)
     dialog.auto_name.setChecked(not state.settings.auto_name_when_certain)
+    dialog.renumber_return.setChecked(True)
+    dialog.copy_bookmark.setChecked(True)
     dialog.mode_cards["pinned_always"].radio.setChecked(True)
     dialog.opacity.setValue(80)
     dialog.text_size.setValue(13)
@@ -500,12 +502,13 @@ def test_save_writes_settings(dialog, state, tmp_path) -> None:
     assert settings.log_directory == str(folder)
     assert settings.home_system == other.name
     assert settings.naming_scheme == key
+    assert settings.renumber_after_return is True and state.tracker.renumber_after_return is True
     assert settings.overlay_mode == "pinned_always"
     assert settings.overlay_opacity == 0.8
     assert settings.overlay_text_size == 13
     assert settings.known_space_radius == 4
     assert settings.overlay_focus_radius == 1 and settings.overlay_max_rows == 9
-    assert settings.rescan_due_hours == 6
+    assert settings.rescan_due_hours == 6 and settings.copy_bookmark_on_change is True
     assert settings.zkill_enabled is True
     assert applied
     assert state.zkill.enabled is True

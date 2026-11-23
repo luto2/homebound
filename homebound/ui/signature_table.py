@@ -22,7 +22,7 @@ from ..mapping.signature_parser import GROUP_ORDER
 from ..mapping.tracker import hole_size
 from ..theme import painting
 from ..theme.tokens import PIXELS, color, font
-from ..validation import require_integer, require_type
+from ..validation import require_integer, require_text, require_type
 from ..mapping.scan_status import age_text
 from . import menus
 from .state import AppState
@@ -104,6 +104,11 @@ def _seen_at(signature: Signature) -> str:
 def is_wormhole_signature(signature: Signature) -> bool:
     """Return whether a row is a wormhole signature (not an anomaly)."""
     return signature.group == "wormhole" and signature.kind != "anom"
+
+
+def can_be_return_hole(signature: Signature) -> bool:
+    """Return whether a row can be marked as the return hole: a wormhole sig, or a sig not scanned yet."""
+    return signature.kind != "anom" and (signature.group == "wormhole" or not signature.group)
 
 
 class SignatureModel(QAbstractTableModel):
@@ -406,7 +411,8 @@ class SignatureModel(QAbstractTableModel):
         """Return the text the copy button copies: ``<number> <sig> <class>``, e.g. ``123-2 ABC C3``.
 
         The number is the bookmark label, the sig is the three letters of its ID, and the class is where the hole
-        leads (as the class badges write it). The class is left out, with its space, when none is known.
+        leads (as the class badges write it). The class is left out, with its space, when none is known, and
+        on the return hole: ``!RTB 12 ABC`` (numeric, letter-led) or ``*A1a-3 ABC`` (chain · depth · position).
 
         Args:
             signature: A wormhole signature of the loaded system.
@@ -416,9 +422,16 @@ class SignatureModel(QAbstractTableModel):
         """
         require_type(signature, Signature, "signature")
         parts = [self.bookmark_for(signature), signature.signature_id.split("-")[0]]
-        if system_class := self.lead_class(signature):
+        if not self.is_return(signature) and (system_class := self.lead_class(signature)):
             parts.append(system_class)
         return " ".join(parts)
+
+    def is_return(self, signature: Signature) -> bool:
+        """Return whether a sig is the hole back to this system's parent (its bookmark is the return one)."""
+        if signature.signature_id not in self.leads:
+            return False
+        mine = self.app_state.store.system(self.system_id)
+        return bool(mine and mine.parent_id == self.leads[signature.signature_id][0])
 
     def bookmark_for(self, signature: Signature) -> str:
         """Return the bookmark label of a wormhole signature.
@@ -880,7 +893,7 @@ class SignatureTable(QTableView):
             self.returnRequested.emit(signature.signature_id, self.signature_model.origin or 0)
 
     def mark_selected_return(self) -> bool:
-        """Ask to mark the one selected wormhole sig as the return hole (the ``R`` key).
+        """Ask to mark the one selected wormhole or unscanned sig as the return hole (the ``R`` key).
 
         Returns:
             True if a request was sent (origin 0 when it isn't known, so the panel can say so).
@@ -888,22 +901,22 @@ class SignatureTable(QTableView):
         selected = [signature for signature_id in self.selected_signatures()
                     if (signature := next((candidate for candidate in self.signature_model.signatures
                                            if candidate.signature_id == signature_id), None))]
-        if len(selected) != 1 or not is_wormhole_signature(selected[0]):
+        if len(selected) != 1 or not can_be_return_hole(selected[0]):
             return False
         self.returnRequested.emit(selected[0].signature_id, self.signature_model.origin or 0)
         return True
 
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
-        """Right-click on a wormhole sig: mark it as the return hole."""
+        """Right-click on a wormhole sig or one not scanned yet: mark it as the return hole."""
         signature = self.signature_model.signature_at(self.rowAt(event.pos().y()))
-        if signature and is_wormhole_signature(signature):
+        if signature and can_be_return_hole(signature):
             self.show_menu(signature, event.globalPos())
 
     def show_menu(self, signature: Signature, position: QPoint) -> QMenu:
         """Show the menu of a wormhole sig: "Return hole to A", or a list of the connections to pick from.
 
         Args:
-            signature: A wormhole signature of the loaded system.
+            signature: A wormhole signature of the loaded system, or one not scanned yet.
             position: Where to show it (global).
 
         Returns:
@@ -954,6 +967,30 @@ class SignatureTable(QTableView):
         model.copied = signature.signature_id
         self.viewport().update()
         self._copied_timer.start()
+        self.copied.emit(label)
+        return label
+
+    def copy_bookmark(self, signature_id: str) -> str | None:
+        """Copy the bookmark text of a sig of the loaded system, as its copy button does.
+
+        A sig in a collapsed group has no row: its text is copied without the "✓ Copied" feedback.
+
+        Returns:
+            The text copied, or None if the sig isn't a wormhole sig of the loaded system.
+        """
+        require_text(signature_id, "signature_id")
+        model = self.signature_model
+        for row, item in enumerate(model.rows):
+            if isinstance(item, Signature) and item.signature_id == signature_id:
+                return self.copy_row(row) if is_wormhole_signature(item) else None
+        signature = self.app_state.store.signature(model.system_id, signature_id) if model.system_id else None
+        if signature is None or not is_wormhole_signature(signature):
+            return None
+        if not signature.hole_index and signature_id not in model.leads:
+            model.reserve_index(signature)
+            signature = self.app_state.store.signature(model.system_id, signature_id) or signature
+        label = model.bookmark_text(signature)
+        QApplication.clipboard().setText(label)
         self.copied.emit(label)
         return label
 

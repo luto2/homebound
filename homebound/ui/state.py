@@ -183,7 +183,8 @@ class AppState(QObject):
         if self.damaged_warning:
             self._report_backup("warn", self.damaged_warning)
         self.namer = Namer(self.store, universe, settings.naming_scheme, self.home_id)
-        self.tracker = Tracker(self.store, universe, self.namer, settings.auto_name_when_certain)
+        self.tracker = Tracker(self.store, universe, self.namer, settings.auto_name_when_certain,
+                               settings.renumber_after_return)
         self._freeze_legacy_names()
         self._watch_names()
         self.selected: int = 0
@@ -441,6 +442,7 @@ class AppState(QObject):
         self.namer.store = self.tracker.store = store
         self.namer.scheme_key = self.settings.naming_scheme
         self.namer.home_id = self.home_id
+        self.tracker.renumber_after_return = self.settings.renumber_after_return
         self._freeze_legacy_names()
         self._watch_names()
         self.tracker.watch_store()
@@ -656,6 +658,7 @@ class AppState(QObject):
         self.namer.scheme_key = settings.naming_scheme
         self.namer.home_id = self.home_id
         self.tracker.auto_when_certain = settings.auto_name_when_certain
+        self.tracker.renumber_after_return = settings.renumber_after_return
         self._take_private_watch_list()
         self.zkill.enabled = settings.zkill_enabled
         self.eve_scout.enabled = settings.eve_scout_enabled

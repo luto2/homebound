@@ -433,6 +433,8 @@ class SystemPanel(QWidget):
             self.toast.emit("err", "Clipboard has no scanner rows. Expected lines like ABC-123<tab>Cosmic Signature …")
             return None
         before = {signature.signature_id: signature.state for signature in self.state.store.signatures(self.system_id)}
+        was_wormhole = {signature.signature_id for signature in self.state.store.signatures(self.system_id)
+                        if signature.group == "wormhole"}
         result = signature_parser.merge_scan(self.state.store, self.system_id, paste)
         parts = []
         if result.signatures is not None:
@@ -451,7 +453,24 @@ class SystemPanel(QWidget):
         self.toast.emit("ok", " · ".join(parts))
         self.state.systemUpdated.emit(self.system_id)
         self.table.flash([row.signature_id for row in paste.signatures])   # added, updated and confirmed
+        if result.signatures is not None:
+            turned_up = [signature.signature_id for signature in self.state.store.signatures(self.system_id)
+                         if signature.group == "wormhole" and signature.kind != "anom"
+                         and signature.signature_id not in was_wormhole
+                         and signature.signature_id in result.signatures.added + result.signatures.updated]
+            if turned_up:   # new, or scanned down to a wormhole by this paste: the last in ID order
+                self.copy_changed_bookmark(turned_up[-1])
         return result
+
+    def copy_changed_bookmark(self, signature_id: str) -> str | None:
+        """Copy the bookmark text of a wormhole sig that was just changed, if that setting is on.
+
+        Returns:
+            The text copied, or None (setting off, or not a wormhole sig).
+        """
+        if not self.state.settings.copy_bookmark_on_change:
+            return None
+        return self.table.copy_bookmark(signature_id)
 
     def linked_connection(self, signature_id: str) -> Connection | None:
         """Return the connection that uses a signature of the shown system, or None."""
@@ -472,7 +491,8 @@ class SystemPanel(QWidget):
         require_type(signature, Signature, "signature")
         state = self.state
         connection = self.linked_connection(signature.signature_id)
-        dialog = SignatureDialog(self.window(), state, signature, connection)
+        origin = self.table.signature_model.origin
+        dialog = SignatureDialog(self.window(), state, signature, connection, return_to=origin)
         dialog.delete.connect(lambda: self.delete_signatures([signature.signature_id]))
         if open_type_picker:
             QTimer.singleShot(0, dialog.wormhole.type.showPopup)
@@ -483,6 +503,10 @@ class SystemPanel(QWidget):
         state.systemUpdated.emit(self.system_id)
         if linked or connection:
             state.mapChanged.emit()
+        if dialog.return_hole and origin:
+            self.mark_return(signature.signature_id, origin)   # copies the return bookmark itself
+        else:
+            self.copy_changed_bookmark(signature.signature_id)
         return True
 
     def mark_return(self, signature_id: str, origin_id: int) -> bool:
@@ -503,12 +527,16 @@ class SystemPanel(QWidget):
             self.toast.emit("err", "Right-click the sig and pick the system its hole leads to")
             return False
         with state.store.batch() as action:
+            signature = state.store.signature(self.system_id, signature_id)
+            if signature is not None and signature.group != "wormhole":   # an unscanned sig: it is a hole now
+                state.tracker.save_signature(self.system_id, signature_id, {"group": "wormhole"})
             found = state.tracker.mark_return(self.system_id, signature_id, connection.id)
         if found is None:
             return False
         self.refresh()
         state.systemUpdated.emit(self.system_id)
         state.mapChanged.emit()
+        self.copy_changed_bookmark(signature_id)
         origin = state.namer.display(origin_id)
         self.undoable.emit(f"{signature_id} is the hole back to {origin}", state.namer.display(self.system_id), action)
         if found.candidates and not found.code:

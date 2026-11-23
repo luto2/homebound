@@ -8,6 +8,19 @@ Each section is headed `## <version> (<date>)` with the groups Added, Changed an
 
 ## Unreleased
 
+### Added
+
+- The signature editor (double-click a sig) has a **↩ Return hole to …** button. It and the right-click menu also work on a sig that isn't scanned yet: it is made a wormhole on the way.
+
+- Settings → Signatures → *Copy the bookmark of the wormhole I just changed*: after a paste that turns up a new wormhole sig, after saving one in the editor and after marking the return hole, its bookmark text is on the clipboard, ready for the in-game bookmark.
+
+### Changed
+
+- "Which sig did you take?" shows each sig's bookmark number, lists the sigs that can lead where you landed first, then the other wormhole sigs, and "New hole" last. When every sig is scanned, the first that fits is preselected instead of "New hole".
+- Return hole bookmarks: `!RTB 12 ABC` under numeric and letter-led (was `12-0 ABC C5`). Under chain · depth · position the holes out get a dot (`.A1a-3`) and the return hole a star with the same name (`*A1a-3`).
+- The return hole gives its number back when you mark it. A new per-map option, **Renumber the other sigs when a return hole is marked** (Settings → Naming), also moves the other sigs' numbers down, so the holes out start at 1.
+- On a local map, a system with no numbered sig and no hole behind it left numbers its holes from 1 again, so home no longer counts up forever. Cloud maps keep counting.
+
 ## 1.0.6 (2026-11-16)
 
 ### Fixed

@@ -2,7 +2,7 @@
 
 - **Audience:** the owner and coding agents.
 - **Scope:** open items only. Finished work is in plan status lines, `CHANGELOG.md` and git; the rules for numbering are below.
-- **Kept current:** checked against `9c545d7` (2026-11-17). Update it when an item is added, finished or changes.
+- **Kept current:** checked against `605b8dc` (2026-11-23). Update it when an item is added, finished or changes.
 
 Open items only. Finished work is recorded in the plan's status line, in the "Done" table of
 [`docs/plans/README.md`](docs/plans/README.md), in [`CHANGELOG.md`](CHANGELOG.md) and in git. Item
@@ -77,6 +77,11 @@ rating and a model suggestion; the scale is in [`CLAUDE.md`](CLAUDE.md) under "E
     when nothing reads an alias any more: a major QWD version drops the aliases once all three products
     have moved.
     Effort: 2/5 · Sonnet.
+32. Hole numbers start again at 1 on cloud maps too (owner, 2026-11-23). A local map sets an empty system's
+    counter back (`naming.restart_hole_numbers`); a cloud map can't, because `next_hole` is a field that only goes up
+    (`MAX_FIELDS` in `homebound/sync/protocol.py`) and merging takes the highest. Needs a protocol change, for
+    example a per-system numbering epoch that the server bumps when the system holds no numbered sig or hole.
+    Effort: 4/5 · Opus.
 
 ## To do
 
