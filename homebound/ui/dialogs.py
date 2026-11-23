@@ -19,7 +19,7 @@ from ..theme import painting
 from ..theme.qss import repolish
 from ..theme.tokens import PIXELS, color, font
 from ..universe.db import System
-from ..validation import require_choice, require_text, require_type
+from ..validation import require_choice, require_integer, require_text, require_type
 from ..mapping.scan_status import age_text
 from .menus import copy_icon, glyph_icon
 from .state import AppState
@@ -284,27 +284,57 @@ class NamingDialog(BaseDialog):
             widget.setVisible(self.asks_static)  # no static leads to this class: only the sig question
 
     def _build_signature_question(self, request: NamingRequest, child: System) -> None:
-        """One row per candidate signature, plus "Not scanned / skip"."""
+        """One row per unlinked WH sig: those that can lead here first, then the others, then "New hole".
+
+        Each row shows the bookmark the sig was given at paste. When every sig in the parent is
+        scanned, the hole was one of them, so the first that can lead here is picked; while some
+        sig is still unscanned, "New hole" is.
+        """
         self.signature_group = QButtonGroup(self)
         self.signature_rows: dict[str, ChoiceRow] = {}
         if not request.signature_candidates:
             return
         self.caption("Which sig did you take?")
-        for signature_id in request.signature_candidates:
-            signature = self.state.store.signature(request.parent_id, signature_id)
-            if signature is None:   # scanned in this process just before; it is there
-                continue
-            row = ChoiceRow(signature_id, self.signature_text(signature, child.system_class),
+        fitting, others = self.sort_candidates(request, child.system_class)
+        for signature in fitting + others:
+            row = ChoiceRow(signature.signature_id, self.signature_text(signature, child.system_class),
                             group=self.signature_group)
-            self.signature_rows[signature_id] = row
+            self.signature_rows[signature.signature_id] = row
             self.body.addWidget(row)
-        skip = ChoiceRow("—", "Not scanned / skip", group=self.signature_group)
-        self.signature_rows[""] = skip
-        self.body.addWidget(skip)
-        skip.radio.setChecked(True)
+        new_hole = ChoiceRow("—", "New hole · not scanned / skip", group=self.signature_group)
+        self.signature_rows[""] = new_hole
+        self.body.addWidget(new_hole)
+        if fitting and not self.state.tracker.has_unscanned_signatures(request.parent_id):
+            first = self.signature_rows[fitting[0].signature_id]
+            first.caption.setText("BEST GUESS")
+            first.caption.setVisible(True)
+            first.radio.setChecked(True)
+        else:
+            new_hole.radio.setChecked(True)
+
+    def sort_candidates(self, request: NamingRequest, child_class: str) -> tuple[list[Signature], list[Signature]]:
+        """Split the parent's unlinked WH sigs into those that can lead to the child's class and the rest.
+
+        The tracker's candidates can lead there, except a K162 whose typed-in destination is another
+        class. The rest are the other unlinked WH sigs, in case a type or destination was entered wrong.
+
+        Returns:
+            ``(fitting, others)``, each in signature ID order.
+        """
+        candidates = set(request.signature_candidates)
+        fitting: list[Signature] = []
+        others: list[Signature] = []
+        for signature_id in self.state.tracker.unlinked_wormhole_signatures(request.parent_id):
+            signature = self.state.store.signature(request.parent_id, signature_id)
+            if signature is None:
+                continue
+            leads_elsewhere = ((signature.type or "").upper() == "K162" and signature.destination
+                               and signature.destination != child_class)
+            (fitting if signature_id in candidates and not leads_elsewhere else others).append(signature)
+        return fitting, others
 
     def signature_text(self, signature: Signature, child_class: str) -> str:
-        """Describe a candidate: 'H296 → C5 · 100%', 'K162 → C3 (typed in; you landed in a C4) · 100%'."""
+        """Describe a candidate: 'Home-3 · H296 → C5 · 100%', 'Home-4 · K162 → C3 (typed in; you landed in a C4) · 100%'."""
         known = self.state.universe.known_type(signature.type)
         if (signature.type or "").upper() == "K162":
             what = f"K162 → {signature.destination}" if signature.destination else "K162"
@@ -315,7 +345,9 @@ class NamingDialog(BaseDialog):
         else:
             what = "type unknown"
         percent = f"{signature.scan_percent:.0f}%" if signature.scan_percent is not None else ""
-        return " · ".join(part for part in (what, percent) if part)
+        bookmark = (self.state.namer.bookmark(signature.system_id, signature.hole_index)
+                    if signature.hole_index else "")
+        return " · ".join(part for part in (bookmark, what, percent) if part)
 
     def answer(self, is_static: bool) -> None:
         """Pick yes or no and accept (the Y and N keys)."""
@@ -393,17 +425,29 @@ class SignatureDialog(BaseDialog):
 
     For a K162 also where it leads and its size. The probe scanner never shows the WH type, so this
     is where it is entered after warping to the hole and checking show info. If the sig is linked
-    to a map connection, saving updates that connection too.
+    to a map connection, saving updates that connection too. When it is known where a return hole
+    here leads, a footer button saves the sig as a wormhole and marks it as that hole, whatever
+    group it had (``return_hole``).
     """
 
     delete = Signal()
 
     def __init__(self, parent: QWidget | None, state: AppState, signature: Signature,
-                 connection: Connection | None = None) -> None:
-        """Build the editor for a signature, optionally linked to a connection."""
+                 connection: Connection | None = None, return_to: int | None = None) -> None:
+        """Build the editor for a signature, optionally linked to a connection.
+
+        Args:
+            parent: The window to centre on.
+            state: The app state.
+            signature: The signature.
+            connection: The connection it is linked to, if any.
+            return_to: Where a return hole in this system leads, to offer "Return hole to …"; None for no button.
+        """
         require_type(signature, Signature, "signature")
         require_type(connection, (Connection, type(None)), "connection")
+        require_integer(return_to, "return_to", minimum=1, optional=True)
         self.state, self.signature, self.connection = state, signature, connection
+        self.return_hole = False
         subtitle = state.namer.with_real_name(signature.system_id)
         if connection:
             subtitle += f" · leads to {state.namer.display(connection.other_end(signature.system_id))}"
@@ -438,9 +482,22 @@ class SignatureDialog(BaseDialog):
         self.scanner_note = _end_label(self.name, "from the scanner")
         self.body.addWidget(self.name)
         self.add_buttons(danger_button("✕ Delete sig", lambda: (self.delete.emit(), self.reject())))
+        self.return_button: QPushButton | None = None
+        already = connection is not None and connection.other_end(signature.system_id) == return_to
+        if return_to and signature.kind != "anom" and not already:
+            self.return_button = QPushButton(f"↩ Return hole to {state.namer.display(return_to)}")
+            self.return_button.setToolTip("Save this sig as a wormhole and mark it as the hole back there")
+            self.return_button.clicked.connect(self.accept_as_return)
+            self.foot.insertWidget(1, self.return_button)
         self.group.currentIndexChanged.connect(self._sync_group)
         self._sync_group()
         self.wormhole.type.setFocus()
+
+    def accept_as_return(self) -> None:
+        """Make the sig a wormhole and accept, asking the caller to mark it as the return hole."""
+        self.group.setCurrentIndex(self.group.findData("wormhole"))
+        self.return_hole = True
+        self.accept()
 
     def return_candidates(self) -> tuple[str, ...]:
         """Return the types a return hole without a type can be (the other side is a K162), to list first."""

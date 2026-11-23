@@ -328,6 +328,43 @@ def test_paste_merges_the_clipboard(state, panel, qt_application) -> None:
     assert panel.delete_missing_button.text() == "✕ Delete 1"
 
 
+def test_paste_copies_the_bookmark_of_a_new_wormhole_when_set(state, panel, qt_application) -> None:
+    """Setting on: a paste that turns up a wormhole copies its bookmark; one that finds none leaves the clipboard."""
+    state.settings.copy_bookmark_on_change = True
+    QApplication.clipboard().setText(SCAN)
+    panel.paste()
+    signature = state.store.signature(HOME.id, "ABC-123")
+    assert QApplication.clipboard().text() == panel.table.signature_model.bookmark_text(signature)
+    QApplication.clipboard().setText(SCAN)                  # nothing new: the scan text stays
+    panel.paste()
+    assert QApplication.clipboard().text() == SCAN
+    QApplication.clipboard().setText(SCAN.replace("DEF-456\tCosmic Signature\t\t\t12,5%",
+                                                  "DEF-456\tCosmic Signature\tWormhole\tUnstable Wormhole\t100%"))
+    panel.paste()                                           # scanned down to a wormhole by this paste
+    signature = state.store.signature(HOME.id, "DEF-456")
+    assert QApplication.clipboard().text() == panel.table.signature_model.bookmark_text(signature)
+
+
+def test_paste_leaves_the_clipboard_with_the_setting_off(state, panel, qt_application) -> None:
+    """Setting off (the default): the clipboard keeps the scan."""
+    assert state.settings.copy_bookmark_on_change is False
+    QApplication.clipboard().setText(SCAN)
+    panel.paste()
+    assert QApplication.clipboard().text() == SCAN
+    assert panel.copy_changed_bookmark("ABC-123") is None
+
+
+def test_copy_bookmark_of_a_sig_without_a_row(state, panel, qt_application) -> None:
+    """A sig in a collapsed group is copied without a row; a sig that isn't a wormhole isn't."""
+    QApplication.clipboard().setText(SCAN)
+    panel.paste()
+    table = panel.table
+    table.signature_model.rows = []                         # as if its group were collapsed
+    text = table.copy_bookmark("ABC-123")
+    assert text and QApplication.clipboard().text() == text
+    assert table.copy_bookmark("GHI-789") is None and table.copy_bookmark("NOP-000") is None
+
+
 def test_paste_opens_the_group_it_changed(state, panel, qt_application) -> None:
     """A paste that adds or misses a row in a collapsed group opens that group once; a paste that changes nothing
     in it leaves it as the user collapsed it."""
@@ -930,10 +967,11 @@ def test_a_typed_static_is_numbered_like_any_other_hole(state, model) -> None:
     add_signature(state, "WH-001", group="wormhole", type="H296")
     model.load(HOME.id)
     assert model.upcoming == {"WH-001": 2}
+    add_signature(state, "WH-000", group="wormhole", hole_index=5)   # home holds a number: it counts on
     state.store.remove_system(child.id)
     add_signature(state, "WH-002", group="wormhole", type="H296")
     model.load(HOME.id)
-    assert model.upcoming == {"WH-001": 2, "WH-002": 3}   # 1 was given out: it isn't used again
+    assert model.upcoming == {"WH-001": 6, "WH-002": 7}   # 1 was given out: it isn't used again
 
 
 def test_two_sigs_with_one_number_are_flagged(state, model) -> None:
@@ -958,7 +996,7 @@ def test_bookmark_for_reserved_index(state, model) -> None:
 
 
 def test_bookmark_for_linked_child_and_home(state, panel) -> None:
-    """A linked hole is named after the child's index; the hole back home ends in -0."""
+    """A linked hole is named after the child's index; the hole back home is the return bookmark."""
     child = pick_system("C5", exclude={HOME.id})
     state.dispatch(state.tracker.add_wormhole(HOME.id, child.id))
     mapped_child = state.store.system(child.id)
@@ -979,7 +1017,7 @@ def test_bookmark_for_linked_child_and_home(state, panel) -> None:
     child_model = SignatureModel(state)
     child_model.load(child.id)
     assert child_model.bookmark_for(state.store.signature(child.id, "BACK-01")) == state.namer.bookmark_home(child.id)
-    assert "-0" in child_model.bookmark_for(state.store.signature(child.id, "BACK-01"))
+    assert child_model.bookmark_for(state.store.signature(child.id, "BACK-01")) == "!RTB 1"
     assert "BACK-01" not in child_model.upcoming
 
 
@@ -1007,8 +1045,8 @@ def test_bookmark_text_unlinked_known_type_and_k162(state, model) -> None:
     assert model.bookmark_text(bare) == f"{model.bookmark_for(bare)} ABE"
 
 
-def test_bookmark_text_return_hole_uses_home_class(state, model) -> None:
-    """The return hole of a child is numbered -0 and copies the class of the system it leads back to."""
+def test_bookmark_text_return_hole_is_rtb_without_class(state, model) -> None:
+    """The return hole of a child copies ``!RTB <label> <sig>``, without a class."""
     child = pick_system("C5", exclude={HOME.id})
     state.dispatch(state.tracker.add_wormhole(HOME.id, child.id))
     state.store.upsert_signature(Signature(child.id, "BAK-001", group="wormhole", kind="sig"))
@@ -1016,7 +1054,7 @@ def test_bookmark_text_return_hole_uses_home_class(state, model) -> None:
     model.load(child.id)
     signature = state.store.signature(child.id, "BAK-001")
     home_class = state.universe.by_id(HOME.id).system_class
-    assert model.bookmark_text(signature) == f"{state.namer.bookmark_home(child.id)} BAK {home_class}"
+    assert home_class and model.bookmark_text(signature) == f"{state.namer.bookmark_home(child.id)} BAK"
     assert model.bookmark_text(signature).startswith(state.namer.bookmark_home(child.id) + " ")
 
 
@@ -1519,11 +1557,78 @@ def test_panel_marks_the_return_hole_with_one_undo(state, panel) -> None:
     assert len(undo) == 1 and "KKK-001" in undo[0][0] and changed and not toasts
     model = panel.table.signature_model
     signature = state.store.signature(child.id, "KKK-001")
-    assert model.hint is None and model.button_label(signature).endswith("-0")
+    assert model.hint is None and model.button_label(signature).startswith("!RTB ")
     assert model._display_text(signature, COLUMN_NAME).endswith("· return")
     state.store.undo(undo[0][2])
     assert state.store.connection(HOME.id, child.id).signature_on(child.id) is None
     assert state.store.signature(child.id, "KKK-001").destination is None
+
+
+def test_signature_editor_marks_an_unscanned_sig_as_the_return_hole(state, panel, modal) -> None:
+    """Double-click an unscanned sig → "Return hole to Home": it becomes a wormhole and the hole back."""
+    child, _ = return_scene(state)
+    add_signature(state, "NEW-777", child.id)                       # group not known yet
+    state.select(child.id)
+    panel.set_system(child.id)
+
+    def press_return(dialog) -> int:
+        assert dialog.return_button is not None and "Return hole to" in dialog.return_button.text()
+        dialog.return_button.click()
+        return dialog.result()
+
+    modal.handler = press_return
+    assert panel.edit_signature(state.store.signature(child.id, "NEW-777")) is True
+    signature = state.store.signature(child.id, "NEW-777")
+    assert signature.group == "wormhole" and signature.type == "K162"   # the other side is an H296
+    assert state.store.connection(HOME.id, child.id).signature_on(child.id) == "NEW-777"
+    assert panel.table.signature_model.bookmark_text(signature) == f"!RTB {state.namer.label(child.id)} NEW"
+
+
+def test_saving_a_wormhole_in_the_editor_copies_its_bookmark_when_set(state, panel, modal, qt_application) -> None:
+    """Setting on: an accepted editor of a wormhole sig copies its bookmark text."""
+    state.settings.copy_bookmark_on_change = True
+    add_signature(state, "EDT-123", group="wormhole")
+    panel.set_system(HOME.id)
+    modal.handler = lambda dialog: 1
+    assert panel.edit_signature(state.store.signature(HOME.id, "EDT-123")) is True
+    signature = state.store.signature(HOME.id, "EDT-123")
+    assert QApplication.clipboard().text() == panel.table.signature_model.bookmark_text(signature)
+
+
+def test_marking_the_return_hole_copies_its_bookmark_when_set(state, panel, qt_application) -> None:
+    """Setting on: marking the return hole puts its !RTB bookmark on the clipboard."""
+    state.settings.copy_bookmark_on_change = True
+    child, _ = return_scene(state)
+    state.select(child.id)
+    panel.set_system(child.id)
+    assert panel.mark_return("KKK-001", HOME.id) is True
+    assert QApplication.clipboard().text() == f"!RTB {state.namer.label(child.id)} KKK"
+
+
+def test_signature_editor_offers_no_return_without_an_origin_or_when_linked(state, panel, modal) -> None:
+    """No known origin, or the sig already is that hole: no return button."""
+    from homebound.ui.dialogs import SignatureDialog
+    child, connection = return_scene(state)
+    signature = state.store.signature(child.id, "AAA-111")
+    assert SignatureDialog(None, state, signature).return_button is None
+    state.store.set_connection_signature(connection.id, child.id, "AAA-111")
+    linked = state.store.connection_by_id(connection.id)
+    assert SignatureDialog(None, state, signature, linked, return_to=HOME.id).return_button is None
+    assert SignatureDialog(None, state, signature, return_to=HOME.id).return_button is not None
+
+
+def test_right_click_offers_the_return_hole_on_an_unscanned_sig(state, panel, modal) -> None:
+    """A sig not scanned yet can be marked from the menu or with R; it is made a wormhole on the way."""
+    child, _ = return_scene(state)
+    add_signature(state, "NEW-777", child.id)
+    state.select(child.id)
+    panel.set_system(child.id)
+    table = panel.table
+    table.selectRow(next(row for row, item in enumerate(table.signature_model.rows)
+                         if getattr(item, "signature_id", "") == "NEW-777"))
+    assert table.mark_selected_return() is True
+    assert state.store.signature(child.id, "NEW-777").group == "wormhole"
+    assert state.store.connection(HOME.id, child.id).signature_on(child.id) == "NEW-777"
 
 
 def test_panel_tells_the_candidates_and_refuses_without_an_origin(state, panel, modal) -> None:

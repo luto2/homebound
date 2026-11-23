@@ -9,7 +9,8 @@ from homebound.mapping.naming import (SCHEMES, forget_alias, rename_system, Chai
                                       freeze_legacy_names, guess_static, label_unnamed_systems, number_for_letters,
                                       hole_digit, hole_path, is_static_signature, letters_for_number, level_positions,
                                       next_level_index, ReturnType, return_type, scheme_for_key, signature_destination,
-                                      static_slot_count, static_slot_for_class, take_hole_number)
+                                      number_signature, restart_hole_numbers, static_slot_count, static_slot_for_class,
+                                      take_hole_number)
 
 
 def test_hole_digits() -> None:
@@ -184,11 +185,38 @@ def test_take_hole_number_counts_up_from_one() -> None:
     assert take_hole_number(store, HOME.id) == 1
     store.upsert_signature(Signature(HOME.id, "ABC-123", hole_index=2))
     assert take_hole_number(store, HOME.id) == 3
+    store.upsert_signature(Signature(HOME.id, "DEF-456", hole_index=1))
     store.delete_signatures(HOME.id, ["ABC-123"])
-    assert take_hole_number(store, HOME.id) == 3          # 2 was given out
+    assert take_hole_number(store, HOME.id) == 3          # 2 was given out, 1 is still there
     assert take_hole_number(store, 30000142) == 1         # not on the map
     with pytest.raises(ValueError):
         take_hole_number(store, 0)
+
+
+def test_hole_numbers_restart_when_a_local_system_holds_none() -> None:
+    """On a local map a system with no numbered sig or child left counts from 1 again; a cloud map doesn't."""
+    store = Store(":memory:")
+    store.add_system(HOME.id)
+    store.upsert_signature(Signature(HOME.id, "ABC-123", group="wormhole"))
+    assert number_signature(store, HOME.id, "ABC-123") == 1
+    store.upsert_signature(Signature(HOME.id, "DEF-456", group="wormhole"))
+    assert number_signature(store, HOME.id, "DEF-456") == 2
+    store.delete_signatures(HOME.id, ["ABC-123", "DEF-456"])
+    assert store.system(HOME.id).next_hole == 2
+    assert take_hole_number(store, HOME.id) == 1
+    store.layout_local = True                              # a cloud map: the shared counter only goes up
+    assert take_hole_number(store, HOME.id) == 3
+    assert not restart_hole_numbers(store, HOME.id)
+    store.layout_local = False
+    store.upsert_signature(Signature(HOME.id, "GHI-789", group="wormhole"))
+    store.upsert_signature(Signature(HOME.id, "JKL-012", group="wormhole"))
+    assert number_signature(store, HOME.id, "GHI-789") == 1
+    assert number_signature(store, HOME.id, "JKL-012") == 2
+    assert store.system(HOME.id).next_hole == 2
+    assert not restart_hole_numbers(store, HOME.id)        # numbers in use: nothing to restart
+    assert not restart_hole_numbers(store, 30000142)       # not on the map
+    with pytest.raises(ValueError):
+        restart_hole_numbers(store, 0)
 
 
 def test_hole_path_stops_at_a_loop() -> None:

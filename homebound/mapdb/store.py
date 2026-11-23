@@ -622,6 +622,17 @@ class Store:
             self.database.execute("UPDATE systems SET next_hole=? WHERE id=? AND coalesce(next_hole, 0) < ?",
                                   (hole, system_id, hole))
 
+    def set_hole_counter(self, system_id: int, value: int) -> None:
+        """Set a system's ``next_hole`` back to a lower value, so the numbers above it are given again.
+
+        Only for a local map: when its system holds no numbered sig or child any more
+        (``naming.restart_hole_numbers``), or a return hole gave its number back
+        (``Tracker.mark_return``). Like the raise, it is not part of the action.
+        """
+        require_integer(system_id, "system_id", minimum=1)
+        require_integer(value, "value", minimum=0)
+        self.database.execute("UPDATE systems SET next_hole=? WHERE id=?", (value, system_id))
+
     def _touch(self, entity: str, key: Any) -> None:
         """Remember an entity's row before the open batch first changes it."""
         if (entity, key) not in self._pending:

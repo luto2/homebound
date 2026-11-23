@@ -299,7 +299,15 @@ class SettingsDialog(QDialog):
         self.auto_name.setChecked(self.edited.auto_name_when_certain)
         layout.addWidget(self.auto_name)
         layout.addWidget(help_label("Bookmarks: a WH sig gets its number n when it is pasted, so its hole in system S is S-n; "
-                                    "the way back home is S-0. Names never change on their own."))
+                                    "the way back home is !RTB S (*S-n under chain · depth · position). "
+                                    "Names never change on their own."))
+        self.renumber_return = QCheckBox("Renumber the other sigs when a return hole is marked")
+        self.renumber_return.setChecked(self.edited.renumber_after_return)
+        self.renumber_return.setToolTip("The return hole gives up its number. On: the higher numbers of that "
+                                        "system's unlinked sigs move down by one, so its holes start at 1 "
+                                        "(a bookmark you already made for one of them is then off by one). "
+                                        "Off: they keep their numbers. This map only.")
+        layout.addWidget(self.renumber_return)
         layout.addWidget(caption("Remembered names"))
         layout.addWidget(help_label("Every custom name is remembered and comes back when the system is mapped again. "
                                     "They belong to this map. Deleting one also clears the name on the map, after you "
@@ -391,6 +399,12 @@ class SettingsDialog(QDialog):
         layout.addLayout(rescan_row)
         layout.addWidget(help_label("A system whose last signature paste is this old is marked for a rescan. "
                                     "Wormhole systems that were never pasted are marked too."))
+        self.copy_bookmark = QCheckBox("Copy the bookmark of the wormhole I just changed")
+        self.copy_bookmark.setChecked(self.edited.copy_bookmark_on_change)
+        layout.addWidget(self.copy_bookmark)
+        layout.addWidget(help_label("After a paste that turns up a new wormhole sig, after saving a wormhole sig in "
+                                    "the editor and after marking the return hole, its bookmark text (as the copy "
+                                    "button copies it) goes to the clipboard, ready to paste into the in-game bookmark."))
 
     # ------------------------------------------------------------ overlay
     def _build_overlay_page(self, layout: QVBoxLayout) -> None:
@@ -866,6 +880,7 @@ class SettingsDialog(QDialog):
                 edited.home_system = home.name
         edited.naming_scheme = next(key for key, card in self.scheme_cards.items() if card.radio.isChecked())
         edited.auto_name_when_certain = self.auto_name.isChecked()
+        edited.renumber_after_return = self.renumber_return.isChecked()
         edited.focus_on_wormhole_jump = self.focus_jump.isChecked()
         edited.overlay_mode = next(key for key, card in self.mode_cards.items() if card.radio.isChecked())
         edited.overlay_pinned_character = self.pinned.currentData()
@@ -875,6 +890,7 @@ class SettingsDialog(QDialog):
         edited.overlay_focus_radius = self.focus_radius.currentData()
         edited.overlay_max_rows = self.max_rows.value()
         edited.rescan_due_hours = self.rescan_due.value()
+        edited.copy_bookmark_on_change = self.copy_bookmark.isChecked()
         edited.zkill_enabled = self.zkill.isChecked()
         edited.eve_scout_enabled = self.eve_scout.isChecked()
         edited.route_preference = self.route_preference.currentData()
