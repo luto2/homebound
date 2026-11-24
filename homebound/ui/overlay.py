@@ -157,7 +157,7 @@ class Overlay(QWidget):
             return self.focused_character is not None and self.target is not None
         return self.target is not None  # follow: an EVE client with a known character is focused
 
-    def refresh(self) -> bool:
+    def refresh(self, *_: object) -> bool:
         """Recompute the target and chain, ask zKill for its systems, and show or hide.
 
         Returns:

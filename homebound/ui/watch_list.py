@@ -99,7 +99,7 @@ class WatchList(QWidget):
         self.reload()
 
     # ------------------------------------------------------------ load
-    def reload(self) -> int:
+    def reload(self, *_: object) -> int:
         """Show both lists with their distance now.
 
         Returns:
@@ -160,7 +160,7 @@ class WatchList(QWidget):
         self.toast.emit("ok", f"Watching {system.name}{' (private)' if private else ''}{where}")
         return True
 
-    def _add_typed(self) -> bool:
+    def _add_typed(self, *_: object) -> bool:
         """Add what the field holds and clear it on success."""
         added = self.add_watch(self.add_field.text(), self.private_box.isChecked())
         if added:
@@ -212,6 +212,6 @@ class WatchList(QWidget):
                        checked=self.state.settings.watch_jumps == jumps, group=group)
         return options
 
-    def show_range_menu(self) -> None:
+    def show_range_menu(self, *_: object) -> None:
         """Open the range menu under the ⚙ button."""
         self.range_menu().exec(self.range_button.mapToGlobal(self.range_button.rect().bottomLeft()))

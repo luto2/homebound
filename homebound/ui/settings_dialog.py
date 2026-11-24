@@ -180,7 +180,7 @@ class SettingsDialog(QDialog):
         self.log_directory.textChanged.connect(self.log_timer.start)
         self.validate_log_directory()
 
-    def browse_log_directory(self) -> str:
+    def browse_log_directory(self, *_: object) -> str:
         """Ask for a folder and put it in the field.
 
         Returns:
@@ -192,7 +192,7 @@ class SettingsDialog(QDialog):
             self.log_directory.setText(chosen)
         return chosen
 
-    def autodetect_log_directory(self) -> bool:
+    def autodetect_log_directory(self, *_: object) -> bool:
         """Fill in the first Chatlogs folder found in the usual Proton / Wine places.
 
         Returns:
@@ -259,7 +259,7 @@ class SettingsDialog(QDialog):
         self.home.textChanged.connect(self.validate_home)
         self.validate_home()
 
-    def validate_home(self) -> bool:
+    def validate_home(self, *_: object) -> bool:
         """Check the home system name and show what it is.
 
         Returns:
@@ -545,7 +545,7 @@ class SettingsDialog(QDialog):
         reset.clicked.connect(self.reset_route_destinations)
         layout.addWidget(reset, 0, Qt.AlignmentFlag.AlignLeft)
 
-    def reset_route_destinations(self) -> list[str]:
+    def reset_route_destinations(self, *_: object) -> list[str]:
         """Put the five trade hubs back as the destinations (saved with the dialog).
 
         Returns:
@@ -602,7 +602,7 @@ class SettingsDialog(QDialog):
         self.kwin_status = status
         return status
 
-    def run_kwin_action(self) -> bool:
+    def run_kwin_action(self, *_: object) -> bool:
         """Enable the script if it is installed but off, otherwise (re)install it.
 
         Returns:
@@ -613,7 +613,7 @@ class SettingsDialog(QDialog):
         self.refresh_kwin("" if succeeded else message)
         return succeeded
 
-    def remove_kwin(self) -> bool:
+    def remove_kwin(self, *_: object) -> bool:
         """Remove the script.
 
         Returns:
@@ -737,7 +737,7 @@ class SettingsDialog(QDialog):
         row = self.backup_list.indexOfTopLevelItem(current_backup) if current_backup else -1
         return self.backups[row] if 0 <= row < len(self.backups) else None
 
-    def backup_now(self) -> bool:
+    def backup_now(self, *_: object) -> bool:
         """Make a ``manual`` backup and list it.
 
         Returns:
@@ -756,7 +756,7 @@ class SettingsDialog(QDialog):
             set_help(self.backup_help, f"✓ Backed up to {path.name}", "help-ok")
         return True
 
-    def restore_selected_backup(self) -> bool:
+    def restore_selected_backup(self, *_: object) -> bool:
         """Ask what to restore from the selected backup and do it.
 
         Restoring settings closes this dialog, since its fields would show the old values.
@@ -791,7 +791,7 @@ class SettingsDialog(QDialog):
         self.refresh_backups()
         return True
 
-    def open_backup_folder(self) -> bool:
+    def open_backup_folder(self, *_: object) -> bool:
         """Open the backups folder in the file manager (created if missing).
 
         Returns:
@@ -801,7 +801,7 @@ class SettingsDialog(QDialog):
         folder.mkdir(parents=True, exist_ok=True)
         return QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
 
-    def browse_backup_copy(self) -> str:
+    def browse_backup_copy(self, *_: object) -> str:
         """Ask for the extra backup folder and put it in the field.
 
         Returns:
@@ -813,7 +813,7 @@ class SettingsDialog(QDialog):
             self.backup_copy.setText(chosen)
         return chosen
 
-    def validate_backup_copy(self) -> str:
+    def validate_backup_copy(self, *_: object) -> str:
         """Check the extra backup folder and show the result.
 
         Returns:
@@ -833,7 +833,7 @@ class SettingsDialog(QDialog):
         return "missing"
 
     # ------------------------------------------------------------ save
-    def save(self) -> bool:
+    def save(self, *_: object) -> bool:
         """Write the edited settings to the application state, apply them and close.
 
         An unknown home system text keeps the previous home instead of clearing it. A log folder

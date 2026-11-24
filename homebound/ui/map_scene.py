@@ -737,7 +737,7 @@ class MapScene(QGraphicsScene):
         self.selectionChanged.connect(self._count_selection)
         self.rebuild()
 
-    def rebuild(self) -> None:
+    def rebuild(self, *_: object) -> None:
         """Sync nodes and edges with the store: drop removed systems, add new ones, redraw every connection."""
         state = self.state
         systems = {system.id: system for system in state.store.systems()}
@@ -774,12 +774,12 @@ class MapScene(QGraphicsScene):
             if connection:
                 edge.refresh(connection)
 
-    def refresh_all(self) -> None:
+    def refresh_all(self, *_: object) -> None:
         """Refresh every node (e.g. after characters moved)."""
         for node in self.nodes.values():
             node.refresh()
 
-    def refresh_scan_status(self) -> int:
+    def refresh_scan_status(self, *_: object) -> int:
         """Recompute every node's rescan status (clock tick, new threshold); only changed nodes repaint.
 
         Returns:
@@ -794,7 +794,7 @@ class MapScene(QGraphicsScene):
             self.clearSelection()
             node.setSelected(True)
 
-    def _count_selection(self) -> None:
+    def _count_selection(self, *_: object) -> None:
         """Tell the state how many systems are selected."""
         self.state.set_selected_count(len(self.selected_nodes()))
 

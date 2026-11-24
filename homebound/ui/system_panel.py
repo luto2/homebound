@@ -349,7 +349,7 @@ class SystemPanel(QWidget):
         return (f"{stats.kills_1h}/{stats.kills_24h} kills · {stats.pod_kills_1h} pods 1h · {last}"
                 + (f" · stale {age_text(stats.fetched_at)}" if stale else ""))
 
-    def refresh(self) -> None:
+    def refresh(self, *_: object) -> None:
         """Reload everything from the store, leaving fields that have the focus alone."""
         state = self.state
         if self.system_id and not state.store.has_system(self.system_id):
@@ -397,7 +397,7 @@ class SystemPanel(QWidget):
             self.banner_text.setText(missing_banner_html(missing, signatures))
             self.delete_missing_button.setText(f"✕ Delete {len(missing)}")
 
-    def refresh_scan_age(self) -> None:
+    def refresh_scan_age(self, *_: object) -> None:
         """Update the sig summary (counts, age of the last paste, rescan due) and repaint the rows (faint when due)."""
         if not self.system_id:
             return
@@ -416,7 +416,7 @@ class SystemPanel(QWidget):
         self.table.viewport().update()
 
     # ------------------------------------------------------------ actions
-    def paste(self) -> signature_parser.ScanResult | None:
+    def paste(self, *_: object) -> signature_parser.ScanResult | None:
         """Merge the scanner text on the clipboard into the shown system (one Undo step).
 
         Probe scanner signatures and anomalies go to the signature table; the ships, deployables and
@@ -518,7 +518,7 @@ class SystemPanel(QWidget):
                 self.edit_signature(signature, open_type_picker=True)
         return True
 
-    def keep_missing(self) -> int:
+    def keep_missing(self, *_: object) -> int:
         """Clear the missing flag of every signature in the shown system.
 
         Returns:
@@ -532,7 +532,7 @@ class SystemPanel(QWidget):
         self.refresh()
         return kept
 
-    def delete_missing(self) -> int:
+    def delete_missing(self, *_: object) -> int:
         """Delete every signature flagged missing (with an Undo toast).
 
         Returns:
@@ -541,7 +541,7 @@ class SystemPanel(QWidget):
         signature_ids = [signature.signature_id for signature in self.state.store.signatures(self.system_id) if signature.state == "missing"]
         return self.delete_signatures(signature_ids, "missing ")
 
-    def delete_selected(self) -> int:
+    def delete_selected(self, *_: object) -> int:
         """Delete the selected table rows (with an Undo toast).
 
         Returns:
@@ -582,7 +582,7 @@ class SystemPanel(QWidget):
         self.undoable.emit(title, detail, action)
         return deleted
 
-    def _save_name(self) -> None:
+    def _save_name(self, *_: object) -> None:
         """Store the custom name; it is remembered for the system (empty clears it and forgets it)."""
         if self.system_id:
             name = self.name.text().strip()

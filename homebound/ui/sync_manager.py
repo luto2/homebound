@@ -420,7 +420,7 @@ class SyncManager(QObject):
                 for character_id, _, system_id, presence, _ in self.state.character_rows()
                 if presence == "online" or (presence == "recent" and not windows_known)}
 
-    def update_presence(self) -> None:
+    def update_presence(self, *_: object) -> None:
         """Send the location of every shared character that is playing; ``null`` for those that stopped."""
         if not self.engine.connected:
             return

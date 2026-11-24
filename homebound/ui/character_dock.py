@@ -111,7 +111,7 @@ class CharacterDock(QListWidget):
         state.mapChanged.connect(self.viewport().update)
         self.reload()
 
-    def reload(self) -> int:
+    def reload(self, *_: object) -> int:
         """Rebuild the rows from the state.
 
         Returns:

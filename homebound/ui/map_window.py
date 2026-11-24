@@ -550,7 +550,7 @@ class MapWindow(QMainWindow):
         self.activateWindow()
 
     # ------------------------------------------------------------ maps
-    def _fill_map_menu(self) -> QMenu:
+    def _fill_map_menu(self, *_: object) -> QMenu:
         """Fill the map menu: the maps with stats, new / rename and a delete submenu.
 
         Returns:
@@ -719,7 +719,7 @@ class MapWindow(QMainWindow):
         return True
 
     # ------------------------------------------------------------ settings sync
-    def _sync_settings(self) -> None:
+    def _sync_settings(self, *_: object) -> None:
         """Refresh every widget that mirrors a setting."""
         settings = self.state.settings
         self.map_button.setText(f"▦ {settings.active_map} ▾")
@@ -810,7 +810,7 @@ class MapWindow(QMainWindow):
                                  f"Rename gives every system on the map its {title} name too (hole numbers "
                                  f"and custom names stay, Undo brings the old names back).")
 
-    def cycle_overlay_mode(self) -> str:
+    def cycle_overlay_mode(self, *_: object) -> str:
         """Move to the next overlay mode (off, follow, pinned, always, off ...), skipping modes that are refused.
 
         Returns:
@@ -893,7 +893,7 @@ class MapWindow(QMainWindow):
         return SettingsDialog(self, self.state, page).exec()
 
     # ------------------------------------------------------------ find / fit
-    def _refresh_find(self) -> QCompleter:
+    def _refresh_find(self, *_: object) -> QCompleter:
         """Rebuild the find field's completer from the systems on the map.
 
         Returns:
@@ -913,7 +913,7 @@ class MapWindow(QMainWindow):
         self.find_field.setCompleter(completer)
         return completer
 
-    def _do_find(self) -> bool:
+    def _do_find(self, *_: object) -> bool:
         """Select and centre the system typed into the find field.
 
         Returns:
@@ -982,7 +982,7 @@ class MapWindow(QMainWindow):
         self.toasts.show("info", f"Not mapped: {origin} → {destination} ({event.character_name})", detail=f"{why}.",
                          timeout_ms=6000)
 
-    def fit_chain(self) -> QRectF:
+    def fit_chain(self, *_: object) -> QRectF:
         """Zoom the view to the chain of the selected system (or of home).
 
         Returns:

@@ -9,3 +9,4 @@ graphify-out/
 
 # private operator notes, never committed
 docs/private/
+mutants/

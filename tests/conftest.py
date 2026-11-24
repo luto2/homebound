@@ -1,4 +1,5 @@
 """Shared fixtures: the real universe data, a scripted map, and an offscreen Qt application."""
+import functools
 import gc
 import os
 import re
@@ -16,8 +17,27 @@ from homebound.mapping.naming import Namer  # noqa: E402
 from homebound.mapping.tracker import NamingRequest, Tracker  # noqa: E402
 from homebound.universe.db import System, Universe, load_universe  # noqa: E402
 
-UNIVERSE = load_universe()
-HOME = UNIVERSE.by_name("J161940")  # C5, static H296 -> C5
+@functools.cache
+def universe_and_home() -> tuple[Universe, System]:
+    """Load the universe and the home system (J161940: C5, static H296 -> C5) on first use.
+
+    Lazy, so a broken loader fails the tests that use it instead of the conftest import. mutmut needs
+    that: it breaks every function to check the suite notices, and a conftest import error is a pytest
+    usage error to it, not a failure.
+    """
+    universe = load_universe()
+    home = universe.by_name("J161940")
+    assert home is not None
+    return universe, home
+
+
+def __getattr__(name: str) -> object:
+    """Serve ``UNIVERSE`` and ``HOME`` for ``from conftest import ...``, loaded on first use."""
+    if name == "UNIVERSE":
+        return universe_and_home()[0]
+    if name == "HOME":
+        return universe_and_home()[1]
+    raise AttributeError(name)
 
 
 def pick_system(system_class: str, statics_to: str | None = None, exclude: Collection[int] = ()) -> System:
@@ -26,10 +46,11 @@ def pick_system(system_class: str, statics_to: str | None = None, exclude: Colle
     Raises:
         LookupError: If no system fits.
     """
-    for system in UNIVERSE.all_systems():
+    universe = universe_and_home()[0]
+    for system in universe.all_systems():
         if system.system_class != system_class or system.id in exclude:
             continue
-        if statics_to and (statics_to not in UNIVERSE.static_destination_classes(system.id)
+        if statics_to and (statics_to not in universe.static_destination_classes(system.id)
                            or len(system.statics) != 1):
             continue
         return system
@@ -74,12 +95,13 @@ class MapSimulation:
 
     def __init__(self, scheme: str = "numeric") -> None:
         """Create the map under a naming scheme."""
+        universe, home = universe_and_home()
         self.store = Store(":memory:")
-        self.namer = Namer(self.store, UNIVERSE, scheme, HOME.id)
-        self.tracker = Tracker(self.store, UNIVERSE, self.namer)
+        self.namer = Namer(self.store, universe, scheme, home.id)
+        self.tracker = Tracker(self.store, universe, self.namer)
         self.time = datetime(2026, 10, 30, 12, tzinfo=timezone.utc)
-        self.store.add_system(HOME.id)
-        self.jump(HOME.name, first=True)
+        self.store.add_system(home.id)
+        self.jump(home.name, first=True)
 
     def jump(self, name: str, first: bool = False, character: int = 1) -> list:
         """Move a character to a system one minute after the last move and return the tracker events."""

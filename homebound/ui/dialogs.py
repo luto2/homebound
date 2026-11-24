@@ -559,7 +559,7 @@ class PromptDialog(BaseDialog):
         """Update the primary button text."""
         self.primary_button.setText(self._primary(self.text()) if callable(self._primary) else self._primary)
 
-    def validate_now(self) -> bool:
+    def validate_now(self, *_: object) -> bool:
         """Run the validator and show its result.
 
         Returns:
@@ -910,7 +910,7 @@ class BuildDataDialog(BaseDialog):
         repolish(self.status)
         self.adjustSize()
 
-    def start(self) -> BuildWorker:
+    def start(self, *_: object) -> BuildWorker:
         """Start the build in a thread; the dialog accepts itself when it succeeds.
 
         Returns:
@@ -955,7 +955,7 @@ class BuildDataDialog(BaseDialog):
         self.download_button.setEnabled(True)
         return False
 
-    def quit(self) -> None:
+    def quit(self, *_: object) -> None:
         """Stop a running build (at its next step or download chunk) and close."""
         if self.worker is not None and self.worker.isRunning():
             self.worker.cancelled = True
@@ -998,7 +998,7 @@ class BuildDataDialog(BaseDialog):
         row.addWidget(self.copy_button)
         return box
 
-    def copy_command(self) -> str:
+    def copy_command(self, *_: object) -> str:
         """Copy the command and show a ✓ for two seconds.
 
         Returns:
@@ -1057,7 +1057,7 @@ class RestoreBackupDialog(BaseDialog):
         """Return the ticked map names."""
         return [name for name, box in self.map_boxes.items() if box.isChecked()]
 
-    def _sync(self) -> bool:
+    def _sync(self, *_: object) -> bool:
         """Enable Restore once there is something to do: maps with a way picked, or the settings alone.
 
         Returns:

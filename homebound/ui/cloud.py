@@ -123,7 +123,7 @@ class MakeCloudMapDialog(BaseDialog):
         primary.clicked.connect(self._make)
         self.result_info: dict = {}
 
-    def _make(self) -> None:
+    def _make(self, *_: object) -> None:
         """Upload."""
         char_id = self.payer.currentData()
         try:
@@ -166,7 +166,7 @@ class InviteDialog(BaseDialog):
         self.primary.clicked.disconnect()
         self.primary.clicked.connect(self._make)
 
-    def _make(self) -> None:
+    def _make(self, *_: object) -> None:
         """Ask the server for a code and copy it."""
         try:
             invite = self.sync.api.invite(self.map_id, self.role.currentData(), self.hours.value(), self.uses.value())
@@ -203,7 +203,7 @@ class MembersDialog(BaseDialog):
         refresh.clicked.connect(self.refresh)
         self.refresh()
 
-    def refresh(self) -> None:
+    def refresh(self, *_: object) -> None:
         """Reload the member list."""
         while self.member_layout.count():
             widget = self.member_layout.takeAt(0).widget()
@@ -302,7 +302,7 @@ class MembersDialog(BaseDialog):
             "Invite codes only work for listed alliances, corporations and characters, so a code passed on to "
             "someone else is useless. Members who don't match lose their seat (the owner always stays)."))
 
-    def _add_access(self) -> None:
+    def _add_access(self, *_: object) -> None:
         """Add the typed alliance, corp or character."""
         value = self.access_name.text().strip()
         if not value:
@@ -430,7 +430,7 @@ class AccountDialog(BaseDialog):
             layout.addWidget(row)
         self.error.hide()
 
-    def _add_alt(self) -> None:
+    def _add_alt(self, *_: object) -> None:
         """Link another character with its own SSO login."""
         try:
             link = self.sync.api.link_character()["link_code"]
@@ -456,7 +456,7 @@ class AccountDialog(BaseDialog):
             show_error(self.error, error)
         self.refresh()
 
-    def _sign_out(self) -> None:
+    def _sign_out(self, *_: object) -> None:
         self.sync.sign_out()
         self.accept()
 
@@ -495,7 +495,7 @@ class CloudMenu(QObject):
         self.button.setMenu(self.menu)
         sync.sessionProblem.connect(self._session_problem)
 
-    def fill(self) -> QMenu:
+    def fill(self, *_: object) -> QMenu:
         """Build the menu for the current state."""
         menu, sync = self.menu, self.sync
         menu.clear()

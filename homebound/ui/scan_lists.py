@@ -76,7 +76,7 @@ class FoldingList(QWidget):
         layout.addWidget(self.list)
         self.list.hide()
 
-    def toggle(self) -> None:
+    def toggle(self, *_: object) -> None:
         """Fold or unfold the list."""
         self.set_expanded(not self.expanded)
 
@@ -290,7 +290,7 @@ class StructureList(FoldingList):
         menu.popup(position)
         return menu
 
-    def add_structure(self) -> bool:
+    def add_structure(self, *_: object) -> bool:
         """Ask for a new structure and add it.
 
         Returns:

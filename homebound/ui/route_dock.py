@@ -258,7 +258,7 @@ class RouteDock(QWidget):
         self.reload()
 
     # ------------------------------------------------------------ load
-    def reload(self) -> int:
+    def reload(self, *_: object) -> int:
         """Work out the routes from the current origin and show them.
 
         Returns:
@@ -324,7 +324,7 @@ class RouteDock(QWidget):
         system = self.state.universe.by_id(system_id)
         return bool(system) and self.add_destination(system.name)
 
-    def _add_typed(self) -> bool:
+    def _add_typed(self, *_: object) -> bool:
         """Add what the field holds and clear it on success."""
         added = self.add_destination(self.add_field.text())
         if added:
@@ -440,6 +440,6 @@ class RouteDock(QWidget):
         menus.item(options, "Reset destinations to the trade hubs", self.reset_destinations)
         return options
 
-    def show_options(self) -> None:
+    def show_options(self, *_: object) -> None:
         """Open the options menu under the ⚙ button."""
         self.options_menu().exec(self.options_button.mapToGlobal(self.options_button.rect().bottomLeft()))

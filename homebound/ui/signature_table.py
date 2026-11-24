@@ -788,7 +788,7 @@ class SignatureTable(QTableView):
             self.signature_delegate.flash.clear()
         return self.signature_model.load(system_id)
 
-    def _repaint(self) -> None:
+    def _repaint(self, *_: object) -> None:
         """Repaint the rows (a flash frame)."""
         self.viewport().update()
 
@@ -860,7 +860,7 @@ class SignatureTable(QTableView):
         super().resizeEvent(event)
         self._fit(COLUMN_NAME)
 
-    def _update_spans(self) -> None:
+    def _update_spans(self, *_: object) -> None:
         """Header rows span every column."""
         self.clearSpans()
         for row, item in enumerate(self.signature_model.rows):

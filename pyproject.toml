@@ -29,6 +29,7 @@ dev = [
     "pytest-cov>=7",
     "homebound[server]",
     "mypy>=2.4.1",
+    "mutmut>=3.8.1",
 ]
 packaging = ["pyinstaller>=6.16"]
 
@@ -57,3 +58,7 @@ warn_unused_ignores = false
 [[tool.mypy.overrides]]
 module = ["homebound.ui.*", "homebound.theme.*", "homebound.platform.*", "homebound.__main__"]
 disable_error_code = ["override", "call-overload", "call-arg", "union-attr", "attr-defined", "func-returns-value", "method-assign", "misc"]
+
+[tool.mutmut]
+source_paths = ["homebound/", "homebound_server/"]
+also_copy = ["tools/", "packaging/", "data/", "docs/", "design-system/", "README.md", "HOW_TO.md"]

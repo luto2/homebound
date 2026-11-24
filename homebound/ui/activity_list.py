@@ -164,7 +164,7 @@ class ActivityList(QWidget):
         self.list.hide()
         self.hide()
 
-    def toggle(self) -> None:
+    def toggle(self, *_: object) -> None:
         """Fold or unfold the list."""
         self.expanded = not self.expanded
         self.header.expanded = self.expanded
